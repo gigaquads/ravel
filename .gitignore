@@ -1,5 +1,7 @@
 *.swp
 *.swn
 *.swo
+*.egg-info
 __pycache__/
+/venv/
 .cache

@@ -9,67 +9,100 @@ from .const import (
     )
 
 
-class registry(object):
+class ApiRegistry(object):
 
-    methods = defaultdict(dict)
+    def __init__(self):
+        self.handlers = defaultdict(dict)
 
-    def __init__(self, http_method: str, path: str, schemas: dict = None):
-        self.http_method = http_method.lower()
-        self.path = path.lower()
-        self.schemas = schemas or {}
+    def get(self, path, schemas=None, hook=None):
+        return ApiRegistryDecorator(self, HTTP_GET, path,
+                schemas=schemas, hook=hook)
 
-    def __call__(self, func):
-        schemas = self.schemas
+    def post(self, path, schemas=None):
+        return ApiRegistryDecorator(self, HTTP_POST, path, schemas=schemas)
 
-        def handler(*args, **kwargs):
-            if 'request' in schemas:
-                request = args[0]
-                request_data = self.load_request_json(request)
-                schema = schemas.get('request')
-                result = schema.load(request_data, strict=True)
-                request.json = result.data
+    def put(self, path, schemas=None):
+        return ApiRegistryDecorator(self, HTTP_PUT, path, schemas=schemas)
 
-            handler_result = func(*args, **kwargs)
-            print(handler_result)
+    def patch(self, path, schemas=None):
+        return ApiRegistryDecorator(self, HTTP_PATCH, path, schemas=schemas)
 
-            if 'response' in schemas:
-                schema = schemas.get('response')
-                handler_result = schema.load(handler_result, strict=True)
+    def delete(self, path, schemas=None):
+        return ApiRegistryDecorator(self, HTTP_DELETE, path, schemas=schemas)
 
-            return handler_result
-
-        self.methods[self.path][self.http_method] = handler
-        handler.__name__ = 'on_{}'.format(self.http_method)
-        return handler
-
-    @classmethod
-    def route(cls, http_method, path, handler_args=None, handler_kwargs=None):
-        handler = cls.methods[path.lower()][http_method.lower()]
+    def route(self, http_method, path, handler_args=None, handler_kwargs=None):
+        handler = self.handlers[path.lower()][http_method.lower()]
         handler_args = handler_args or tuple()
         handler_kwargs = handler_kwargs or dict()
         return handler(*handler_args, **handler_kwargs)
 
+    def validate_request(self, schema, params_schema, *args, **kwargs):
+        pass
 
-class get(registry):
-    def __init__(self, path, schemas = None):
-        super(get, self).__init__(HTTP_GET, path, schemas)
-
-
-class post(registry):
-    def __init__(self, path, schemas = None):
-        super(post, self).__init__(HTTP_POST, path, schemas)
+    def validate_response(self, schema, result, *args, **kwargs):
+        pass
 
 
-class patch(registry):
-    def __init__(self, path, schemas = None):
-        super(patch, self).__init__(HTTP_PATCH, path, schemas)
+class ApiRegistryDecorator(object):
+
+    def __init__(self,
+            registry,
+            http_method: str,
+            path: str,
+            schemas: dict = None,
+            hook=None):
+
+        self.registry = registry
+        self.http_method = http_method.lower()
+        self.path = path.lower()
+        self.schemas = schemas or {}
+        self.hook = hook
+
+    def __call__(self, func):
+        handler = ApiHandler(func, self)
+        if self.hook is not None:
+            self.hook(handler)
+        self.registry.handlers[self.path][self.http_method] = handler
+        return handler
 
 
-class put(registry):
-    def __init__(self, path, schemas = None):
-        super(put, self).__init__(HTTP_PUT, path, schemas)
+class ApiHandler(object):
+    def __init__(self, target, decorator):
+        self.target = target
+        self.decorator = decorator
 
+    def __repr__(self):
+        return '<ApiHandler({})>'.format(', '.join([
+                'method={}'.format(self.decorator.http_method.upper()),
+                'path={}'.format(self.decorator.path),
+                ]))
 
-class delete(registry):
-    def __init__(self, path, schemas = None):
-        super(delete, self).__init__(HTTP_DELETE, path, schemas)
+    def __call__(self, *args, **kwargs):
+        # TODO: Move this schema logic into pre middleware hooks passed to ctor
+        # as a `validate={request: func, response: func, params: func}` kwarg in
+        # ApiRegistry
+        schemas = self.decorator.schemas
+        if 'request' in schemas:
+            request = args[0]
+            request_data = request.json  # TODO: implement this in falcon with Request subclass
+            schema = schemas.get('request')
+            result = schema.load(request_data, strict=True)
+            request.json = result.data
+
+        request_schema = schemas.get('request')
+        response_schema = schemas.get('response')
+        params_schema = schemas.get('params')
+
+        self.decorator.registry.validate_request(
+                request_schema, params_schema, *args, **kwargs)
+
+        handler_result = self.target(*args, **kwargs)
+
+        self.decorator.registry.validate_response(
+                response_schema, handler_result, *args, **kwargs)
+
+        if 'response' in schemas:
+            schema = schemas.get('response')
+            handler_result = schema.load(handler_result, strict=True)
+
+        return handler_result

@@ -12,9 +12,9 @@ if __name__ == '__main__':
     with open(os.path.join(HERE, 'requirements.txt')) as f:
         REQUIREMENTS = [s.strip().replace('-', '_') for s in f.readlines()]
 
-    setup(name='Biz',
+    setup(name='PyBiz',
           version='1.0',
-          description='Business Object Framework'
+          description='PyBiz',
           long_description=README,
           install_requires=REQUIREMENTS,
           packages=find_packages(),
