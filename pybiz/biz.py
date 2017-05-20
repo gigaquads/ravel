@@ -6,11 +6,13 @@ from types import MethodType
 
 from .patch import JsonPatchMixin
 from .dao import DaoManager
+from .dirty import DirtyDict, DirtyInterface
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
     PATCH_PATH_ANNOTATION,
     PATCH_ANNOTATION,
+    IS_BIZOBJ_ANNOTATION,
     )
 
 
@@ -18,7 +20,7 @@ class BizObjectMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         # set this attribute in order to be able to
         # use duck typing to check isinstance of BizObjects
-        setattr(cls, 'is_bizobj', True)
+        setattr(cls, IS_BIZOBJ_ANNOTATION, True)
 
         # build field properties according to the schema
         # associated with this BizObject class
@@ -68,52 +70,58 @@ class BizObjectMeta(ABCMeta):
             return property(fget=fget, fset=fset, fdel=fdel)
 
         for field_name in schema.fields:
-            assert not hasattr(cls, field_name)
-            setattr(cls, field_name, build_property(field_name))
+            if field_name not in ('_id', 'public_id'):
+                assert not hasattr(cls, field_name)
+                setattr(cls, field_name, build_property(field_name))
 
 
-class BizObject(JsonPatchMixin, metaclass=BizObjectMeta):
+class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
 
     _schema = None  # auto-memoized Schema instance
     _dao_manager = DaoManager.get_instance()
 
-    def __init__(self, data=None, mark_dirty=True, **kwargs_data):
+    def __init__(self, data=None, **kwargs_data):
+        super(BizObject, self).__init__()
+        self._data = self._init_data(data, kwargs_data)
+
+    def _init_data(self, data, kwargs_data):
         data = data or {}
         data.update(kwargs_data)
-        data.setdefault('_id', None)
-        data.setdefault('public_id', None)
+
         if self._schema is not None:
             result = self._schema.load(data)
             if result.errors:
                 raise Exception(str(result.errors))
-            self._data = result.data
-        else:
-            self._data = data
+            data = result.data
 
-        self._dirty_set = set()
-        if mark_dirty:
-            self.mark_dirty()
+        return DirtyDict(data)
 
-    def __getitem__(self, attr):
-        return self._data[attr]
+    def __getitem__(self, key):
+        return self._data[key]
 
-    def __setitem__(self, attr, value):
+    def __setitem__(self, key, value):
         if self._schema is not None:
-            if attr not in self._schema.fields:
+            if key not in self._schema.fields:
                 raise KeyError('{} not in {} schema'.format(
-                        attr, self._schema.__class__.__name__))
-        self._data[attr] = value
+                        key, self._schema.__class__.__name__))
+
+        self._data[key] = value
 
     def __contains__(self, key):
         return key in self._data
 
     def __repr__(self):
         bizobj_id = ''
-        if self._data['_id'] is not None:
-            bizobj_id = '/id={}'.format(self._data['_id'])
-        elif self._data['public_id'] is not None:
-            bizobj_id = '/pid={}'.format(self._data['public_id'])
-        dirty_flag = '*' if self._dirty_set else ''
+        _id = self._data.get('_id')
+        if _id is not None:
+            bizobj_id = '/id={}'.format(_id)
+        else:
+            public_id = self._data.get('public_id')
+            if public_id is not None:
+                bizobj_id = '/public_id={}'.format(public_id)
+
+        dirty_flag = '*' if self._data.dirty else ''
+
         return '<{class_name}{dirty_flag}{bizobj_id}>'.format(
                 class_name=self.__class__.__name__,
                 bizobj_id=bizobj_id,
@@ -126,13 +134,23 @@ class BizObject(JsonPatchMixin, metaclass=BizObjectMeta):
 
     @classmethod
     def dao_provider(cls):
-        name = re.sub(r'([a-z])([A-Z0-9])', r'\1_\2', cls.__name__).upper()
-        provider = os.environ.get('{}_DAO_PROVIDER'.format(name))
-        return provider or os.environ['DAO_PROVIDER']
+        """
+        By default, we try to read the dao_provider string from an environment
+        variable named X_DAO_PROVIDER, where X is the uppercase name of this
+        class. Otherwise, we try to read a default global dao provider from the
+        DAO_PROVIDER environment variable.
+        """
+        cls_name = re.sub(r'([a-z])([A-Z0-9])', r'\1_\2', cls.__name__).upper()
+        dao_provider = os.environ.get('{}_DAO_PROVIDER'.format(cls_name))
+        return dao_provider or os.environ['DAO_PROVIDER']
 
     @classmethod
     def get_dao(cls):
         return cls._dao_manager.get_dao_for_bizobj(cls)
+
+    @property
+    def data(self):
+        return self._data
 
     @property
     def dao(self):
@@ -159,14 +177,19 @@ class BizObject(JsonPatchMixin, metaclass=BizObjectMeta):
 
     @property
     def dirty(self):
-        return frozenset(self._dirty_set)
+        return self._data.dirty
 
-    def mark_dirty(self, attr=None):
-        if attr is not None:
-            assert attr in self._data
-            self._dirty_set.add(attr)
-        else:
-            self._dirty_set = set(self._data.keys())
+    def set_parent(self, key_in_parent, parent):
+        self._data.set_parent(key_in_parent, parent)
+
+    def has_parent(self, obj):
+        return self._data.has_parent(obj)
+
+    def mark_dirty(self, key):
+        self._data.mark_dirty(key)
+
+    def clear_dirty(self):
+        self._data.clear_dirty()
 
     def save(self, and_fetch=False):
         bizobjs = []
@@ -175,7 +198,7 @@ class BizObject(JsonPatchMixin, metaclass=BizObjectMeta):
         # accumulate all nested bizobjs in order to call save
         # recursively on them. at the same time, build up the
         # data structure(s) passed down to the DAL.
-        for k in self._dirty_set:
+        for k in self._dirty:
             v = self._data[k]
             if isinstance(v, BizObject):
                 bizobjs.append(v)
@@ -194,4 +217,4 @@ class BizObject(JsonPatchMixin, metaclass=BizObjectMeta):
             self._id = _id
             if and_fetch:
                 self.update(self.dao.fetch(_id=_id))
-            self._dirty_set.clear()
+            self.clear_dirty()

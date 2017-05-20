@@ -12,7 +12,7 @@ if __name__ == '__main__':
     with open(os.path.join(HERE, 'requirements.txt')) as f:
         REQUIREMENTS = [s.strip().replace('-', '_') for s in f.readlines()]
 
-    setup(name='PyBiz',
+    setup(name='pybiz',
           version='1.0',
           description='PyBiz',
           long_description=README,

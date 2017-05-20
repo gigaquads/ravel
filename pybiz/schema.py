@@ -1,9 +1,11 @@
-import re
 import pytz
+import dateutil.parser
 
+from uuid import UUID
 from datetime import datetime, date
 from abc import ABCMeta, abstractmethod
 
+from .util import is_bizobj
 from .const import (
     RE_EMAIL, RE_UUID, RE_FLOAT,
     OP_LOAD, OP_DUMP,
@@ -18,7 +20,8 @@ class ValidationError(Exception):
 
 class Field(object, metaclass=ABCMeta):
 
-    def __init__(self,
+    def __init__(
+            self,
             allow_none=False,
             load_only=False,
             load_from=None,
@@ -49,32 +52,38 @@ class Field(object, metaclass=ABCMeta):
 
 class Nested(Field):
 
-    def __init__(self, nested_schema, many=False, *args, **kwargs):
+    def __init__(self, nested, many=False, *args, **kwargs):
         super(Nested, self).__init__(*args, **kwargs)
-        assert isinstance(nested_schema, Schema)
-        self.nested_schema = nested_schema
+        self.nested = nested
         self.many = many
 
     def load(self, value):
         if not self.many:
-            schema_result = self.nested_schema.load(value)
+            if is_bizobj(value):
+                return FieldResult(value=value)
+            schema_result = self.nested.load(value)
             if schema_result.errors:
                 return FieldResult(error=schema_result.errors)
             else:
-                return FieldResult(value=self.nested_schema.load(value).data)
+                return FieldResult(value=self.nested.load(value).data)
         else:
+            if is_bizobj(value):
+                return FieldResult(value=value)
             if not isinstance(value, (list, tuple, set)):
                 return FieldResult(error='expected a valid sequence')
             result_list = []
             for i, x in enumerate(value):
-                result = self.nested_schema.load(x)
+                result = self.nested.load(x)
                 if result.errors:
                     return FieldResult(error={i: result.errors})
                 result_list.append(result.data)
             return FieldResult(value=result_list)
 
     def dump(self, data):
-        return self.load(data)
+        if is_bizobj(data):
+            return data.dump()
+        else:
+            return self.load(data)
 
 
 class List(Field):
@@ -160,7 +169,7 @@ class Uuid(Field):
             if not RE_UUID.match(value):
                 return FieldResult(error='invalid UUID')
         elif isinstance(value, int):
-            hex_atr = hex(value)[2:]
+            hex_str = hex(value)[2:]
             return ('0'*(32 - len(hex_str))) + hex_str
         else:
             return FieldResult(error='expected a UUID')
@@ -208,7 +217,7 @@ class DateTime(Field):
             return FieldResult(value=value.replace(tzinfo=pytz.utc))
         elif isinstance(value, (int, float)):
             try:
-                return FieldResult(value=datetime.utcfromtimestamp(ts))
+                return FieldResult(value=datetime.utcfromtimestamp(value))
             except ValueError:
                 return FieldResult(error='invalid UTC timestamp')
         elif isinstance(value, str):
@@ -267,8 +276,19 @@ class SchemaMeta(type):
 
 class Schema(object, metaclass=SchemaMeta):
 
-    def __init__(self, strict=False):
+    def __init__(self, strict=False, ignore_additional=True):
+        """
+        Kwargs:
+            - strict: if True, then a ValidationException will be thrown if any
+              errors are encountered during load (or dump).
+
+            - ignore_additional: if True, additional key-value pairs will be
+              allowed to exist in the data loaded by this schema; however,
+              these additional keys-value will not exist in the data returned
+              by load or dump.
+        """
         self.strict = strict
+        self.ignore_additional = ignore_additional
 
     def __repr__(self):
         return '<Schema({})>'.format(self.__class__.__name__)
@@ -284,7 +304,6 @@ class Schema(object, metaclass=SchemaMeta):
 
         strict = strict if strict is not None else self.strict
         result = SchemaResult(op, {}, {})
-        errors = {}
 
         for k, v in data.items():
             field = self.fields.get(k)
@@ -292,7 +311,8 @@ class Schema(object, metaclass=SchemaMeta):
             if field is None:
                 field = self.load_from_fields.get(k)
                 if field is None:
-                    result.errors[k] = 'unrecognized field'
+                    if not self.ignore_additional:
+                        result.errors[k] = 'unrecognized field'
                     continue
 
             if v is None:
@@ -365,7 +385,6 @@ if __name__ == '__main__':
         sex = Enum(Str(), ('m', 'f', 'o'), required=True)
         race = Enum(Str(), ('white', 'asian', 'black'), required=True)
         friends = List(Str())
-
 
     schema = UserSchema()
     data = {
