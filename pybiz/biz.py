@@ -7,6 +7,7 @@ from types import MethodType
 from .patch import JsonPatchMixin
 from .dao import DaoManager
 from .dirty import DirtyDict, DirtyInterface
+from .util import is_bizobj
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -104,7 +105,6 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
             if key not in self._schema.fields:
                 raise KeyError('{} not in {} schema'.format(
                         key, self._schema.__class__.__name__))
-
         self._data[key] = value
 
     def __contains__(self, key):
@@ -156,6 +156,14 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
     def dao(self):
         return self._dao_manager.get_dao_for_bizobj(self.__class__)
 
+    @property
+    def _id(self):
+        return self._data.get('_id')
+
+    @_id.setter
+    def _id(self, _id):
+        self._data['_id'] = _id
+
     def keys(self):
         return self._data.keys()
 
@@ -185,36 +193,37 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
     def has_parent(self, obj):
         return self._data.has_parent(obj)
 
+    def get_parent(self):
+        return self._data.get_parent()
+
     def mark_dirty(self, key):
         self._data.mark_dirty(key)
 
-    def clear_dirty(self):
-        self._data.clear_dirty()
+    def clear_dirty(self, keys=None):
+        self._data.clear_dirty(keys=keys)
 
-    def save(self, and_fetch=False):
-        bizobjs = []
-        data = {}  # data to save
+    def save(self, fetch=False):
+        nested_bizobjs = []
+        data_to_save = {}
 
-        # accumulate all nested bizobjs in order to call save
-        # recursively on them. at the same time, build up the
-        # data structure(s) passed down to the DAL.
-        for k in self._dirty:
+        # build data dict to save
+        # and accumulated nested bizobjs
+        for k in self._data.dirty:
             v = self._data[k]
-            if isinstance(v, BizObject):
-                bizobjs.append(v)
+            if is_bizobj(v):
+                nested_bizobjs.append(v)
+                data_to_save[k] = self._data[k].data
             else:
-                data[k] = v
+                data_to_save[k] = v
 
-        # depth-first save of nested bizobjs
-        for bizobj in bizobjs:
+        # depth-first save nested bizobjs.
+        for bizobj in nested_bizobjs:
             bizobj.save()
 
-        # persist data and update this bizobj
-        if data:
-            # TODO: pass both the old and the new value to dao.save
-            # so that it can figure out optimally what to save.
-            _id = self.dao.save(data, _id=self._id)
+        # persist data and refresh data
+        if data_to_save:
+            _id = self.dao.save(data_to_save, _id=self._id)
             self._id = _id
-            if and_fetch:
+            if fetch:
                 self.update(self.dao.fetch(_id=_id))
             self.clear_dirty()

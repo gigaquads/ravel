@@ -20,11 +20,15 @@ class DirtyInterface(metaclass=ABCMeta):
         pass
 
     @abstractmethod
+    def get_parent(self) -> object:
+        pass
+
+    @abstractmethod
     def mark_dirty(self, key) -> None:
         pass
 
     @abstractmethod
-    def clear_dirty(self) -> None:
+    def clear_dirty(self, keys=None) -> None:
         pass
 
 
@@ -52,6 +56,10 @@ class DirtyDict(dict, DirtyInterface):
             value.set_parent(key, self)
 
     @property
+    def key_in_parent(self):
+        return self._key_in_parent
+
+    @property
     def dirty(self):
         return frozenset(self._dirty_keys)
 
@@ -66,8 +74,14 @@ class DirtyDict(dict, DirtyInterface):
                 return True
         return False
 
-    def clear_dirty(self):
-        self._dirty_keys.clear()
+    def get_parent(self):
+        return self._parent_ref()
+
+    def clear_dirty(self, keys=None):
+        if keys is None:
+            self._dirty_keys.clear()
+        else:
+            self._dirty_keys -= set(keys)
 
     def mark_dirty(self, key):
         self._dirty_keys.add(key)

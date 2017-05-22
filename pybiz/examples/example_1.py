@@ -54,8 +54,8 @@ class User(BizObject):
         return UserSchema
 
     @api.post('/users')
-    def create_user(request, response):
-        data = User.get_dao().create({
+    def create_user_api(request, response):
+        user = User.create({
             '_id': None,
             'public_id': uuid.uuid4().hex,
             'name': {'first': 'Leonardo', 'last': 'DaVinci'},
@@ -63,8 +63,14 @@ class User(BizObject):
             'numbers': [1, 2, 3],
             'age': 967,
             })
-        user = User(data)
         user.save()
+        return user
+
+    @classmethod
+    def create(cls, data, **kwargs_data):
+        data.update(kwargs_data)
+        created_data = User.get_dao().create(data)
+        user = cls(created_data)
         return user
 
     @pre_patch('/name')
