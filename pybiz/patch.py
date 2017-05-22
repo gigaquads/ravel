@@ -8,19 +8,24 @@ from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
     PATCH_ANNOTATION,
+    OP_DELTA_REMOVE,
+    OP_DELTA_ADD,
+    OP_DELTA_REPLACE,
+    RECOGNIZED_DELTA_OPS,
     )
 
+# TODO: write JsonPatch unit test
 
 class JsonPatchMixin(object):
 
+    # Format: `{class_name: {path_str: cb_method_name}`
     _patch_map = defaultdict(lambda: defaultdict(str))
-    """Format: `{class_name: {path_str: cb_method_name}`"""
 
+    # Format: `{class_name: {path_str: [cb_method_name]}`
     _pre_patch_map = defaultdict(lambda: defaultdict(list))
-    """Format: `{class_name: {path_str: [cb_method_name]}`"""
 
+    # Format: `{class_name: {path_str: [cb_method_name]}`
     _post_patch_map = defaultdict(lambda: defaultdict(list))
-    """Format: `{class_name: {path_str: [cb_method_name]}`"""
 
     def patch(self, op, path, value=None):
         ctx = self._build_patch_context(path)
@@ -31,7 +36,7 @@ class JsonPatchMixin(object):
                 self._apply_pre_patch_hooks(ctx, op, rel_path, value)
                 self._apply_patch_delta(idx, biz_obj, ctx, op, rel_path, value)
                 self._apply_post_patch_hooks(ctx, op, rel_path, value)
-            except JsonPatchStop:
+            except JsonPatchStopSignal:
                 cancel_propagation = True
             if cancel_propagation:
                 break
@@ -53,7 +58,9 @@ class JsonPatchMixin(object):
 
         # add the bizobj field that contains the patched data
         # to the dirty set.
-        biz_obj.mark_dirty(ctx['tokenized_path'][idx+1])
+        # XXX: remvove this when we're sure that the DirtyDict
+        # is already marking patched fields as dirty
+        # biz_obj.mark_dirty(ctx['tokenized_path'][idx+1])
 
     def _apply_pre_patch_hooks(self, ctx, op, rel_path, value):
         for k in self.get_pre_patch_hooks(ctx['path']):
@@ -97,49 +104,55 @@ class JsonPatchMixin(object):
         cls._patch_map[class_name][path] = method_name
 
     def apply_delta(self, op, path, value=None):
+        assert op in RECOGNIZED_DELTA_OPS
         assert len(path) >= 2
+
         obj = path[-2].obj
         sub_obj = path[-1].obj
-        attr = path[-1].parent_attr
-        if op == 'remove':
-            if attr.isdigit():
+        key = path[-1].key_in_parent
+
+        if op == OP_DELTA_REMOVE:
+            if key.isdigit():
                 assert isinstance(obj, list)
-                idx = int(attr)
+                idx = int(key)
                 new_obj = obj[:idx] + obj[idx+1:]
                 obj.clear()
                 obj.extend(new_obj)
             else:
-                obj[attr] = None
-        elif op in ('add', 'replace'):  # break this apart
-            is_list = isinstance(sub_obj, list)
-            if op == 'add':
-                if is_list:
-                    sub_obj.append(value)
-                else:
-                    is_bizobj = util.is_bizobj(sub_obj)
-                    is_dict = isinstance(sub_obj, dict)
-                    if is_dict or is_bizobj:
-                        assert attr not in sub_obj
-                        sub_obj[attr] = value
-            elif op == 'replace':
-                if is_list:
-                    idx_str = attr
-                    assert attr
-                    assert isinstance(idx_str, str)
-                    assert idx_str.isdigit()
-                    idx = int(idx_str)
-                    assert 0 <= idx
-                    assert idx < len(obj)
-                    sub_obj[idx] = value
-                else:
-                    assert attr in obj
-                    obj[attr] = value
+                obj[key] = None
+            return
+
+        is_list = isinstance(sub_obj, list)
+
+        if op == OP_DELTA_ADD:
+            if is_list:
+                sub_obj.append(value)
+            else:
+                is_bizobj = util.is_bizobj(sub_obj)
+                is_dict = isinstance(sub_obj, dict)
+                if is_dict or is_bizobj:
+                    assert key not in sub_obj
+                    sub_obj[key] = value
+        elif op == OP_DELTA_REPLACE:
+            if is_list:
+                assert key
+                idx_str = key
+                assert isinstance(idx_str, str)
+                assert idx_str.isdigit()
+                idx = int(idx_str)
+                assert 0 <= idx
+                assert idx < len(obj)
+                sub_obj[idx] = value
+            else:
+                assert key in obj
+                obj[key] = value
 
     def _build_patch_context(self, path: str):
         tokenized_path = self._parse_path(path)
         obj = self
         objs = [obj]
         biz_objs = [(0, obj)]
+
         for i, token in enumerate(tokenized_path):
             if token == ROOT_ATTR:
                 continue
@@ -147,17 +160,19 @@ class JsonPatchMixin(object):
             if is_bizobj:
                 sub_obj = getattr(obj, token, None)
             elif token.isdigit():
-                #raise NotImplementedError('list deltas are not implemented')
                 sub_obj = obj[int(token)]
             else:
                 assert isinstance(obj, dict)
                 sub_obj = obj[token]
+
             assert sub_obj is not None
             objs.append(sub_obj)
-            is_sub_bizobj = getattr(sub_obj, 'is_bizobj', False)
-            if is_sub_bizobj:
+
+            if util.is_bizobj(sub_obj):
                 biz_objs.append((i, sub_obj))
+
             obj = sub_obj
+
         return {
             'path': path,
             'tokenized_path': tokenized_path,
@@ -172,14 +187,14 @@ class JsonPatchMixin(object):
 
 
 class JsonPatchPathComponent(object):
-    def __init__(self, parent_attr, obj):
-        self._item = (parent_attr, obj)
+    def __init__(self, key_in_parent, obj):
+        self._item = (key_in_parent, obj)
 
     def __repr__(self):
         return str(self._item)
 
     @property
-    def parent_attr(self):
+    def key_in_parent(self):
         return self._item[0]
 
     @property
@@ -187,7 +202,7 @@ class JsonPatchPathComponent(object):
         return self._item[1]
 
 
-class JsonPatchStop(Exception):
+class JsonPatchStopSignal(Exception):
     pass
 
 

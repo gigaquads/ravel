@@ -18,6 +18,13 @@ HTTP_METHODS = frozenset({
     HTTP_GET, HTTP_POST, HTTP_PUT, HTTP_PATCH, HTTP_DELETE
     })
 
+OP_DELTA_ADD = 'add'
+OP_DELTA_REMOVE = 'remove'
+OP_DELTA_REPLACE = 'replace'
+RECOGNIZED_DELTA_OPS = frozenset({
+    OP_DELTA_ADD, OP_DELTA_REMOVE, OP_DELTA_REPLACE,
+    })
+
 OP_LOAD = 'load'
 OP_DUMP = 'dump'
 
