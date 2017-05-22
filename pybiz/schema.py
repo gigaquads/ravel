@@ -27,13 +27,26 @@ class Field(object, metaclass=ABCMeta):
             load_from=None,
             dump_to=None,
             required=False,
+            load_required=False,
+            dump_required=False,
             ):
-
+        """
+        Kwargs:
+            - allow_none: the field may have a value of None.
+            - required: the field must be present when loaded and dumped.
+            - load_only: do not dump this field.
+            - load_from: the name of the field in the pre-loaded data.
+            - load_required: the field must be present when loaded
+            - dump_to: the name of the field in the dumped data
+            - dump_required: the field must be present when dumped
+        """
         self.load_only = load_only
         self.load_from = load_from
         self.dump_to = dump_to
         self.allow_none = allow_none
         self.required = required
+        self.dump_required = dump_required
+        self.load_required = load_required
         self.name = None
 
     def __repr__(self):
@@ -90,7 +103,6 @@ class List(Field):
 
     def __init__(self, nested_field, *args, **kwargs):
         super(List, self).__init__(*args, **kwargs)
-        assert isinstance(nested_field, Field)
         self.nested_field = nested_field
 
     def load(self, value):
@@ -124,7 +136,6 @@ class Enum(Field):
 
     def __init__(self, nested, allowed_values, *args, **kwargs):
         super(Enum, self).__init__(*args, **kwargs)
-        assert isinstance(nested, (Field, Schema))
         self.is_nested_field = isinstance(nested, Field)
         self.allowed_values = set(allowed_values)
         self.nested = nested
@@ -151,7 +162,7 @@ class Email(Field):
             value = value.lower()
             if not RE_EMAIL.match(value):
                 return FieldResult(error='not a valid e-mail address')
-            return value
+            return FieldResult(value=value)
         else:
             return FieldResult(error='expected an e-mail address')
 
@@ -163,16 +174,17 @@ class Uuid(Field):
 
     def load(self, value):
         if isinstance(value, UUID):
-            return value.hex
-        elif isinstance(value, str):
+            return FieldResult(value=value.hex)
+        if isinstance(value, str):
             value = value.replace('-', '').lower()
             if not RE_UUID.match(value):
                 return FieldResult(error='invalid UUID')
-        elif isinstance(value, int):
+            else:
+                return FieldResult(value=value)
+        if isinstance(value, int):
             hex_str = hex(value)[2:]
-            return ('0'*(32 - len(hex_str))) + hex_str
-        else:
-            return FieldResult(error='expected a UUID')
+            return FieldResult(value=('0'*(32 - len(hex_str))) + hex_str)
+        return FieldResult(error='expected a UUID')
 
     def dump(self, data):
         return self.load(data)
@@ -199,12 +211,13 @@ class Float(Field):
     def load(self, value):
         if isinstance(value, float):
             return FieldResult(value=value)
-        elif isinstance(value, str):
+        if isinstance(value, int):
+            return FieldResult(value=float(value))
+        if isinstance(value, str):
             if not RE_FLOAT.match(value):
                 return FieldResult(error='expected a float')
             return FieldResult(value=float(value))
-        else:
-            return FieldResult(error='expected a float')
+        return FieldResult(error='expected a float')
 
     def dump(self, data):
         return self.load(data)
@@ -262,7 +275,7 @@ class SchemaMeta(type):
         type.__init__(cls, name, bases, dict_)
 
         cls.fields = {}
-        cls.required_fields = {}
+        cls.required_fields = {OP_DUMP: {}, OP_LOAD: {}}
         cls.load_from_fields = {}
         for k, v in dict_.items():
             if isinstance(v, Field):
@@ -271,37 +284,41 @@ class SchemaMeta(type):
                     cls.load_from_fields[v.load_from] = v
                 cls.fields[k] = v
                 if v.required:
-                    cls.required_fields[k] = v
+                    cls.required_fields[OP_DUMP][k] = v
+                    cls.required_fields[OP_LOAD][k] = v
+                else:
+                    if v.dump_required:
+                        cls.required_fields[OP_DUMP][k] = v
+                    if v.load_required:
+                        cls.required_fields[OP_LOAD][k] = v
 
 
 class Schema(object, metaclass=SchemaMeta):
 
-    def __init__(self, strict=False, ignore_additional=True):
+    def __init__(self, strict=False, allow_additional=True):
         """
         Kwargs:
             - strict: if True, then a ValidationException will be thrown if any
               errors are encountered during load (or dump).
 
-            - ignore_additional: if True, additional key-value pairs will be
+            - allow_additional: if True, additional key-value pairs will be
               allowed to exist in the data loaded by this schema; however,
               these additional keys-value will not exist in the data returned
               by load or dump.
         """
         self.strict = strict
-        self.ignore_additional = ignore_additional
+        self.allow_additional = allow_additional
 
     def __repr__(self):
         return '<Schema({})>'.format(self.__class__.__name__)
 
     def load(self, data, strict=None):
-        return self._transform(data, OP_LOAD, strict)
+        return self._apply(OP_LOAD, data, strict)
 
     def dump(self, data, strict=None):
-        return self._transform(data, OP_DUMP, strict)
+        return self._apply(OP_DUMP, data, strict)
 
-    def _transform(self, data, op, strict):
-        assert op in (OP_LOAD, OP_DUMP)
-
+    def _apply(self, op, data, strict):
         strict = strict if strict is not None else self.strict
         result = SchemaResult(op, {}, {})
 
@@ -311,7 +328,7 @@ class Schema(object, metaclass=SchemaMeta):
             if field is None:
                 field = self.load_from_fields.get(k)
                 if field is None:
-                    if not self.ignore_additional:
+                    if not self.allow_additional:
                         result.errors[k] = 'unrecognized field'
                     continue
 
@@ -334,7 +351,7 @@ class Schema(object, metaclass=SchemaMeta):
                 else:
                     result.data[field.name] = field_result.value
 
-        for k in self.required_fields:
+        for k in self.required_fields[op]:
             if k not in result.data:
                 if k not in result.errors:
                     result.errors[k] = 'required field'
@@ -346,10 +363,14 @@ class Schema(object, metaclass=SchemaMeta):
 
 
 class SchemaResult(object):
+
+    RECOGNIZED_OPS = {OP_LOAD, OP_DUMP}
+
     def __init__(self, op, data: dict, errors: dict):
+        assert op in self.RECOGNIZED_OPS
         self.op = op
-        self.data = data
-        self.errors = errors
+        self.data = data or {}
+        self.errors = errors or {}
 
     def __repr__(self):
         return '<SchemaResult("{}", has_errors={})>'.format(
@@ -385,6 +406,7 @@ if __name__ == '__main__':
         sex = Enum(Str(), ('m', 'f', 'o'), required=True)
         race = Enum(Str(), ('white', 'asian', 'black'), required=True)
         friends = List(Str())
+
 
     schema = UserSchema()
     data = {
