@@ -4,7 +4,7 @@ import pytest
 import mock
 
 from pybiz.biz import BizObject, Relationship
-from pybiz.schema import Schema, Int, Str, Nested
+from pybiz.schema import Schema, Int, Str, SubObject
 
 
 @pytest.fixture(scope='module')
@@ -20,10 +20,19 @@ def ChildSchema():
 def ParentSchema(ChildSchema):
 
     class ParentSchema(Schema):
-        my_child = Nested(ChildSchema())
+        my_child = SubObject(ChildSchema())
         my_str = Str()
 
     return ParentSchema
+
+
+@pytest.fixture(scope='module')
+def SuperParentSchema():
+
+    class SuperParentSchema(Schema):
+        my_str_super = Str()
+
+    return SuperParentSchema
 
 
 @pytest.fixture(scope='module')
@@ -38,9 +47,22 @@ def Child(ChildSchema):
 
 
 @pytest.fixture(scope='module')
-def Parent(ParentSchema, Child):
+def SuperParent(SuperParentSchema, Child):
 
-    class Parent(BizObject):
+    class SuperParent(BizObject):
+        @classmethod
+        def schema(cls):
+            return SuperParentSchema
+
+        my_child_super = Relationship(Child)
+
+    return SuperParent
+
+
+@pytest.fixture(scope='module')
+def Parent(ParentSchema, SuperParent, Child):
+
+    class Parent(SuperParent):
         @classmethod
         def schema(cls):
             return ParentSchema
@@ -48,6 +70,26 @@ def Parent(ParentSchema, Child):
         my_child = Relationship(Child)
 
     return Parent
+
+
+def test_BizObject_inherits_relationships(Parent, SuperParent):
+    """
+    Make sure the derived classes inherit the fields of their super classes.
+    """
+    property_type = property().__class__
+    for k in ['my_child', 'my_child_super']:
+        assert hasattr(Parent, k)
+        assert isinstance(getattr(Parent, k), property_type)
+        assert k in Parent._relationships
+
+
+def test_BizObject_relationship_names(Parent, SuperParent):
+    """
+    Make sure that the Relationship instances are aware of what they are called
+    from the point of view of the BizObject class.
+    """
+    assert Parent._relationships['my_child'].name == 'my_child'
+    assert Parent._relationships['my_child_super'].name == 'my_child_super'
 
 
 def test_BizObject_init(Parent):

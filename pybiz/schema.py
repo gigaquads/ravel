@@ -5,7 +5,6 @@ from uuid import UUID
 from datetime import datetime, date
 from abc import ABCMeta, abstractmethod
 
-from .util import is_bizobj
 from .const import (
     RE_EMAIL, RE_UUID, RE_FLOAT,
     OP_LOAD, OP_DUMP,
@@ -67,40 +66,25 @@ class Field(object, metaclass=ABCMeta):
         pass
 
 
-class Nested(Field):
+class SubObject(Field):
 
     def __init__(self, nested, many=False, *args, **kwargs):
-        super(Nested, self).__init__(*args, **kwargs)
+        super(SubObject, self).__init__(*args, **kwargs)
         self.nested = nested
         self.many = many
 
     def load(self, value):
-        if not self.many:
-            if is_bizobj(value):
-                return FieldResult(value=value)
+        if isinstance(self.nested, Field):
+            return self.nested.load(x)
+        else:
             schema_result = self.nested.load(value)
             if schema_result.errors:
                 return FieldResult(error=schema_result.errors)
             else:
                 return FieldResult(value=self.nested.load(value).data)
-        else:  # XXX: Deprecated. Replaced with List
-            if is_bizobj(value):
-                return FieldResult(value=value)
-            if not isinstance(value, (list, tuple, set)):
-                return FieldResult(error='expected a valid sequence')
-            result_list = []
-            for i, x in enumerate(value):
-                result = self.nested.load(x)
-                if result.errors:
-                    return FieldResult(error={i: result.errors})
-                result_list.append(result.data)
-            return FieldResult(value=result_list)
 
     def dump(self, data):
-        if is_biobj(data):
-            return data.dump()
-        else:
-            return self.load(data)
+        return self.load(data)
 
 
 class List(Field):
@@ -419,7 +403,7 @@ if __name__ == '__main__':
 
         created_at = DateTime()
         user_id = Int(load_from='id', dump_to='public_id')
-        name = Nested(NameSchema())
+        name = SubObject(NameSchema())
         age = Int()
         rating = Float()
         sex = Enum(Str(), ('m', 'f', 'o'), required=True)

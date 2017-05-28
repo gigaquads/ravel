@@ -16,6 +16,22 @@ def MySchema():
 
 
 @pytest.fixture(scope='module')
+def SuperSchema():
+    class SuperSchema(Schema):
+        x_super = fields.Str()
+
+    return SuperSchema
+
+
+@pytest.fixture(scope='module')
+def SubSchema(SuperSchema):
+    class SubSchema(SuperSchema):
+        x_sub = fields.Str()
+
+    return SubSchema
+
+
+@pytest.fixture(scope='module')
 def MySchemaRequired():
     class MySchemaRequired(Schema):
         my_str = fields.Str(required=True)
@@ -70,6 +86,16 @@ def test_Schema_dump_ok(MySchema, input_val, exp_retval):
     result = schema.dump(input_val)
     assert not result.errors
     assert result.data == exp_retval
+
+
+def test_Schema_inherits_field_properties(SubSchema):
+    """
+    Make sure the derived classes inherit the fields of their super classes.
+    """
+    s = SubSchema()
+    for k in ['x_sub', 'x_super']:
+        assert hasattr(s, k)
+        assert isinstance(getattr(s, k), fields.Field)
 
 
 def test_Schema_allow_additional(MySchema):

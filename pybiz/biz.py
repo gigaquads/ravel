@@ -1,5 +1,18 @@
-import re
+"""
+Relationship Load/Dump Mechanics:
+    Load:
+        - If any relationship name matches a schema field name
+          of type <List> or <SubObject>, try to load the raw data
+          into relationship data.
+    Dump:
+        - Simply dump the related objects into the data dict
+          returned from the schema dump.
+
+"""
+
 import os
+import copy
+import re
 
 from abc import ABCMeta, abstractmethod
 from types import MethodType
@@ -17,18 +30,6 @@ from .const import (
     IS_BIZOBJ_ANNOTATION,
     )
 
-"""
-Relationship Building Strategy:
-    Load:
-        - If any relationship name matches a schema field name
-          of type <List> or <Nested>, try to load the raw data
-          into relationship data.
-    Dump:
-        - Simply dump the related objects into the data dict
-          returned from the schema dump.
-
-"""
-
 
 class Relationship(object):
 
@@ -39,6 +40,9 @@ class Relationship(object):
         self.many = many
         self.name = None
 
+    def copy(self):
+        return copy.copy(self)
+
 
 class BizObjectMeta(ABCMeta):
 
@@ -48,32 +52,41 @@ class BizObjectMeta(ABCMeta):
 
     def __new__(cls, name, bases, dict_):
         bases = bases + (cls.RelationshipsMixin,)
-
-        # set this attribute in order to be able to
-        # use duck typing to check isinstance of BizObjects
-        dict_[IS_BIZOBJ_ANNOTATION] = True
-
-        return ABCMeta.__new__(cls, name, bases, dict_)
+        new_class = ABCMeta.__new__(cls, name, bases, dict_)
+        cls.add_is_bizobj_annotation(new_class)
+        return new_class
 
     def __init__(cls, name, bases, dict_):
-        bases = bases + (cls.RelationshipsMixin,)
         ABCMeta.__init__(cls, name, bases + (cls.RelationshipsMixin,), dict_)
-
         relationships = cls.build_relationships()
+        cls.build_all_properties(relationships)
+        cls.register_JsonPatch_hooks(bases)
+
+    def add_is_bizobj_annotation(new_class):
+        # set this attribute in order to be able to
+        # use duck typing to check isinstance of BizObjects
+        setattr(new_class, IS_BIZOBJ_ANNOTATION, True)
+
+    def build_all_properties(cls, relationships):
+        # NOTE: the names of Fields declared in the Schema and Relationships
+        # declared on the BizObject will overwrite any methods or attributes
+        # defined explicitly on the BizObject class. This happens below.
+        #
+        cls.build_relationship_properties(relationships)
         cls._relationships = relationships
 
-        # build field properties according to the schema
-        # associated with this BizObject class
         schema_factory = cls.schema()
         if schema_factory is not None:
             s = cls._schema = schema_factory()
             s.strict = True
             if s is not None:
-                cls.build_properties(s, relationships)
+                cls.build_field_properties(s, relationships)
 
+    def register_JsonPatch_hooks(cls, bases):
+        if not any(issubclass(x, JsonPatchMixin) for x in bases):
+            return
         # JsonPatchMixin integration:
         # register pre and post patch callbacks
-        if any(issubclass(x, JsonPatchMixin) for x in bases):
             # scan class methods for those annotated as patch hooks
             # and register them as such.
             for k in dir(cls):
@@ -93,21 +106,33 @@ class BizObjectMeta(ABCMeta):
     def build_relationships(cls):
         # aggregate all relationships delcared on the bizobj
         # class into a single "relationships" dict.
-        relationships = {}
-        for k in dir(cls):
-            v = getattr(cls, k)
-            if isinstance(v, Relationship):
-                relationships[k] = v
-                v.name = k
+        direct_relationships = {}
+        inherited_relationships = {}
 
-        # clear the individually declared relationships out of
-        # class namespace.
-        for k in relationships:
+        for k in dir(cls):
+            rel = getattr(cls, k)
+            is_relationship = isinstance(rel, Relationship)
+            if not is_relationship:
+                is_super_relationship = k in cls._relationships
+                if is_super_relationship:
+                    super_rel = cls._relationships[k]
+                    rel = super_rel.copy()
+                    rel.name = k
+                    inherited_relationships[k] = rel
+            else:
+                direct_relationships[k] = rel
+                rel.name = k
+
+        # clear the Relationships delcared on this subclass
+        # from the class name space, to be replaced dynamically
+        # with properties later on.
+        for k in direct_relationships:
             delattr(cls, k)
 
-        return relationships
+        inherited_relationships.update(direct_relationships)
+        return inherited_relationships
 
-    def build_properties(cls, schema, relationships: dict):
+    def build_field_properties(cls, schema, relationships):
         """
         Create properties out of the fields declared on the schema associated
         with the class.
@@ -124,6 +149,11 @@ class BizObjectMeta(ABCMeta):
 
             return property(fget=fget, fset=fset, fdel=fdel)
 
+        for field_name in schema.fields:
+            if field_name not in relationships:
+                setattr(cls, field_name, build_property(field_name))
+
+    def build_relationship_properties(cls, relationships):
         def build_rel_property(k, rel):
             def fget(self):
                 return self._relationship_data.get(k)
@@ -147,19 +177,12 @@ class BizObjectMeta(ABCMeta):
             return property(fget=fget, fset=fset, fdel=fdel)
 
         for rel_name, rel in relationships.items():
-            assert not hasattr(cls, rel_name)
             setattr(cls, rel_name, build_rel_property(rel_name, rel))
-
-        for field_name in schema.fields:
-            if field_name not in relationships:
-                assert not hasattr(cls, field_name)
-                setattr(cls, field_name, build_property(field_name))
-
 
 class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
 
     _schema = None  # set by metaclass
-    _relationships = None  # set by metaclass
+    _relationships = {}  # set by metaclass
     _dao_manager = DaoManager.get_instance()
 
     def __init__(self, data=None, **kwargs_data):
@@ -330,7 +353,6 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
                         self._relationship_data[rel_name] = related_bizobj_list
                     else:
                         if not is_bizobj(related_data):
-                            import ipdb; ipdb.set_trace()
                             related_bizobj = rel.bizobj_class(related_data)
                         else:
                             related_bizobj = related_data
