@@ -91,7 +91,7 @@ def test_List_load_ok(data):
     field = fields.List(mock_str_field)
     field.load(data)
     for x in data:
-        assert field.nested_field.load.called_once_with(x)
+        assert field.nested.load.called_once_with(x)
 
 
 def test_List_load_empty_list_ok():

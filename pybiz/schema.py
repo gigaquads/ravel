@@ -12,6 +12,10 @@ from .const import (
     )
 
 
+# TODO: implement a "relationship" class for use in bizobj class scope
+# which somehow shadows and loads the nested data from the schema
+
+
 class ValidationError(Exception):
     def __init__(self, reasons: dict = None):
         self.reasons = reasons or {}
@@ -79,7 +83,7 @@ class Nested(Field):
                 return FieldResult(error=schema_result.errors)
             else:
                 return FieldResult(value=self.nested.load(value).data)
-        else:
+        else:  # XXX: Deprecated. Replaced with List
             if is_bizobj(value):
                 return FieldResult(value=value)
             if not isinstance(value, (list, tuple, set)):
@@ -93,7 +97,7 @@ class Nested(Field):
             return FieldResult(value=result_list)
 
     def dump(self, data):
-        if is_bizobj(data):
+        if is_biobj(data):
             return data.dump()
         else:
             return self.load(data)
@@ -101,23 +105,34 @@ class Nested(Field):
 
 class List(Field):
 
-    def __init__(self, nested_field, *args, **kwargs):
+    def __init__(self, nested, *args, **kwargs):
         super(List, self).__init__(*args, **kwargs)
-        self.nested_field = nested_field
+        self.nested = nested
 
     def load(self, value):
         if not isinstance(value, (list, tuple, set)):
             return FieldResult(error='expected a valid sequence')
+
         result_list = []
-        for i, x in enumerate(value):
-            result = self.nested_field.load(x)
-            if result.error:
-                return FieldResult(error={i: result.error})
-            result_list.append(result.value)
+        if isinstance(self.nested, Field):
+            for i, x in enumerate(value):
+                result = self.nested.load(x)
+                if result.error:
+                    return FieldResult(error={i: result.error})
+                result_list.append(result.value)
+        else:
+            for i, x in enumerate(value):
+                result = self.nested.load(x)
+                if result.errors:
+                    return FieldResult(error={i: result.errors})
+                result_list.append(result.data)
+
         return FieldResult(value=result_list)
 
     def dump(self, data):
-        return self.load(data)
+        # TODO: Implement dump
+        # return self.load(data)
+        pass
 
 
 class Str(Field):
@@ -277,7 +292,8 @@ class SchemaMeta(type):
         cls.fields = {}
         cls.required_fields = {OP_DUMP: {}, OP_LOAD: {}}
         cls.load_from_fields = {}
-        for k, v in dict_.items():
+        for k in dir(cls):
+            v = getattr(cls, k)
             if isinstance(v, Field):
                 v.name = k
                 if v.load_from is not None:
@@ -294,6 +310,9 @@ class SchemaMeta(type):
 
 
 class Schema(object, metaclass=SchemaMeta):
+
+    _id = Int(load_only=True)
+    public_id = Str(dump_to='id')
 
     def __init__(self, strict=False, allow_additional=True):
         """
