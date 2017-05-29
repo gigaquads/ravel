@@ -1,5 +1,5 @@
 uwsgi \
     --http :9000 \
-    --wsgi-file business.py \
+    --wsgi-file main.py \
     --virtualenv "$VIRTUAL_ENV" \
     --callable api

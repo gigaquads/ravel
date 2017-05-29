@@ -428,7 +428,7 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
                     data_to_save[k] = data_to_save
             elif v.dirty:
                 v.save()
-                data_to_save[k] = v.dump()
+                data_to_save[k] = v.dump()  # TODO: cache dump data
 
         for k in self._data.dirty:
             data_to_save[k] = self[k]
