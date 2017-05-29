@@ -92,11 +92,11 @@ def test_JsonPatchMixin_build_match_context_6(mock_bizobj):
 
 def _test_JsonPatchMixin_build_match_context(
         mock_bizobj, path, exp_bizobj_list, exp_objs):
-    ctx = JsonPatchMixin._build_patch_context(mock_bizobj, path)
+    ctx = JsonPatchMixin._build_patch_context(mock_bizobj, '', path)
     assert ctx['path'] == path
     assert 'tokenized_path' in ctx
     assert len(ctx['tokenized_path']) >= 1
-    assert ctx['biz_objs'] == exp_bizobj_list
+    assert ctx['bizobjs'] == exp_bizobj_list
     assert ctx['objs'] == exp_objs
 
 

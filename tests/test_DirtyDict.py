@@ -60,3 +60,13 @@ def test_clear_dirty():
     assert 'a' in d1.dirty
     d1.clear_dirty()
     assert not d1.dirty
+
+
+def test_DirtyDict_recursive_init():
+    data = {'a': {'b': 'c'}}
+
+    d = DirtyDict(data, recursive=False)
+    assert not isinstance(d['a'], DirtyDict)
+
+    d = DirtyDict(data, recursive=True)
+    assert isinstance(d['a'], DirtyDict)
