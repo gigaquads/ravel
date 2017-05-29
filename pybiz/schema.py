@@ -114,9 +114,7 @@ class List(Field):
         return FieldResult(value=result_list)
 
     def dump(self, data):
-        # TODO: Implement dump
-        # return self.load(data)
-        pass
+        return self.load(data)
 
 
 class Str(Field):
@@ -126,6 +124,18 @@ class Str(Field):
             return FieldResult(value)
         else:
             return FieldResult(error='expected a string')
+
+    def dump(self, data):
+        return self.load(data)
+
+
+class Dict(Field):
+
+    def load(self, value):
+        if isinstance(value, dict):
+            return FieldResult(value)
+        else:
+            return FieldResult(error='expected a dict')
 
     def dump(self, data):
         return self.load(data)

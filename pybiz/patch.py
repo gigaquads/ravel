@@ -28,48 +28,49 @@ class JsonPatchMixin(object):
     # Format: `{class_name: {path_str: [cb_method_name]}`
     _post_patch_map = defaultdict(lambda: defaultdict(list))
 
-    def patch(self, op, path, value=None):
-        ctx = self._build_patch_context(path, value)
+    def patch(self, op: str, path: str, value=None):
+        ctx = self._build_patch_context(op, path, value)
         cancel_propagation = False
-        for idx, biz_obj in reversed(ctx['biz_objs']):
-            rel_path = self._build_relative_path(ctx, idx)
+        for (i, (idx, bizobj)) in enumerate(reversed(ctx['bizobjs'])):
+            # avoid trying to patch a bizobj that we simply want to remove or
+            # replace from its parent object or list:
+            #if (op != OP_DELTA_ADD) and (len(relative_path) == 1):
+            if (op != OP_DELTA_ADD) and (len(ctx['tokenized_path'][idx:]) == 1):
+                continue
+
+            relative_path = self._build_relative_path(ctx, idx) # -> list
+
             try:
-                self._apply_pre_patch_hooks(ctx, op, rel_path, value)
-                self._apply_patch_delta(idx, biz_obj, ctx, op, rel_path, value)
-                self._apply_post_patch_hooks(ctx, op, rel_path, value)
+                self._apply_pre_patch_hooks(ctx, op, relative_path, value)
+                self._apply_delta(idx, bizobj, ctx, op, relative_path, value)
+                self._apply_post_patch_hooks(ctx, op, relative_path, value)
             except JsonPatchStopSignal:
                 cancel_propagation = True
             if cancel_propagation:
                 break
 
     @staticmethod
-    def _build_relative_path(ctx, idx):
+    def _build_relative_path(ctx, idx) -> list:
         return [
             JsonPatchPathComponent(k, v) for (k, v) in
                 zip(ctx['tokenized_path'][idx:],
                     ctx['objs'][idx:])
             ]
 
-    def _apply_patch_delta(self, idx, biz_obj, ctx, op, rel_path, value):
+    def _apply_delta(self, idx, bizobj, ctx, op, relative_path, value):
         custom_apply_delta = self.get_patch_hook(ctx['path'])
         if custom_apply_delta:
-            custom_apply_delta(op, rel_path, value)
+            custom_apply_delta(op, relative_path, value)
         else:
-            biz_obj.apply_delta(op, rel_path, value)
+            bizobj.apply_delta(op, relative_path, value)
 
-        # add the bizobj field that contains the patched data
-        # to the dirty set.
-        # XXX: remvove this when we're sure that the DirtyDict
-        # is already marking patched fields as dirty
-        # biz_obj.mark_dirty(ctx['tokenized_path'][idx+1])
-
-    def _apply_pre_patch_hooks(self, ctx, op, rel_path, value):
+    def _apply_pre_patch_hooks(self, ctx, op, relative_path, value):
         for k in self.get_pre_patch_hooks(ctx['path']):
-            getattr(self, k)(op, rel_path, value)
+            getattr(self, k)(op, relative_path, value)
 
-    def _apply_post_patch_hooks(self, ctx, op, rel_path, value):
+    def _apply_post_patch_hooks(self, ctx, op, relative_path, value):
         for k in self.get_post_patch_hooks(ctx['path']):
-            getattr(self, k)(op, rel_path, value)
+            getattr(self, k)(op, relative_path, value)
 
     @classmethod
     def get_pre_patch_hooks(cls, path):
@@ -167,11 +168,11 @@ class JsonPatchMixin(object):
                     die('{} has no attribute "{}"', obj, key)
                 setattr(obj, key, value)
 
-    def _build_patch_context(self, path: str, value=None):
+    def _build_patch_context(self, op, path: str, value=None):
         tokenized_path = self._parse_path(path)
         obj = self
         objs = [obj]
-        biz_objs = [(0, obj)]
+        bizobjs = [(0, obj)]
 
         for i, token in enumerate(tokenized_path):
             if token == ROOT_ATTR:
@@ -195,14 +196,14 @@ class JsonPatchMixin(object):
             objs.append(sub_obj)
 
             if util.is_bizobj(sub_obj):
-                biz_objs.append((i, sub_obj))
+                bizobjs.append((i, sub_obj))
 
             obj = sub_obj
 
         return {
             'path': path,
             'tokenized_path': tokenized_path,
-            'biz_objs': biz_objs,
+            'bizobjs': bizobjs,
             'objs': objs,
             }
 

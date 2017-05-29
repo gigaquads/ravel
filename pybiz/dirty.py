@@ -34,7 +34,7 @@ class DirtyInterface(metaclass=ABCMeta):
 
 class DirtyDict(dict, DirtyInterface):
 
-    def __init__(self, data=None, **kwargs):
+    def __init__(self, data=None, recursive=True, **kwargs):
         super(DirtyDict, self).__init__(data or {}, **kwargs)
         self._hash = int(uuid.uuid4().hex, 16)
         self._dirty_keys = set(self.keys())
@@ -44,6 +44,16 @@ class DirtyDict(dict, DirtyInterface):
         for k, v in self.items():
             if isinstance(v, DirtyInterface):
                 v.set_parent(k, self)
+
+        if recursive:
+            self._recursive_init(self)
+
+    @staticmethod
+    def _recursive_init(dict_):
+        items = list(dict_.items())
+        for k, v in items:
+            if isinstance(v, dict):
+                dict_[k] = DirtyDict(v, recursive=True)
 
     def __hash__(self):
         """This is needed to be able to store instances as weakrefs."""

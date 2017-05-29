@@ -85,23 +85,21 @@ class BizObjectMeta(ABCMeta):
     def register_JsonPatch_hooks(cls, bases):
         if not any(issubclass(x, JsonPatchMixin) for x in bases):
             return
-        # JsonPatchMixin integration:
-        # register pre and post patch callbacks
-            # scan class methods for those annotated as patch hooks
-            # and register them as such.
-            for k in dir(cls):
-                v = getattr(cls, k)
-                if isinstance(v, MethodType):
-                    path = getattr(v, PATCH_PATH_ANNOTATION, None)
-                    if hasattr(v, PRE_PATCH_ANNOTATION):
-                        assert path
-                        cls.add_pre_patch_hook(path, k)
-                    elif hasattr(v, PATCH_ANNOTATION):
-                        assert path
-                        cls.set_patch_hook(path, k)
-                    elif hasattr(v, POST_PATCH_ANNOTATION):
-                        assert path
-                        cls.add_post_patch_hook(path, k)
+        # scan class methods for those annotated as patch hooks
+        # and register them as such.
+        for k in dir(cls):
+            v = getattr(cls, k)
+            if isinstance(v, MethodType):
+                path = getattr(v, PATCH_PATH_ANNOTATION, None)
+                if hasattr(v, PRE_PATCH_ANNOTATION):
+                    assert path
+                    cls.add_pre_patch_hook(path, k)
+                elif hasattr(v, PATCH_ANNOTATION):
+                    assert path
+                    cls.set_patch_hook(path, k)
+                elif hasattr(v, POST_PATCH_ANNOTATION):
+                    assert path
+                    cls.add_post_patch_hook(path, k)
 
     def build_relationships(cls):
         # aggregate all relationships delcared on the bizobj
@@ -178,6 +176,7 @@ class BizObjectMeta(ABCMeta):
 
         for rel_name, rel in relationships.items():
             setattr(cls, rel_name, build_rel_property(rel_name, rel))
+
 
 class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
 
@@ -321,7 +320,11 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
             has_field = load_from_field in self._schema.fields
             if not self._schema or (load_from_field in self._schema.fields):
                 dump_to = rel.dump_to or rel_name
-                data[dump_to] = rel_val.dump()
+                if is_bizobj(rel_val):
+                    data[dump_to] = rel_val.dump()
+                else:
+                    assert isinstance(rel_val, (list, set, tuple))
+                    data[dump_to] = [bizobj.dump() for bizobj in rel_val]
         return data
 
     def _load(self, data, kwargs_data):
@@ -333,29 +336,47 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
         data = data or {}
         data.update(kwargs_data)
 
-        # TODO: if bizobjs are passed in to ctor but not declared as
-        # relationships, raise exception
+        # NOTE: When bizobjs are passed into the ctor instead of raw dicts, the
+        # bizobjs are not copied, which means that if some other bizobj also
+        # references these bizobj and makes changes to them, the changes will
+        # also have an effect here.
+
+        # TODO: get rel_name from rel.name instead
 
         # eagerly load all related bizobjs from the loaded data dict,
         # removing the fields from said dict.
-        # TODO: get rel_name from rel.name instead
         for rel_name, rel in self._relationships.items():
             if rel_name in self._schema.fields:
                 load_from = rel.load_from or rel_name
                 related_data = data.pop(load_from, None)
-                if related_data is not None:
-                    if rel.many:
-                        related_bizobj_list = [
-                            rel.bizobj_class(_) for _ in related_data
-                            if (not is_bizobj(_))
-                                and isinstance(_, rel.bizobj_class)
-                            ]
-                        self._relationship_data[rel_name] = related_bizobj_list
-                    else:
-                        if not is_bizobj(related_data):
-                            related_bizobj = rel.bizobj_class(related_data)
+
+                if related_data is None:
+                    self._relationship_data[rel_name] = None
+                    continue
+
+                if rel.many:
+                    related_bizobj_list = []
+                    for obj in related_data:
+                        if isinstance(obj, rel.bizobj_class):
+                            related_bizobj_list.append(obj)
                         else:
-                            related_bizobj = related_data
+                            related_bizobj_list.append(
+                                rel.bizobj_class(related_data))
+
+                    self._relationship_data[rel_name] = related_bizobj_list
+
+                else:
+                    if not is_bizobj(related_data):
+                        # if the assertion below fails, then most likely
+                        # you're intended to use the many=True kwarg in a
+                        # relationship. The data coming in from load is a
+                        # list, but without the 'many' kwarg set, the
+                        # Relationship assumes that the 'related_data' is a
+                        # dict and tries to call a bizobj ctor with it.
+                        assert isinstance(related_data, dict)
+                        related_bizobj = rel.bizobj_class(related_data)
+                    else:
+                        related_bizobj = related_data
                         self._relationship_data[rel_name] = related_bizobj
 
         if self._schema is not None:
