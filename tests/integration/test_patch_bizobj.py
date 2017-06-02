@@ -121,10 +121,8 @@ def test_patch_bizobj_scalar(artist):
     for delta in deltas:
         artist.patch(**delta)
 
-    assert artist.dirty == {'name', 'tags', 'age'}
-
-    # TODO: Implement DirtyList and then uncomment this assert:
-    #assert 'things' in artist.dirty
+    assert artist.dirty == {'name', 'tags', 'age', 'things'}
+    # TODO: Implement common base class for DirtyList and DirtyDict
 
     assert artist.name == new_name
     assert artist.tags == [new_tags[0]] + new_tags[2:]

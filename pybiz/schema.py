@@ -11,10 +11,6 @@ from .const import (
     )
 
 
-# TODO: implement a "relationship" class for use in bizobj class scope
-# which somehow shadows and loads the nested data from the schema
-
-
 class ValidationError(Exception):
     def __init__(self, reasons: dict = None):
         self.reasons = reasons or {}

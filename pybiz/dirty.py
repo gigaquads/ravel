@@ -32,38 +32,27 @@ class DirtyInterface(metaclass=ABCMeta):
         pass
 
 
-class DirtyDict(dict, DirtyInterface):
+class DirtyObject(DirtyInterface):
 
-    def __init__(self, data=None, recursive=True, **kwargs):
-        super(DirtyDict, self).__init__(data or {}, **kwargs)
+    def __init__(self):
+        super(DirtyObject, self).__init__()
         self._hash = int(uuid.uuid4().hex, 16)
-        self._dirty_keys = set(self.keys())
         self._parent_ref = None
         self._key_in_parent = None
+        self._dirty_keys = set()
+        self.set_parent_on_children()
+        self.initialize_dirty_children()
 
-        for k, v in self.items():
-            if isinstance(v, DirtyInterface):
-                v.set_parent(k, self)
+    @abstractmethod
+    def set_parent_on_children(self):
+        pass
 
-        if recursive:
-            self._recursive_init(self)
-
-    @staticmethod
-    def _recursive_init(dict_):
-        items = list(dict_.items())
-        for k, v in items:
-            if isinstance(v, dict):
-                dict_[k] = DirtyDict(v, recursive=True)
+    @abstractmethod
+    def initialize_dirty_children(self, obj):
+        pass
 
     def __hash__(self):
-        """This is needed to be able to store instances as weakrefs."""
         return self._hash
-
-    def __setitem__(self, key, value):
-        super(DirtyDict, self).__setitem__(key, value)
-        self.mark_dirty(key)
-        if isinstance(value, DirtyInterface):
-            value.set_parent(key, self)
 
     @property
     def key_in_parent(self):
@@ -93,28 +82,64 @@ class DirtyDict(dict, DirtyInterface):
         else:
             self._dirty_keys -= set(keys)
 
-    def mark_dirty(self, key):
-        self._dirty_keys.add(key)
+    def mark_dirty(self, keys):
+        keys = [keys] if isinstance(keys, (int, str)) else keys
+        for key in keys:
+            self._dirty_keys.add(key)
         if self._parent_ref is not None:
             parent = self._parent_ref()
             if parent is not None:
                 parent.mark_dirty(self._key_in_parent)
 
 
-class DirtyList(list, DirtyInterface):
+class DirtyDict(dict, DirtyObject):
 
-    @property
-    def dirty(self) -> frozenset:
-        pass
+    def __init__(self, data=None, **kwargs):
+        dict.__init__(self, data or {}, **kwargs)
+        DirtyObject.__init__(self)
+        self.mark_dirty(self.keys())
 
-    def set_parent(self, key_in_parent, parent) -> None:
-        pass
+    def __setitem__(self, key, value):
+        super(DirtyDict, self).__setitem__(key, value)
+        self.mark_dirty(key)
+        if isinstance(value, DirtyInterface):
+            value.set_parent(key, self)
 
-    def has_parent(self, obj) -> bool:
-        pass
+    def set_parent_on_children(self):
+        for k, v in self.items():
+            if isinstance(v, DirtyInterface):
+                v.set_parent(k, self)
 
-    def mark_dirty(self, key) -> None:
-        pass
+    def initialize_dirty_children(self):
+        items = list(self.items())
+        for k, v in items:
+            if isinstance(v, dict):
+                self[k] = DirtyDict(v)
+            elif isinstance(v, (list, tuple, set)):
+                self[k] = DirtyList(v)
 
-    def clear_dirty(self) -> None:
-        pass
+
+class DirtyList(list, DirtyObject):
+
+    def __init__(self, data=None):
+        list.__init__(self, data or [])
+        DirtyObject.__init__(self)
+        self.mark_dirty(range(len(self)))
+
+    def __setitem__(self, idx, value):
+        super(DirtyList, self).__setitem__(idx, value)
+        self.mark_dirty(idx)
+        if isinstance(value, DirtyInterface):
+            value.set_parent(idx, self)
+
+    def set_parent_on_children(self):
+        for i, v in enumerate(self):
+            if isinstance(v, DirtyInterface):
+                v.set_parent(i, self)
+
+    def initialize_dirty_children(self):
+        for i, v in enumerate(self):
+            if isinstance(v, dict):
+                self[i] = DirtyDict(v)
+            elif isinstance(v, (list, tuple, set)):
+                self[i] = DirtyList(v)
