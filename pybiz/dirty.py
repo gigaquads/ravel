@@ -83,9 +83,8 @@ class DirtyObject(DirtyInterface):
             self._dirty_keys -= set(keys)
 
     def mark_dirty(self, keys):
-        keys = [keys] if isinstance(keys, (int, str)) else keys
-        for key in keys:
-            self._dirty_keys.add(key)
+        keys = {keys} if isinstance(keys, (int, str)) else set(keys)
+        self._dirty_keys |= keys
         if self._parent_ref is not None:
             parent = self._parent_ref()
             if parent is not None:

@@ -23,11 +23,7 @@ class Dao(object, metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def save(self, _id, data):
-        pass
-
-    @abstractmethod
-    def save_many(self, id_data_pairs: list):
+    def save(self, _id, data: dict):
         pass
 
     @abstractmethod

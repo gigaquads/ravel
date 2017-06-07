@@ -174,8 +174,8 @@ class BizObjectMeta(ABCMeta):
 
             return property(fget=fget, fset=fset, fdel=fdel)
 
-        for rel_name, rel in relationships.items():
-            setattr(cls, rel_name, build_rel_property(rel_name, rel))
+        for rel in relationships.values():
+            setattr(cls, rel.name, build_rel_property(rel.name, rel))
 
 
 class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
@@ -288,8 +288,8 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
         return self._data.items()
 
     def update(self, dct):
-        self._data.update(dct)
         self._cached_dump_data = None
+        self._data.update(dct)
         self.mark_dirty(dct.keys())
 
     def dump(self):
@@ -322,11 +322,13 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
         """
         data = {}
         for rel_name, rel_val in self.relationships.items():
+            # rel_val is the actual object or list associated with the
+            # relationship; whereas, just rel is the relationship object itself.
             rel = self._relationships[rel_name]
-            load_from_field = rel.load_from or rel_name
+            load_from_field = rel.load_from or rel.name
             has_field = load_from_field in self._schema.fields
             if not self._schema or (load_from_field in self._schema.fields):
-                dump_to = rel.dump_to or rel_name
+                dump_to = rel.dump_to or rel.name
                 if is_bizobj(rel_val):
                     data[dump_to] = rel_val.dump()
                 else:
@@ -348,17 +350,15 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
         # references these bizobj and makes changes to them, the changes will
         # also have an effect here.
 
-        # TODO: get rel_name from rel.name instead
-
         # eagerly load all related bizobjs from the loaded data dict,
         # removing the fields from said dict.
-        for rel_name, rel in self._relationships.items():
-            if rel_name in self._schema.fields:
-                load_from = rel.load_from or rel_name
+        for rel in self._relationships.values():
+            if rel.name in self._schema.fields:
+                load_from = rel.load_from or rel.name
                 related_data = data.pop(load_from, None)
 
                 if related_data is None:
-                    self._relationship_data[rel_name] = None
+                    self._relationship_data[rel.name] = None
                     continue
 
                 if rel.many:
@@ -370,7 +370,7 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
                             related_bizobj_list.append(
                                 rel.bizobj_class(related_data))
 
-                    self._relationship_data[rel_name] = related_bizobj_list
+                    self._relationship_data[rel.name] = related_bizobj_list
 
                 else:
                     if not is_bizobj(related_data):
@@ -384,7 +384,7 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
                         related_bizobj = rel.bizobj_class(related_data)
                     else:
                         related_bizobj = related_data
-                        self._relationship_data[rel_name] = related_bizobj
+                        self._relationship_data[rel.name] = related_bizobj
 
         if self._schema is not None:
             result = self._schema.load(data)
@@ -410,11 +410,8 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
         return self._data.get_parent()
 
     def mark_dirty(self, key_or_keys):
+        self._data.mark_dirty(key_or_keys)
         self._cached_dump_data = None
-        if isinstance(key_or_keys, str):
-            self._data.mark_dirty.add(key)
-        else:
-            self._data.mark_dirty |= set(key_or_keys)
 
     def clear_dirty(self, keys=None):
         self._data.clear_dirty(keys=keys)
@@ -446,7 +443,7 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
 
         # persist data and refresh data
         if data_to_save:
-            _id = self.dao.save(data_to_save, _id=self._id)
+            _id = self.dao.save(self._id, data_to_save)
             self._id = _id
             if fetch:
                 self.update(self.dao.fetch(_id=_id))

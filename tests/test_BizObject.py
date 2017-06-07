@@ -117,7 +117,6 @@ def test_BizObject_dump(Parent, Child):
     parent = Parent({'my_str': 'x'}, my_child=child)
 
     dumped_data = parent.dump()
-    dumped_data = parent.dump()
     assert dumped_data == {
         'my_str': 'x',
         'my_child': {'my_str': 'z'}
@@ -193,9 +192,9 @@ def test_BizObject_save(Parent, Child):
     bizobj.save()
 
     bizobj.dao.save.assert_any_call(
-            {'my_str': 'x', 'my_child': {'my_str': 'z', '_id': 1}}, _id=None)
+            None, {'my_str': 'x', 'my_child': {'my_str': 'z', '_id': 1}})
 
-    bizobj.dao.save.assert_any_call({'my_str': 'z'}, _id=None)
+    bizobj.dao.save.assert_any_call(None, {'my_str': 'z'})
 
     assert bizobj._id == new_id
     assert bizobj.my_str == 'x'
@@ -237,8 +236,7 @@ def test_BizObject_save_nested(Parent, Child):
     bizobj.my_child.my_str = 'x'
     bizobj.my_child.save()
 
-    bizobj.my_child.dao.save.assert_any_call(
-            {'my_str': 'x'}, _id=None)
+    bizobj.my_child.dao.save.assert_any_call(None, {'my_str': 'x'})
 
 
 def test_BizObject_save_nested_through_parent(Parent, Child):
@@ -259,8 +257,8 @@ def test_BizObject_save_nested_through_parent(Parent, Child):
     assert not bizobj.my_child.dirty
     assert not bizobj.dirty
 
-    bizobj.my_child.dao.save.assert_any_call({'my_str': 'x'}, _id=None)
+    bizobj.my_child.dao.save.assert_any_call(None, {'my_str': 'x'})
 
     bizobj.dao.save.assert_any_call(
-            {'my_child': {'my_str': 'x', '_id': new_id}}, _id=None)
+            None, {'my_child': {'my_str': 'x', '_id': new_id}})
 
