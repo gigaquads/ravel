@@ -117,6 +117,7 @@ def test_BizObject_dump(Parent, Child):
     parent = Parent({'my_str': 'x'}, my_child=child)
 
     dumped_data = parent.dump()
+    dumped_data = parent.dump()
     assert dumped_data == {
         'my_str': 'x',
         'my_child': {'my_str': 'z'}

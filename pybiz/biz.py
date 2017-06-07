@@ -189,6 +189,7 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
         self._data = self._load(data, kwargs_data)
         self._public_id = None
         self._bizobj_id = None
+        self._cached_dump_data = None
 
         if self._schema is not None:
             self._is_id_in_schema = '_id' in self._schema.fields
@@ -288,13 +289,19 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
 
     def update(self, dct):
         self._data.update(dct)
+        self._cached_dump_data = None
+        self.mark_dirty(dct.keys())
 
     def dump(self):
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
         """
-        data = self._dump_schema()
+        if self._cached_dump_data:
+            data = self._cached_dump_data
+        else:
+            data = self._dump_schema()
+            self._cached_dump_data = data
         related_data = self._dump_relationships()
         data.update(related_data)
         return data
@@ -402,8 +409,12 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
     def get_parent(self):
         return self._data.get_parent()
 
-    def mark_dirty(self, key):
-        self._data.mark_dirty(key)
+    def mark_dirty(self, key_or_keys):
+        self._cached_dump_data = None
+        if isinstance(key_or_keys, str):
+            self._data.mark_dirty.add(key)
+        else:
+            self._data.mark_dirty |= set(key_or_keys)
 
     def clear_dirty(self, keys=None):
         self._data.clear_dirty(keys=keys)
@@ -428,7 +439,7 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
                     data_to_save[k] = data_to_save
             elif v.dirty:
                 v.save()
-                data_to_save[k] = v.dump()  # TODO: cache dump data
+                data_to_save[k] = v.dump()
 
         for k in self._data.dirty:
             data_to_save[k] = self[k]
