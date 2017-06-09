@@ -43,6 +43,10 @@ def Child(ChildSchema):
         def schema(cls):
             return ChildSchema
 
+        @classmethod
+        def get_dotted_dao_class_path(cls):
+            return 'path.to.ChildDao'
+
     return Child
 
 
@@ -51,8 +55,12 @@ def SuperParent(SuperParentSchema, Child):
 
     class SuperParent(BizObject):
         @classmethod
-        def schema(cls):
+        def schema(cls):  # TODO: rename to schema_class_path
             return SuperParentSchema
+
+        @classmethod
+        def get_dotted_dao_class_path(cls):  # TODO: rename to dao_class_path
+            return 'path.to.SuperParentDao'
 
         my_child_super = Relationship(Child)
 
@@ -66,6 +74,10 @@ def Parent(ParentSchema, SuperParent, Child):
         @classmethod
         def schema(cls):
             return ParentSchema
+
+        @classmethod
+        def get_dotted_dao_class_path(cls):
+            return 'path.to.ParentDao'
 
         my_child = Relationship(Child)
 
@@ -149,19 +161,9 @@ def test_BizObject_dirty_nested(Parent, Child):
     #assert 'my_child' in bizobj.dirty
 
 
-def test_BizObject_dao_provider(Parent):
-    old_environ = os.environ.copy()
-    os.environ.clear()
-
+def test_BizObject_get_dotted_dao_class_path(Parent):
     bizobj = Parent()
-    os.environ['DAO_PROVIDER'] = 'x'
-    assert bizobj.dao_provider() == os.environ['DAO_PROVIDER']
-
-    os.environ['PARENT_DAO_PROVIDER'] = 'y'
-    assert bizobj.dao_provider() == os.environ['PARENT_DAO_PROVIDER']
-
-    os.environ.clear()
-    os.environ.update(old_environ)
+    assert bizobj.get_dotted_dao_class_path() == 'path.to.ParentDao'
 
 
 def test_BizObject_setitem(Child):

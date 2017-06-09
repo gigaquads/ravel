@@ -21,7 +21,7 @@ from .patch import JsonPatchMixin
 from .dao import DaoManager
 from .dirty import DirtyDict, DirtyInterface
 from .util import is_bizobj
-from .schema import Field
+from .schema import Schema, Field
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -247,20 +247,15 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
 
     @classmethod
     @abstractmethod
-    def schema(cls):
+    def schema(cls) -> Schema:
         return None
 
     @classmethod
-    def dao_provider(cls):
+    @abstractmethod
+    def get_dotted_dao_class_path(cls) -> str:
         """
-        By default, we try to read the dao_provider string from an environment
-        variable named X_DAO_PROVIDER, where X is the uppercase name of this
-        class. Otherwise, we try to read a default global dao provider from the
-        DAO_PROVIDER environment variable.
+        Return a dotted path to the DAO class to use, like 'path.to.MyDao'.
         """
-        cls_name = re.sub(r'([a-z])([A-Z0-9])', r'\1_\2', cls.__name__).upper()
-        dao_provider = os.environ.get('{}_DAO_PROVIDER'.format(cls_name))
-        return dao_provider or os.environ['DAO_PROVIDER']
 
     @classmethod
     def get_dao(cls):
@@ -427,7 +422,8 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
             rel = self._relationships[k]
             if rel.many:
                 dump_data_list = []
-                # TODO keep track of which are dirty to avoid O(N) scan of list
+                # TODO keep track in the rel of which bizobj are dirty
+                # to avoid O(N) scan of list
                 for bizobj in v:
                     if bizobj.dirty:
                         bizobj.save()

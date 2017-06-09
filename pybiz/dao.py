@@ -1,7 +1,9 @@
+from importlib import import_module
 from abc import ABCMeta, abstractmethod
 
 
 # TODO: make BizObject.dao_provider simply return the dotted path to the DAO
+
 # class to use and scrap the DaoManager
 
 class DAOError(Exception):
@@ -68,17 +70,39 @@ class DaoManager(object):
             self._factories[provider].update(class_map)
 
     def get_dao_for_bizobj(self, bizobj_class):
-        provider = bizobj_class.dao_provider().lower()
-        class_name = bizobj_class.__name__
-        if provider is None:
-            raise DAOError('{} has no provider'.format(class_name))
+        bizobj_class_name = bizobj_class.__name__
 
-        factory = self._factories.get(provider.lower())
-        if factory is None:
-            raise DAOError('{} provider not recognized'.format(provider))
+        # split the dotted path to the DAO class into a module
+        # path and a class name for a DAO class inside of said module.
+        class_path_str = bizobj_class.get_dotted_dao_class_path()
+        if not class_path_str:
+            raise DAOError(
+                '{} has no DAO. ensure that the '
+                'get_dotted_dao_class_path classmethod returns '
+                'the dotted path to the DAO class to use.'.format(
+                    bizobj_class_name))
 
-        dao_class = factory.get(class_name)
-        if dao_class is None:
-            raise DAOError('{} not registered'.format(class_name))
+        class_path = class_path_str.split('.')
+        assert len(class_path) > 1
+
+        module_path_str = '.'.join(class_path[:-1])
+        class_name = class_path[-1]
+
+        # try first to fetch the DAO class from cache
+        cache_key = class_path_str
+        dao_class = self._cached_dao_classes.get(cache_key)
+        if dao_class is not None:
+            return dao_class
+
+        # otherwise, lazily load and cache the class
+        # and return an instance.
+        try:
+            dao_module = import_module(module_path_str)
+            dao_class = getattr(dao_module, cache_key)
+        except Exception as exc:
+            raise DAOError(
+                'failed to import {} when loading the DAO class '
+                'specified by {}: {}.'.format(
+                    class_path_str, bizobj_class_name, exc.message))
 
         return dao_class()

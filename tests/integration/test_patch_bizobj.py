@@ -40,12 +40,19 @@ class Album(BizObject):
     def schema(cls):
         return AlbumSchema
 
+    @classmethod
+    def get_dotted_dao_class_path(cls):
+        return 'dao.AlbumDao'
 
 class Artist(BizObject):
 
     @classmethod
     def schema(cls):
         return ArtistSchema
+
+    @classmethod
+    def get_dotted_dao_class_path(cls):
+        return 'dao.ArtistDao'
 
     albums = Relationship(Album, many=True)
 
