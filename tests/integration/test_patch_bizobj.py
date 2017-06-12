@@ -34,39 +34,59 @@ class ArtistSchema(PublicSchema):
     tags = List(Str())
 
 
-class Album(BizObject):
+@pytest.fixture(scope='function')
+def Album():
 
-    @classmethod
-    def schema(cls):
-        return AlbumSchema
+    class Album(BizObject):
 
-    @classmethod
-    def get_dotted_dao_class_path(cls):
-        return 'dao.AlbumDao'
+        @classmethod
+        def __schema__(cls):
+            return AlbumSchema
 
-class Artist(BizObject):
+        @classmethod
+        def __dao__(cls):
+            dao = MagicMock()
+            dao.save.return_value = 1
+            dao.fetch.return_value = {'public_id': MOCK_PUBLIC_ID}
+            return dao
 
-    @classmethod
-    def schema(cls):
-        return ArtistSchema
+        @property
+        def dao(self):
+            if not getattr(self, '_dao', None):
+                self._dao = self.__dao__()
+            return self._dao
 
-    @classmethod
-    def get_dotted_dao_class_path(cls):
-        return 'dao.ArtistDao'
-
-    albums = Relationship(Album, many=True)
+    return Album
 
 
 @pytest.fixture(scope='function')
-def mock_dao():
-    dao = MagicMock()
-    dao.save.return_value = 1
-    dao.fetch.return_value = {'public_id': MOCK_PUBLIC_ID}
-    return dao
+def Artist(Album):
+
+    class Artist(BizObject):
+
+        @classmethod
+        def __schema__(cls):
+            return ArtistSchema
+
+        @classmethod
+        def __dao__(cls):
+            dao = MagicMock()
+            dao.save.return_value = 1
+            dao.fetch.return_value = {'public_id': MOCK_PUBLIC_ID}
+            return dao
+
+        @property
+        def dao(self):
+            if not getattr(self, '_dao', None):
+                self._dao = self.__dao__()
+            return self._dao
+
+        albums = Relationship(Album, many=True)
+
+    return Artist
 
 
-@pytest.fixture(scope='function')
-def albums(mock_dao):
+def test_patch_bizobj_scalar(Artist, Album):
     albums = [
         Album(
             title='Passages',
@@ -80,14 +100,7 @@ def albums(mock_dao):
 
     for album in albums:
         album.clear_dirty()
-        album._dao_manager = MagicMock()
-        album._dao_manager.get_dao_for_bizobj.return_value = mock_dao
 
-    return albums
-
-
-@pytest.fixture(scope='function')
-def artist(albums, mock_dao):
     artist = Artist(
         name='Ravi Shankar',
         age=79,
@@ -95,12 +108,7 @@ def artist(albums, mock_dao):
         albums=albums)
 
     artist.clear_dirty()
-    artist._dao_manager = MagicMock()
-    artist._dao_manager.get_dao_for_bizobj.return_value = mock_dao
-    return artist
 
-
-def test_patch_bizobj_scalar(artist):
     new_name = 'Sir Ravi'
     new_track_1 = 'Track 1'
     new_track_2 = 'Track 2'
@@ -129,7 +137,6 @@ def test_patch_bizobj_scalar(artist):
         artist.patch(**delta)
 
     assert artist.dirty == {'name', 'tags', 'age', 'things'}
-    # TODO: Implement common base class for DirtyList and DirtyDict
 
     assert artist.name == new_name
     assert artist.tags == [new_tags[0]] + new_tags[2:]

@@ -40,11 +40,11 @@ def Child(ChildSchema):
 
     class Child(BizObject):
         @classmethod
-        def schema(cls):
+        def __schema__(cls):
             return ChildSchema
 
         @classmethod
-        def get_dotted_dao_class_path(cls):
+        def __dao__(cls):
             return 'path.to.ChildDao'
 
     return Child
@@ -55,11 +55,11 @@ def SuperParent(SuperParentSchema, Child):
 
     class SuperParent(BizObject):
         @classmethod
-        def schema(cls):  # TODO: rename to schema_class_path
+        def __schema__(cls):  # TODO: rename to schema_class_path
             return SuperParentSchema
 
         @classmethod
-        def get_dotted_dao_class_path(cls):  # TODO: rename to dao_class_path
+        def __dao__(cls):  # TODO: rename to dao_class_path
             return 'path.to.SuperParentDao'
 
         my_child_super = Relationship(Child)
@@ -72,11 +72,11 @@ def Parent(ParentSchema, SuperParent, Child):
 
     class Parent(SuperParent):
         @classmethod
-        def schema(cls):
+        def __schema__(cls):
             return ParentSchema
 
         @classmethod
-        def get_dotted_dao_class_path(cls):
+        def __dao__(cls):
             return 'path.to.ParentDao'
 
         my_child = Relationship(Child)
@@ -163,7 +163,7 @@ def test_BizObject_dirty_nested(Parent, Child):
 
 def test_BizObject_get_dotted_dao_class_path(Parent):
     bizobj = Parent()
-    assert bizobj.get_dotted_dao_class_path() == 'path.to.ParentDao'
+    assert bizobj.__dao__() == 'path.to.ParentDao'
 
 
 def test_BizObject_setitem(Child):
@@ -215,11 +215,11 @@ def test_BizObject_save_and_fetch(Parent, Child):
     bizobj._dao_manager = mock.MagicMock()
     bizobj._dao_manager.get_dao_for_bizobj.return_value = mock_dao
 
-    bizobj.my_str = 'x'
+    bizobj.my_str = new_my_str
     assert 'my_str' in bizobj.dirty
 
     bizobj.save(fetch=True)
-    bizobj.dao.save.called_once_with({'my_str': 'x'}, _id=None)
+    bizobj.dao.save.called_once_with({'my_str': new_my_str}, _id=None)
     assert bizobj._id == new_id
     assert bizobj.my_str == new_my_str
     assert not bizobj.dirty

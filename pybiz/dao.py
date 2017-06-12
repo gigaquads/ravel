@@ -48,37 +48,23 @@ class DaoManager(object):
         return cls._instance
 
     def __init__(self):
-        """
-        self._factories has the following format:
-            {
-                'dao_provider': {'bizobj_class_name': dao_class}
-            }
-
-        For example:
-            {
-                'postgres': {'User': UserPostgresDAO},
-                'mysql': {'User': UserMysqlDAO},
-            }
-        """
-        self._factories = {}
-
-    def register(self, provider: str, class_map: dict):
-        provider = provider.lower()
-        if provider not in self._factories:
-            self._factories[provider] = class_map
-        else:
-            self._factories[provider].update(class_map)
+        self._cached_dao_classes = {}
 
     def get_dao_for_bizobj(self, bizobj_class):
         bizobj_class_name = bizobj_class.__name__
 
         # split the dotted path to the DAO class into a module
         # path and a class name for a DAO class inside of said module.
-        class_path_str = bizobj_class.get_dotted_dao_class_path()
+        dao_retval = bizobj_class.__dao__()
+        if not isinstance(dao_retval, str):
+            dao_class = dao_retval
+            return dao_class()
+
+        class_path_str = bizobj_class.__dao__()
         if not class_path_str:
             raise DAOError(
                 '{} has no DAO. ensure that the '
-                'get_dotted_dao_class_path classmethod returns '
+                '__dao__ classmethod returns '
                 'the dotted path to the DAO class to use.'.format(
                     bizobj_class_name))
 
@@ -98,11 +84,12 @@ class DaoManager(object):
         # and return an instance.
         try:
             dao_module = import_module(module_path_str)
-            dao_class = getattr(dao_module, cache_key)
+            dao_class = getattr(dao_module, class_name)
         except Exception as exc:
             raise DAOError(
                 'failed to import {} when loading the DAO class '
                 'specified by {}: {}.'.format(
-                    class_path_str, bizobj_class_name, exc.message))
+                    class_path_str, bizobj_class_name, str(exc)))
 
+        self._cached_dao_classes[cache_key] = dao_class
         return dao_class()

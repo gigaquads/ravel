@@ -75,12 +75,29 @@ class BizObjectMeta(ABCMeta):
         cls.build_relationship_properties(relationships)
         cls._relationships = relationships
 
-        schema_factory = cls.schema()
-        if schema_factory is not None:
-            s = cls._schema = schema_factory()
+        schema_retval = cls.__schema__()
+        if isinstance(schema_retval, str):
+            schema_class = self.import_schema_class(cls.__schema__())
+        else:
+            schema_class = schema_retval
+
+        if schema_class is not None:
+            s = cls._schema = schema_class()
             s.strict = True
             if s is not None:
                 cls.build_field_properties(s, relationships)
+
+    def import_schema_class(self, class_path_str):
+        class_path = class_path_str.split('.')
+        assert len(class_path) > 1
+
+        module_path_str = '.'.join(class_path[:-1])
+        class_name = class_path[-1]
+
+        schema_module = import_module(module_path_str)
+        schema_class = getattr(schema_module, class_name)
+
+        return schema_class()
 
     def register_JsonPatch_hooks(cls, bases):
         if not any(issubclass(x, JsonPatchMixin) for x in bases):
@@ -247,14 +264,16 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
 
     @classmethod
     @abstractmethod
-    def schema(cls) -> Schema:
-        return None
+    def __schema__(cls) -> str:
+        """
+        Return a dotted path to the Schema class, like 'path.to.MySchema'.
+        """
 
     @classmethod
     @abstractmethod
-    def get_dotted_dao_class_path(cls) -> str:
+    def __dao__(cls) -> str:
         """
-        Return a dotted path to the DAO class to use, like 'path.to.MyDao'.
+        Return a dotted path to the DAO class, like 'path.to.MyDao'.
         """
 
     @classmethod
@@ -271,7 +290,7 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
 
     @property
     def dao(self):
-        return self._dao_manager.get_dao_for_bizobj(self.__class__)
+        return self.get_dao()
 
     def keys(self):
         return self._data.keys()
