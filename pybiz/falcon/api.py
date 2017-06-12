@@ -48,8 +48,11 @@ class Api(ApiRegistry):
         return super(Api, self).delete(path, schemas=schemas, hook=self.hook)
 
     def hook(self, handler):
+        """
+        This decorator "hook" registers a wrapped method with Falcon.
+        """
         http_method = handler.decorator.http_method
-        url_path = handler.decorator.path   # TODO: rename path to url_path
+        url_path = handler.decorator.path
         if url_path not in self._resources:
             ApiResource = self._resource_manager.new_resource_class(url_path)
             resource = ApiResource()
@@ -57,17 +60,11 @@ class Api(ApiRegistry):
             self._resources[url_path] = resource
             self._falcon_api.add_route(url_path, resource)
 
-        #resource = self._resources[url_path]
-        #resource.add_handler(http_method, handler)
+    def validate_request(self, request, schema):
+        request.json = schema.load(request.data, strict=True)
 
-    def validate_request(self, schema, params_schema, request, *args, **kwargs):
-        if schema is not None:
-            request.json = schema.load(request.data, strict=True)
-        if params_schema is not None:
-            request.params = params_schema.load(request.params, strict=True)
+    def validate_params(self, request, schema):
+        request.params = params_schema.load(request.params, strict=True)
 
-    def validate_response(self, schema, result, request, response, *args, **kwargs):
-        if schema is not None:
-            response.body = schema.load(result, strict=True)
-        else:
-            response.body = result
+    def validate_response(self, response, result, schema):
+        response.body = schema.load(result, strict=True)

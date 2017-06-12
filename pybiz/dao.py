@@ -2,10 +2,6 @@ from importlib import import_module
 from abc import ABCMeta, abstractmethod
 
 
-# TODO: make BizObject.dao_provider simply return the dotted path to the DAO
-
-# class to use and scrap the DaoManager
-
 class DAOError(Exception):
     pass
 

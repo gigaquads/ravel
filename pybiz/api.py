@@ -36,10 +36,13 @@ class ApiRegistry(object):
         handler_kwargs = handler_kwargs or dict()
         return handler(*handler_args, **handler_kwargs)
 
-    def validate_request(self, schema, params_schema, *args, **kwargs):
+    def validate_request(self, request, schema):
         pass
 
-    def validate_response(self, schema, result, *args, **kwargs):
+    def validate_params(self, request, schema):
+        pass
+
+    def validate_response(self, response, result, schema):
         pass
 
 
@@ -78,31 +81,21 @@ class ApiHandler(object):
                 ]))
 
     def __call__(self, *args, **kwargs):
-        # TODO: Move this schema logic into pre middleware hooks passed to ctor
-        # as a `validate={request: func, response: func, params: func}` kwarg in
-        # ApiRegistry
-        schemas = self.decorator.schemas
-        if 'request' in schemas:
-            request = args[0]
-            request_data = request.json  # TODO: implement this in falcon with Request subclass
-            schema = schemas.get('request')
-            result = schema.load(request_data, strict=True)
-            request.json = result.data
+        request, response = args[:2]
+        registry = self.decorator.registry
 
-        request_schema = schemas.get('request')
-        response_schema = schemas.get('response')
-        params_schema = schemas.get('params')
+        request_schema = self.decorator.schemas.get('request')
+        if request_schema is not None:
+            registry.validate_request(request, request_schema)
 
-        self.decorator.registry.validate_request(
-                request_schema, params_schema, *args, **kwargs)
+        params_schema = self.decorator.schemas.get('params')
+        if params_schema is not None:
+            registry.validate_params(request, params_schema)
 
-        handler_result = self.target(*args, **kwargs)
+        result = self.target(*args, **kwargs)
 
-        self.decorator.registry.validate_response(
-                response_schema, handler_result, *args, **kwargs)
+        response_schema = self.decorator.schemas.get('response')
+        if response_schema is not None:
+            registry.validate_response(response, result, response_schema)
 
-        if 'response' in schemas:
-            schema = schemas.get('response')
-            handler_result = schema.load(handler_result, strict=True)
-
-        return handler_result
+        return result
