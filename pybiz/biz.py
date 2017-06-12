@@ -440,15 +440,15 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
                 continue
             rel = self._relationships[k]
             if rel.many:
-                dump_data_list = []
+                dumped_list_item_map = {}
                 # TODO keep track in the rel of which bizobj are dirty
                 # to avoid O(N) scan of list
-                for bizobj in v:
+                for i, bizobj in enumerate(v):
                     if bizobj.dirty:
-                        bizobj.save()
-                        dump_data_list.append(bizobj.dump())
-                if dump_data_list:
-                    data_to_save[k] = data_to_save
+                        bizobj.save(fetch=fetch)
+                        dumped_list_item_map[i] = bizobj.dump()
+                if dumped_list_item_map:
+                    data_to_save[k] = dumped_list_item_map
             elif v.dirty:
                 v.save()
                 data_to_save[k] = v.dump()
