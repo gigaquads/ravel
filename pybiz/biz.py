@@ -16,6 +16,7 @@ import re
 
 from abc import ABCMeta, abstractmethod
 from types import MethodType
+from importlib import import_module
 
 from .patch import JsonPatchMixin
 from .dao import DaoManager
@@ -77,7 +78,7 @@ class BizObjectMeta(ABCMeta):
 
         schema_retval = cls.__schema__()
         if isinstance(schema_retval, str):
-            schema_class = self.import_schema_class(cls.__schema__())
+            schema_class = cls.import_schema_class(cls.__schema__())
         else:
             schema_class = schema_retval
 
@@ -97,7 +98,7 @@ class BizObjectMeta(ABCMeta):
         schema_module = import_module(module_path_str)
         schema_class = getattr(schema_module, class_name)
 
-        return schema_class()
+        return schema_class
 
     def register_JsonPatch_hooks(cls, bases):
         if not any(issubclass(x, JsonPatchMixin) for x in bases):
