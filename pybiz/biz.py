@@ -22,7 +22,7 @@ from .patch import JsonPatchMixin
 from .dao import DaoManager
 from .dirty import DirtyDict, DirtyInterface
 from .util import is_bizobj
-from .schema import AbstractSchema, Schema, Field, Int, Uuid
+from .schema import AbstractSchema, Schema, Field, Anything
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -62,10 +62,14 @@ class BizObjectMeta(ABCMeta):
             cls.get_dao()  # eagerly import Dao class
 
     def build_schema_class(cls, name):
+        """
+        Builds cls.Schema from the fields declared on the business object. All
+        business objects automatically inherit an _id and public_id fields
+        """
         schema_class_name = '{}Schema'.format(name)
         fields = dict(
-            _id=Int(load_only=True),
-            public_id=Uuid(dump_to='id'),
+            _id=Anything(load_only=True),
+            public_id=Anything(dump_to='id'),
             )
         for k in dir(cls):
             v = getattr(cls, k)
@@ -292,6 +296,14 @@ class BizObject(
         """
 
     @classmethod
+    def get(cls, _id=None, public_id=None, fields: dict = None):
+        return cls.dao.fetch(_id=_id, public_id=public_id, fields=fields)
+
+    @classmethod
+    def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
+        return cls.dao.fetch(_ids=_ids, public_ids=public_ids, fields=fields)
+
+    @classmethod
     def get_dao(cls):
         return cls._dao_manager.get_dao_for_bizobj(cls)
 
@@ -320,6 +332,9 @@ class BizObject(
         self._cached_dump_data = None
         self._data.update(dct)
         self.mark_dirty(dct.keys())
+
+    def delete(self):
+        self.dao.delete(self._id)
 
     def dump(self):
         """
@@ -471,9 +486,12 @@ class BizObject(
         for k in self._data.dirty:
             data_to_save[k] = self[k]
 
-        # persist data and refresh data
+        # persist and refresh data
         if data_to_save:
-            _id = self.dao.save(self._id, data_to_save)
+            if self._id is not None:
+                _id = self.dao.save(self._id, data_to_save)
+            else:
+                _id = self.dao.create(data_to_save)
             self._id = _id
             if fetch:
                 self.update(self.dao.fetch(_id=_id))

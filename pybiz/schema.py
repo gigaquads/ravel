@@ -62,6 +62,15 @@ class Field(object, metaclass=ABCMeta):
         pass
 
 
+class Anything(Field):
+
+    def load(self, value):
+        return FieldResult(value=value)
+
+    def dump(self, data):
+        return FieldResult(value=data)
+
+
 class SubObject(Field):
 
     def __init__(self, nested, many=False, *args, **kwargs):

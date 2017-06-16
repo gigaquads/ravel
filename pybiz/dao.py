@@ -9,20 +9,20 @@ class DAOError(Exception):
 class Dao(object, metaclass=ABCMeta):
 
     @abstractmethod
-    def fetch(_id, fields: dict = None):
+    def fetch(_id=None, public_id=None, fields: dict = None):
         pass
 
     @abstractmethod
-    def fetch_many(_ids, fields: dict = None):
+    def fetch_many(_ids=None, public_ids=None, fields: dict = None):
         pass
 
     @abstractmethod
     def create(self, data):
-        pass
+        pass  # should return a new _id
 
     @abstractmethod
     def save(self, _id, data: dict):
-        pass
+        pass  # should return the _id
 
     @abstractmethod
     def delete(self, _id):
