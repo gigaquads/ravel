@@ -22,7 +22,7 @@ from .patch import JsonPatchMixin
 from .dao import DaoManager
 from .dirty import DirtyDict, DirtyInterface
 from .util import is_bizobj
-from .schema import Schema, Field
+from .schema import AbstractSchema, Schema, Field, Int, Uuid
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -47,28 +47,39 @@ class Relationship(object):
 
 class BizObjectMeta(ABCMeta):
 
-    class RelationshipsMixin(object):
-        def __init__(self, *args, **kwargs):
-            self._relationship_data = {}
-
     def __new__(cls, name, bases, dict_):
-        bases = bases + (cls.RelationshipsMixin,)
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
         cls.add_is_bizobj_annotation(new_class)
         return new_class
 
     def __init__(cls, name, bases, dict_):
-        ABCMeta.__init__(cls, name, bases + (cls.RelationshipsMixin,), dict_)
+        ABCMeta.__init__(cls, name, bases, dict_)
         relationships = cls.build_relationships()
-        cls.build_all_properties(relationships)
+        schema_class = cls.build_schema_class(name)
+        cls.build_all_properties(schema_class, relationships)
         cls.register_JsonPatch_hooks(bases)
+        if name != 'BizObject':
+            cls.get_dao()  # eagerly import Dao class
+
+    def build_schema_class(cls, name):
+        schema_class_name = '{}Schema'.format(name)
+        fields = dict(
+            _id=Int(load_only=True),
+            public_id=Uuid(dump_to='id'),
+            )
+        for k in dir(cls):
+            v = getattr(cls, k)
+            if isinstance(v, Field):
+                fields[k] = v
+        cls.Schema = type(schema_class_name, (Schema,), fields)
+        return cls.Schema
 
     def add_is_bizobj_annotation(new_class):
         # set this attribute in order to be able to
         # use duck typing to check isinstance of BizObjects
         setattr(new_class, IS_BIZOBJ_ANNOTATION, True)
 
-    def build_all_properties(cls, relationships):
+    def build_all_properties(cls, schema_class, relationships):
         # NOTE: the names of Fields declared in the Schema and Relationships
         # declared on the BizObject will overwrite any methods or attributes
         # defined explicitly on the BizObject class. This happens below.
@@ -76,17 +87,18 @@ class BizObjectMeta(ABCMeta):
         cls.build_relationship_properties(relationships)
         cls._relationships = relationships
 
-        schema_retval = cls.__schema__()
-        if isinstance(schema_retval, str):
-            schema_class = cls.import_schema_class(cls.__schema__())
-        else:
-            schema_class = schema_retval
+        # use the schema class overrride if defined
+        schema_class_override = cls.__schema__()
+        if schema_class_override:
+            if isinstance(schema_class_override, str):
+                schema_class = cls.import_schema_class(schema_class_override)
+            else:
+                schema_class = schema_class_override
 
-        if schema_class is not None:
-            s = cls._schema = schema_class()
-            s.strict = True
-            if s is not None:
-                cls.build_field_properties(s, relationships)
+        cls._schema = schema_class()
+        cls._schema.strict = True
+
+        cls.build_field_properties(cls._schema, relationships)
 
     def import_schema_class(self, class_path_str):
         class_path = class_path_str.split('.')
@@ -95,8 +107,12 @@ class BizObjectMeta(ABCMeta):
         module_path_str = '.'.join(class_path[:-1])
         class_name = class_path[-1]
 
-        schema_module = import_module(module_path_str)
-        schema_class = getattr(schema_module, class_name)
+        try:
+            schema_module = import_module(module_path_str)
+            schema_class = getattr(schema_module, class_name)
+        except:
+            raise ImportError(
+                'failed to import schema class {}'.format(class_name))
 
         return schema_class
 
@@ -196,25 +212,22 @@ class BizObjectMeta(ABCMeta):
             setattr(cls, rel.name, build_rel_property(rel.name, rel))
 
 
-class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
+class BizObject(
+    DirtyInterface, AbstractSchema, JsonPatchMixin,
+    metaclass=BizObjectMeta):
 
     _schema = None  # set by metaclass
     _relationships = {}  # set by metaclass
     _dao_manager = DaoManager.get_instance()
 
     def __init__(self, data=None, **kwargs_data):
-        super(BizObject, self).__init__()
-        self._data = self._load(data, kwargs_data)
-        self._public_id = None
-        self._bizobj_id = None
-        self._cached_dump_data = None
+        DirtyInterface.__init__(self)
+        AbstractSchema.__init__(self, strict=True, allow_additional=False)
+        JsonPatchMixin.__init__(self)
 
-        if self._schema is not None:
-            self._is_id_in_schema = '_id' in self._schema.fields
-            self._is_public_id_in_schema = 'public_id' in self._schema.fields
-        else:
-            self._is_id_in_schema = False
-            self._is_public_id_in_schema = False
+        self._relationship_data = {}
+        self._data = self._load(data, kwargs_data)
+        self._cached_dump_data = None
 
     def __getitem__(self, key):
         if key in self._data:
@@ -264,10 +277,11 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
                 dirty_flag=dirty_flag)
 
     @classmethod
-    @abstractmethod
     def __schema__(cls) -> str:
         """
-        Return a dotted path to the Schema class, like 'path.to.MySchema'.
+        Return a dotted path to the Schema class, like 'path.to.MySchema'. This
+        is only used if a Schema subclass is returned. If None is returned, this
+        is ignored.
         """
 
     @classmethod
@@ -336,19 +350,20 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
         fields in the schema.
         """
         data = {}
+
         for rel_name, rel_val in self.relationships.items():
             # rel_val is the actual object or list associated with the
             # relationship; whereas, just rel is the relationship object itself.
             rel = self._relationships[rel_name]
-            load_from_field = rel.load_from or rel.name
-            has_field = load_from_field in self._schema.fields
-            if not self._schema or (load_from_field in self._schema.fields):
-                dump_to = rel.dump_to or rel.name
-                if is_bizobj(rel_val):
-                    data[dump_to] = rel_val.dump()
-                else:
-                    assert isinstance(rel_val, (list, set, tuple))
-                    data[dump_to] = [bizobj.dump() for bizobj in rel_val]
+            dump_to = rel.dump_to or rel.name
+            if rel_val is None:
+                data[dump_to] = None
+            elif is_bizobj(rel_val):
+                data[dump_to] = rel_val.dump()
+            else:
+                assert isinstance(rel_val, (list, set, tuple))
+                data[dump_to] = [bizobj.dump() for bizobj in rel_val]
+
         return data
 
     def _load(self, data, kwargs_data):
@@ -368,38 +383,37 @@ class BizObject(DirtyInterface, JsonPatchMixin, metaclass=BizObjectMeta):
         # eagerly load all related bizobjs from the loaded data dict,
         # removing the fields from said dict.
         for rel in self._relationships.values():
-            if rel.name in self._schema.fields:
-                load_from = rel.load_from or rel.name
-                related_data = data.pop(load_from, None)
+            load_from = rel.load_from or rel.name
+            related_data = data.pop(load_from, None)
 
-                if related_data is None:
-                    self._relationship_data[rel.name] = None
-                    continue
+            if related_data is None:
+                self._relationship_data[rel.name] = None
+                continue
 
-                if rel.many:
-                    related_bizobj_list = []
-                    for obj in related_data:
-                        if isinstance(obj, rel.bizobj_class):
-                            related_bizobj_list.append(obj)
-                        else:
-                            related_bizobj_list.append(
-                                rel.bizobj_class(related_data))
-
-                    self._relationship_data[rel.name] = related_bizobj_list
-
-                else:
-                    if not is_bizobj(related_data):
-                        # if the assertion below fails, then most likely
-                        # you're intended to use the many=True kwarg in a
-                        # relationship. The data coming in from load is a
-                        # list, but without the 'many' kwarg set, the
-                        # Relationship assumes that the 'related_data' is a
-                        # dict and tries to call a bizobj ctor with it.
-                        assert isinstance(related_data, dict)
-                        related_bizobj = rel.bizobj_class(related_data)
+            if rel.many:
+                related_bizobj_list = []
+                for obj in related_data:
+                    if isinstance(obj, rel.bizobj_class):
+                        related_bizobj_list.append(obj)
                     else:
-                        related_bizobj = related_data
-                        self._relationship_data[rel.name] = related_bizobj
+                        related_bizobj_list.append(
+                            rel.bizobj_class(related_data))
+
+                self._relationship_data[rel.name] = related_bizobj_list
+
+            else:
+                if not is_bizobj(related_data):
+                    # if the assertion below fails, then most likely
+                    # you're intended to use the many=True kwarg in a
+                    # relationship. The data coming in from load is a
+                    # list, but without the 'many' kwarg set, the
+                    # Relationship assumes that the 'related_data' is a
+                    # dict and tries to call a bizobj ctor with it.
+                    assert isinstance(related_data, dict)
+                    related_bizobj = rel.bizobj_class(related_data)
+                else:
+                    related_bizobj = related_data
+                    self._relationship_data[rel.name] = related_bizobj
 
         if self._schema is not None:
             result = self._schema.load(data)

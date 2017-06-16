@@ -8,6 +8,7 @@ from .const import (
     HTTP_DELETE,
     )
 
+# TODO: Figure out how to associate db connections with dao classes
 
 class ApiRegistry(object):
 
@@ -16,19 +17,23 @@ class ApiRegistry(object):
 
     def get(self, path, schemas=None, hook=None):
         return ApiRegistryDecorator(self, HTTP_GET, path,
-                schemas=schemas, hook=hook)
+            schemas=schemas, hook=hook)
 
-    def post(self, path, schemas=None):
-        return ApiRegistryDecorator(self, HTTP_POST, path, schemas=schemas)
+    def post(self, path, schemas=None, hook=None):
+        return ApiRegistryDecorator(self, HTTP_POST, path,
+            schemas=schemas, hook=hook)
 
-    def put(self, path, schemas=None):
-        return ApiRegistryDecorator(self, HTTP_PUT, path, schemas=schemas)
+    def put(self, path, schemas=None, hook=None):
+        return ApiRegistryDecorator(self, HTTP_PUT, path,
+            schemas=schemas, hook=hook)
 
-    def patch(self, path, schemas=None):
-        return ApiRegistryDecorator(self, HTTP_PATCH, path, schemas=schemas)
+    def patch(self, path, schemas=None, hook=None):
+        return ApiRegistryDecorator(self, HTTP_PATCH, path,
+            schemas=schemas, hook=hook)
 
-    def delete(self, path, schemas=None):
-        return ApiRegistryDecorator(self, HTTP_DELETE, path, schemas=schemas)
+    def delete(self, path, schemas=None, hook=None):
+        return ApiRegistryDecorator(self, HTTP_DELETE, path,
+            schemas=schemas, hook=hook)
 
     def route(self, http_method, path, handler_args=None, handler_kwargs=None):
         handler = self.handlers[path.lower()][http_method.lower()]
@@ -98,4 +103,5 @@ class ApiHandler(object):
         if response_schema is not None:
             registry.validate_response(response, result, response_schema)
 
+        response.body = result
         return result

@@ -8,77 +8,44 @@ from pybiz.schema import Schema, Int, Str, SubObject
 
 
 @pytest.fixture(scope='module')
-def ChildSchema():
-
-    class ChildSchema(Schema):
-        my_str = Str()
-
-    return ChildSchema
-
-
-@pytest.fixture(scope='module')
-def ParentSchema(ChildSchema):
-
-    class ParentSchema(Schema):
-        my_child = SubObject(ChildSchema())
-        my_str = Str()
-
-    return ParentSchema
-
-
-@pytest.fixture(scope='module')
-def SuperParentSchema():
-
-    class SuperParentSchema(Schema):
-        my_str_super = Str()
-
-    return SuperParentSchema
-
-
-@pytest.fixture(scope='module')
-def Child(ChildSchema):
+def Child():
 
     class Child(BizObject):
-        @classmethod
-        def __schema__(cls):
-            return ChildSchema
 
         @classmethod
         def __dao__(cls):
-            return 'path.to.ChildDao'
+            return mock.MagicMock()
+
+        my_str = Str()
 
     return Child
 
 
 @pytest.fixture(scope='module')
-def SuperParent(SuperParentSchema, Child):
+def SuperParent(Child):
 
     class SuperParent(BizObject):
-        @classmethod
-        def __schema__(cls):  # TODO: rename to schema_class_path
-            return SuperParentSchema
 
         @classmethod
         def __dao__(cls):  # TODO: rename to dao_class_path
-            return 'path.to.SuperParentDao'
+            return mock.MagicMock()
 
+        my_str_super = Str()
         my_child_super = Relationship(Child)
 
     return SuperParent
 
 
 @pytest.fixture(scope='module')
-def Parent(ParentSchema, SuperParent, Child):
+def Parent(SuperParent, Child):
 
     class Parent(SuperParent):
-        @classmethod
-        def __schema__(cls):
-            return ParentSchema
 
         @classmethod
         def __dao__(cls):
-            return 'path.to.ParentDao'
+            return mock.MagicMock()
 
+        my_str = Str()
         my_child = Relationship(Child)
 
     return Parent
@@ -117,7 +84,7 @@ def test_BizObject_init_data(Parent, Child):
     child = Child(my_str='z')
     parent = Parent({'my_str': 'x'}, my_child=child)
     assert parent.data == {'my_str': 'x'}
-    assert parent.relationships == {'my_child': child}
+    assert parent.relationships == {'my_child': child, 'my_child_super': None}
 
     # test that kwarg data overrides dict data passed to ctor
     parent = Parent({'my_str': 'x'}, my_str='y')
@@ -131,7 +98,8 @@ def test_BizObject_dump(Parent, Child):
     dumped_data = parent.dump()
     assert dumped_data == {
         'my_str': 'x',
-        'my_child': {'my_str': 'z'}
+        'my_child': {'my_str': 'z'},
+        'my_child_super': None,
         }
 
 
@@ -159,11 +127,6 @@ def test_BizObject_dirty_nested(Parent, Child):
     bizobj.my_child.my_str = 'x'
     assert 'my_str' in bizobj.my_child.dirty
     #assert 'my_child' in bizobj.dirty
-
-
-def test_BizObject_get_dotted_dao_class_path(Parent):
-    bizobj = Parent()
-    assert bizobj.__dao__() == 'path.to.ParentDao'
 
 
 def test_BizObject_setitem(Child):

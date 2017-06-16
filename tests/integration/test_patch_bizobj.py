@@ -15,33 +15,10 @@ MOCK_PUBLIC_ID = '1234' * 8
 EMPTY_SET = set()
 
 
-class PublicSchema(Schema):
-    _id = Int()
-    public_id = Uuid()
-
-
-class AlbumSchema(PublicSchema):
-    title = Str()
-    year = Int()
-    tracks = List(Str())
-
-
-class ArtistSchema(PublicSchema):
-    name = Str()
-    age = Int(allow_none=True)
-    albums = List(AlbumSchema())
-    things = List(Dict())
-    tags = List(Str())
-
-
 @pytest.fixture(scope='function')
 def Album():
 
     class Album(BizObject):
-
-        @classmethod
-        def __schema__(cls):
-            return AlbumSchema
 
         @classmethod
         def __dao__(cls):
@@ -55,6 +32,10 @@ def Album():
             if not getattr(self, '_dao', None):
                 self._dao = self.__dao__()
             return self._dao
+
+        title = Str()
+        year = Int()
+        tracks = List(Str())
 
     return Album
 
@@ -65,10 +46,6 @@ def Artist(Album):
     class Artist(BizObject):
 
         @classmethod
-        def __schema__(cls):
-            return ArtistSchema
-
-        @classmethod
         def __dao__(cls):
             dao = MagicMock()
             dao.save.return_value = 1
@@ -81,6 +58,11 @@ def Artist(Album):
                 self._dao = self.__dao__()
             return self._dao
 
+        name = Str()
+        age = Int(allow_none=True)
+        albums = List(Album.Schema())
+        things = List(Dict())
+        tags = List(Str())
         albums = Relationship(Album, many=True)
 
     return Artist

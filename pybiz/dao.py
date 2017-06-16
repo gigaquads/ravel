@@ -52,7 +52,10 @@ class DaoManager(object):
         # split the dotted path to the DAO class into a module
         # path and a class name for a DAO class inside of said module.
         dao_retval = bizobj_class.__dao__()
-        if not isinstance(dao_retval, str):
+        if dao_retval is None:
+            raise DAOError(
+                '{} has no value for __dao__'.format(bizobj_class_name))
+        elif not isinstance(dao_retval, str):
             dao_class = dao_retval
             return dao_class()
 
@@ -74,7 +77,7 @@ class DaoManager(object):
         cache_key = class_path_str
         dao_class = self._cached_dao_classes.get(cache_key)
         if dao_class is not None:
-            return dao_class
+            return dao_class()
 
         # otherwise, lazily load and cache the class
         # and return an instance.

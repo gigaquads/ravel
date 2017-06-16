@@ -273,9 +273,6 @@ class DateTime(Field):
 
 class SchemaMeta(type):
 
-    def __new__(cls, name, bases, dict_):
-        return type.__new__(cls, name, bases, dict_)
-
     def __init__(cls, name, bases, dict_):
         type.__init__(cls, name, bases, dict_)
 
@@ -299,10 +296,7 @@ class SchemaMeta(type):
                         cls.required_fields[OP_LOAD][k] = v
 
 
-class Schema(object, metaclass=SchemaMeta):
-
-    _id = Int(load_only=True)
-    public_id = Str(dump_to='id')
+class AbstractSchema(object):
 
     def __init__(self, strict=False, allow_additional=True):
         """
@@ -369,6 +363,10 @@ class Schema(object, metaclass=SchemaMeta):
             result.raise_validation_error()
 
         return result
+
+
+class Schema(AbstractSchema, metaclass=SchemaMeta):
+    pass
 
 
 class SchemaResult(object):

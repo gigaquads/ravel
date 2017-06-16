@@ -1,5 +1,9 @@
 from __future__ import absolute_import
 
+import importlib
+
+import venusian
+
 from pybiz.api import ApiRegistry
 from pybiz.const import HTTP_GET, HTTP_POST, HTTP_PUT, HTTP_PATCH, HTTP_DELETE
 from pybiz.falcon.resource import FalconResourceManager
@@ -8,26 +12,37 @@ from pybiz.falcon.resource import FalconResourceManager
 
 class Api(ApiRegistry):
 
-    def __init__(self, middleware: list = None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         try:
             import falcon
         except ImportError as exc:
             # this try/except is used here to avoid having to bake in
             # falcon as a global dependency of pybiz.
-            exc.message = 'falcon must be installed to use BizObjectApi'
+            exc.message = 'falcon must be installed'
             raise
 
         super(Api, self).__init__(*args, **kwargs)
 
-        middleware = (middleware or []) + self.middleware
+        self._falcon_api = falcon.API(
+            middleware=self.middleware,
+            request_type=self.request_type,
+            )
 
-        self._falcon_api = falcon.API(middleware=middleware)
+        self._scanner = venusian.Scanner()
         self._resource_manager = FalconResourceManager()
         self._resources = {}
 
     @property
     def middleware(self):
         return []
+
+    @property
+    def request_type(self):
+        return None
+
+    def scan(self, package: str):
+        pkg = importlib.import_module(package)
+        self._scanner.scan(pkg)
 
     def __call__(self, environ, start_response):
         return self._falcon_api(environ, start_response)
