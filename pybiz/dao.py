@@ -46,7 +46,7 @@ class DaoManager(object):
     def __init__(self):
         self._cached_dao_classes = {}
 
-    def get_dao_for_bizobj(self, bizobj_class):
+    def get_dao(self, bizobj_class):
         bizobj_class_name = bizobj_class.__name__
 
         # split the dotted path to the DAO class into a module

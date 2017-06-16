@@ -297,15 +297,24 @@ class BizObject(
 
     @classmethod
     def get(cls, _id=None, public_id=None, fields: dict = None):
-        return cls.dao.fetch(_id=_id, public_id=public_id, fields=fields)
+        # TODO: Unit test get
+        return cls.get_dao().fetch(
+            _id=_id, public_id=public_id, fields=fields)
 
     @classmethod
     def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
-        return cls.dao.fetch(_ids=_ids, public_ids=public_ids, fields=fields)
+        # TODO: Unit test get_many
+        return cls.get_dao().fetch(
+            _ids=_ids, public_ids=public_ids, fields=fields)
+
+    @classmethod
+    def delete_many(cls, bizobjs):
+        # TODO: Unit test delete_many
+        cls.get_dao().delete_many([obj._id for obj in bizobjs])
 
     @classmethod
     def get_dao(cls):
-        return cls._dao_manager.get_dao_for_bizobj(cls)
+        return cls._dao_manager.get_dao(cls)
 
     @property
     def data(self):
@@ -492,6 +501,7 @@ class BizObject(
                 _id = self.dao.save(self._id, data_to_save)
             else:
                 _id = self.dao.create(data_to_save)
+            assert _id is not None
             self._id = _id
             if fetch:
                 self.update(self.dao.fetch(_id=_id))

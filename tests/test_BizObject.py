@@ -154,10 +154,10 @@ def test_BizObject_save(Parent, Child):
     new_id = 1
 
     Parent._dao_manager = mock.MagicMock()
-    Parent._dao_manager.get_dao_for_bizobj.return_value = Parent.__dao__()
+    Parent._dao_manager.get_dao.return_value = Parent.__dao__()
 
     Child._dao_manager = mock.MagicMock()
-    Child._dao_manager.get_dao_for_bizobj.return_value = Child.__dao__()
+    Child._dao_manager.get_dao.return_value = Child.__dao__()
 
     bizobj.my_str = 'x'
     assert 'my_str' in bizobj.dirty
@@ -184,7 +184,7 @@ def test_BizObject_save_and_fetch(Parent, Child):
     mock_dao.fetch.return_value = {'my_str': new_my_str}
 
     bizobj._dao_manager = mock.MagicMock()
-    bizobj._dao_manager.get_dao_for_bizobj.return_value = mock_dao
+    bizobj._dao_manager.get_dao.return_value = mock_dao
 
     bizobj.my_str = new_my_str
     assert 'my_str' in bizobj.dirty
@@ -203,7 +203,7 @@ def test_BizObject_save_nested(Parent, Child):
     mock_dao.fetch.return_value = {}
 
     BizObject._dao_manager = mock.MagicMock()
-    BizObject._dao_manager.get_dao_for_bizobj.return_value = mock_dao
+    BizObject._dao_manager.get_dao.return_value = mock_dao
 
     bizobj = Parent(my_child=Child())
     bizobj.my_child.my_str = 'x'
@@ -221,7 +221,7 @@ def test_BizObject_save_nested_through_parent(Parent, Child):
         return mock_dao
 
     BizObject._dao_manager = mock.MagicMock()
-    BizObject._dao_manager.get_dao_for_bizobj.return_value = mock_dao()
+    BizObject._dao_manager.get_dao.return_value = mock_dao()
 
     bizobj = Parent(my_child=Child())
     bizobj.my_child.my_str = 'x'
