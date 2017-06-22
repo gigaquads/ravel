@@ -348,7 +348,7 @@ class AbstractSchema(object):
                 if not field.allow_none:
                     result.errors[k] = 'must not be null'
                     continue
-                elif op == OP_DUMP and field.dump_to:
+                elif op == OP_DUMP and field.dump_to and (not field.load_only):
                     result.data[field.dump_to] = None
                 elif op == OP_LOAD:
                     result.data[k] = None
@@ -358,8 +358,13 @@ class AbstractSchema(object):
                 field_result = getattr(field, op)(v)
                 if field_result.error:
                     result.errors[k] = field_result.error
-                elif op == OP_DUMP and field.dump_to:
-                    result.data[field.dump_to] = field_result.value
+                elif op == OP_DUMP:
+                    if field.load_only:
+                        continue
+                    if field.dump_to:
+                        result.data[field.dump_to] = field_result.value
+                    else:
+                        result.data[field.name] = field_result.value
                 else:
                     result.data[field.name] = field_result.value
 

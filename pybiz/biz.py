@@ -58,8 +58,6 @@ class BizObjectMeta(ABCMeta):
         schema_class = cls.build_schema_class(name)
         cls.build_all_properties(schema_class, relationships)
         cls.register_JsonPatch_hooks(bases)
-        if name != 'BizObject':
-            cls.get_dao()  # eagerly import Dao class
 
     def build_schema_class(cls, name):
         """
@@ -497,12 +495,13 @@ class BizObject(
 
         # persist and refresh data
         if data_to_save:
+            updated_data = None
             if self._id is not None:
-                _id = self.dao.save(self._id, data_to_save)
+                updated_data = self.dao.save(self._id, data_to_save)
             else:
-                _id = self.dao.create(data_to_save)
-            assert _id is not None
-            self._id = _id
+                updated_data = self.dao.create(data_to_save)
+            if updated_data:
+                self.update(updated_data)
             if fetch:
                 self.update(self.dao.fetch(_id=_id))
             self.clear_dirty()

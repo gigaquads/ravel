@@ -1,4 +1,13 @@
+import os
+import inspect
+import importlib
+
+import yaml
+import venusian
+
 from collections import defaultdict
+
+from pybiz.dao import DaoManager
 
 from .const import (
     HTTP_GET,
@@ -41,6 +50,21 @@ class ApiRegistry(object):
         handler_kwargs = handler_kwargs or dict()
         return handler(*handler_args, **handler_kwargs)
 
+    def process_manifest(self, manifest_filepath=None):
+        """
+        Bootstrap the data, business, and service layers, wiring them up,
+        according to the settings contained in a service manifest file.
+        """
+        # get manifest file path from environ var. The name of the var is
+        # dynamic. if the service package is called my_service, then the
+        # expected var name will be MY_SERVICE_MANIFEST
+        if manifest_filepath is None:
+            root_pkg_name = self.__class__.__module__.split('.')[0].upper()
+            manifest_filepath = os.environ['{}_MANIFEST'.format(root_pkg_name)]
+
+        bootstrapr = ApiBootstrapper(manifest_filepath)
+        bootstrapr.bootstrap()
+
     def validate_request(self, request, schema):
         pass
 
@@ -49,6 +73,51 @@ class ApiRegistry(object):
 
     def validate_response(self, response, result, schema):
         pass
+
+
+class ApiBootstrapper(object):
+
+    def __init__(self, manifest_filepath):
+        self.manifest = {}
+        with open(manifest_filepath) as manifest_file:
+            self.manifest = yaml.load(manifest_file)
+
+    def bootstrap(self):
+        self._bootstrap_data_access_layer()
+        self._bootstrap_endpoints()
+
+    def _bootstrap_data_access_layer(self):
+        """
+        Associate each BizObject class with a corresponding Dao class.
+        """
+        manager = DaoManager.get_instance()
+        for item in self.manifest.get('data_access_layer', []):
+            manager.register(
+                self._import_object(item['business_object']),
+                self._import_object(item['dao']))
+
+    def _bootstrap_endpoints(self):
+        """
+        Use venusian simply to scan the endpoint packages/modules, causing the
+        endpoint callables to register themselves with the Api instance.
+        """
+        scanner = venusian.Scanner()
+        service_layer = self.manifest.get('service_layer')
+        if service_layer:
+            endpoint_module_paths = service_layer.get('endpoints')
+            for path in endpoint_module_paths:
+                obj = importlib.import_module(path)
+                scanner.scan(obj)
+
+    @staticmethod
+    def _import_object(path_str):
+        """
+        Import an object from a module, given a dotted path to said object.
+        """
+        path = path_str.split('.')
+        module_path, obj_name = '.'.join(path[:-1]), path[-1]
+        module = importlib.import_module(module_path)
+        return getattr(module, obj_name)
 
 
 class ApiRegistryDecorator(object):
