@@ -122,6 +122,27 @@ class List(Field):
         return self.load(data)
 
 
+class Regexp(Field):
+
+    def __init__(self, pattern, re_flags=None, *args, **kwargs):
+        super(Regexp, self).__init__(*args, **kwargs)
+        self.pattern = pattern
+        self.flags = flags or ()
+        self.regexp = re.compile(self.pattern, *self.flags)
+
+    def load(self, value):
+        if not isinstance(value, str):
+            return FieldResult(error='expected a string')
+        if not self.regexp.match(value):
+            return FieldResult(error='illegal string format')
+
+        return FieldResult(value=value)
+
+    def dump(self, data):
+        return self.load(data)
+
+
+
 class Str(Field):
 
     def load(self, value):
