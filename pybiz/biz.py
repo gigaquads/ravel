@@ -287,13 +287,6 @@ class BizObject(
         """
 
     @classmethod
-    @abstractmethod
-    def __dao__(cls) -> str:
-        """
-        Return a dotted path to the DAO class, like 'path.to.MyDao'.
-        """
-
-    @classmethod
     def get(cls, _id=None, public_id=None, fields: dict = None):
         # TODO: Unit test get
         return cls.get_dao().fetch(

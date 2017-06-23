@@ -5,9 +5,13 @@ import importlib
 import yaml
 import venusian
 
+import pybiz.schema as fields
+
 from collections import defaultdict
 
 from pybiz.dao import DaoManager
+from pybiz.schema import Schema
+from pybiz.manifest import Manifest
 
 from .const import (
     HTTP_GET,
@@ -17,32 +21,32 @@ from .const import (
     HTTP_DELETE,
     )
 
-# TODO: Figure out how to associate db connections with dao classes
 
 class ApiRegistry(object):
 
-    def __init__(self):
+    def __init__(self, manifest: str=None):
         self.handlers = defaultdict(dict)
+        self.manifest = Manifest(self, filepath=manifest)
 
-    def get(self, path, schemas=None, hook=None):
+    def get(self, path, schemas=None, hook=None, unpack=None):
         return ApiRegistryDecorator(self, HTTP_GET, path,
-            schemas=schemas, hook=hook)
+            schemas=schemas, hook=hook, unpack=unpack)
 
-    def post(self, path, schemas=None, hook=None):
+    def post(self, path, schemas=None, hook=None, unpack=None):
         return ApiRegistryDecorator(self, HTTP_POST, path,
-            schemas=schemas, hook=hook)
+            schemas=schemas, hook=hook, unpack=unpack)
 
-    def put(self, path, schemas=None, hook=None):
+    def put(self, path, schemas=None, hook=None, unpack=None):
         return ApiRegistryDecorator(self, HTTP_PUT, path,
-            schemas=schemas, hook=hook)
+            schemas=schemas, hook=hook, unpack=unpack)
 
-    def patch(self, path, schemas=None, hook=None):
+    def patch(self, path, schemas=None, hook=None, unpack=None):
         return ApiRegistryDecorator(self, HTTP_PATCH, path,
-            schemas=schemas, hook=hook)
+            schemas=schemas, hook=hook, unpack=unpack)
 
-    def delete(self, path, schemas=None, hook=None):
+    def delete(self, path, schemas=None, hook=None, unpack=None):
         return ApiRegistryDecorator(self, HTTP_DELETE, path,
-            schemas=schemas, hook=hook)
+            schemas=schemas, hook=hook, unpack=unpack)
 
     def route(self, http_method, path, handler_args=None, handler_kwargs=None):
         handler = self.handlers[path.lower()][http_method.lower()]
@@ -50,20 +54,12 @@ class ApiRegistry(object):
         handler_kwargs = handler_kwargs or dict()
         return handler(*handler_args, **handler_kwargs)
 
-    def process_manifest(self, manifest_filepath=None):
+    def bootstrap(self, filepath=None):
         """
         Bootstrap the data, business, and service layers, wiring them up,
         according to the settings contained in a service manifest file.
         """
-        # get manifest file path from environ var. The name of the var is
-        # dynamic. if the service package is called my_service, then the
-        # expected var name will be MY_SERVICE_MANIFEST
-        if manifest_filepath is None:
-            root_pkg_name = self.__class__.__module__.split('.')[0].upper()
-            manifest_filepath = os.environ['{}_MANIFEST'.format(root_pkg_name)]
-
-        bootstrapr = ApiBootstrapper(manifest_filepath)
-        bootstrapr.bootstrap()
+        self.manifest.process()
 
     def validate_request(self, request, schema):
         pass
@@ -75,51 +71,6 @@ class ApiRegistry(object):
         pass
 
 
-class ApiBootstrapper(object):
-
-    def __init__(self, manifest_filepath):
-        self.manifest = {}
-        with open(manifest_filepath) as manifest_file:
-            self.manifest = yaml.load(manifest_file)
-
-    def bootstrap(self):
-        self._bootstrap_data_access_layer()
-        self._bootstrap_endpoints()
-
-    def _bootstrap_data_access_layer(self):
-        """
-        Associate each BizObject class with a corresponding Dao class.
-        """
-        manager = DaoManager.get_instance()
-        for item in self.manifest.get('data_access_layer', []):
-            manager.register(
-                self._import_object(item['business_object']),
-                self._import_object(item['dao']))
-
-    def _bootstrap_endpoints(self):
-        """
-        Use venusian simply to scan the endpoint packages/modules, causing the
-        endpoint callables to register themselves with the Api instance.
-        """
-        scanner = venusian.Scanner()
-        service_layer = self.manifest.get('service_layer')
-        if service_layer:
-            endpoint_module_paths = service_layer.get('endpoints')
-            for path in endpoint_module_paths:
-                obj = importlib.import_module(path)
-                scanner.scan(obj)
-
-    @staticmethod
-    def _import_object(path_str):
-        """
-        Import an object from a module, given a dotted path to said object.
-        """
-        path = path_str.split('.')
-        module_path, obj_name = '.'.join(path[:-1]), path[-1]
-        module = importlib.import_module(module_path)
-        return getattr(module, obj_name)
-
-
 class ApiRegistryDecorator(object):
 
     def __init__(self,
@@ -127,13 +78,16 @@ class ApiRegistryDecorator(object):
             http_method: str,
             path: str,
             schemas: dict = None,
-            hook=None):
+            hook=None,
+            unpack=None,
+            ):
 
         self.registry = registry
         self.http_method = http_method.lower()
         self.path = path.lower()
         self.schemas = schemas or {}
         self.hook = hook
+        self.unpack = unpack
 
     def __call__(self, func):
         handler = ApiHandler(func, self)
@@ -165,6 +119,14 @@ class ApiHandler(object):
         params_schema = self.decorator.schemas.get('params')
         if params_schema is not None:
             registry.validate_params(request, params_schema)
+
+        if self.decorator.unpack:
+            # call the unpack to replace normal args to handler (namely request,
+            # response, ...) with args and kwargs as if the handler is an RPC
+            # method.
+            args_kwargs = self.decorator.unpack(request)
+            if args_kwargs:
+                args, kwargs = args_kwargs
 
         result = self.target(*args, **kwargs)
 

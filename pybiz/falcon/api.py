@@ -48,19 +48,31 @@ class Api(ApiRegistry):
         return self._falcon_api(environ, start_response)
 
     def get(self, path, schemas=None):
-        return super(Api, self).get(path, schemas=schemas, hook=self.hook)
+        return super(Api, self).get(
+                path, schemas=schemas, hook=self.hook, unpack=self.unpack)
 
     def post(self, path, schemas=None):
-        return super(Api, self).post(path, schemas=schemas, hook=self.hook)
+        return super(Api, self).post(
+                path, schemas=schemas, hook=self.hook, unpack=self.unpack)
 
     def patch(self, path, schemas=None):
-        return super(Api, self).patch(path, schemas=schemas, hook=self.hook)
+        return super(Api, self).patch(
+                path, schemas=schemas, hook=self.hook, unpack=self.unpack)
 
     def put(self, path, schemas=None):
-        return super(Api, self).put(path, schemas=schemas, hook=self.hook)
+        return super(Api, self).put(
+                path, schemas=schemas, hook=self.hook, unpack=self.unpack)
 
     def delete(self, path, schemas=None):
-        return super(Api, self).delete(path, schemas=schemas, hook=self.hook)
+        return super(Api, self).delete(
+                path, schemas=schemas, hook=self.hook, unpack=self.unpack)
+
+    def unpack(self, request):
+        """
+        Unpack the request data into args and kwargs, returning them in a tuple:
+        (args, kwargs).
+        """
+        return None
 
     def hook(self, handler):
         """
