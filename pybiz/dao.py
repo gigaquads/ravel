@@ -9,15 +9,15 @@ class DAOError(Exception):
 class Dao(object, metaclass=ABCMeta):
 
     @abstractmethod
-    def exists(_id=None, public_id=None):
+    def exists(self, _id=None, public_id=None):
         pass
 
     @abstractmethod
-    def fetch(_id=None, public_id=None, fields: dict = None):
+    def fetch(self, _id=None, public_id=None, fields: dict = None):
         pass
 
     @abstractmethod
-    def fetch_many(_ids=None, public_ids=None, fields: dict = None):
+    def fetch_many(self, _ids=None, public_ids=None, fields: dict = None):
         pass
 
     @abstractmethod
