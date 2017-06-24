@@ -8,7 +8,7 @@ from pybiz.schema import Schema
 
 # TODO: List dump ok/error
 # TODO: Enum dump, load ok/error
-# TODO: SubObject dump, load ok/error
+# TODO: Object dump, load ok/error
 
 
 @pytest.mark.parametrize(

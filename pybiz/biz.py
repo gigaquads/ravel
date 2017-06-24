@@ -2,7 +2,7 @@
 Relationship Load/Dump Mechanics:
     Load:
         - If any relationship name matches a schema field name
-          of type <List> or <SubObject>, try to load the raw data
+          of type <List> or <Object>, try to load the raw data
           into relationship data.
     Dump:
         - Simply dump the related objects into the data dict
@@ -498,3 +498,5 @@ class BizObject(
             if fetch:
                 self.update(self.dao.fetch(_id=_id))
             self.clear_dirty()
+
+        return self

@@ -4,7 +4,7 @@ import pytest
 import mock
 
 from pybiz.biz import BizObject, Relationship
-from pybiz.schema import Schema, Int, Str, SubObject
+from pybiz.schema import Schema, Int, Str, Object
 
 
 @pytest.fixture(scope='module')

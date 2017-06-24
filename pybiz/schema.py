@@ -71,10 +71,10 @@ class Anything(Field):
         return FieldResult(value=data)
 
 
-class SubObject(Field):
+class Object(Field):
 
     def __init__(self, nested, many=False, *args, **kwargs):
-        super(SubObject, self).__init__(*args, **kwargs)
+        super(Object, self).__init__(*args, **kwargs)
         self.nested = nested
         self.many = many
 
@@ -442,7 +442,7 @@ if __name__ == '__main__':
 
         created_at = DateTime()
         user_id = Int(load_from='id', dump_to='public_id')
-        name = SubObject(NameSchema())
+        name = Object(NameSchema())
         age = Int()
         rating = Float()
         sex = Enum(Str(), ('m', 'f', 'o'), required=True)
