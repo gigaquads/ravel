@@ -28,6 +28,7 @@ class Field(object, metaclass=ABCMeta):
             required=False,
             load_required=False,
             dump_required=False,
+            default=None,
             ):
         """
         Kwargs:
@@ -46,6 +47,7 @@ class Field(object, metaclass=ABCMeta):
         self.required = required
         self.dump_required = dump_required
         self.load_required = load_required
+        self.default = default
         self.name = None
 
     def __repr__(self):
@@ -244,6 +246,7 @@ class Int(Field):
 class Float(Field):
 
     def load(self, value):
+        value = value or self.default
         if isinstance(value, float):
             return FieldResult(value=value)
         if isinstance(value, int):

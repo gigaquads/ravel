@@ -490,6 +490,7 @@ class BizObject(
         if data_to_save:
             updated_data = None
             if self._id is not None:
+                # TODO: rename save to "update" and save to "create"
                 updated_data = self.dao.save(self._id, data_to_save)
             else:
                 updated_data = self.dao.create(data_to_save)
