@@ -75,23 +75,23 @@ class Anything(Field):
 
 class Object(Field):
 
-    def __init__(self, nested, many=False, *args, **kwargs):
+    def __init__(self, nested, *args, **kwargs):
         super(Object, self).__init__(*args, **kwargs)
         self.nested = nested
-        self.many = many
 
     def load(self, value):
-        if isinstance(self.nested, Field):
-            return self.nested.load(x)
+        schema_result = self.nested.load(value)
+        if schema_result.errors:
+            return FieldResult(error=schema_result.errors)
         else:
-            schema_result = self.nested.load(value)
-            if schema_result.errors:
-                return FieldResult(error=schema_result.errors)
-            else:
-                return FieldResult(value=self.nested.load(value).data)
+            return FieldResult(value=self.nested.load(value).data)
 
-    def dump(self, data):
-        return self.load(data)
+    def dump(self, value):
+        schema_result = self.nested.dump(value)
+        if schema_result.errors:
+            return FieldResult(error=schema_result.errors)
+        else:
+            return FieldResult(value=self.nested.dump(value).data)
 
 
 class List(Field):
@@ -246,7 +246,7 @@ class Int(Field):
 class Float(Field):
 
     def load(self, value):
-        value = value or self.default
+        value = value if value is not None else self.default
         if isinstance(value, float):
             return FieldResult(value=value)
         if isinstance(value, int):
@@ -259,7 +259,6 @@ class Float(Field):
 
     def dump(self, data):
         return self.load(data)
-
 
 class DateTime(Field):
 
@@ -322,11 +321,10 @@ class SchemaMeta(type):
                 if v.required:
                     cls.required_fields[OP_DUMP][k] = v
                     cls.required_fields[OP_LOAD][k] = v
-                else:
-                    if v.dump_required:
-                        cls.required_fields[OP_DUMP][k] = v
-                    if v.load_required:
-                        cls.required_fields[OP_LOAD][k] = v
+                elif v.dump_required:
+                    cls.required_fields[OP_DUMP][k] = v
+                elif v.load_required:
+                    cls.required_fields[OP_LOAD][k] = v
 
 
 class AbstractSchema(object):
@@ -372,10 +370,9 @@ class AbstractSchema(object):
                 if not field.allow_none:
                     result.errors[k] = 'must not be null'
                     continue
-                elif op == OP_DUMP and field.dump_to and (not field.load_only):
-                    result.data[field.dump_to] = None
-                elif op == OP_LOAD:
-                    result.data[k] = None
+                elif op == OP_DUMP:
+                    if not field.load_only:
+                        result.data[field.dump_to or k] = None
                 else:
                     result.data[k] = v
             else:
@@ -392,10 +389,15 @@ class AbstractSchema(object):
                 else:
                     result.data[field.name] = field_result.value
 
-        for k in self.required_fields[op]:
-            if k not in result.data:
-                if k not in result.errors:
-                    result.errors[k] = 'required field'
+        for k, field in self.required_fields[op].items():
+            if op == OP_DUMP:
+                k_to = field.dump_to or k
+                if k_to not in result.data and (not field.load_only):
+                    result.errors[k] = 'required by dump'
+            elif op == OP_LOAD:
+                k_from = field.load_from or k
+                if k not in result.data:
+                    result.errors[k_from] = 'required by load'
 
         if strict and result.errors:
             result.raise_validation_error()
