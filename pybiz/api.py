@@ -124,7 +124,7 @@ class ApiHandler(object):
             # call the unpack to replace normal args to handler (namely request,
             # response, ...) with args and kwargs as if the handler is an RPC
             # method.
-            args_kwargs = self.decorator.unpack(request)
+            args_kwargs = self.decorator.unpack(request, **kwargs)
             if args_kwargs:
                 args, kwargs = args_kwargs
 

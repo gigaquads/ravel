@@ -390,6 +390,8 @@ class AbstractSchema(object):
                     result.data[field.name] = field_result.value
 
         for k, field in self.required_fields[op].items():
+            if k in result.errors:
+                continue
             if op == OP_DUMP:
                 k_to = field.dump_to or k
                 if k_to not in result.data and (not field.load_only):
