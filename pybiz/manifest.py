@@ -73,6 +73,10 @@ class Manifest(object):
             abs_root_dir = os.path.realpath(root_pkg.__file__)
             proj_dir = '/'.join(abs_root_dir.split('/')[:-2])
             filepath = os.path.join(proj_dir, 'manifest.yaml')
+            if not os.path.exists(filepath):
+                filepath = os.path.join(proj_dir, 'manifest.yml')
+
+            # TODO: raise exception if manifest doesn't exist
 
         return filepath
 
