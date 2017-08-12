@@ -16,12 +16,17 @@ class ManifestSchema(Schema):
     Describes the structure expected in manifest.yaml files.
     """
 
-    class DataAccessMappingSchema(Schema):
-        business_object = fields.Str(required=True)
-        data_access_object = fields.Str(required=True)
+    class PathsSchema(Schema):
+        api = fields.List(fields.Str(), required=True)
+        biz = fields.List(fields.Str(), required=True)
+        dao = fields.List(fields.Str(), required=True)
 
-    api_endpoints = fields.List(fields.Str(), required=True)
-    data_access_layer = fields.List(DataAccessMappingSchema(), required=True)
+    class BindingSchema(Schema):
+        biz = fields.Str(required=True)
+        dao = fields.Str(required=True)
+
+    paths = fields.Object(PathsSchema(), required=True)
+    bindings = fields.List(BindingSchema(), required=True)
 
 
 class Manifest(object):
@@ -41,14 +46,17 @@ class Manifest(object):
         self.api = api
         self.filepath = self._get_manifest_filepath(api, filepath)
         self.data = self._load_manifest_file()
+        self.scanner = venusian.Scanner(
+            bizobj_classes={},
+            dao_classes={})
 
     def process(self):
         """
         Interpret the manifest file data, bootstrapping the layers of the
         framework.
         """
-        self._bind_data_access_objects_to_bizobjs()
-        self._scan_endpoint_modules()
+        self._scan()
+        self._bind()
 
     @staticmethod
     def _get_manifest_filepath(api, filepath):
@@ -86,33 +94,24 @@ class Manifest(object):
             manifest = yaml.load(manifest_file)
             return schema.load(manifest, strict=True).data
 
-    def _bind_data_access_objects_to_bizobjs(self):
-        """
-        Associate each BizObject class with a corresponding Dao class.
-        """
-        manager = DaoManager.get_instance()
-        for item in self.data.get('data_access_layer', []):
-            manager.register(
-                self._import_object(item['business_object']),
-                self._import_object(item['data_access_object']))
-
-    def _scan_endpoint_modules(self):
+    def _scan(self):
         """
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Api instance.
         """
-        scanner = venusian.Scanner()
-        endpoint_module_paths = self.data.get('api_endpoints')
-        for path in endpoint_module_paths:
-            obj = importlib.import_module(path)
-            scanner.scan(obj)
+        for category, pkg_paths in self.data['paths'].items():
+            for pkg_path in pkg_paths:
+                pkg = importlib.import_module(pkg_path)
+                categories = (category, ) if category != 'api' else None
+                self.scanner.scan(pkg, categories=categories)
 
-    @staticmethod
-    def _import_object(path_str):
+    def _bind(self):
         """
-        Import an object from a module, given a dotted path to said object.
+        Associate each BizObject class with a corresponding Dao class.
         """
-        path = path_str.split('.')
-        module_path, obj_name = '.'.join(path[:-1]), path[-1]
-        module = importlib.import_module(module_path)
-        return getattr(module, obj_name)
+        manager = DaoManager.get_instance()
+        for binding in self.data.get('bindings', []):
+            biz_class = self.scanner.bizobj_classes[binding['biz']]
+            dao_class = self.scanner.dao_classes[binding['dao']]
+            manager.register(biz_class, dao_class)
+

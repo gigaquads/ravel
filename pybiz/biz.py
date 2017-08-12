@@ -14,6 +14,8 @@ import os
 import copy
 import re
 
+import venusian
+
 from abc import ABCMeta, abstractmethod
 from types import MethodType
 from importlib import import_module
@@ -58,6 +60,11 @@ class BizObjectMeta(ABCMeta):
         schema_class = cls.build_schema_class(name)
         cls.build_all_properties(schema_class, relationships)
         cls.register_JsonPatch_hooks(bases)
+
+        def callback(scanner, name, bizobj_class):
+            scanner.bizobj_classes[name] = bizobj_class
+
+        venusian.attach(cls, callback, category='biz')
 
     def build_schema_class(cls, name):
         """

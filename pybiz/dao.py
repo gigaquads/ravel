@@ -1,3 +1,5 @@
+import venusian
+
 from importlib import import_module
 from abc import ABCMeta, abstractmethod
 
@@ -6,7 +8,18 @@ class DAOError(Exception):
     pass
 
 
-class Dao(object, metaclass=ABCMeta):
+class DaoMeta(ABCMeta):
+
+    def __init__(cls, name, bases, dict_):
+        ABCMeta.__init__(cls, name, bases, dict_)
+
+        def callback(scanner, name, dao_class):
+            scanner.dao_classes[name] = dao_class
+
+        venusian.attach(cls, callback, category='dao')
+
+
+class Dao(object, metaclass=DaoMeta):
 
     @abstractmethod
     def exists(self, _id=None, public_id=None):
