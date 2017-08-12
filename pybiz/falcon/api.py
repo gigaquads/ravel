@@ -23,9 +23,13 @@ class Api(ApiRegistry):
 
         super(Api, self).__init__(*args, **kwargs)
 
+        request_type = self.request_type
+        if request_type is None:
+            request_type = falcon.Request
+
         self._falcon_api = falcon.API(
             middleware=self.middleware,
-            request_type=self.request_type,
+            request_type=request_type,
             )
 
         self._scanner = venusian.Scanner()
