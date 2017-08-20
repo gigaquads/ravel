@@ -1,12 +1,12 @@
 import os
 import inspect
 import importlib
-
 import yaml
 import venusian
 
 import pybiz.schema as fields
 
+from abc import ABCMeta, abstractmethod
 from collections import defaultdict
 
 from pybiz.dao import DaoManager
@@ -22,29 +22,59 @@ from .const import (
     )
 
 
-class ApiRegistry(object):
+class ApiRegistry(object, metaclass=ABCMeta):
 
-    def __init__(self, manifest: str=None):
+    def __init__(self, hook=None, unpack=None, manifest_filepath: str=None):
         self.handlers = defaultdict(dict)
-        self.manifest = Manifest(self, filepath=manifest)
+        self.hook = hook
+        self.unpack = unpack
+        self.manifest = None
+        if manifest_filepath:
+            self.manifest = Manifest(self, filepath=manifest_filepath)
+
+    @abstractmethod
+    def get_request(self, *args, **kwargs):
+        """
+        This method defines how the request object is extracted from the args or
+        kwargs received by registered handlers (before unpacking) from your web
+        framework. Override this method in a subclass.
+        """
+
+    @abstractmethod
+    def get_response(self, *args, **kwargs):
+        """
+        This method defines how the response object is extracted from the args or
+        kwargs received by registered handlers (before unpacking) from your web
+        framework.
+        """
 
     def get(self, path, schemas=None, hook=None, unpack=None):
+        hook = hook or self.hook
+        unpack = unpack or self.unpack
         return ApiRegistryDecorator(self, HTTP_GET, path,
             schemas=schemas, hook=hook, unpack=unpack)
 
     def post(self, path, schemas=None, hook=None, unpack=None):
+        hook = hook or self.hook
+        unpack = unpack or self.unpack
         return ApiRegistryDecorator(self, HTTP_POST, path,
             schemas=schemas, hook=hook, unpack=unpack)
 
     def put(self, path, schemas=None, hook=None, unpack=None):
+        hook = hook or self.hook
+        unpack = unpack or self.unpack
         return ApiRegistryDecorator(self, HTTP_PUT, path,
             schemas=schemas, hook=hook, unpack=unpack)
 
     def patch(self, path, schemas=None, hook=None, unpack=None):
+        hook = hook or self.hook
+        unpack = unpack or self.unpack
         return ApiRegistryDecorator(self, HTTP_PATCH, path,
             schemas=schemas, hook=hook, unpack=unpack)
 
     def delete(self, path, schemas=None, hook=None, unpack=None):
+        hook = hook or self.hook
+        unpack = unpack or self.unpack
         return ApiRegistryDecorator(self, HTTP_DELETE, path,
             schemas=schemas, hook=hook, unpack=unpack)
 
@@ -59,7 +89,8 @@ class ApiRegistry(object):
         Bootstrap the data, business, and service layers, wiring them up,
         according to the settings contained in a service manifest file.
         """
-        self.manifest.process()
+        if self.manifest is not None:
+            self.manifest.process()
 
     def validate_request(self, request, schema):
         pass
@@ -98,8 +129,10 @@ class ApiRegistryDecorator(object):
 
 
 class ApiHandler(object):
+
     def __init__(self, target, decorator):
         self.target = target
+        self.signature = inspect.signature(self.target)
         self.decorator = decorator
 
     def __repr__(self):
@@ -109,8 +142,9 @@ class ApiHandler(object):
                 ]))
 
     def __call__(self, *args, **kwargs):
-        request, response = args[:2]
         registry = self.decorator.registry
+        request = registry.get_request(*args, **kwargs)
+        response = registry.get_response(*args, **kwargs)
 
         request_schema = self.decorator.schemas.get('request')
         if request_schema is not None:
@@ -124,15 +158,21 @@ class ApiHandler(object):
             # call the unpack to replace normal args to handler (namely request,
             # response, ...) with args and kwargs as if the handler is an RPC
             # method.
-            args_kwargs = self.decorator.unpack(request, **kwargs)
-            if args_kwargs:
-                args, kwargs = args_kwargs
-
-        result = self.target(*args, **kwargs)
+            args_dict = self.decorator.unpack(self.signature, *args, **kwargs)
+            result = self.target(**args_dict)
+        else:
+            result = self.target(*args, **kwargs)
 
         response_schema = self.decorator.schemas.get('response')
         if response_schema is not None:
             registry.validate_response(response, result, response_schema)
 
-        response.body = result
         return result
+
+    @property
+    def http_method(self):
+        return self.decorator.http_method
+
+    @property
+    def path(self):
+        return self.decorator.path

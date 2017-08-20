@@ -22,7 +22,7 @@ from types import MethodType
 from importlib import import_module
 
 from .patch import JsonPatchMixin
-from .dao import DaoManager
+from .dao import DaoManager, Dao
 from .dirty import DirtyDict, DirtyInterface
 from .util import is_bizobj
 from .schema import AbstractSchema, Schema, Field, Anything
@@ -79,11 +79,17 @@ class BizObjectMeta(ABCMeta):
         schema_class = cls.build_schema_class(name)
         cls.build_all_properties(schema_class, relationships)
         cls.register_JsonPatch_hooks(bases)
+        cls.register_dao()
 
         def callback(scanner, name, bizobj_class):
             scanner.bizobj_classes[name] = bizobj_class
 
         venusian.attach(cls, callback, category='biz')
+
+    def register_dao(cls):
+        dao_class = cls.__dao__()
+        if dao_class:
+            cls._dao_manager.register(cls, dao_class)
 
     def build_schema_class(cls, name):
         """
@@ -308,12 +314,18 @@ class BizObject(
                 dirty_flag=dirty_flag)
 
     @classmethod
-    def __schema__(cls) -> str:
+    def __schema__(cls) -> (str, Schema):
         """
         Return a dotted path to the Schema class, like 'path.to.MySchema'. This
         is only used if a Schema subclass is returned. If None is returned, this
         is ignored.
         """
+
+    @classmethod
+    def __dao__(cls) -> (str, Dao):
+        """
+        """
+
     @classmethod
     def set_id_generator(cls, id_generator:IdGenerator):
         cls._id_generator = id_generator

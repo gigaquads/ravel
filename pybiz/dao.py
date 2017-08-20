@@ -26,15 +26,15 @@ class Dao(object, metaclass=DaoMeta):
         pass
 
     @abstractmethod
-    def fetch(self, _id=None, public_id=None, fields: dict = None) -> dict:
+    def fetch(self, _id=None, public_id=None, fields: dict=None) -> dict:
         pass
 
     @abstractmethod
-    def fetch_many(self, _ids=None, public_ids=None, fields: dict = None):
+    def fetch_many(self, _ids: list=None, public_ids:list=None, fields: dict=None) -> list:
         pass
 
     @abstractmethod
-    def create(self, _id, data) -> dict:
+    def create(self, _id, data: dict) -> dict:
         pass
 
     @abstractmethod
@@ -42,11 +42,15 @@ class Dao(object, metaclass=DaoMeta):
         pass
 
     @abstractmethod
-    def delete(self, _id):
+    def update_many(self, _ids: list, data: list) -> list:
         pass
 
     @abstractmethod
-    def delete_many(self, _ids):
+    def delete(self, _id) -> dict:
+        pass
+
+    @abstractmethod
+    def delete_many(self, _ids: list) -> list:
         pass
 
 
