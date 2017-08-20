@@ -10,13 +10,13 @@ from pybiz.schema import Schema, Int, Str, Object
 @pytest.fixture(scope='module')
 def Child():
 
+    _id_generator = mock.MagicMock()
+
     class Child(BizObject):
 
         @classmethod
         def __dao__(cls):
             dao = mock.MagicMock()
-            dao.save.return_value = 1
-            dao.create.return_value = 1
             dao.fetch.return_value = {}
             return dao
 
@@ -28,13 +28,13 @@ def Child():
 @pytest.fixture(scope='module')
 def SuperParent(Child):
 
+    _id_generator = mock.MagicMock()
+
     class SuperParent(BizObject):
 
         @classmethod
         def __dao__(cls):
             dao = mock.MagicMock()
-            dao.save.return_value = 1
-            dao.create.return_value = 1
             dao.fetch.return_value = {}
             return dao
 
@@ -47,14 +47,14 @@ def SuperParent(Child):
 @pytest.fixture(scope='module')
 def Parent(SuperParent, Child):
 
+    _id_generator = mock.MagicMock()
+    _id_generator.next_id.return_value = 1
+
     class Parent(SuperParent):
 
         @classmethod
         def __dao__(cls):
             dao = mock.MagicMock()
-            dao.save.return_value = 1
-            dao.create.return_value = 1
-            dao.fetch.return_value = {}
             return dao
 
         my_str = Str()
@@ -154,10 +154,22 @@ def test_BizObject_save(Parent, Child):
     new_id = 1
 
     Parent._dao_manager = mock.MagicMock()
-    Parent._dao_manager.get_dao.return_value = Parent.__dao__()
+    Parent._dao_manager.get_dao.return_value = parent_dao = Parent.__dao__()
 
     Child._dao_manager = mock.MagicMock()
-    Child._dao_manager.get_dao.return_value = Child.__dao__()
+    Child._dao_manager.get_dao.return_value = child_dao = Child.__dao__()
+
+    Parent._id_generator = mock.MagicMock()
+    Parent._id_generator.next_id.return_value = 1
+    Child._id_generator = mock.MagicMock()
+    Child._id_generator.next_id.return_value = 2
+
+    child_dao.create.return_value = {'_id': 2, 'my_str': 'z'}
+    parent_dao.create.return_value = {
+        '_id': 1,
+        'my_str': 'x',
+        'my_child': child_dao.create.return_value,
+        }
 
     bizobj.my_str = 'x'
     assert 'my_str' in bizobj.dirty
@@ -165,9 +177,9 @@ def test_BizObject_save(Parent, Child):
     bizobj.save()
 
     bizobj.dao.create.assert_called_once_with(
-        {'my_str': 'x', 'my_child': {'my_str': 'z', '_id': 1}})
+        1, {'my_str': 'x', 'my_child': {'my_str': 'z', '_id': 2}})
 
-    bizobj.my_child.dao.create.assert_called_once_with({'my_str': 'z'})
+    bizobj.my_child.dao.create.assert_called_once_with(2, {'my_str': 'z'})
 
     assert bizobj._id == new_id
     assert bizobj.my_str == 'x'
@@ -179,59 +191,97 @@ def test_BizObject_save_and_fetch(Parent, Child):
     new_id = 1
     new_my_str = 'x_saved'
 
-    mock_dao = mock.MagicMock()
-    mock_dao.save.return_value = new_id
-    mock_dao.fetch.return_value = {'my_str': new_my_str}
+    Parent._id_generator = mock.MagicMock()
+    Parent._id_generator.next_id.return_value = 1
 
-    bizobj._dao_manager = mock.MagicMock()
-    bizobj._dao_manager.get_dao.return_value = mock_dao
+    Parent._dao_manager = mock.MagicMock()
+    Parent._dao_manager.get_dao.return_value = parent_dao = Parent.__dao__()
+
+    parent_dao.update.return_value = {
+        '_id': new_id,
+        'my_str': new_my_str
+        }
+    parent_dao.fetch.return_value = {
+        '_id': new_id,
+        'my_str': new_my_str
+        }
+
+    parent_dao.create.return_value = {'_id': 1, 'my_str': new_my_str}
 
     bizobj.my_str = new_my_str
+
     assert 'my_str' in bizobj.dirty
 
     bizobj.save(fetch=True)
-    bizobj.dao.save.called_once_with({'my_str': new_my_str}, _id=None)
+    bizobj.dao.create.assert_called_once_with(new_id, {'my_str': new_my_str})
+
     assert bizobj._id == new_id
     assert bizobj.my_str == new_my_str
     assert not bizobj.dirty
 
 
 def test_BizObject_save_nested(Parent, Child):
-    new_id = 1
     mock_dao = mock.MagicMock()
-    mock_dao.save.return_value = new_id
+    mock_dao.update.return_value = {'my_child': {'my_str': 'x', '_id': 2}}
     mock_dao.fetch.return_value = {}
 
-    BizObject._dao_manager = mock.MagicMock()
-    BizObject._dao_manager.get_dao.return_value = mock_dao
+    Parent._dao_manager = mock.MagicMock()
+    Parent._dao_manager.get_dao.return_value = mock_dao
+    Parent._id_generator = mock.MagicMock()
+    Parent._id_generator.next_id.return_value = 1
+
+    Parent._dao_manager = mock.MagicMock()
+    Parent._dao_manager.get_dao.return_value = mock_dao
+
+    mock_child_dao = mock.MagicMock()
+    mock_child_dao.update.return_value = 1
+    mock_child_dao.update.return_value = {'my_str': 'x', '_id': 2}
+    mock_child_dao.fetch.return_value = {}
+
+    Child._id_generator = mock.MagicMock()
+    Child._id_generator.next_id.return_value = 2
+    Child._dao_manager = mock.MagicMock()
+    Child._dao_manager.get_dao.return_value = mock_child_dao
 
     bizobj = Parent(my_child=Child())
     bizobj.my_child.my_str = 'x'
     bizobj.my_child.save()
 
-    bizobj.my_child.dao.create.assert_any_call({'my_str': 'x'})
+    bizobj.my_child.dao.create.assert_any_call(2, {'my_str': 'x'})
 
 
 def test_BizObject_save_nested_through_parent(Parent, Child):
-    new_id = 1
     def mock_dao():
         mock_dao = mock.MagicMock()
-        mock_dao.save.return_value = new_id
+        mock_dao.update.return_value = {
+            '_id': 1, 'my_child': {'my_str': 'x', '_id': 2}
+            }
         mock_dao.fetch.return_value = {}
         return mock_dao
 
-    BizObject._dao_manager = mock.MagicMock()
-    BizObject._dao_manager.get_dao.return_value = mock_dao()
+    Parent._dao_manager = mock.MagicMock()
+    Parent._dao_manager.get_dao.return_value = mock_dao()
+
+    child_mock_dao = mock.MagicMock()
+    child_mock_dao.update.return_value = {'my_str': 'x', '_id': 2}
+    child_mock_dao.fetch.return_value = {}
+
+    Child._dao_manager = mock.MagicMock()
+    Child._dao_manager.get_dao.return_value = child_mock_dao
+    Child._id_generator = mock.MagicMock()
+    Child._id_generator.next_id.return_value = 2
 
     bizobj = Parent(my_child=Child())
     bizobj.my_child.my_str = 'x'
-    bizobj.save()
+
+    assert bizobj.my_child.dirty
+    assert not bizobj.dirty
+
+    bizobj.my_child.save()
 
     assert not bizobj.my_child.dirty
     assert not bizobj.dirty
 
-    bizobj.my_child.dao.create.assert_any_call({'my_str': 'x'})
-
-    bizobj.dao.create.assert_any_call(
-        {'my_child': {'my_str': 'x', '_id': new_id}})
+    bizobj.my_child.dao.create.assert_any_call(2, {'my_str': 'x'})
+    bizobj.dao.create.assert_not_called()
 

@@ -395,11 +395,11 @@ class AbstractSchema(object):
             if op == OP_DUMP:
                 k_to = field.dump_to or k
                 if k_to not in result.data and (not field.load_only):
-                    result.errors[k] = 'required by dump'
+                    result.errors[k] = 'missing'
             elif op == OP_LOAD:
                 k_from = field.load_from or k
                 if k not in result.data:
-                    result.errors[k_from] = 'required by load'
+                    result.errors[k_from] = 'missing'
 
         if strict and result.errors:
             result.raise_validation_error()

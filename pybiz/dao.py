@@ -22,11 +22,11 @@ class DaoMeta(ABCMeta):
 class Dao(object, metaclass=DaoMeta):
 
     @abstractmethod
-    def exists(self, _id=None, public_id=None):
+    def exists(self, _id=None, public_id=None) -> bool:
         pass
 
     @abstractmethod
-    def fetch(self, _id=None, public_id=None, fields: dict = None):
+    def fetch(self, _id=None, public_id=None, fields: dict = None) -> dict:
         pass
 
     @abstractmethod
@@ -34,12 +34,12 @@ class Dao(object, metaclass=DaoMeta):
         pass
 
     @abstractmethod
-    def create(self, data):
-        pass  # should return a new _id
+    def create(self, _id, data) -> dict:
+        pass
 
     @abstractmethod
-    def save(self, _id, data: dict):
-        pass  # should return the _id
+    def update(self, _id, data: dict) -> dict:
+        pass
 
     @abstractmethod
     def delete(self, _id):

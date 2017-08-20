@@ -12,6 +12,7 @@ Relationship Load/Dump Mechanics:
 
 import os
 import copy
+import uuid
 import re
 
 import venusian
@@ -32,6 +33,24 @@ from .const import (
     PATCH_ANNOTATION,
     IS_BIZOBJ_ANNOTATION,
     )
+
+
+# TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan.
+
+
+class IdGenerator(object, metaclass=ABCMeta):
+
+    @abstractmethod
+    def next_id(self):
+        """
+        Generate and return a new ID.
+        """
+
+
+class UuidGenerator(IdGenerator):
+
+    def next_id(self):
+        return int(uuid.uuid4().hex, 16)
 
 
 class Relationship(object):
@@ -89,14 +108,13 @@ class BizObjectMeta(ABCMeta):
         setattr(new_class, IS_BIZOBJ_ANNOTATION, True)
 
     def build_all_properties(cls, schema_class, relationships):
-        # NOTE: the names of Fields declared in the Schema and Relationships
+        # the names of Fields declared in the Schema and Relationships
         # declared on the BizObject will overwrite any methods or attributes
-        # defined explicitly on the BizObject class. This happens below.
-        #
+        # defined explicitly on the BizObject class. This happens here.
         cls.build_relationship_properties(relationships)
         cls._relationships = relationships
 
-        # use the schema class overrride if defined
+        # use the schema class override if defined
         schema_class_override = cls.__schema__()
         if schema_class_override:
             if isinstance(schema_class_override, str):
@@ -222,12 +240,16 @@ class BizObjectMeta(ABCMeta):
 
 
 class BizObject(
-    DirtyInterface, AbstractSchema, JsonPatchMixin,
-    metaclass=BizObjectMeta):
+        AbstractSchema,
+        JsonPatchMixin,
+        DirtyInterface,
+        metaclass=BizObjectMeta
+        ):
 
     _schema = None  # set by metaclass
     _relationships = {}  # set by metaclass
     _dao_manager = DaoManager.get_instance()
+    _id_generator = UuidGenerator()
 
     def __init__(self, data=None, **kwargs_data):
         DirtyInterface.__init__(self)
@@ -292,22 +314,26 @@ class BizObject(
         is only used if a Schema subclass is returned. If None is returned, this
         is ignored.
         """
+    @classmethod
+    def set_id_generator(cls, id_generator:IdGenerator):
+        cls._id_generator = id_generator
+
+    @classmethod
+    def get_next_id(cls):
+        return cls._id_generator.next_id()
 
     @classmethod
     def get(cls, _id=None, public_id=None, fields: dict = None):
-        # TODO: Unit test get
         return cls.get_dao().fetch(
             _id=_id, public_id=public_id, fields=fields)
 
     @classmethod
     def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
-        # TODO: Unit test get_many
         return cls.get_dao().fetch(
             _ids=_ids, public_ids=public_ids, fields=fields)
 
     @classmethod
     def delete_many(cls, bizobjs):
-        # TODO: Unit test delete_many
         cls.get_dao().delete_many([obj._id for obj in bizobjs])
 
     @classmethod
@@ -471,40 +497,51 @@ class BizObject(
         nested_bizobjs = []
         data_to_save = {}
 
-        # depth-first save nested bizobjs.
+        # Save ditty child BizObjects before saving this BizObject so that the
+        # updated child data can be passed into this object's dao.save/create
+        # method
         for k, v in self.relationships.items():
+            # `k` is the declared name of the relationship
+            # `v` is the relationship declaration itself.
             if not v:
                 continue
+
             rel = self._relationships[k]
+
             if rel.many:
+                # this is a non-scalar relationship
                 dumped_list_item_map = {}
-                # TODO keep track in the rel of which bizobj are dirty
-                # to avoid O(N) scan of list
                 for i, bizobj in enumerate(v):
                     if bizobj.dirty:
                         bizobj.save(fetch=fetch)
                         dumped_list_item_map[i] = bizobj.dump()
+
                 if dumped_list_item_map:
                     data_to_save[k] = dumped_list_item_map
+
             elif v.dirty:
+                # this is a scalar relationship
                 v.save()
                 data_to_save[k] = v.dump()
+                if '_id' in v.data:
+                    data_to_save[k]['_id'] = v.data['_id']
 
         for k in self._data.dirty:
             data_to_save[k] = self[k]
 
-        # persist and refresh data
+        # Persist and refresh data
         if data_to_save:
-            updated_data = None
-            if self._id is not None:
-                # TODO: rename save to "update" and save to "create"
-                updated_data = self.dao.save(self._id, data_to_save)
+            if self._id is None:
+                updated_data = self.dao.create(self.get_next_id(), data_to_save)
             else:
-                updated_data = self.dao.create(data_to_save)
+                updated_data = self.dao.update(self._id, data_to_save)
+
             if updated_data:
                 self.update(updated_data)
+
             if fetch:
-                self.update(self.dao.fetch(_id=_id))
+                self.update(self.dao.fetch(_id=self._id))
+
             self.clear_dirty()
 
         return self

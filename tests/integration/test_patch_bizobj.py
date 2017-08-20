@@ -23,8 +23,8 @@ def Album():
         @classmethod
         def __dao__(cls):
             dao = MagicMock()
-            dao.save.return_value = 1
-            dao.create.return_value = 1
+            dao.update.return_value = {'_id': 1}
+            dao.create.return_value = {'_id': 1}
             dao.fetch.return_value = {'public_id': MOCK_PUBLIC_ID}
             return dao
 
@@ -49,8 +49,8 @@ def Artist(Album):
         @classmethod
         def __dao__(cls):
             dao = MagicMock()
-            dao.save.return_value = 1
-            dao.create.return_value = 1
+            dao.update.return_value = {'_id': 1}
+            dao.create.return_value = {'_id': 1}
             dao.fetch.return_value = {'public_id': MOCK_PUBLIC_ID}
             return dao
 

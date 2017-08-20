@@ -123,7 +123,7 @@ def test_Schema_required(MySchemaRequired):
     schema = MySchemaRequired()
     result = schema.load(input_val)
     assert 'my_str' in result.errors
-    assert result.errors['my_str'] == 'required field'
+    assert result.errors['my_str'] == 'missing'
 
 
 def test_Schema_dump_to(MySchemaDumpTo):
