@@ -1,2 +1,4 @@
-from .service import api
-from .business import Account, User
+from pybiz.examples.frameworks.falcon.service import api
+
+
+api.bootstrap('./manifest.yml')

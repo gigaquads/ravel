@@ -35,6 +35,7 @@ from .const import (
     )
 
 
+# TODO: allow schema to be bound to bizobj via manifest declaration
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan.
 
 
@@ -46,11 +47,20 @@ class IdGenerator(object, metaclass=ABCMeta):
         Generate and return a new ID.
         """
 
+    @abstractmethod
+    def next_public_id(self):
+        """
+        Generate and return a new ID.
+        """
+
 
 class UuidGenerator(IdGenerator):
 
     def next_id(self):
-        return int(uuid.uuid4().hex, 16)
+        return uuid.uuid4().hex
+
+    def next_public_id(self):
+        return uuid.uuid4().hex
 
 
 class Relationship(object):
@@ -335,6 +345,10 @@ class BizObject(
         return cls._id_generator.next_id()
 
     @classmethod
+    def get_next_public_id(cls):
+        return cls._id_generator.next_public_id()
+
+    @classmethod
     def get(cls, _id=None, public_id=None, fields: dict = None):
         return cls.get_dao().fetch(
             _id=_id, public_id=public_id, fields=fields)
@@ -379,7 +393,7 @@ class BizObject(
         self.mark_dirty(dct.keys())
 
     def delete(self):
-        self.dao.delete(self._id)
+        self.dao.delete(_id=self._id, public_id=self.public_id)
 
     def dump(self):
         """
@@ -542,18 +556,29 @@ class BizObject(
             data_to_save[k] = self[k]
 
         # Persist and refresh data
-        if data_to_save:
-            if self._id is None:
-                updated_data = self.dao.create(self.get_next_id(), data_to_save)
-            else:
-                updated_data = self.dao.update(self._id, data_to_save)
+        if self._id is None:
+            self._id = self.get_next_id()
+            if not self.public_id:
+                self.public_id = self.get_next_public_id()
+            updated_data = self.dao.create(
+                    _id=self._id,
+                    public_id=self.public_id,
+                    data=data_to_save)
+        else:
+            updated_data = self.dao.update(
+                    _id=self._id,
+                    public_id=self.public_id,
+                    data=data_to_save)
 
-            if updated_data:
-                self.update(updated_data)
+        if updated_data:
+            self.update(updated_data)
 
-            if fetch:
-                self.update(self.dao.fetch(_id=self._id))
+        if fetch:
+            self.update(
+                self.dao.fetch(
+                    _id=self._id,
+                    public_id=self.public_id
+                ))
 
-            self.clear_dirty()
-
+        self.clear_dirty()
         return self

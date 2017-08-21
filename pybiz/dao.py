@@ -34,23 +34,23 @@ class Dao(object, metaclass=DaoMeta):
         pass
 
     @abstractmethod
-    def create(self, _id, data: dict) -> dict:
+    def create(self, _id=None, public_id=None, data: dict=None) -> dict:
         pass
 
     @abstractmethod
-    def update(self, _id, data: dict) -> dict:
+    def update(self, _id=None, public_id=None, data: dict=None) -> dict:
         pass
 
     @abstractmethod
-    def update_many(self, _ids: list, data: list) -> list:
+    def update_many(self, _ids: list=None, public_ids: list=None, data: list=None) -> list:
         pass
 
     @abstractmethod
-    def delete(self, _id) -> dict:
+    def delete(self, _id=None, public_id=None) -> dict:
         pass
 
     @abstractmethod
-    def delete_many(self, _ids: list) -> list:
+    def delete_many(self, _ids: list=None, public_ids: list=None) -> list:
         pass
 
 

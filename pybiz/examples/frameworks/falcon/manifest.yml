@@ -1,0 +1,6 @@
+package: pybiz.examples.frameworks.falcon
+
+bindings:
+    - biz: User
+      schema: UserSchema
+      dao: UserDao

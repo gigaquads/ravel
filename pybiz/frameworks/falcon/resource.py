@@ -29,8 +29,12 @@ class FalconResourceManager(object):
                 cls._handlers[http_method] = handler
 
             @classmethod
-            def get_handler(cls, http_method):
-                return cls._handlers[http_method]
+            def get_handler(cls, http_method=None, request=None):
+                assert http_method or request
+                if http_method is not None:
+                    return cls._handlers.get(http_method.lower())
+                elif request is not None:
+                    return cls._handlers.get(request.method.lower())
 
             @classmethod
             def is_http_method_supported(cls, http_method):
@@ -44,9 +48,9 @@ class FalconResourceManager(object):
 
             def __repr__(self):
                 default_path = self.url_path
-                return '<{}{}>'.format(
-                        self.__class__.__name__,
-                        '(path='+default_path+')' if default_path else '')
+                path_str = '(path='+default_path+')' if default_path else ''
+                name_str = self.__class__.__name__
+                return '<{}{}>'.format(name_str, path_str)
 
             def __getattr__(self, key):
                 """
@@ -56,21 +60,27 @@ class FalconResourceManager(object):
                 match = RE_HANDLER_METHOD.match(key)
                 if match is not None:
                     http_method = match.groups()[0].lower()
+
                     if not self.is_http_method_supported(http_method):
                         error_msg = 'HTTP {} not supported'.format(
                                 http_method.upper())
+
                         if self.url_path:
                             path = self.url_path
                             error_msg += ' for URL path {}'.format(path)
+
                         raise AttributeError(error_msg)
-                    handler = self.get_handler(http_method)
+
+                    handler = self.get_handler(http_method=http_method)
                     return handler
+
                 raise AttributeError(key)
 
             @property
             def url_path(self):
                 return self._url_path
 
+        # return the new dynamic class defined above
         return ApiResource
 
 

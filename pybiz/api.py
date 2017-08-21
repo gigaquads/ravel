@@ -1,8 +1,10 @@
 import os
 import inspect
 import importlib
-import yaml
+import traceback
+
 import venusian
+import yaml
 
 import pybiz.schema as fields
 
@@ -13,6 +15,7 @@ from pybiz.dao import DaoManager
 from pybiz.schema import Schema
 from pybiz.manifest import Manifest
 
+from .exc import ApiError
 from .const import (
     HTTP_GET,
     HTTP_POST,
@@ -24,28 +27,96 @@ from .const import (
 
 class ApiRegistry(object, metaclass=ABCMeta):
 
-    def __init__(self, hook=None, unpack=None, manifest_filepath: str=None):
-        self.handlers = defaultdict(dict)
-        self.hook = hook
-        self.unpack = unpack
-        self.manifest = None
-        if manifest_filepath:
-            self.manifest = Manifest(self, filepath=manifest_filepath)
+    _instance = None
+
+    @classmethod
+    def get_instance(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = cls(*args, **kwargs)
+        return cls._instance
+
+    def __init__(self):
+        self._handlers = defaultdict(dict)
+        self._bootstrapped = False
+        self._manifest = None
+
+    @property
+    def handlers(self):
+        return self._handlers
+
+    @property
+    def manifest(self):
+        return self._manifest
+
+    @property
+    def bootstrapped(self):
+        return self._bootstrapped
+
+    def bootstrap(self, filepath: str=None):
+        """
+        Bootstrap the data, business, and service layers, wiring them up,
+        according to the settings contained in a service manifest file.
+
+        Args:
+            - filepath: Path to manifest.yml file
+        """
+        if not self._bootstrapped:
+            self._bootstrapped = True
+            if filepath is not None:
+                self._manifest = Manifest(self, filepath=filepath)
+            if self._manifest is not None:
+                self._manifest.process()
 
     @abstractmethod
-    def get_request(self, *args, **kwargs):
+    def hook(self, handler):
         """
-        This method defines how the request object is extracted from the args or
-        kwargs received by registered handlers (before unpacking) from your web
-        framework. Override this method in a subclass.
+        This `hook` method is called upon each use of an HTTP decorator method
+        (defined below). This is where you can register each handler with your
+        native web framework.
         """
 
     @abstractmethod
-    def get_response(self, *args, **kwargs):
+    def pack(self, result, *args, **kwargs):
         """
-        This method defines how the response object is extracted from the args or
-        kwargs received by registered handlers (before unpacking) from your web
-        framework.
+        Defines how the return value from API callables is set on the HTTP
+        response used by whatever web framework you're using.
+
+        Take the Falcon web framework for example. Normally, Falcon does not
+        expect return values from its request handlers. Instead, it does
+        `response.body = result`. By defining unpack, we can have it our way by
+        defining custom logic to apply to the return value of our handlers. For
+        example:
+
+        ```python3
+        def pack(data, *args, **kwargs):
+            # *args is whatever Falcon passed into the handler.
+            response = args[1]
+            response.body = data
+        ```
+        """
+
+    @abstractmethod
+    def unpack(self, signature, *args, **kwargs):
+        """
+        Defines how the arguments passed into API handlers from your web
+        framework are transformed into the expected arguments.
+
+        For example, Falcon would require our handlers to have the following
+        function signature:
+
+        ```python3
+            def login(request, response):
+                pass
+        ```
+
+        By implementing `unpack`, we could extract the top-level fields in the
+        request JSON payload, say "email" and "password", and pass them into the
+        handler directly, like so:
+
+        ```python3
+            def login(email, password):
+                pass
+        ```
         """
 
     def get(self, path, schemas=None, hook=None, unpack=None):
@@ -84,23 +155,6 @@ class ApiRegistry(object, metaclass=ABCMeta):
         handler_kwargs = handler_kwargs or dict()
         return handler(*handler_args, **handler_kwargs)
 
-    def bootstrap(self, filepath=None):
-        """
-        Bootstrap the data, business, and service layers, wiring them up,
-        according to the settings contained in a service manifest file.
-        """
-        if self.manifest is not None:
-            self.manifest.process()
-
-    def validate_request(self, request, schema):
-        pass
-
-    def validate_params(self, request, schema):
-        pass
-
-    def validate_response(self, response, result, schema):
-        pass
-
 
 class ApiRegistryDecorator(object):
 
@@ -108,7 +162,7 @@ class ApiRegistryDecorator(object):
             registry,
             http_method: str,
             path: str,
-            schemas: dict = None,
+            schemas: dict=None,
             hook=None,
             unpack=None,
             ):
@@ -142,31 +196,20 @@ class ApiHandler(object):
                 ]))
 
     def __call__(self, *args, **kwargs):
-        registry = self.decorator.registry
-        request = registry.get_request(*args, **kwargs)
-        response = registry.get_response(*args, **kwargs)
+        try:
+            unpack = self.decorator.unpack
+            args_dict = unpack(self.signature, *args, **kwargs)
+        except KeyError as exc:
+            raise ApiError(
+                'Could not unpack request arguments. Missing '
+                '{} argument.'.format(str(exc)))
+        except Exception:
+            msg = traceback.format_exc()
+            raise ApiError(
+                '{} - Could not unpack request arguments.'.format(msg))
 
-        request_schema = self.decorator.schemas.get('request')
-        if request_schema is not None:
-            registry.validate_request(request, request_schema)
-
-        params_schema = self.decorator.schemas.get('params')
-        if params_schema is not None:
-            registry.validate_params(request, params_schema)
-
-        if self.decorator.unpack:
-            # call the unpack to replace normal args to handler (namely request,
-            # response, ...) with args and kwargs as if the handler is an RPC
-            # method.
-            args_dict = self.decorator.unpack(self.signature, *args, **kwargs)
-            result = self.target(**args_dict)
-        else:
-            result = self.target(*args, **kwargs)
-
-        response_schema = self.decorator.schemas.get('response')
-        if response_schema is not None:
-            registry.validate_response(response, result, response_schema)
-
+        result = self.target(**args_dict)
+        self.decorator.registry.pack(result, *args, **kwargs)
         return result
 
     @property
@@ -176,3 +219,7 @@ class ApiHandler(object):
     @property
     def path(self):
         return self.decorator.path
+
+    @property
+    def schemas(self):
+        return self.decorator.schemas

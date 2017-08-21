@@ -16,16 +16,12 @@ class ManifestSchema(Schema):
     Describes the structure expected in manifest.yaml files.
     """
 
-    class PathsSchema(Schema):
-        api = fields.List(fields.Str(), required=True)
-        biz = fields.List(fields.Str(), required=True)
-        dao = fields.List(fields.Str(), required=True)
-
     class BindingSchema(Schema):
         biz = fields.Str(required=True)
         dao = fields.Str(required=True)
+        schema = fields.Str(required=False)
 
-    paths = fields.Object(PathsSchema(), required=True)
+    package = fields.Str(required=True)
     bindings = fields.List(BindingSchema(), required=True)
 
 
@@ -48,7 +44,9 @@ class Manifest(object):
         self.data = self._load_manifest_file()
         self.scanner = venusian.Scanner(
             bizobj_classes={},
-            dao_classes={})
+            schema_classes={},
+            dao_classes={},
+            )
 
     def process(self):
         """
@@ -99,19 +97,23 @@ class Manifest(object):
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Api instance.
         """
-        for category, pkg_paths in self.data['paths'].items():
-            for pkg_path in pkg_paths:
-                pkg = importlib.import_module(pkg_path)
-                categories = (category, ) if category != 'api' else None
-                self.scanner.scan(pkg, categories=categories)
+        pkg = importlib.import_module(self.data['package'])
+        self.scanner.scan(pkg)
 
     def _bind(self):
         """
-        Associate each BizObject class with a corresponding Dao class.
+        Associate each BizObject class with a corresponding Dao class. Also bind
+        Schema classes to their respective BizObject classes.
         """
         manager = DaoManager.get_instance()
         for binding in self.data.get('bindings', []):
             biz_class = self.scanner.bizobj_classes[binding['biz']]
             dao_class = self.scanner.dao_classes[binding['dao']]
+
+            # bind schema class to bizobj class
+            if 'schema' in binding:
+                schema_class = self.scanner.schema_classes[binding['schema']]
+                biz_class.Schema = schema_class
+
             manager.register(biz_class, dao_class)
 

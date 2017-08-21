@@ -1,5 +1,6 @@
 import pytz
 import dateutil.parser
+import venusian
 
 from uuid import UUID
 from datetime import datetime, date
@@ -12,6 +13,7 @@ from .const import (
 
 
 class ValidationError(Exception):
+
     def __init__(self, reasons: dict = None):
         self.reasons = reasons or {}
         super(ValidationError, self).__init__(str(self.reasons))
@@ -325,6 +327,14 @@ class SchemaMeta(type):
                     cls.required_fields[OP_DUMP][k] = v
                 elif v.load_required:
                     cls.required_fields[OP_LOAD][k] = v
+
+        # collect the schema class in a global set
+        # through a venusian callback:
+        def callback(scanner, name, schema_class):
+            scanner.schema_classes[name] = schema_class
+
+        venusian.attach(cls, callback, category='schema')
+
 
 
 class AbstractSchema(object):
