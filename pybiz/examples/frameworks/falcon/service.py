@@ -1,6 +1,6 @@
 import json
 
-from pybiz.falcon import Api
+from pybiz.frameworks.falcon import Api
 
 
 class UserService(Api):

@@ -6,7 +6,8 @@ import venusian
 
 from pybiz.api import ApiRegistry
 from pybiz.const import HTTP_GET, HTTP_POST, HTTP_PUT, HTTP_PATCH, HTTP_DELETE
-from pybiz.falcon.resource import FalconResourceManager
+
+from .resource import FalconResourceManager
 
 
 

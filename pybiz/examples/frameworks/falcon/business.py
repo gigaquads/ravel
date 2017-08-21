@@ -1,5 +1,6 @@
 from pybiz import BizObject
-from pybiz.falcon.example.service import api
+
+from .service import api
 
 
 class User(BizObject):
