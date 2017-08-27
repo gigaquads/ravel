@@ -418,7 +418,10 @@ class AbstractSchema(object):
 
 
 class Schema(AbstractSchema, metaclass=SchemaMeta):
-    pass
+
+    @classmethod
+    def load_keys(cls, keys) -> list:
+        return [f.load_from or f.name for f in cls.fields.values()]
 
 
 class SchemaResult(object):

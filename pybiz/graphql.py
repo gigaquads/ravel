@@ -11,22 +11,23 @@ class GraphQLNode(object):
 
 class GraphQLField(GraphQLNode):
 
-    DEPTH_FIRST  = 1
-    BREDTH_FIRST = 2
-
     def __init__(self, relationship, ast_field, parent):
         self.relationship = relationship
         self.parent = parent
         self.name = ast_field.name
         self.alias = getattr(ast_field, 'alias', None)
         self.value = getattr(ast_field, 'value', None)
-        self.args = getattr(ast_field, 'arguments', ())
         self.relationships = {}
         self.fields = {}
 
+        self.kwargs = {
+            arg.name: arg.value for arg in
+            getattr(ast_field, 'arguments', ())
+            }
+
         for child_ast_field in ast_field.selections:
             child_name = child_ast_field.name
-            rel = self.bizobj_class._relationships.get(child_name)
+            rel = self.bizobj_class.relationships.get(child_name)
             if rel is not None:
                 child = GraphQLField(rel, child_ast_field, self)
                 self.relationships[child_name] = child
@@ -46,39 +47,21 @@ class GraphQLField(GraphQLNode):
     def bizobj_class(self):
         return self.relationship.bizobj_class
 
-    def execute(self, func, args=None, kwargs=None, traversal=DEPTH_FIRST):
+    def execute(self, func):
         """
         Execute a function with the following signature on this field
         as well as its child fields.
 
         ```python3
-        def execute(field=None, *args, **kwargs):
+        def execute(field) -> dict:
             pass
         ```
         """
-        args = args or ()
-        kwargs = kwargs or {}
-        kwargs['field'] = self
-        results = {}
-
-        child_results = {
-            child.key: child.execute(
-                func, args=args, kwargs=kwargs, traversal=traversal
-                )
+        results = func(self)
+        results.update({
+            child.key: child.execute(func)
             for child in self.relationships.values()
-            }
-
-        # TODO: Implement breadth-first
-        # TODO: set relationship object on field object and pass into get method
-
-        bizobj = self.bizobj_class.get(fields=self.field_names)
-
-        # NOTE: dump will return None as default values of relationships;
-        # therefore, we must calld dump() before merging in child results or
-        # else the None values will overwrite the child values.
-        results.update(bizobj.dump())
-        results.update(child_results)
-
+            })
         return results
 
 
@@ -93,7 +76,7 @@ class GraphQLEngine(object):
         tree = {}
 
         for field in ast_query.selections:
-            rel = self._root._relationships.get(field.name)
+            rel = self._root.relationships.get(field.name)
             if not rel:
                 raise Exception('unrecognized field: {}'.format(field.name))
             field = GraphQLField(rel, field, None)
@@ -106,14 +89,14 @@ class GraphQLEngine(object):
         results = {}
 
         for field in tree.values():
-            results.update(field.execute(self.field_execution_v1))
+            results.update(field.execute(self.evaluate_field_v1_v1))
 
         return results
 
-    def field_execution_v1(self, field=None):
-        bizobj = field.bizobj_class.get(
-            fields=[f.name for f in field.fields], **kwargs)
-
+    def evaluate_field_v1_v1(self, field):
+        bizobj_class = field.bizobj_class
+        selected_fields = bizobj_class.Schema.load_keys(field.fields.keys())
+        bizobj = bizobj_class.get(fields=selected_fields, **field.kwargs)
         return bizobj.dump()
 
 
@@ -122,28 +105,26 @@ if __name__ == '__main__':
 
     from datetime import datetime
 
-
     class TestObject(BizObject):
         created_at = fields.DateTime(default=lambda: datetime.now())
 
         @classmethod
-        def get(cls, fields=None, **kwargs):
+        def get(cls, fields=None, id=None, **kwargs):
             return cls(**{k: '1' for k in fields})
-
 
     class Account(TestObject):
         name = fields.Str()
-
+        account_type = fields.Str(load_from='type', dump_to='type')
 
     class User(TestObject):
         name = fields.Str()
         email = fields.Str()
         account = Relationship(Account)
 
-
     class Document(TestObject):
         user = Relationship(User)
         account = Relationship(Account)
+
 
     query = '''
     {
@@ -152,6 +133,7 @@ if __name__ == '__main__':
             email
             account {
                 name
+                type
             }
         }
     }'''

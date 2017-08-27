@@ -26,6 +26,7 @@ from .dao import DaoManager, Dao
 from .dirty import DirtyDict, DirtyInterface
 from .util import is_bizobj
 from .schema import AbstractSchema, Schema, Field, Anything
+from .id_generator import IdGenerator, UuidGenerator
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -35,31 +36,8 @@ from .const import (
     )
 
 
-# TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan.
-
-
-class IdGenerator(object, metaclass=ABCMeta):
-
-    @abstractmethod
-    def next_id(self):
-        """
-        Generate and return a new ID.
-        """
-
-    @abstractmethod
-    def next_public_id(self):
-        """
-        Generate and return a new ID.
-        """
-
-
-class UuidGenerator(IdGenerator):
-
-    def next_id(self):
-        return uuid.uuid4().hex
-
-    def next_public_id(self):
-        return uuid.uuid4().hex
+# TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
+# during the dump operation.
 
 
 class Relationship(object):
@@ -108,7 +86,7 @@ class BizObjectMeta(ABCMeta):
         schema_class_name = '{}Schema'.format(name)
         fields = dict(
             _id=Anything(load_only=True),
-            public_id=Anything(dump_to='id'),
+            public_id=Anything(dump_to='id', load_from='id'),
             )
         for k in dir(cls):
             v = getattr(cls, k)
@@ -127,7 +105,7 @@ class BizObjectMeta(ABCMeta):
         # declared on the BizObject will overwrite any methods or attributes
         # defined explicitly on the BizObject class. This happens here.
         cls.build_relationship_properties(relationships)
-        cls._relationships = relationships
+        cls.relationships = relationships
 
         # use the schema class override if defined
         schema_class_override = cls.__schema__()
@@ -230,23 +208,23 @@ class BizObjectMeta(ABCMeta):
     def build_relationship_properties(cls, relationships):
         def build_rel_property(k, rel):
             def fget(self):
-                return self._relationship_data.get(k)
+                return self._adjacent_bizobjs.get(k)
 
             def fset(self, value):
-                rel = self._relationships[k]
+                rel = self.relationships[k]
                 is_sequence = isinstance(value, (list, tuple, set))
                 if not is_sequence:
                     if rel.many:
                         raise ValueError('{} must be non-scalar'.format(k))
                     bizobj_list = value
-                    self._relationship_data[k] = bizobj_list
+                    self._adjacent_bizobjs[k] = bizobj_list
                 elif is_sequence:
                     if not rel.many:
                         raise ValueError('{} must be scalar'.format(k))
-                    self._relationship_data[k] = value
+                    self._adjacent_bizobjs[k] = value
 
             def fdel(self):
-                del self._relationship_data[k]
+                del self._adjacent_bizobjs[k]
 
             return property(fget=fget, fset=fset, fdel=fdel)
 
@@ -261,33 +239,33 @@ class BizObject(
         metaclass=BizObjectMeta
         ):
 
-    _schema = None  # set by metaclass
-    _relationships = {}  # set by metaclass
+    _schema = None      # set by metaclass
+    _relationships = {} # set by metaclass
     _dao_manager = DaoManager.get_instance()
     _id_generator = UuidGenerator()
 
     def __init__(self, data=None, **kwargs_data):
-        DirtyInterface.__init__(self)
         AbstractSchema.__init__(self, strict=True, allow_additional=False)
+        DirtyInterface.__init__(self)
         JsonPatchMixin.__init__(self)
 
-        self._relationship_data = {}
+        self._adjacent_bizobjs = {}
         self._data = self._load(data, kwargs_data)
         self._cached_dump_data = None
 
     def __getitem__(self, key):
         if key in self._data:
             return self._data[key]
-        elif key in self._relationships:
-            return self._relationships[key].data
+        elif key in self.relationships:
+            return self.relationships[key].data
         elif self._schema and key in self._schema.fields:
             return None
 
         raise KeyError(key)
 
     def __setitem__(self, key, value):
-        if key in self._relationships:
-            rel = self._relationships[key]
+        if key in self.relationships:
+            rel = self.relationships[key]
             is_sequence = isinstance(value, (list, tuple, set))
             if rel.many:
                 assert is_sequence
@@ -333,6 +311,8 @@ class BizObject(
     @classmethod
     def __dao__(cls) -> (str, Dao):
         """
+        Returns a dotted path or Python reference to a Dao class to back this
+        BizObject. Normally, this information should be declared in a manifest.
         """
 
     @classmethod
@@ -340,12 +320,8 @@ class BizObject(
         cls._id_generator = id_generator
 
     @classmethod
-    def get_next_id(cls):
-        return cls._id_generator.next_id()
-
-    @classmethod
-    def get_next_public_id(cls):
-        return cls._id_generator.next_public_id()
+    def get_id_generator(cls):
+        return cls._id_generator
 
     @classmethod
     def get(cls, _id=None, public_id=None, fields: dict = None):
@@ -368,10 +344,6 @@ class BizObject(
     @property
     def data(self):
         return self._data
-
-    @property
-    def relationships(self):
-        return self._relationship_data
 
     @property
     def dao(self):
@@ -424,10 +396,10 @@ class BizObject(
         """
         data = {}
 
-        for rel_name, rel_val in self.relationships.items():
+        for rel_name, rel_val in self._adjacent_bizobjs.items():
             # rel_val is the actual object or list associated with the
             # relationship; whereas, just rel is the relationship object itself.
-            rel = self._relationships[rel_name]
+            rel = self.relationships[rel_name]
             dump_to = rel.dump_to or rel.name
             if rel_val is None:
                 data[dump_to] = None
@@ -455,12 +427,12 @@ class BizObject(
 
         # eagerly load all related bizobjs from the loaded data dict,
         # removing the fields from said dict.
-        for rel in self._relationships.values():
+        for rel in self.relationships.values():
             load_from = rel.load_from or rel.name
             related_data = data.pop(load_from, None)
 
             if related_data is None:
-                self._relationship_data[rel.name] = None
+                self._adjacent_bizobjs[rel.name] = None
                 continue
 
             if rel.many:
@@ -472,7 +444,7 @@ class BizObject(
                         related_bizobj_list.append(
                             rel.bizobj_class(related_data))
 
-                self._relationship_data[rel.name] = related_bizobj_list
+                self._adjacent_bizobjs[rel.name] = related_bizobj_list
 
             else:
                 if not is_bizobj(related_data):
@@ -486,7 +458,7 @@ class BizObject(
                     related_bizobj = rel.bizobj_class(related_data)
                 else:
                     related_bizobj = related_data
-                    self._relationship_data[rel.name] = related_bizobj
+                    self._adjacent_bizobjs[rel.name] = related_bizobj
 
         if self._schema is not None:
             result = self._schema.load(data)
@@ -525,13 +497,13 @@ class BizObject(
         # Save ditty child BizObjects before saving this BizObject so that the
         # updated child data can be passed into this object's dao.save/create
         # method
-        for k, v in self.relationships.items():
+        for k, v in self._adjacent_bizobjs.items():
             # `k` is the declared name of the relationship
-            # `v` is the relationship declaration itself.
+            # `v` is the related bizobj or list of bizbojs
             if not v:
                 continue
 
-            rel = self._relationships[k]
+            rel = self.relationships[k]
 
             if rel.many:
                 # this is a non-scalar relationship
@@ -556,9 +528,9 @@ class BizObject(
 
         # Persist and refresh data
         if self._id is None:
-            self._id = self.get_next_id()
+            self._id = self._id_generator.next_id()
             if not self.public_id:
-                self.public_id = self.get_next_public_id()
+                self.public_id = self._id_generator.next_public_id()
             updated_data = self.dao.create(
                     _id=self._id,
                     public_id=self.public_id,
