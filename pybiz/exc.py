@@ -6,4 +6,5 @@ class ApiError(PyBizError):
     pass
 
 
-
+class ManifestError(PyBizError):
+    pass

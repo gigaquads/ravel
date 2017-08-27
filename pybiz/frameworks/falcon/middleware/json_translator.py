@@ -29,6 +29,8 @@ class JsonTranslator(object):
             request.json = schema.load(request.json).data
 
         # apply validation to request query string params
+        # replace the params objects from falcon with
+        # schema-loaded data
         if 'params' in handler.schemas:
             schema = handler.schemas['params']
             result = schema.load(params).data

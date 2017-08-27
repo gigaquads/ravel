@@ -82,7 +82,8 @@ class Manifest(object):
             if not os.path.exists(filepath):
                 filepath = os.path.join(proj_dir, 'manifest.yml')
 
-            # TODO: raise exception if manifest doesn't exist
+        if filepath is None:
+            raise ManifestError('could not find pybiz manifest file')
 
         return filepath
 

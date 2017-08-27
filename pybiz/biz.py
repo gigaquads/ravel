@@ -35,7 +35,6 @@ from .const import (
     )
 
 
-# TODO: allow schema to be bound to bizobj via manifest declaration
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan.
 
 
