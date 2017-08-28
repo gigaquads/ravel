@@ -86,7 +86,11 @@ class Api(ApiRegistry):
             else:
                 kwargs_dict[k] = request.json.get(k)
 
+        # careful not to overwrite properties in the JSON body
+        # with those in the query string params...
         args_dict.update(kwargs_dict)
+        args_dict.update(request.params)
+
         return args_dict
 
     def pack(self, data, request, response, *args, **kwargs):
