@@ -421,7 +421,14 @@ class Schema(AbstractSchema, metaclass=SchemaMeta):
 
     @classmethod
     def load_keys(cls, keys) -> list:
-        return [f.load_from or f.name for f in cls.fields.values()]
+        loaded_keys = []
+        for key in keys:
+            if key in cls.load_from_fields:
+                loaded_key = cls.load_from_fields(key).name
+            else:
+                loaded_key = key
+            loaded_keys.append(loaded_key)
+        return loaded_keys
 
 
 class SchemaResult(object):
