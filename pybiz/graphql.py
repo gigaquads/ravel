@@ -72,7 +72,7 @@ class GraphQLGetter(object, metaclass=ABCMeta):
 
     @classmethod
     @abstractmethod
-    def graphql_get(self, field: GraphQLField, **kwargs):
+    def graphql_get(self, node: GraphQLField, fields: list=None, **kwargs):
         pass
 
 
@@ -108,8 +108,16 @@ class GraphQLEngine(object):
 
     def _evaluate_field(self, field):
         assert issubclass(field.bizobj_class, GraphQLGetter)
+
+        # we "load" the field names so that they appear as they should
+        # when passed down into the DAL.
         selected = field.bizobj_class.Schema.load_keys(field.fields.keys())
-        bizobj = field.bizobj_class.graphql_get(fields=selected, **field.kwargs)
+
+        # load the BizObject with the requested fields
+        bizobj = field.bizobj_class.graphql_get(
+            field, fields=selected, **field.kwargs)
+
+        # return said fields in a JSON object
         return bizobj.dump()
 
 
@@ -123,7 +131,7 @@ if __name__ == '__main__':
         created_at = fields.DateTime(default=lambda: datetime.now())
 
         @classmethod
-        def graphql_get(cls, fields=None, id=None, **kwargs):
+        def graphql_get(cls, node, fields=None, id=None, **kwargs):
             return cls(**{k: '1' for k in fields})
 
     class Account(TestObject):

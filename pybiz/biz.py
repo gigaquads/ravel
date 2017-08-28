@@ -390,9 +390,18 @@ class BizObjectGraphQLGetter(GraphQLGetter):
     """
 
     @classmethod
-    def graphql_get(cls, selector: GraphQLField, **kwargs) -> dict:
+    def graphql_get(cls, node: GraphQLField, fields=None, **kwargs) -> dict:
         """
         Return a BizObject populated by the data specified in the selector.
+
+        Args:
+            - `node`: The node in the GraphQL query.
+            - `fields`: List of string field names. The field names
+              selected in the GraphQL query are "loaded" to be the names
+              declared on the BizObject. The "pre-loaded" field names are
+              available through `node.arguments.fields.keys()`.
+            - `kwargs`: expanded arguments passed to the GraphQL node, also
+              present in `node.args`.
         """
         return {}
 
