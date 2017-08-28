@@ -68,6 +68,7 @@ class BizObjectMeta(ABCMeta):
         schema_class = cls.build_schema_class(name)
 
         cls.build_all_properties(schema_class, relationships)
+        cls.set_graphql_engine()
         cls.register_JsonPatch_hooks(bases)
         cls.register_dao()
 
@@ -75,6 +76,9 @@ class BizObjectMeta(ABCMeta):
             scanner.bizobj_classes[name] = bizobj_class
 
         venusian.attach(cls, callback, category='biz')
+
+    def set_graphql_engine(cls):
+        cls.graphql_engine = GraphQLEngine(cls)
 
     def register_dao(cls):
         dao_class = cls.__dao__()
