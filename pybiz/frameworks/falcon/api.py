@@ -77,8 +77,6 @@ class Api(ApiRegistry):
         """
         args_dict = {}
         kwargs_dict = kwargs.copy()
-        print('kwargs_dict', kwargs_dict)
-        print('args_dict', args_dict)
 
         for k, param in signature.parameters.items():
             if k in kwargs_dict:
