@@ -357,12 +357,12 @@ class AbstractSchema(object):
         return '<Schema({})>'.format(self.__class__.__name__)
 
     def load(self, data, strict=None):
-        return self._apply(OP_LOAD, data, strict)
+        return self._apply_json_patch_op(OP_LOAD, data, strict)
 
     def dump(self, data, strict=None):
-        return self._apply(OP_DUMP, data, strict)
+        return self._apply_json_patch_op(OP_DUMP, data, strict)
 
-    def _apply(self, op, data, strict):
+    def _apply_json_patch_op(self, op, data, strict):
         strict = strict if strict is not None else self.strict
         result = SchemaResult(op, {}, {})
 

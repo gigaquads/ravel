@@ -62,8 +62,10 @@ class BizObjectMeta(ABCMeta):
 
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
+
         relationships = cls.build_relationships()
         schema_class = cls.build_schema_class(name)
+
         cls.build_all_properties(schema_class, relationships)
         cls.register_JsonPatch_hooks(bases)
         cls.register_dao()
@@ -88,10 +90,12 @@ class BizObjectMeta(ABCMeta):
             _id=Anything(load_only=True),
             public_id=Anything(dump_to='id', load_from='id'),
             )
+
         for k in dir(cls):
             v = getattr(cls, k)
             if isinstance(v, Field):
                 fields[k] = v
+
         cls.Schema = type(schema_class_name, (Schema,), fields)
         return cls.Schema
 
@@ -164,13 +168,16 @@ class BizObjectMeta(ABCMeta):
         for k in dir(cls):
             rel = getattr(cls, k)
             is_relationship = isinstance(rel, Relationship)
+
             if not is_relationship:
                 is_super_relationship = k in cls._relationships
+
                 if is_super_relationship:
                     super_rel = cls._relationships[k]
                     rel = super_rel.copy()
                     rel.name = k
                     inherited_relationships[k] = rel
+
             else:
                 direct_relationships[k] = rel
                 rel.name = k
@@ -213,14 +220,18 @@ class BizObjectMeta(ABCMeta):
             def fset(self, value):
                 rel = self.relationships[k]
                 is_sequence = isinstance(value, (list, tuple, set))
+
                 if not is_sequence:
                     if rel.many:
                         raise ValueError('{} must be non-scalar'.format(k))
+
                     bizobj_list = value
                     self._adjacent_bizobjs[k] = bizobj_list
+
                 elif is_sequence:
                     if not rel.many:
                         raise ValueError('{} must be scalar'.format(k))
+
                     self._adjacent_bizobjs[k] = value
 
             def fdel(self):
@@ -232,10 +243,151 @@ class BizObjectMeta(ABCMeta):
             setattr(cls, rel.name, build_rel_property(rel.name, rel))
 
 
+class BizObjectCrudMethods(object):
+    """
+    BizObjectCrudMethods endows the BizObject with general boilerplate CRUD
+    methods, which interface with the DAO. Note that the `save` method is
+    actually an upsert.
+    """
+
+    @classmethod
+    def get(cls, _id=None, public_id=None, fields: dict = None):
+        return cls.get_dao().fetch(
+            _id=_id, public_id=public_id, fields=fields)
+
+    @classmethod
+    def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
+        return cls.get_dao().fetch(
+            _ids=_ids, public_ids=public_ids, fields=fields)
+
+    @classmethod
+    def delete_many(cls, bizobjs):
+        cls.get_dao().delete_many([obj._id for obj in bizobjs])
+
+    def delete(self):
+        self.dao.delete(_id=self._id, public_id=self.public_id)
+
+    def save(self, fetch=False):
+        nested_bizobjs = []
+        data_to_save = {}
+
+        # Save ditty child BizObjects before saving this BizObject so that the
+        # updated child data can be passed into this object's dao.save/create
+        # method
+        for k, v in self._adjacent_bizobjs.items():
+            # `k` is the declared name of the relationship
+            # `v` is the related bizobj or list of bizbojs
+            if not v:
+                continue
+
+            rel = self.relationships[k]
+
+            if rel.many:
+                # this is a non-scalar relationship
+                dumped_list_item_map = {}
+                for i, bizobj in enumerate(v):
+                    if bizobj.dirty:
+                        bizobj.save(fetch=fetch)
+                        dumped_list_item_map[i] = bizobj.dump()
+
+                if dumped_list_item_map:
+                    data_to_save[k] = dumped_list_item_map
+
+            elif v.dirty:
+                # this is a scalar relationship
+                v.save()
+                data_to_save[k] = v.dump()
+                if '_id' in v.data:
+                    data_to_save[k]['_id'] = v.data['_id']
+
+        for k in self._data.dirty:
+            data_to_save[k] = self[k]
+
+        # Persist and refresh data
+        if self._id is None:
+            self._id = self._id_generator.next_id()
+
+            if not self.public_id:
+                self.public_id = self._id_generator.next_public_id()
+
+            updated_data = self.dao.create(
+                    _id=self._id,
+                    public_id=self.public_id,
+                    data=data_to_save)
+
+        else:
+            updated_data = self.dao.update(
+                    _id=self._id,
+                    public_id=self.public_id,
+                    data=data_to_save)
+
+        if updated_data:
+            self.merge(updated_data)
+
+        if fetch:
+            self.merge(
+                self.dao.fetch(
+                    _id=self._id,
+                    public_id=self.public_id
+                ))
+
+        self.clear_dirty()
+        return self
+
+
+class BizObjectDirtyDict(DirtyInterface):
+    """
+    BizObjectDirtyDict implements the DirtyInterface, meaning that it has the
+    facility to keep track of what fields in its internal data dictionary have
+    been modified as well as the ability to notify its parent dictionary of said
+    changes, provided it has a parent.
+    """
+
+    def __init__(self, data, kwargs_data):
+        DirtyInterface.__init__(self)
+        self._data = self._load(data, kwargs_data)
+
+    @property
+    def dirty(self):
+        return self._data.dirty
+
+    def set_parent(self, key_in_parent, parent):
+        self._data.set_parent(key_in_parent, parent)
+
+    def has_parent(self, obj):
+        return self._data.has_parent(obj)
+
+    def get_parent(self):
+        return self._data.get_parent()
+
+    def mark_dirty(self, key_or_keys):
+        self._data.mark_dirty(key_or_keys)
+        self._cached_dump_data = None
+
+    def clear_dirty(self, keys=None):
+        self._data.clear_dirty(keys=keys)
+
+
+class BizObjectSchema(AbstractSchema):
+    """
+    BizObjectSchema makes the BizObject into a Schema subclass, which the
+    BizObjectMeta class uses to build a separate Schema from the fields declared
+    directly on said BizObject. See the metaclass for implementation details.
+    """
+
+
+class BizObjectJsonPatch(JsonPatchMixin):
+    """
+    BizObjectJsonPatch provides the components necessary for implementing JSON
+    Patch operations on the BizObject.
+    """
+
+
 class BizObject(
-        AbstractSchema,
-        JsonPatchMixin,
-        DirtyInterface,
+        BizObjectSchema,
+        BizObjectJsonPatch,
+        BizObjectCrudMethods,
+        BizObjectDirtyDict,
         metaclass=BizObjectMeta
         ):
 
@@ -244,14 +396,42 @@ class BizObject(
     _dao_manager = DaoManager.get_instance()
     _id_generator = UuidGenerator()
 
-    def __init__(self, data=None, **kwargs_data):
-        AbstractSchema.__init__(self, strict=True, allow_additional=False)
-        DirtyInterface.__init__(self)
-        JsonPatchMixin.__init__(self)
+    @classmethod
+    def __schema__(cls):
+        """
+        Return a dotted path to the Schema class, like 'path.to.MySchema'. This
+        is only used if a Schema subclass is returned. If None is returned, this
+        is ignored.
+        """
 
+    @classmethod
+    def __dao__(cls):
+        """
+        Returns a dotted path or Python reference to a Dao class to back this
+        BizObject. Normally, this information should be declared in a manifest.
+        """
+
+    @classmethod
+    def get_dao(cls):
+        return cls._dao_manager.get_dao(cls)
+
+    @classmethod
+    def get_id_generator(cls):
+        return cls._id_generator
+
+    @classmethod
+    def set_id_generator(cls, id_generator:IdGenerator):
+        cls._id_generator = id_generator
+
+    def __init__(self, data=None, **kwargs_data):
         self._adjacent_bizobjs = {}
-        self._data = self._load(data, kwargs_data)
         self._cached_dump_data = None
+
+        # the order of these super class constructors matters...
+        BizObjectJsonPatch.__init__(self)
+        BizObjectCrudMethods.__init__(self)
+        BizObjectSchema.__init__(self, strict=True, allow_additional=False)
+        BizObjectDirtyDict.__init__(self, data, kwargs_data)
 
     def __getitem__(self, key):
         if key in self._data:
@@ -300,47 +480,6 @@ class BizObject(
                 bizobj_id=bizobj_id,
                 dirty_flag=dirty_flag)
 
-    @classmethod
-    def __schema__(cls) -> (str, Schema):
-        """
-        Return a dotted path to the Schema class, like 'path.to.MySchema'. This
-        is only used if a Schema subclass is returned. If None is returned, this
-        is ignored.
-        """
-
-    @classmethod
-    def __dao__(cls) -> (str, Dao):
-        """
-        Returns a dotted path or Python reference to a Dao class to back this
-        BizObject. Normally, this information should be declared in a manifest.
-        """
-
-    @classmethod
-    def set_id_generator(cls, id_generator:IdGenerator):
-        cls._id_generator = id_generator
-
-    @classmethod
-    def get_id_generator(cls):
-        return cls._id_generator
-
-    @classmethod
-    def get(cls, _id=None, public_id=None, fields: dict = None):
-        return cls.get_dao().fetch(
-            _id=_id, public_id=public_id, fields=fields)
-
-    @classmethod
-    def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
-        return cls.get_dao().fetch(
-            _ids=_ids, public_ids=public_ids, fields=fields)
-
-    @classmethod
-    def delete_many(cls, bizobjs):
-        cls.get_dao().delete_many([obj._id for obj in bizobjs])
-
-    @classmethod
-    def get_dao(cls):
-        return cls._dao_manager.get_dao(cls)
-
     @property
     def data(self):
         return self._data
@@ -358,13 +497,12 @@ class BizObject(
     def items(self):
         return self._data.items()
 
-    def update(self, dct):
+    def merge(self, dct):
+        """
+        """
         self._cached_dump_data = None
         self._data.update(dct)
         self.mark_dirty(dct.keys())
-
-    def delete(self):
-        self.dao.delete(_id=self._id, public_id=self.public_id)
 
     def dump(self):
         """
@@ -432,7 +570,7 @@ class BizObject(
             related_data = data.pop(load_from, None)
 
             if related_data is None:
-                self._adjacent_bizobjs[rel.name] = None
+                #self._adjacent_bizobjs[rel.name] = None
                 continue
 
             if rel.many:
@@ -469,87 +607,3 @@ class BizObject(
         # at this point, the data dict has been cleared of any fields that are
         # shadowed by Relationships declared on the bizobj class.
         return DirtyDict(data)
-
-    @property
-    def dirty(self):
-        return self._data.dirty
-
-    def set_parent(self, key_in_parent, parent):
-        self._data.set_parent(key_in_parent, parent)
-
-    def has_parent(self, obj):
-        return self._data.has_parent(obj)
-
-    def get_parent(self):
-        return self._data.get_parent()
-
-    def mark_dirty(self, key_or_keys):
-        self._data.mark_dirty(key_or_keys)
-        self._cached_dump_data = None
-
-    def clear_dirty(self, keys=None):
-        self._data.clear_dirty(keys=keys)
-
-    def save(self, fetch=False):
-        nested_bizobjs = []
-        data_to_save = {}
-
-        # Save ditty child BizObjects before saving this BizObject so that the
-        # updated child data can be passed into this object's dao.save/create
-        # method
-        for k, v in self._adjacent_bizobjs.items():
-            # `k` is the declared name of the relationship
-            # `v` is the related bizobj or list of bizbojs
-            if not v:
-                continue
-
-            rel = self.relationships[k]
-
-            if rel.many:
-                # this is a non-scalar relationship
-                dumped_list_item_map = {}
-                for i, bizobj in enumerate(v):
-                    if bizobj.dirty:
-                        bizobj.save(fetch=fetch)
-                        dumped_list_item_map[i] = bizobj.dump()
-
-                if dumped_list_item_map:
-                    data_to_save[k] = dumped_list_item_map
-
-            elif v.dirty:
-                # this is a scalar relationship
-                v.save()
-                data_to_save[k] = v.dump()
-                if '_id' in v.data:
-                    data_to_save[k]['_id'] = v.data['_id']
-
-        for k in self._data.dirty:
-            data_to_save[k] = self[k]
-
-        # Persist and refresh data
-        if self._id is None:
-            self._id = self._id_generator.next_id()
-            if not self.public_id:
-                self.public_id = self._id_generator.next_public_id()
-            updated_data = self.dao.create(
-                    _id=self._id,
-                    public_id=self.public_id,
-                    data=data_to_save)
-        else:
-            updated_data = self.dao.update(
-                    _id=self._id,
-                    public_id=self.public_id,
-                    data=data_to_save)
-
-        if updated_data:
-            self.update(updated_data)
-
-        if fetch:
-            self.update(
-                self.dao.fetch(
-                    _id=self._id,
-                    public_id=self.public_id
-                ))
-
-        self.clear_dirty()
-        return self

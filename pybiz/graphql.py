@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+from abc import ABCMeta, abstractmethod
+
 from graphql.parser import GraphQLParser
 
 from pybiz import Schema, fields, BizObject, Relationship
@@ -20,11 +22,14 @@ class GraphQLField(GraphQLNode):
         self.relationships = {}
         self.fields = {}
 
+        # these are kwargs to pass into the get method of
+        # the related bizobj class (if there is one)
         self.kwargs = {
             arg.name: arg.value for arg in
             getattr(ast_field, 'arguments', ())
             }
 
+        # initialize nested relationships and fields
         for child_ast_field in ast_field.selections:
             child_name = child_ast_field.name
             rel = self.bizobj_class.relationships.get(child_name)
@@ -65,13 +70,30 @@ class GraphQLField(GraphQLNode):
         return results
 
 
+class GraphQLGetter(object, metaclass=ABCMeta):
+
+    @classmethod
+    @abstractmethod
+    def graphql_get(self, field: GraphQLField, **kwargs):
+        pass
+
+
 class GraphQLEngine(object):
 
     def __init__(self, root):
         self._parser = GraphQLParser()
         self._root = root
 
-    def parse(self, query: str) -> dict:
+    def query(self, query: str) -> dict:
+        tree = self._parse_query(query)
+        results = {}
+
+        for field in tree.values():
+            results.update(field.execute(self._evaluate_field))
+
+        return results
+
+    def _parse_query(self, query: str) -> dict:
         ast_query = self._parser.parse(query).definitions[0]
         tree = {}
 
@@ -84,19 +106,10 @@ class GraphQLEngine(object):
 
         return tree
 
-    def execute(self, query: str) -> dict:
-        tree = self.parse(query)
-        results = {}
-
-        for field in tree.values():
-            results.update(field.execute(self.evaluate_field_v1_v1))
-
-        return results
-
-    def evaluate_field_v1_v1(self, field):
+    def _evaluate_field(self, field):
         bizobj_class = field.bizobj_class
-        selected_fields = bizobj_class.Schema.load_keys(field.fields.keys())
-        bizobj = bizobj_class.get(fields=selected_fields, **field.kwargs)
+        selection = bizobj_class.Schema.load_keys(field.fields.keys())
+        bizobj = bizobj_class.graphql_get(fields=selection, **field.kwargs)
         return bizobj.dump()
 
 
@@ -105,11 +118,11 @@ if __name__ == '__main__':
 
     from datetime import datetime
 
-    class TestObject(BizObject):
+    class TestObject(BizObject, GraphQLGetter):
         created_at = fields.DateTime(default=lambda: datetime.now())
 
         @classmethod
-        def get(cls, fields=None, id=None, **kwargs):
+        def graphql_get(cls, fields=None, id=None, **kwargs):
             return cls(**{k: '1' for k in fields})
 
     class Account(TestObject):
@@ -139,4 +152,4 @@ if __name__ == '__main__':
     }'''
 
     engine = GraphQLEngine(Document)
-    print(json.dumps(engine.execute(query), indent=2, sort_keys=True))
+    print(json.dumps(engine.query(query), indent=2, sort_keys=True))
