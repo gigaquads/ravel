@@ -98,7 +98,8 @@ class GraphQLEngine(object):
         for field in ast_query.selections:
             rel = self._root.relationships.get(field.name)
             if rel:
-                tree[field.key] = GraphQLField(rel, field, None)
+                graphql_field = GraphQLField(rel, field, None)
+                tree[graphql_field.key] = graphql_field
             else:
                 # TODO: use custom exception type
                 raise Exception('unrecognized field: {}'.format(field.name))
@@ -106,7 +107,7 @@ class GraphQLEngine(object):
         return tree
 
     def _evaluate_field(self, field):
-        assert isinstance(field.bizobj_class, GraphQLGetter)
+        assert issubclass(field.bizobj_class, GraphQLGetter)
         selected = field.bizobj_class.Schema.load_keys(field.fields.keys())
         bizobj = field.bizobj_class.graphql_get(fields=selected, **field.kwargs)
         return bizobj.dump()
