@@ -22,6 +22,7 @@ from types import MethodType
 from importlib import import_module
 
 from .patch import JsonPatchMixin
+from .graphql import GraphQLGetter, GraphQLEngine, GraphQLField
 from .dao import DaoManager, Dao
 from .dirty import DirtyDict, DirtyInterface
 from .util import is_bizobj
@@ -383,11 +384,25 @@ class BizObjectJsonPatch(JsonPatchMixin):
     """
 
 
+class BizObjectGraphQLGetter(GraphQLGetter):
+    """
+    Implements stubs for GraphQLGetter.
+    """
+
+    @classmethod
+    def graphql_get(cls, selector: GraphQLField, **kwargs) -> dict:
+        """
+        Return a BizObject populated by the data specified in the selector.
+        """
+        return {}
+
+
 class BizObject(
         BizObjectSchema,
         BizObjectJsonPatch,
         BizObjectCrudMethods,
         BizObjectDirtyDict,
+        BizObjectGraphQLGetter,
         metaclass=BizObjectMeta
         ):
 
@@ -430,6 +445,7 @@ class BizObject(
         # the order of these super class constructors matters...
         BizObjectJsonPatch.__init__(self)
         BizObjectCrudMethods.__init__(self)
+        BizObjectGraphQLGetter.__init__(self)
         BizObjectSchema.__init__(self, strict=True, allow_additional=False)
         BizObjectDirtyDict.__init__(self, data, kwargs_data)
 

@@ -4,8 +4,6 @@ from abc import ABCMeta, abstractmethod
 
 from graphql.parser import GraphQLParser
 
-from pybiz import Schema, fields, BizObject, Relationship
-
 
 class GraphQLNode(object):
     pass
@@ -99,17 +97,18 @@ class GraphQLEngine(object):
 
         for field in ast_query.selections:
             rel = self._root.relationships.get(field.name)
-            if not rel:
+            if rel:
+                tree[field.key] = GraphQLField(rel, field, None)
+            else:
+                # TODO: use custom exception type
                 raise Exception('unrecognized field: {}'.format(field.name))
-            field = GraphQLField(rel, field, None)
-            tree[field.key] = field
 
         return tree
 
     def _evaluate_field(self, field):
-        bizobj_class = field.bizobj_class
-        selection = bizobj_class.Schema.load_keys(field.fields.keys())
-        bizobj = bizobj_class.graphql_get(fields=selection, **field.kwargs)
+        assert isinstance(field.bizobj_class, GraphQLGetter)
+        selected = field.bizobj_class.Schema.load_keys(field.fields.keys())
+        bizobj = field.bizobj_class.graphql_get(fields=selected, **field.kwargs)
         return bizobj.dump()
 
 
@@ -117,6 +116,7 @@ if __name__ == '__main__':
     import json
 
     from datetime import datetime
+    from pybiz import Schema, fields, BizObject, Relationship
 
     class TestObject(BizObject, GraphQLGetter):
         created_at = fields.DateTime(default=lambda: datetime.now())

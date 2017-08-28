@@ -62,7 +62,7 @@ class ApiRegistry(object, metaclass=ABCMeta):
         """
         if not self._bootstrapped:
             self._bootstrapped = True
-            if filepath is not None:
+            if self._manifest is None or filepath is not None:
                 self._manifest = Manifest(self, filepath=filepath)
             if self._manifest is not None:
                 self._manifest.process()
