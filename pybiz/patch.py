@@ -17,6 +17,7 @@ from .const import (
 # TODO: write JsonPatch patch method test
 # TODO: write JsonPatch hook method tests
 
+
 class JsonPatchMixin(object):
 
     # Format: `{class_name: {path_str: cb_method_name}`
@@ -34,11 +35,10 @@ class JsonPatchMixin(object):
         for (i, (idx, bizobj)) in enumerate(reversed(ctx['bizobjs'])):
             # avoid trying to patch a bizobj that we simply want to remove or
             # replace from its parent object or list:
-            #if (op != OP_DELTA_ADD) and (len(relative_path) == 1):
             if (op != OP_DELTA_ADD) and (len(ctx['tokenized_path'][idx:]) == 1):
                 continue
 
-            relative_path = self._build_relative_path(ctx, idx) # -> list
+            relative_path = self._build_relative_path(ctx, idx)
 
             try:
                 self._apply_pre_patch_hooks(ctx, op, relative_path, value)
@@ -53,8 +53,8 @@ class JsonPatchMixin(object):
     def _build_relative_path(ctx, idx) -> list:
         return [
             JsonPatchPathComponent(k, v) for (k, v) in
-                zip(ctx['tokenized_path'][idx:],
-                    ctx['objs'][idx:])
+            zip(ctx['tokenized_path'][idx:],
+                ctx['objs'][idx:])
             ]
 
     def _apply_delta(self, idx, bizobj, ctx, op, relative_path, value):
@@ -160,7 +160,7 @@ class JsonPatchMixin(object):
                     die('list index out of bounds')
                 obj[idx] = value
             elif isinstance(obj, dict):
-                if not key in obj:
+                if key not in obj:
                     die('key "{}" not found in {}', key, obj)
                 obj[key] = value
             elif util.is_bizobj(obj):
@@ -207,7 +207,7 @@ class JsonPatchMixin(object):
             'objs': objs,
             }
 
-    def _parse_path(self, path:str):
+    def _parse_path(self, path: str):
         path_crumbs = [ROOT_ATTR]
         path_crumbs.extend(x for x in path.strip('/').split('/') if x)
         if len(path_crumbs) == 1:
