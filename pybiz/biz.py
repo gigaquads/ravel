@@ -90,11 +90,17 @@ class BizObjectMeta(ABCMeta):
         Builds cls.Schema from the fields declared on the business object. All
         business objects automatically inherit an _id and public_id fields
         """
+        fields = {}
+
+        inherited_schema_class = getattr(cls, 'Schema', None)
+        if inherited_schema_class is not None:
+            fields.update(inherited_schema_class.fields.copy())
+
         schema_class_name = '{}Schema'.format(name)
-        fields = dict(
+        fields.update(dict(
             _id=Anything(load_only=True),
             public_id=Anything(dump_to='id', load_from='id'),
-            )
+            ))
 
         for k in dir(cls):
             v = getattr(cls, k)
