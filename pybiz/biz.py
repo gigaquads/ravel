@@ -90,24 +90,31 @@ class BizObjectMeta(ABCMeta):
         Builds cls.Schema from the fields declared on the business object. All
         business objects automatically inherit an _id and public_id fields
         """
-        fields = {}
+        # We begin by building the `fields` dict that will become attributes
+        # of our dynamic Schema class being created below.
+        #
+        # Ensure each BizObject Schema class has
+        # both _id and public_id fields.
+        fields = dict(
+            _id=Anything(load_only=True),
+            public_id=Anything(dump_to='id', load_from='id'))
 
+        # "inherit" fields of parent BizObject.Schema
         inherited_schema_class = getattr(cls, 'Schema', None)
         if inherited_schema_class is not None:
             fields.update(inherited_schema_class.fields.copy())
 
-        schema_class_name = '{}Schema'.format(name)
-        fields.update(dict(
-            _id=Anything(load_only=True),
-            public_id=Anything(dump_to='id', load_from='id'),
-            ))
-
+        # Collect and field declared on this BizObject class
         for k in dir(cls):
             v = getattr(cls, k)
             if isinstance(v, Field):
                 fields[k] = v
 
+        # Build string name of the new Schema class
+        # and construct the Schema class object:
+        schema_class_name = '{}Schema'.format(name)
         cls.Schema = type(schema_class_name, (Schema,), fields)
+
         return cls.Schema
 
     def add_is_bizobj_annotation(new_class):
@@ -130,9 +137,7 @@ class BizObjectMeta(ABCMeta):
             else:
                 schema_class = schema_class_override
 
-        cls._schema = schema_class()
-        cls._schema.strict = True
-
+        cls._schema = schema_class(strict=True, allow_additional=False)
         cls.build_field_properties(cls._schema, relationships)
 
     def import_schema_class(self, class_path_str):
@@ -145,7 +150,7 @@ class BizObjectMeta(ABCMeta):
         try:
             schema_module = import_module(module_path_str)
             schema_class = getattr(schema_module, class_name)
-        except:
+        except Exception:
             raise ImportError(
                 'failed to import schema class {}'.format(class_name))
 
@@ -181,10 +186,10 @@ class BizObjectMeta(ABCMeta):
             is_relationship = isinstance(rel, Relationship)
 
             if not is_relationship:
-                is_super_relationship = k in cls._relationships
+                is_super_relationship = k in cls.relationships
 
                 if is_super_relationship:
-                    super_rel = cls._relationships[k]
+                    super_rel = cls.relationships[k]
                     rel = super_rel.copy()
                     rel.name = k
                     inherited_relationships[k] = rel
@@ -226,7 +231,7 @@ class BizObjectMeta(ABCMeta):
     def build_relationship_properties(cls, relationships):
         def build_rel_property(k, rel):
             def fget(self):
-                return self._adjacent_bizobjs.get(k)
+                return self._related_bizobjs.get(k)
 
             def fset(self, value):
                 rel = self.relationships[k]
@@ -237,16 +242,16 @@ class BizObjectMeta(ABCMeta):
                         raise ValueError('{} must be non-scalar'.format(k))
 
                     bizobj_list = value
-                    self._adjacent_bizobjs[k] = bizobj_list
+                    self._related_bizobjs[k] = bizobj_list
 
                 elif is_sequence:
                     if not rel.many:
                         raise ValueError('{} must be scalar'.format(k))
 
-                    self._adjacent_bizobjs[k] = value
+                    self._related_bizobjs[k] = value
 
             def fdel(self):
-                del self._adjacent_bizobjs[k]
+                del self._related_bizobjs[k]
 
             return property(fget=fget, fset=fset, fdel=fdel)
 
@@ -285,7 +290,7 @@ class BizObjectCrudMethods(object):
         # Save ditty child BizObjects before saving this BizObject so that the
         # updated child data can be passed into this object's dao.save/create
         # method
-        for k, v in self._adjacent_bizobjs.items():
+        for k, v in self._related_bizobjs.items():
             # `k` is the declared name of the relationship
             # `v` is the related bizobj or list of bizbojs
             if not v:
@@ -350,8 +355,8 @@ class BizObjectDirtyDict(DirtyInterface):
     """
     BizObjectDirtyDict implements the DirtyInterface, meaning that it has the
     facility to keep track of what fields in its internal data dictionary have
-    been modified as well as the ability to notify its parent dictionary of said
-    changes, provided it has a parent.
+    been modified as well as the ability to notify its parent dictionary of
+    said changes, provided it has a parent.
     """
 
     def __init__(self, data, kwargs_data):
@@ -382,8 +387,9 @@ class BizObjectDirtyDict(DirtyInterface):
 class BizObjectSchema(AbstractSchema):
     """
     BizObjectSchema makes the BizObject into a Schema subclass, which the
-    BizObjectMeta class uses to build a separate Schema from the fields declared
-    directly on said BizObject. See the metaclass for implementation details.
+    BizObjectMeta class uses to build a separate Schema from the fields
+    declared directly on said BizObject. See the metaclass for implementation
+    details.
     """
 
 
@@ -425,8 +431,8 @@ class BizObject(
         metaclass=BizObjectMeta
         ):
 
-    _schema = None      # set by metaclass
-    _relationships = {} # set by metaclass
+    _schema = None       # set by metaclass
+    relationships = {}  # set by metaclass
     _dao_manager = DaoManager.get_instance()
     _id_generator = UuidGenerator()
 
@@ -434,8 +440,8 @@ class BizObject(
     def __schema__(cls):
         """
         Return a dotted path to the Schema class, like 'path.to.MySchema'. This
-        is only used if a Schema subclass is returned. If None is returned, this
-        is ignored.
+        is only used if a Schema subclass is returned. If None is returned,
+        this is ignored.
         """
 
     @classmethod
@@ -454,53 +460,75 @@ class BizObject(
         return cls._id_generator
 
     @classmethod
-    def set_id_generator(cls, id_generator:IdGenerator):
+    def set_id_generator(cls, id_generator: IdGenerator):
         cls._id_generator = id_generator
 
     def __init__(self, data=None, **kwargs_data):
-        self._adjacent_bizobjs = {}
+        # storage for BizObjects, declared through Relationships
+        self._related_bizobjs = {}
+
+        # memoized dump() return value goes here:
         self._cached_dump_data = None
 
-        # the order of these super class constructors matters...
+        # the order of these super class constructors matters.
+        # each of these is a "partial" class, used this way for
+        # organizational purpose, as this would be a very large
+        # class otherwise.
         BizObjectJsonPatch.__init__(self)
         BizObjectCrudMethods.__init__(self)
         BizObjectGraphQLGetter.__init__(self)
-        BizObjectSchema.__init__(self, strict=True, allow_additional=False)
+        BizObjectSchema.__init__(self)
         BizObjectDirtyDict.__init__(self, data, kwargs_data)
 
     def __getitem__(self, key):
+        """
+        If the key is the name of a field, return it. If it's a relationship,
+        return the related BizObject or list of BizObjects. Otherwise, raise
+        a KeyError.
+        """
         if key in self._data:
             return self._data[key]
-        elif key in self.relationships:
-            return self.relationships[key].data
-        elif self._schema and key in self._schema.fields:
+        elif key in self._related_bizobjs:
+            return self._related_bizobjs[key]
+        elif key in self._schema.fields:
             return None
 
         raise KeyError(key)
 
     def __setitem__(self, key, value):
+        """
+        Set the field or related BizObject on the instance, but if the key does
+        not correspond to either a field or Relationship, raise KeyError.
+        """
+        # if the data being set is a BizObject associated through a declared
+        # Relationship, add it to the "related_bizobj" storage dict.
         if key in self.relationships:
             rel = self.relationships[key]
             is_sequence = isinstance(value, (list, tuple, set))
+
             if rel.many:
                 assert is_sequence
             else:
                 assert not is_sequence
-            rel.data = list(value)
 
-        if self._schema is not None:
-            if key not in self._schema.fields:
-                raise KeyError('{} not in {} schema'.format(
-                        key, self._schema.__class__.__name__))
+            self._related_bizobjs[key] = value
+            return
 
-        self._data[key] = value
+        # disallow assignment of any field not declared in the Schema class
+        # otherwise, set it on the data dict.
+        if key in self._schema.fields:
+            self._data[key] = value
+        else:
+            raise KeyError('{} not in {} schema'.format(
+                    key, self._schema.__class__.__name__))
 
     def __contains__(self, key):
         return key in self._data
 
     def __repr__(self):
-        bizobj_id = ''
+        # extract the id or public id to display
         _id = self._id
+        bizobj_id = ''
         if _id is not None:
             bizobj_id = '/id={}'.format(_id)
         else:
@@ -508,6 +536,7 @@ class BizObject(
             if public_id is not None:
                 bizobj_id = '/public_id={}'.format(public_id)
 
+        # an indication that the bizobj has unsaved data
         dirty_flag = '*' if self._data.dirty else ''
 
         return '<{class_name}{dirty_flag}{bizobj_id}>'.format(
@@ -532,48 +561,65 @@ class BizObject(
     def items(self):
         return self._data.items()
 
-    def merge(self, dct):
+    def merge(self, obj):
         """
+        Merge another dict or BizObject's data dict into the data dict of this
+        BizObject. Not called "update" because that would be confused as the
+        name of the CRUD method. "Update" int the CRUD sense is performed by
+        the save method.
         """
+        # create a deep copy of the data so as other BizObjects that also
+        # merge in or possess this data don't mutate the data stored here.
+        data = copy.deepcopy(obj if isinstance(obj, dict) else obj.data)
+        self._data.update(data)
+
+        # clear cached dump data because we now have different data :)
+        # and mark all new keys as dirty.
         self._cached_dump_data = None
-        self._data.update(dct)
-        self.mark_dirty(dct.keys())
+        self.mark_dirty(data.keys())
 
     def dump(self):
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
         """
+        # as an optimization, we memoize the return value of dump per instance.
+        # first. This only applies to fields. Each BizObject associated through
+        # a Relationship memoizes its own dump dict.
         if self._cached_dump_data:
             data = self._cached_dump_data
         else:
-            data = self._dump_schema()
+            data = self._dump_fields()
             self._cached_dump_data = data
+
+        # recursively dump related BizObjects and add to final dump dict
         related_data = self._dump_relationships()
         data.update(related_data)
+
         return data
 
-    def _dump_schema(self):
+    def _dump_fields(self):
         """
-        Dump all scalar fields of the instance to a dict.
+        Dump all scalar fields of the instance to a dict. If a
         """
-        if self._schema is not None:
-            return self._schema.dump(self._data).data
-        return self._data.copy()
+        return self._schema.dump(self._data).data
 
     def _dump_relationships(self):
         """
         If no schema is associated with the instance, we dump all relationship
-        data that exists. Otherwise, we only dump data declared as corresponding
-        fields in the schema.
+        data that exists. Otherwise, we only dump data declared as
+        corresponding fields in the schema.
         """
         data = {}
 
-        for rel_name, rel_val in self._adjacent_bizobjs.items():
+        for rel_name, rel_val in self._related_bizobjs.items():
             # rel_val is the actual object or list associated with the
-            # relationship; whereas, just rel is the relationship object itself.
+            # relationship; rel is the relationship object itself.
             rel = self.relationships[rel_name]
             dump_to = rel.dump_to or rel.name
+
+            # if the related object is null, dump null; therwise, if it
+            # is an object, dump it. if a list, dump the list.
             if rel_val is None:
                 data[dump_to] = None
             elif is_bizobj(rel_val):
@@ -586,8 +632,8 @@ class BizObject(
 
     def _load(self, data, kwargs_data):
         """
-        Load data passed into the bizobj ctor into an internal DirtyDict. If any
-        of the data fields correspond with delcared Relationships, load the
+        Load data passed into the bizobj ctor into an internal DirtyDict. If
+        any of the data fields correspond with delcared Relationships, load the
         bizobjs declared by said Relationships from said data.
         """
         data = data or {}
@@ -605,7 +651,6 @@ class BizObject(
             related_data = data.pop(load_from, None)
 
             if related_data is None:
-                #self._adjacent_bizobjs[rel.name] = None
                 continue
 
             if rel.many:
@@ -617,7 +662,7 @@ class BizObject(
                         related_bizobj_list.append(
                             rel.bizobj_class(related_data))
 
-                self._adjacent_bizobjs[rel.name] = related_bizobj_list
+                self._related_bizobjs[rel.name] = related_bizobj_list
 
             else:
                 if not is_bizobj(related_data):
@@ -631,14 +676,13 @@ class BizObject(
                     related_bizobj = rel.bizobj_class(related_data)
                 else:
                     related_bizobj = related_data
-                    self._adjacent_bizobjs[rel.name] = related_bizobj
+                    self._related_bizobjs[rel.name] = related_bizobj
 
-        if self._schema is not None:
-            result = self._schema.load(data)
-            if result.errors:
-                raise Exception(str(result.errors))
-            data = result.data
+        result = self._schema.load(data)
+        if result.errors:
+            # TODO: raise custom exception
+            raise Exception(str(result.errors))
 
         # at this point, the data dict has been cleared of any fields that are
         # shadowed by Relationships declared on the bizobj class.
-        return DirtyDict(data)
+        return DirtyDict(result.data)
