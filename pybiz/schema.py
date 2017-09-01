@@ -1,6 +1,7 @@
 import pytz
 import dateutil.parser
 import venusian
+import copy
 
 from uuid import UUID
 from datetime import datetime, date
@@ -56,6 +57,17 @@ class Field(object, metaclass=ABCMeta):
         return '<Field({}{})>'.format(
                 self.__class__.__name__,
                 ', name="{}"'.format(self.name) if self.name else '')
+
+    def get_value_or_default(self, value):
+        if value is not None:
+            return value
+        elif self.default is not None:
+            if callable(self.default):
+                return self.default()
+            else:
+                return copy.deepcopy(self.default)
+        else:
+            return None
 
     @abstractmethod
     def load(self, data):
@@ -248,7 +260,6 @@ class Int(Field):
 class Float(Field):
 
     def load(self, value):
-        value = value if value is not None else self.default
         if isinstance(value, float):
             return FieldResult(value=value)
         if isinstance(value, int):
@@ -357,14 +368,18 @@ class AbstractSchema(object):
         return '<Schema({})>'.format(self.__class__.__name__)
 
     def load(self, data, strict=None):
-        return self._apply_json_patch_op(OP_LOAD, data, strict)
+        return self._apply_op(OP_LOAD, data, strict)
 
     def dump(self, data, strict=None):
-        return self._apply_json_patch_op(OP_DUMP, data, strict)
+        return self._apply_op(OP_DUMP, data, strict)
 
-    def _apply_json_patch_op(self, op, data, strict):
+    def _apply_op(self, op, data, strict):
         strict = strict if strict is not None else self.strict
         result = SchemaResult(op, {}, {})
+
+        for k, field in self.fields.items():
+            if not data.get(k) and field.default is not None:
+                data[k] = field.get_value_or_default(None)
 
         for k, v in data.items():
             field = self.fields.get(k)
