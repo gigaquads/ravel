@@ -40,6 +40,9 @@ from .const import (
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
 
+# TODO: deprecated IdGenerator and set appropriate default callbacks on _id and
+# public_id fields.
+
 
 class Relationship(object):
 
@@ -92,12 +95,13 @@ class BizObjectMeta(ABCMeta):
         """
         # We begin by building the `fields` dict that will become attributes
         # of our dynamic Schema class being created below.
-        #
         # Ensure each BizObject Schema class has
         # both _id and public_id fields.
-        fields = dict(
-            _id=Anything(load_only=True),
-            public_id=Anything(dump_to='id', load_from='id'))
+
+        fields = {
+            '_id': Anything(load_only=True),
+            'public_id': Anything(dump_to='id', default=UUID.next_uuid),
+            }
 
         # "inherit" fields of parent BizObject.Schema
         inherited_schema_class = getattr(cls, 'Schema', None)
@@ -159,6 +163,7 @@ class BizObjectMeta(ABCMeta):
     def register_JsonPatch_hooks(cls, bases):
         if not any(issubclass(x, JsonPatchMixin) for x in bases):
             return
+
         # scan class methods for those annotated as patch hooks
         # and register them as such.
         for k in dir(cls):
@@ -578,6 +583,16 @@ class BizObject(
         self._cached_dump_data = None
         self.mark_dirty(data.keys())
 
+    def load(self, fields=None):
+        """
+        Assuming _id or public_id is not None, this will load the rest of the
+        BizObject's data.
+        """
+        self.merge(
+            self.get(_id=self._id, public_id=self.public_id, fields=fields)
+            )
+        return self
+
     def dump(self):
         """
         Dump the fields of this business object along with its related objects
@@ -653,6 +668,7 @@ class BizObject(
             if related_data is None:
                 continue
 
+            # we're loading a list of BizObjects
             if rel.many:
                 related_bizobj_list = []
                 for obj in related_data:
@@ -664,6 +680,8 @@ class BizObject(
 
                 self._related_bizobjs[rel.name] = related_bizobj_list
 
+            # We are loading a single BizObject. If obj is a plain dict,
+            # we instantiate the related BizObject automatically.
             else:
                 if not is_bizobj(related_data):
                     # if the assertion below fails, then most likely
