@@ -1,11 +1,12 @@
 import pytz
 import dateutil.parser
 import venusian
-import copy
 
 from uuid import UUID
 from datetime import datetime, date
 from abc import ABCMeta, abstractmethod
+
+from Crypto import Random
 
 from .const import (
     RE_EMAIL, RE_UUID, RE_FLOAT,
@@ -57,17 +58,6 @@ class Field(object, metaclass=ABCMeta):
         return '<Field({}{})>'.format(
                 self.__class__.__name__,
                 ', name="{}"'.format(self.name) if self.name else '')
-
-    def get_value_or_default(self, value):
-        if value is not None:
-            return value
-        elif self.default is not None:
-            if callable(self.default):
-                return self.default()
-            else:
-                return copy.deepcopy(self.default)
-        else:
-            return None
 
     @abstractmethod
     def load(self, data):
@@ -223,6 +213,17 @@ class Email(Field):
 
 class Uuid(Field):
 
+    _random = Random.new()
+    _random_atfork = True
+
+    @classmethod
+    def next_uuid(cls):
+        if cls._random_atfork:
+            cls._random_atfork = False
+            Random.atfork()
+
+        return UUID(bytes=cls._random.read(16))
+
     def load(self, value):
         if isinstance(value, UUID):
             return FieldResult(value=value.hex)
@@ -368,18 +369,14 @@ class AbstractSchema(object):
         return '<Schema({})>'.format(self.__class__.__name__)
 
     def load(self, data, strict=None):
-        return self._apply_op(OP_LOAD, data, strict)
+        return self._apply_json_patch_op(OP_LOAD, data, strict)
 
     def dump(self, data, strict=None):
-        return self._apply_op(OP_DUMP, data, strict)
+        return self._apply_json_patch_op(OP_DUMP, data, strict)
 
-    def _apply_op(self, op, data, strict):
+    def _apply_json_patch_op(self, op, data, strict):
         strict = strict if strict is not None else self.strict
         result = SchemaResult(op, {}, {})
-
-        for k, field in self.fields.items():
-            if not data.get(k) and field.default is not None:
-                data[k] = field.get_value_or_default(None)
 
         for k, v in data.items():
             field = self.fields.get(k)

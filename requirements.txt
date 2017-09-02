@@ -3,3 +3,5 @@ pytz
 venusian
 pyyaml
 graphql-py
+requests
+py-crypto

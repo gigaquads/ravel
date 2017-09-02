@@ -26,8 +26,7 @@ from .graphql import GraphQLGetter, GraphQLEngine, GraphQLField
 from .dao import DaoManager, Dao
 from .dirty import DirtyDict, DirtyInterface
 from .util import is_bizobj
-from .schema import AbstractSchema, Schema, Field, Anything
-from .id_generator import IdGenerator, UuidGenerator
+from .schema import AbstractSchema, Schema, Field, Uuid, Anything
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -40,8 +39,7 @@ from .const import (
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
 
-# TODO: deprecated IdGenerator and set appropriate default callbacks on _id and
-# public_id fields.
+# TODO: delete IdGenerator module
 
 
 class Relationship(object):
@@ -100,7 +98,7 @@ class BizObjectMeta(ABCMeta):
 
         fields = {
             '_id': Anything(load_only=True),
-            'public_id': Anything(dump_to='id', default=UUID.next_uuid),
+            'public_id': Anything(dump_to='id', default=Uuid.next_uuid),
             }
 
         # "inherit" fields of parent BizObject.Schema
@@ -326,21 +324,13 @@ class BizObjectCrudMethods(object):
 
         # Persist and refresh data
         if self._id is None:
-            self._id = self._id_generator.next_id()
-
-            if not self.public_id:
-                self.public_id = self._id_generator.next_public_id()
-
-            updated_data = self.dao.create(
-                    _id=self._id,
-                    public_id=self.public_id,
-                    data=data_to_save)
-
+            updated_data = self.dao.create(data=data_to_save)
         else:
             updated_data = self.dao.update(
                     _id=self._id,
                     public_id=self.public_id,
-                    data=data_to_save)
+                    data=data_to_save
+                    )
 
         if updated_data:
             self.merge(updated_data)
@@ -439,7 +429,6 @@ class BizObject(
     _schema = None       # set by metaclass
     relationships = {}  # set by metaclass
     _dao_manager = DaoManager.get_instance()
-    _id_generator = UuidGenerator()
 
     @classmethod
     def __schema__(cls):
@@ -459,14 +448,6 @@ class BizObject(
     @classmethod
     def get_dao(cls):
         return cls._dao_manager.get_dao(cls)
-
-    @classmethod
-    def get_id_generator(cls):
-        return cls._id_generator
-
-    @classmethod
-    def set_id_generator(cls, id_generator: IdGenerator):
-        cls._id_generator = id_generator
 
     def __init__(self, data=None, **kwargs_data):
         # storage for BizObjects, declared through Relationships
