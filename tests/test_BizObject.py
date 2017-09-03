@@ -14,7 +14,6 @@ def Child():
     _id_generator = mock.MagicMock()
 
     class Child(BizObject):
-
         @classmethod
         def __dao__(cls):
             dao = mock.MagicMock()
@@ -32,7 +31,6 @@ def SuperParent(Child):
     _id_generator = mock.MagicMock()
 
     class SuperParent(BizObject):
-
         @classmethod
         def __dao__(cls):
             dao = mock.MagicMock()
@@ -52,7 +50,6 @@ def Parent(SuperParent, Child):
     _id_generator.next_id.return_value = 1
 
     class Parent(SuperParent):
-
         @classmethod
         def __dao__(cls):
             dao = mock.MagicMock()
@@ -111,9 +108,11 @@ def test_BizObject_dump(Parent, Child):
     dumped_data = parent.dump()
     assert dumped_data == {
         'my_str': 'x',
-        'my_child': {'my_str': 'z'},
+        'my_child': {
+            'my_str': 'z'
+        },
         'my_child_super': None,
-        }
+    }
 
 
 def test_BizObject_dirty(Parent):
@@ -170,7 +169,7 @@ def test_BizObject_save(Parent, Child):
         '_id': 1,
         'my_str': 'x',
         'my_child': child_dao.create.return_value,
-        }
+    }
 
     bizobj.my_str = 'x'
     assert 'my_str' in bizobj.dirty
@@ -178,7 +177,11 @@ def test_BizObject_save(Parent, Child):
     bizobj.save()
 
     bizobj.dao.create.assert_called_once_with(
-        1, {'my_str': 'x', 'my_child': {'my_str': 'z', '_id': 2}})
+        1, {'my_str': 'x',
+            'my_child': {
+                'my_str': 'z',
+                '_id': 2
+            }})
 
     bizobj.my_child.dao.create.assert_called_once_with(2, {'my_str': 'z'})
 
@@ -198,14 +201,8 @@ def test_BizObject_save_and_fetch(Parent, Child):
     Parent._dao_manager = mock.MagicMock()
     Parent._dao_manager.get_dao.return_value = parent_dao = Parent.__dao__()
 
-    parent_dao.update.return_value = {
-        '_id': new_id,
-        'my_str': new_my_str
-        }
-    parent_dao.fetch.return_value = {
-        '_id': new_id,
-        'my_str': new_my_str
-        }
+    parent_dao.update.return_value = {'_id': new_id, 'my_str': new_my_str}
+    parent_dao.fetch.return_value = {'_id': new_id, 'my_str': new_my_str}
 
     parent_dao.create.return_value = {'_id': 1, 'my_str': new_my_str}
 
@@ -255,8 +252,12 @@ def test_BizObject_save_nested_through_parent(Parent, Child):
     def mock_dao():
         mock_dao = mock.MagicMock()
         mock_dao.update.return_value = {
-            '_id': 1, 'my_child': {'my_str': 'x', '_id': 2}
+            '_id': 1,
+            'my_child': {
+                'my_str': 'x',
+                '_id': 2
             }
+        }
         mock_dao.fetch.return_value = {}
         return mock_dao
 
