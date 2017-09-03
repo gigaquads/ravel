@@ -1,8 +1,10 @@
+import copy
+
 import pytz
 import dateutil.parser
 import venusian
 
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime, date
 from abc import ABCMeta, abstractmethod
 
@@ -51,13 +53,29 @@ class Field(object, metaclass=ABCMeta):
         self.required = required
         self.dump_required = dump_required
         self.load_required = load_required
-        self.default = default
         self.name = None
+        self.default = default
+        self._default_value = None
 
     def __repr__(self):
         return '<Field({}{})>'.format(
                 self.__class__.__name__,
                 ', name="{}"'.format(self.name) if self.name else '')
+
+    @property
+    def default_value(self):
+        if self._default_value is None:
+            is_callable = callable(self.default)
+            if is_callable:
+                self._default_value = self.default()
+            else:
+                self._default_value = copy.deepcopy(self.default)
+
+        return self._default_value
+
+    @property
+    def has_default_value(self):
+        return self.default is not None
 
     @abstractmethod
     def load(self, data):
@@ -152,10 +170,14 @@ class Regexp(Field):
 class Str(Field):
 
     def load(self, value):
-        if isinstance(value, str):
+        if isinstance(value, UUID):
+            return FieldResult(value.hex)
+        elif isinstance(value, str):
             return FieldResult(value)
         else:
-            return FieldResult(error='expected a string')
+            return FieldResult(error='expected a string but got {}'.format(
+                type(value).__name__
+                ))
 
     def dump(self, data):
         return self.load(data)
@@ -213,15 +235,12 @@ class Email(Field):
 
 class Uuid(Field):
 
-    _random = Random.new()
     _random_atfork = True
+    _random = Random.new()
 
     @classmethod
     def next_uuid(cls):
-        if cls._random_atfork:
-            cls._random_atfork = False
-            Random.atfork()
-
+        Random.atfork()
         return UUID(bytes=cls._random.read(16))
 
     def load(self, value):
@@ -377,6 +396,10 @@ class AbstractSchema(object):
     def _apply_json_patch_op(self, op, data, strict):
         strict = strict if strict is not None else self.strict
         result = SchemaResult(op, {}, {})
+
+        for k, field in self.fields.items():
+            if data.get(k) is None and field.has_default_value:
+                data[k] = field.default_value
 
         for k, v in data.items():
             field = self.fields.get(k)
