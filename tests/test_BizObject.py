@@ -3,6 +3,7 @@ import os
 import pytest
 import mock
 
+from pybiz import schema as fields
 from pybiz.biz import BizObject, Relationship
 from pybiz.schema import Schema, Int, Str, Object
 
@@ -13,7 +14,6 @@ def Child():
     _id_generator = mock.MagicMock()
 
     class Child(BizObject):
-
         @classmethod
         def __dao__(cls):
             dao = mock.MagicMock()
@@ -31,7 +31,6 @@ def SuperParent(Child):
     _id_generator = mock.MagicMock()
 
     class SuperParent(BizObject):
-
         @classmethod
         def __dao__(cls):
             dao = mock.MagicMock()
@@ -51,7 +50,6 @@ def Parent(SuperParent, Child):
     _id_generator.next_id.return_value = 1
 
     class Parent(SuperParent):
-
         @classmethod
         def __dao__(cls):
             dao = mock.MagicMock()
@@ -61,6 +59,15 @@ def Parent(SuperParent, Child):
         my_child = Relationship(Child)
 
     return Parent
+
+
+@pytest.fixture(scope='module')
+def BizFields():
+    class BizFields(BizObject):
+        floaty = fields.Float(allow_none=True)
+        floaty_default = fields.Float(default=7.77, allow_none=True)
+
+    return BizFields
 
 
 def test_BizObject_inherits_relationships(Parent, SuperParent):
@@ -110,9 +117,11 @@ def test_BizObject_dump(Parent, Child):
     dumped_data = parent.dump()
     assert dumped_data == {
         'my_str': 'x',
-        'my_child': {'my_str': 'z'},
+        'my_child': {
+            'my_str': 'z'
+        },
         'my_child_super': None,
-        }
+    }
 
 
 def test_BizObject_dirty(Parent):
@@ -169,7 +178,7 @@ def test_BizObject_save(Parent, Child):
         '_id': 1,
         'my_str': 'x',
         'my_child': child_dao.create.return_value,
-        }
+    }
 
     bizobj.my_str = 'x'
     assert 'my_str' in bizobj.dirty
@@ -177,7 +186,11 @@ def test_BizObject_save(Parent, Child):
     bizobj.save()
 
     bizobj.dao.create.assert_called_once_with(
-        1, {'my_str': 'x', 'my_child': {'my_str': 'z', '_id': 2}})
+        1, {'my_str': 'x',
+            'my_child': {
+                'my_str': 'z',
+                '_id': 2
+            }})
 
     bizobj.my_child.dao.create.assert_called_once_with(2, {'my_str': 'z'})
 
@@ -197,14 +210,8 @@ def test_BizObject_save_and_fetch(Parent, Child):
     Parent._dao_manager = mock.MagicMock()
     Parent._dao_manager.get_dao.return_value = parent_dao = Parent.__dao__()
 
-    parent_dao.update.return_value = {
-        '_id': new_id,
-        'my_str': new_my_str
-        }
-    parent_dao.fetch.return_value = {
-        '_id': new_id,
-        'my_str': new_my_str
-        }
+    parent_dao.update.return_value = {'_id': new_id, 'my_str': new_my_str}
+    parent_dao.fetch.return_value = {'_id': new_id, 'my_str': new_my_str}
 
     parent_dao.create.return_value = {'_id': 1, 'my_str': new_my_str}
 
@@ -254,8 +261,12 @@ def test_BizObject_save_nested_through_parent(Parent, Child):
     def mock_dao():
         mock_dao = mock.MagicMock()
         mock_dao.update.return_value = {
-            '_id': 1, 'my_child': {'my_str': 'x', '_id': 2}
+            '_id': 1,
+            'my_child': {
+                'my_str': 'x',
+                '_id': 2
             }
+        }
         mock_dao.fetch.return_value = {}
         return mock_dao
 
@@ -285,3 +296,30 @@ def test_BizObject_save_nested_through_parent(Parent, Child):
     bizobj.my_child.dao.create.assert_any_call(2, {'my_str': 'x'})
     bizobj.dao.create.assert_not_called()
 
+
+@pytest.mark.default
+def test_BizObject_float_will_be_none_without_default(BizFields):
+    bizobj = BizFields()
+
+    assert bizobj.floaty == None
+
+
+@pytest.mark.default
+def test_BizObject_sets_default_when_field_is_not_specified(BizFields):
+    bizobj = BizFields()
+
+    assert bizobj.floaty_default == 7.77
+
+
+@pytest.mark.default
+def test_BizObject_sets_default_when_none_is_specified(BizFields):
+    bizobj = BizFields(floaty_default=None)
+
+    assert bizobj.floaty_default == 7.77
+
+
+@pytest.mark.default
+def test_BizObject_default_will_not_override_input(BizFields):
+    bizobj = BizFields(floaty_default=6.66)
+
+    assert bizobj.floaty_default == 6.66
