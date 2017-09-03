@@ -3,9 +3,9 @@ import os
 import pytest
 import mock
 
+from pybiz import schema as fields
 from pybiz.biz import BizObject, Relationship
 from pybiz.schema import Schema, Int, Str, Object
-from pybiz.test.fixtures.biz import BizFields
 
 
 @pytest.fixture(scope='module')
@@ -59,6 +59,15 @@ def Parent(SuperParent, Child):
         my_child = Relationship(Child)
 
     return Parent
+
+
+@pytest.fixture(scope='module')
+def BizFields():
+    class BizFields(BizObject):
+        floaty = fields.Float(allow_none=True)
+        floaty_default = fields.Float(default=7.77, allow_none=True)
+
+    return BizFields
 
 
 def test_BizObject_inherits_relationships(Parent, SuperParent):
