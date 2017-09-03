@@ -270,7 +270,7 @@ class BizObjectCrudMethods(object):
     """
 
     @classmethod
-    def exists(_id=None, public_id=None):
+    def exists(cls, _id=None, public_id=None):
         return cls.get_dao().exists(_id=_id, public_id=public_id)
 
     @classmethod
