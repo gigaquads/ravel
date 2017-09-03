@@ -30,7 +30,7 @@ class FacebookOauth2Authenticator(Oauth2Authenticator):
 
     @property
     def redirect_url(self):
-        return self._redirect_uri
+        return self._env.redirect_uri
 
     @property
     def login_url(self):
@@ -38,7 +38,7 @@ class FacebookOauth2Authenticator(Oauth2Authenticator):
             base_url=self._login_url,
             query_params=urlencode({
                 'client_id': self._env.client_id,
-                'redirect_uri': self._env.redirect_uri,
+                'redirect_uri': self.redirect_url,
                 'state': self.csrf_token,
                 'scope': ','.join(self._scope)
                 }))
@@ -47,7 +47,7 @@ class FacebookOauth2Authenticator(Oauth2Authenticator):
         resp = requests.get(self._access_token_url, params={
             'client_id': self._env.client_id,
             'client_secret': self._env.client_secret,
-            'redirect_uri': self._env.redirect_uri,
+            'redirect_uri': self.redirect_url,
             'code': auth_code
             })
 
