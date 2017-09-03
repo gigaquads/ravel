@@ -5,3 +5,6 @@ pyyaml
 graphql-py
 requests
 pycrypto
+
+pytest
+mock

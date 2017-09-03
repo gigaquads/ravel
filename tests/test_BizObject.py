@@ -5,6 +5,7 @@ import mock
 
 from pybiz.biz import BizObject, Relationship
 from pybiz.schema import Schema, Int, Str, Object
+from pybiz.test.fixtures.biz import BizFields
 
 
 @pytest.fixture(scope='module')
@@ -285,3 +286,30 @@ def test_BizObject_save_nested_through_parent(Parent, Child):
     bizobj.my_child.dao.create.assert_any_call(2, {'my_str': 'x'})
     bizobj.dao.create.assert_not_called()
 
+
+@pytest.mark.default
+def test_BizObject_float_will_be_none_without_default(BizFields):
+    bizobj = BizFields()
+
+    assert bizobj.floaty == None
+
+
+@pytest.mark.default
+def test_BizObject_sets_default_when_field_is_not_specified(BizFields):
+    bizobj = BizFields()
+
+    assert bizobj.floaty_default == 7.77
+
+
+@pytest.mark.default
+def test_BizObject_sets_default_when_none_is_specified(BizFields):
+    bizobj = BizFields(floaty_default=None)
+
+    assert bizobj.floaty_default == 7.77
+
+
+@pytest.mark.default
+def test_BizObject_default_will_not_override_input(BizFields):
+    bizobj = BizFields(floaty_default=6.66)
+
+    assert bizobj.floaty_default == 6.66
