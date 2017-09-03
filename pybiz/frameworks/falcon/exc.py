@@ -10,9 +10,9 @@ class PybizFalconError(HTTPError):
     default_message = 'bad request'
 
     def __init__(self, message=None, data=None):
-        super().__init__()
-        self.message = message or self.default_message
         self.data = data or {}
+        self.message = message or self.default_message
+        super().__init__(status=self.http_status, description=self.message)
 
     def __repr__(self):
         return '<FalconError({})>'.format(self.__class__.__name__)
@@ -40,3 +40,13 @@ class NotFound(PybizFalconError):
             message='{} not found'.format(resource_name),
             data=data
             )
+
+
+class NotAuthenticated(PybizFalconError):
+
+    http_status = status_codes.HTTP_401
+    api_status = 'not-authenticated'
+    default_message = 'unauthenticated'
+
+    def __init__(self):
+        super().__init__()

@@ -71,6 +71,6 @@ class FacebookOauth2Authenticator(Oauth2Authenticator):
         data = resp.json()
 
         return RemoteUser(
-            name=data['name'],
+            user_id=data['id'],
             email=data['email'],
             )
