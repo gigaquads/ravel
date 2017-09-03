@@ -10,6 +10,7 @@ from abc import ABCMeta, abstractmethod
 
 from Crypto import Random
 
+from .util import to_timestamp
 from .const import (
     RE_EMAIL, RE_UUID, RE_FLOAT,
     OP_LOAD, OP_DUMP,
@@ -99,6 +100,7 @@ class Object(Field):
 
     def __init__(self, nested, *args, **kwargs):
         super(Object, self).__init__(*args, **kwargs)
+        assert isinstance(nested, Schema)
         self.nested = nested
 
     def load(self, value):
@@ -258,7 +260,9 @@ class Uuid(Field):
         return FieldResult(error='expected a UUID')
 
     def dump(self, data):
-        return self.load(data)
+        result = self.load(data)
+        result.data = result.data.hex
+        return result
 
 
 class Int(Field):
@@ -315,25 +319,8 @@ class DateTime(Field):
 
     def dump(self, data):
         result = self.load(data)
-        result.value = self.to_timestamp(result.value)
+        result.value = to_timestamp(result.value)
         return result
-
-    @staticmethod
-    def to_timestamp(datetime_obj):
-        """
-        Return the datetime object as a UTC timestamp in seconds.
-        """
-        if datetime_obj is None:
-            return None
-        if isinstance(datetime_obj, datetime):
-            if datetime_obj.tzinfo is None:
-                raise ValueError('datetime object has no timezone')
-        elif isinstance(datetime_obj, date):
-            datetime_obj = datetime\
-                .strptime(str(datetime_obj), "%Y-%m-%d")\
-                .replace(tzinfo=pytz.utc)
-        epoch = datetime.fromtimestamp(0, pytz.utc)
-        return int((datetime_obj - epoch).total_seconds())
 
 
 class SchemaMeta(type):
@@ -388,18 +375,19 @@ class AbstractSchema(object):
         return '<Schema({})>'.format(self.__class__.__name__)
 
     def load(self, data, strict=None):
-        return self._apply_json_patch_op(OP_LOAD, data, strict)
+        return self._apply_op(OP_LOAD, data, strict)
 
     def dump(self, data, strict=None):
-        return self._apply_json_patch_op(OP_DUMP, data, strict)
+        return self._apply_op(OP_DUMP, data, strict)
 
-    def _apply_json_patch_op(self, op, data, strict):
+    def _apply_op(self, op, data, strict):
         strict = strict if strict is not None else self.strict
         result = SchemaResult(op, {}, {})
 
-        for k, field in self.fields.items():
-            if data.get(k) is None and field.has_default_value:
-                data[k] = field.default_value
+        if op == OP_LOAD:
+            for k, field in self.fields.items():
+                if data.get(k) is None and field.has_default_value:
+                    data[k] = field.default_value
 
         for k, v in data.items():
             field = self.fields.get(k)

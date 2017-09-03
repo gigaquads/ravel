@@ -12,7 +12,6 @@ Relationship Load/Dump Mechanics:
 
 import os
 import copy
-import uuid
 import re
 
 import venusian
@@ -52,7 +51,7 @@ class Relationship(object):
         self.name = None
 
     def copy(self):
-        return copy.copy(self)
+        return copy.deepcopy(self)
 
 
 class BizObjectMeta(ABCMeta):
@@ -96,9 +95,12 @@ class BizObjectMeta(ABCMeta):
         # Ensure each BizObject Schema class has
         # both _id and public_id fields.
 
+        def default_public_id():
+            return Uuid.next_uuid().hex
+
         fields = {
             '_id': Anything(load_only=True),
-            'public_id': Anything(dump_to='id', default=Uuid.next_uuid),
+            'public_id': Anything(dump_to='id', default=default_public_id)
             }
 
         # "inherit" fields of parent BizObject.Schema
@@ -571,7 +573,7 @@ class BizObject(
     def load(self, fields=None):
         """
         Assuming _id or public_id is not None, this will load the rest of the
-        BizObject's data.
+        BizObject's data. Note that this shadows AbstractSchema's load method.
         """
         self.merge(
             self.get(_id=self._id, public_id=self.public_id, fields=fields)
