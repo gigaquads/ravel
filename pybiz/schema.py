@@ -56,7 +56,6 @@ class Field(object, metaclass=ABCMeta):
         self.load_required = load_required
         self.name = None
         self.default = default
-        self._default_value = None
 
     def __repr__(self):
         return '<Field({}{})>'.format(
@@ -65,14 +64,12 @@ class Field(object, metaclass=ABCMeta):
 
     @property
     def default_value(self):
-        if self._default_value is None:
-            is_callable = callable(self.default)
-            if is_callable:
-                self._default_value = self.default()
+        if self.default is not None:
+            if callable(self.default):
+                return self.default()
             else:
-                self._default_value = copy.deepcopy(self.default)
-
-        return self._default_value
+                return copy.deepcopy(self.default)
+        return None
 
     @property
     def has_default_value(self):
@@ -259,10 +256,8 @@ class Uuid(Field):
             return FieldResult(value=('0'*(32 - len(hex_str))) + hex_str)
         return FieldResult(error='expected a UUID')
 
-    def dump(self, data):
-        result = self.load(data)
-        result.data = result.data.hex
-        return result
+    def dump(self, value):
+        return self.load(value)
 
 
 class Int(Field):

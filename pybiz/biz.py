@@ -313,7 +313,7 @@ class BizObjectCrudMethods(object):
                 for i, bizobj in enumerate(v):
                     if bizobj.dirty:
                         bizobj.save(fetch=fetch)
-                        dumped_list_item_map[i] = bizobj.dump()
+                        dumped_list_item_map[i] = copy.deepcopy(bizobj.data)
 
                 if dumped_list_item_map:
                     data_to_save[k] = dumped_list_item_map
@@ -321,7 +321,7 @@ class BizObjectCrudMethods(object):
             elif v.dirty:
                 # this is a scalar relationship
                 v.save()
-                data_to_save[k] = v.dump()
+                data_to_save[k] = copy.deepcopy(v.data)
                 if '_id' in v.data:
                     data_to_save[k]['_id'] = v.data['_id']
 
@@ -526,7 +526,7 @@ class BizObject(
         else:
             public_id = self.public_id
             if public_id is not None:
-                bizobj_id = '/public_id={}'.format(public_id)
+                bizobj_id = '/public-id={}'.format(public_id)
 
         # an indication that the bizobj has unsaved data
         dirty_flag = '*' if self._data.dirty else ''
