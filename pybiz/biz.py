@@ -232,21 +232,28 @@ class BizObjectMeta(ABCMeta):
                 setattr(cls, field_name, build_property(field_name))
 
     def build_relationship_properties(cls, relationships):
-        def build_rel_property(k, rel):
+        def build_relationship_property(k, rel):
+
             def fget(self):
+                """
+                Return the related BizObject instance or list.
+                """
                 return self._related_bizobjs.get(k)
 
             def fset(self, value):
+                """
+                Set the related BizObject or list, enuring that a list can't
+                be assigned to a Relationship with many == False and vice
+                versa..
+                """
                 rel = self.relationships[k]
                 is_sequence = isinstance(value, (list, tuple, set))
 
                 if not is_sequence:
                     if rel.many:
                         raise ValueError('{} must be non-scalar'.format(k))
-
                     bizobj_list = value
                     self._related_bizobjs[k] = bizobj_list
-
                 elif is_sequence:
                     if not rel.many:
                         raise ValueError('{} must be scalar'.format(k))
@@ -254,12 +261,16 @@ class BizObjectMeta(ABCMeta):
                     self._related_bizobjs[k] = value
 
             def fdel(self):
+                """
+                Remove the related BizObject or list. The field will appeear in
+                dump() results. You must assign None if you want to None to appear.
+                """
                 del self._related_bizobjs[k]
 
             return property(fget=fget, fset=fset, fdel=fdel)
 
         for rel in relationships.values():
-            setattr(cls, rel.name, build_rel_property(rel.name, rel))
+            setattr(cls, rel.name, build_relationship_property(rel.name, rel))
 
 
 class BizObjectCrudMethods(object):
