@@ -38,8 +38,6 @@ from .const import (
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
 
-# TODO: delete IdGenerator module
-
 
 class Relationship(object):
 
