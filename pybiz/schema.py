@@ -1,11 +1,16 @@
+import copy
+
 import pytz
 import dateutil.parser
 import venusian
 
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime, date
 from abc import ABCMeta, abstractmethod
 
+from Crypto import Random
+
+from .util import to_timestamp
 from .const import (
     RE_EMAIL, RE_UUID, RE_FLOAT,
     OP_LOAD, OP_DUMP,
@@ -49,13 +54,26 @@ class Field(object, metaclass=ABCMeta):
         self.required = required
         self.dump_required = dump_required
         self.load_required = load_required
-        self.default = default
         self.name = None
+        self.default = default
 
     def __repr__(self):
         return '<Field({}{})>'.format(
                 self.__class__.__name__,
                 ', name="{}"'.format(self.name) if self.name else '')
+
+    @property
+    def default_value(self):
+        if self.default is not None:
+            if callable(self.default):
+                return self.default()
+            else:
+                return copy.deepcopy(self.default)
+        return None
+
+    @property
+    def has_default_value(self):
+        return self.default is not None
 
     @abstractmethod
     def load(self, data):
@@ -79,6 +97,7 @@ class Object(Field):
 
     def __init__(self, nested, *args, **kwargs):
         super(Object, self).__init__(*args, **kwargs)
+        assert isinstance(nested, Schema)
         self.nested = nested
 
     def load(self, value):
@@ -150,10 +169,14 @@ class Regexp(Field):
 class Str(Field):
 
     def load(self, value):
-        if isinstance(value, str):
+        if isinstance(value, UUID):
+            return FieldResult(value.hex)
+        elif isinstance(value, str):
             return FieldResult(value)
         else:
-            return FieldResult(error='expected a string')
+            return FieldResult(error='expected a string but got {}'.format(
+                type(value).__name__
+                ))
 
     def dump(self, data):
         return self.load(data)
@@ -211,6 +234,14 @@ class Email(Field):
 
 class Uuid(Field):
 
+    _random_atfork = True
+    _random = Random.new()
+
+    @classmethod
+    def next_uuid(cls):
+        Random.atfork()
+        return UUID(bytes=cls._random.read(16))
+
     def load(self, value):
         if isinstance(value, UUID):
             return FieldResult(value=value.hex)
@@ -225,8 +256,8 @@ class Uuid(Field):
             return FieldResult(value=('0'*(32 - len(hex_str))) + hex_str)
         return FieldResult(error='expected a UUID')
 
-    def dump(self, data):
-        return self.load(data)
+    def dump(self, value):
+        return self.load(value)
 
 
 class Int(Field):
@@ -248,7 +279,6 @@ class Int(Field):
 class Float(Field):
 
     def load(self, value):
-        value = value if value is not None else self.default
         if isinstance(value, float):
             return FieldResult(value=value)
         if isinstance(value, int):
@@ -284,25 +314,8 @@ class DateTime(Field):
 
     def dump(self, data):
         result = self.load(data)
-        result.value = self.to_timestamp(result.value)
+        result.value = to_timestamp(result.value)
         return result
-
-    @staticmethod
-    def to_timestamp(datetime_obj):
-        """
-        Return the datetime object as a UTC timestamp in seconds.
-        """
-        if datetime_obj is None:
-            return None
-        if isinstance(datetime_obj, datetime):
-            if datetime_obj.tzinfo is None:
-                raise ValueError('datetime object has no timezone')
-        elif isinstance(datetime_obj, date):
-            datetime_obj = datetime\
-                .strptime(str(datetime_obj), "%Y-%m-%d")\
-                .replace(tzinfo=pytz.utc)
-        epoch = datetime.fromtimestamp(0, pytz.utc)
-        return int((datetime_obj - epoch).total_seconds())
 
 
 class SchemaMeta(type):
@@ -357,14 +370,19 @@ class AbstractSchema(object):
         return '<Schema({})>'.format(self.__class__.__name__)
 
     def load(self, data, strict=None):
-        return self._apply_json_patch_op(OP_LOAD, data, strict)
+        return self._apply_op(OP_LOAD, data, strict)
 
     def dump(self, data, strict=None):
-        return self._apply_json_patch_op(OP_DUMP, data, strict)
+        return self._apply_op(OP_DUMP, data, strict)
 
-    def _apply_json_patch_op(self, op, data, strict):
+    def _apply_op(self, op, data, strict):
         strict = strict if strict is not None else self.strict
         result = SchemaResult(op, {}, {})
+
+        if op == OP_LOAD:
+            for k, field in self.fields.items():
+                if data.get(k) is None and field.has_default_value:
+                    data[k] = field.default_value
 
         for k, v in data.items():
             field = self.fields.get(k)

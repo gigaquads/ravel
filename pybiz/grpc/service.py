@@ -18,15 +18,15 @@ class GrpcService(object):
     def __init__(
             self,
             driver: GrpcDriver,
-            insecure_addr: str=None,
-            secure_addr: str=None,
+            insecure_port: str=None,
+            secure_port: str=None,
             executor: Executor=None):
 
-        assert insecure_addr or secure_addr
+        assert insecure_port or secure_port
 
         self._driver = driver
-        self._insecure_addr = insecure_addr
-        self._secure_addr = secure_addr
+        self._insecure_port = insecure_port
+        self._secure_port = secure_port
         self._server = None
         self._new_executor = lambda: executor or ThreadPoolExecutor(
                 max_workers=self.DEFAULT_SERVER_MAX_WORKERS
@@ -37,12 +37,12 @@ class GrpcService(object):
         return self._driver.types
 
     @property
-    def insecure_addr(self):
-        return self._insecure_addr
+    def insecure_port(self):
+        return self._insecure_port
 
     @property
-    def secure_addr(self):
-        return self._secure_addr
+    def secure_port(self):
+        return self._secure_port
 
     @property
     def server(self):
@@ -62,8 +62,8 @@ class GrpcService(object):
         self._server = self.build_grpc_server()
         servicer = DynamicServicer(
             driver=self._driver,
-            insecure_addr=self._insecure_addr,
-            secure_addr=self._secure_addr,
+            insecure_port=self._insecure_port,
+            secure_port=self._secure_port,
             )
 
         self._driver.add_servicer_to_server(servicer, self._server)
@@ -72,12 +72,12 @@ class GrpcService(object):
     def build_grpc_server(self):
         """
         Build and return a grpc server object using a secure or insecure port,
-        as defined by the secure_addr or insecure_addr passed to the
+        as defined by the secure_port or insecure_port passed to the
         constructor.
         """
         server = grpc.server(self._new_executor())
-        if self._secure_addr is not None:
-            server.add_secure_port(self._secure_addr)
-        elif self._insecure_addr is not None:
-            server.add_insecure_port(self._insecure_addr)
+        if self._secure_port is not None:
+            server.add_secure_port(self._secure_port)
+        elif self._insecure_port is not None:
+            server.add_insecure_port(self._insecure_port)
         return server

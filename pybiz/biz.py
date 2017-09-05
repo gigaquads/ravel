@@ -12,7 +12,6 @@ Relationship Load/Dump Mechanics:
 
 import os
 import copy
-import uuid
 import re
 
 import venusian
@@ -26,8 +25,7 @@ from .graphql import GraphQLGetter, GraphQLEngine, GraphQLField
 from .dao import DaoManager, Dao
 from .dirty import DirtyDict, DirtyInterface
 from .util import is_bizobj
-from .schema import AbstractSchema, Schema, Field, Anything
-from .id_generator import IdGenerator, UuidGenerator
+from .schema import AbstractSchema, Schema, Field, Uuid, Anything
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -51,7 +49,7 @@ class Relationship(object):
         self.name = None
 
     def copy(self):
-        return copy.copy(self)
+        return copy.deepcopy(self)
 
 
 class BizObjectMeta(ABCMeta):
@@ -92,12 +90,16 @@ class BizObjectMeta(ABCMeta):
         """
         # We begin by building the `fields` dict that will become attributes
         # of our dynamic Schema class being created below.
-        #
         # Ensure each BizObject Schema class has
         # both _id and public_id fields.
-        fields = dict(
-            _id=Anything(load_only=True),
-            public_id=Anything(dump_to='id', load_from='id'))
+
+        def default_public_id():
+            return Uuid.next_uuid().hex
+
+        fields = {
+            '_id': Anything(load_only=True),
+            'public_id': Anything(dump_to='id', default=default_public_id)
+            }
 
         # "inherit" fields of parent BizObject.Schema
         inherited_schema_class = getattr(cls, 'Schema', None)
@@ -159,6 +161,7 @@ class BizObjectMeta(ABCMeta):
     def register_JsonPatch_hooks(cls, bases):
         if not any(issubclass(x, JsonPatchMixin) for x in bases):
             return
+
         # scan class methods for those annotated as patch hooks
         # and register them as such.
         for k in dir(cls):
@@ -229,21 +232,28 @@ class BizObjectMeta(ABCMeta):
                 setattr(cls, field_name, build_property(field_name))
 
     def build_relationship_properties(cls, relationships):
-        def build_rel_property(k, rel):
+        def build_relationship_property(k, rel):
+
             def fget(self):
+                """
+                Return the related BizObject instance or list.
+                """
                 return self._related_bizobjs.get(k)
 
             def fset(self, value):
+                """
+                Set the related BizObject or list, enuring that a list can't
+                be assigned to a Relationship with many == False and vice
+                versa..
+                """
                 rel = self.relationships[k]
                 is_sequence = isinstance(value, (list, tuple, set))
 
                 if not is_sequence:
                     if rel.many:
                         raise ValueError('{} must be non-scalar'.format(k))
-
                     bizobj_list = value
                     self._related_bizobjs[k] = bizobj_list
-
                 elif is_sequence:
                     if not rel.many:
                         raise ValueError('{} must be scalar'.format(k))
@@ -251,12 +261,16 @@ class BizObjectMeta(ABCMeta):
                     self._related_bizobjs[k] = value
 
             def fdel(self):
+                """
+                Remove the related BizObject or list. The field will appeear in
+                dump() results. You must assign None if you want to None to appear.
+                """
                 del self._related_bizobjs[k]
 
             return property(fget=fget, fset=fset, fdel=fdel)
 
         for rel in relationships.values():
-            setattr(cls, rel.name, build_rel_property(rel.name, rel))
+            setattr(cls, rel.name, build_relationship_property(rel.name, rel))
 
 
 class BizObjectCrudMethods(object):
@@ -265,6 +279,10 @@ class BizObjectCrudMethods(object):
     methods, which interface with the DAO. Note that the `save` method is
     actually an upsert.
     """
+
+    @classmethod
+    def exists(cls, _id=None, public_id=None):
+        return cls.get_dao().exists(_id=_id, public_id=public_id)
 
     @classmethod
     def get(cls, _id=None, public_id=None, fields: dict = None):
@@ -304,7 +322,7 @@ class BizObjectCrudMethods(object):
                 for i, bizobj in enumerate(v):
                     if bizobj.dirty:
                         bizobj.save(fetch=fetch)
-                        dumped_list_item_map[i] = bizobj.dump()
+                        dumped_list_item_map[i] = copy.deepcopy(bizobj.data)
 
                 if dumped_list_item_map:
                     data_to_save[k] = dumped_list_item_map
@@ -312,7 +330,7 @@ class BizObjectCrudMethods(object):
             elif v.dirty:
                 # this is a scalar relationship
                 v.save()
-                data_to_save[k] = v.dump()
+                data_to_save[k] = copy.deepcopy(v.data)
                 if '_id' in v.data:
                     data_to_save[k]['_id'] = v.data['_id']
 
@@ -321,21 +339,13 @@ class BizObjectCrudMethods(object):
 
         # Persist and refresh data
         if self._id is None:
-            self._id = self._id_generator.next_id()
-
-            if not self.public_id:
-                self.public_id = self._id_generator.next_public_id()
-
-            updated_data = self.dao.create(
-                    _id=self._id,
-                    public_id=self.public_id,
-                    data=data_to_save)
-
+            updated_data = self.dao.create(data=data_to_save)
         else:
             updated_data = self.dao.update(
                     _id=self._id,
                     public_id=self.public_id,
-                    data=data_to_save)
+                    data=data_to_save
+                    )
 
         if updated_data:
             self.merge(updated_data)
@@ -434,7 +444,6 @@ class BizObject(
     _schema = None       # set by metaclass
     relationships = {}  # set by metaclass
     _dao_manager = DaoManager.get_instance()
-    _id_generator = UuidGenerator()
 
     @classmethod
     def __schema__(cls):
@@ -454,14 +463,6 @@ class BizObject(
     @classmethod
     def get_dao(cls):
         return cls._dao_manager.get_dao(cls)
-
-    @classmethod
-    def get_id_generator(cls):
-        return cls._id_generator
-
-    @classmethod
-    def set_id_generator(cls, id_generator: IdGenerator):
-        cls._id_generator = id_generator
 
     def __init__(self, data=None, **kwargs_data):
         # storage for BizObjects, declared through Relationships
@@ -534,7 +535,7 @@ class BizObject(
         else:
             public_id = self.public_id
             if public_id is not None:
-                bizobj_id = '/public_id={}'.format(public_id)
+                bizobj_id = '/public-id={}'.format(public_id)
 
         # an indication that the bizobj has unsaved data
         dirty_flag = '*' if self._data.dirty else ''
@@ -577,6 +578,16 @@ class BizObject(
         # and mark all new keys as dirty.
         self._cached_dump_data = None
         self.mark_dirty(data.keys())
+
+    def load(self, fields=None):
+        """
+        Assuming _id or public_id is not None, this will load the rest of the
+        BizObject's data. Note that this shadows AbstractSchema's load method.
+        """
+        self.merge(
+            self.get(_id=self._id, public_id=self.public_id, fields=fields)
+            )
+        return self
 
     def dump(self):
         """
@@ -653,6 +664,7 @@ class BizObject(
             if related_data is None:
                 continue
 
+            # we're loading a list of BizObjects
             if rel.many:
                 related_bizobj_list = []
                 for obj in related_data:
@@ -664,6 +676,8 @@ class BizObject(
 
                 self._related_bizobjs[rel.name] = related_bizobj_list
 
+            # We are loading a single BizObject. If obj is a plain dict,
+            # we instantiate the related BizObject automatically.
             else:
                 if not is_bizobj(related_data):
                     # if the assertion below fails, then most likely

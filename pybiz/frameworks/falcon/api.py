@@ -16,7 +16,6 @@ from .resource import FalconResourceManager
 from .request import Request
 
 
-
 class Api(ApiRegistry):
 
     def __init__(self, *args, **kwargs):
@@ -79,8 +78,12 @@ class Api(ApiRegistry):
         kwargs_dict = kwargs.copy()
 
         for k, param in signature.parameters.items():
-            if k in kwargs_dict:
+            # naively skip params named kwargs and args because they
+            # are most likely **kwargs and *args rather than actual
+            # argument names.
+            if k in ('kwargs', 'args') or k in kwargs_dict:
                 continue
+
             if param.default is inspect._empty:
                 args_dict[k] = request.json[k]
             else:

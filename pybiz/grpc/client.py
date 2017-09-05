@@ -12,15 +12,15 @@ class GrpcClient(object):
     def __init__(
             self,
             driver: GrpcDriver,
-            secure_addr=None,
-            insecure_addr=None,
+            secure_port=None,
+            insecure_port=None,
             ):
 
-        assert insecure_addr or secure_addr
+        assert insecure_port or secure_port
 
         self._driver = driver
-        self._insecure_addr = insecure_addr
-        self._secure_addr = secure_addr
+        self._insecure_port = insecure_port
+        self._secure_port = secure_port
         self._channel = self._new_channel()
         self._stub = self._driver.stub_class(self._channel)
         self._method_names = {
@@ -57,12 +57,12 @@ class GrpcClient(object):
     def _new_channel(self):
         """
         Return a secure or insecure grpc channel object based on whether a
-        secure_addr or insecure_addr was supplied to the constructor.
+        secure_port or insecure_port was supplied to the constructor.
         """
-        if self._insecure_addr:
-            return grpc.insecure_channel(self._insecure_addr)
+        if self._insecure_port:
+            return grpc.insecure_channel(self._insecure_port)
         else:
-            return grpc.secure_channel(self._secure_addr)
+            return grpc.secure_channel(self._secure_port)
 
     @property
     def types(self) -> dict:
@@ -114,14 +114,14 @@ if __name__ == '__main__':
 
     # run the server or client based on first CLI arg:
     if sys.argv[1].lower() == 'server':
-        service = GreeterService(driver, insecure_addr=SOCKET_ADDR)
+        service = GreeterService(driver, insecure_port=SOCKET_ADDR)
         server = service.server()
 
         server.start()
         input('Press any key to kill the server...')
 
     else:
-        client = GreeterClient(driver, insecure_addr=SOCKET_ADDR)
+        client = GreeterClient(driver, insecure_port=SOCKET_ADDR)
 
         while True:
             name = input('Write your name (Enter nothing to quit): ').strip()
