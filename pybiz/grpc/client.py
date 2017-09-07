@@ -1,5 +1,7 @@
 import grpc
 
+from .driver import GrpcDriver
+
 
 class GrpcClient(object):
     """
