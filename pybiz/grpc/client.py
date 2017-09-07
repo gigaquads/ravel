@@ -24,7 +24,7 @@ class GrpcClient(object):
         self._insecure_port = insecure_port
         self._secure_port = secure_port
         self._channel = self._new_channel()
-        self._stub = self._driver.stub_class(self._channel)
+        self._stub = self._driver.Stub(self._channel)
         self._method_names = {
             attr for attr in dir(self._stub)
             if not attr.startswith('__')
