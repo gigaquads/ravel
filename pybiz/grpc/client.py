@@ -1,3 +1,5 @@
+import inspect
+
 import grpc
 
 from .driver import GrpcDriver
@@ -24,11 +26,7 @@ class GrpcClient(object):
         self._insecure_port = insecure_port
         self._secure_port = secure_port
         self._channel = self._new_channel()
-        self._stub = self._driver.stub_class(self._channel)
-        self._method_names = {
-            attr for attr in dir(self._stub)
-            if not attr.startswith('__')
-            }
+        self._stub = self._driver.Stub(self._channel)
 
         def build_wrapper(func_name, func):
             """
@@ -45,12 +43,12 @@ class GrpcClient(object):
             return wrapper
 
         # replace/decorate RPC instance methods (decorator above)
-        for method_name in self._method_names:
+        for method_name in self.methods:
             method = getattr(self, method_name, None)
 
             # ensure we've implemented all RPC functions
-            if not method or not callable(method):
-                raise Exception('{} must implement {}'.format(
+            if not (method and inspect.ismethod(method)):
+                raise NotImplemented('{} must implement {}'.format(
                     self.__class__.__name__, method_name))
             else:
                 wrapper = build_wrapper(method_name, method)
@@ -72,7 +70,7 @@ class GrpcClient(object):
 
     @property
     def methods(self) -> list:
-        return self._method_names
+        return self._driver.methods
 
     @property
     def channel(self):

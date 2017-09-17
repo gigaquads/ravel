@@ -25,8 +25,16 @@ class GrpcDriver(object):
     def __init__(self, pb2, pb2_grpc):
         self.pb2 = pb2
         self.pb2_grpc = pb2_grpc
-        self.types = self._aggregate_message_types()
+        self.types = self._aggregate_message_types(pb2)
         self._bind_pb2_grpc_objects(pb2_grpc)
+        self._methods = frozenset({
+            name for (name, _method)
+            in inspect.getmembers(self.Servicer, predicate=inspect.isfunction)
+            })
+
+    @property
+    def methods(self):
+        return self._methods
 
     def _aggregate_message_types(self, pb2):
         """ Extract protobuf message types from pb2 mobule and store them
