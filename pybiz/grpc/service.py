@@ -1,3 +1,5 @@
+import inspect
+
 import grpc
 
 from concurrent.futures import ThreadPoolExecutor, Executor
@@ -32,6 +34,13 @@ class GrpcService(object):
                 max_workers=self.DEFAULT_SERVER_MAX_WORKERS
                 )
 
+        # ensure the instance implements the expected service interface
+        for method_name in self._driver.methods:
+            obj = getattr(self, method_name, None)
+            if not (obj and inspect.ismethod(obj)):
+                raise NotImplemented('{} must implement {}'.format(
+                    self.__class__.__name__, method_name))
+
     @property
     def types(self):
         return self._driver.types
@@ -48,7 +57,7 @@ class GrpcService(object):
     def server(self):
         return self._build_server()
 
-    def _build_server(self):
+    def _build_server(self):  # TODO: rename this because its too similar to _build_grpc_server
         if self._server is not None:
             return self._server
 
