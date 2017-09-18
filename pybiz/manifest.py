@@ -22,7 +22,7 @@ class ManifestSchema(Schema):
         schema = fields.Str(required=False)
 
     package = fields.Str(required=True)
-    bindings = fields.List(BindingSchema(), required=True)
+    bindings = fields.List(BindingSchema(), required=False)
 
 
 class Manifest(object):
