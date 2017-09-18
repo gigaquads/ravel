@@ -7,7 +7,8 @@ package: {{ project_name|snake }}
 
 # The `bindings` section declares which Dao class is to be
 # utilized by each BizObject class as well as the
-# Schema class (optional).
-bindings:
-    - biz: User
-      dao: UserDao
+# Schema class (optional). For example:
+#
+# bindings:
+#    - biz: User
+#      dao: UserDao

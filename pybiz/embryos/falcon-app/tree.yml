@@ -1,21 +1,22 @@
-- readme.md
-- requirements.txt
-- manifest.yml
-- setup.py
-- uwsgi:
-   - main.py
-   - prod.ini
-   - dev.ini
-- bin:
-    - debug
-- {{ project_name|snake }}:
-    - __init__.py
-    - app.py
-    - api:
+- {{ project_name }}:
+    - readme.md
+    - requirements.txt
+    - manifest.yml
+    - setup.py
+    - uwsgi:
+       - main.py
+       - prod.ini
+       - dev.ini
+    - bin:
+        - debug
+    - {{ project_name|snake }}:
         - __init__.py
-        - execute_graphql_query.py
-    - biz:
-        - __init__.py
-        - graphql_document.py
-    - dao:
-        - __init__.py
+        - app.py
+        - api:
+            - __init__.py
+            - execute_graphql_query.py
+        - biz:
+            - __init__.py
+            - graphql_document.py
+        - dao:
+            - __init__.py
