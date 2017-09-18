@@ -1,0 +1,4 @@
+- {{ biz_dir }}:
+    - {{ biz_class_name }}: biz()
+- {{ dao_dir }}:
+    - {{ dao_class_name }}: dao()
