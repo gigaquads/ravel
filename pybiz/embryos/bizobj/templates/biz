@@ -1,44 +1,46 @@
 from pybiz import BizObject, fields
 from pybiz.graphql import GraphQLField
 
-from {{ project_name|snake }}.api import app
 
-
-class {{ name }}(BizObject):
+class {{ biz_class_name }}(BizObject):
 
 {% for field in fields %}
     {{ field['name'] }} = fields.{{ field['type'] }}()
 {% endfor %}
 
-{% for method in biz %}
-    {% if method.get('class_method') %}
-    @classmethod
-    {% elif method.get('static_method') %}
-    @staticmethod
-    {% endif %}
-    def {{ method['name'] }}(
-        {% if method.get('class_method') %}
-            cls
-        {% elif not method.get('static_method') %}
-            self
-        {% endif %}
-        {% if method.get('args') or method.get('kwargs') or method.get('variadic_args') or method.get('variadic_kwargs') %}
-            ,
-        {% endif %}
-        {% for arg in method.get('args', []) %}
-            {{ arg['name'] }}{{': ' + arg['type'] if arg.get('type') else ''}}
-            {%- if not loop.last %},{% endif %}
-        {% endfor %}
-        {% for kwarg in method.get('kwargs', []) %}
-            {{ kwarg['name'] }}: {{': ' + kwarg['type'] if kwarg.get('type') else ''}}={{ kwarg.get('default') }}
-            {%- if not loop.last %},{% endif %}
-        {% endfor %}
-        {% if method.get('variadic_args') %}
-            , *args
-        {% endif %}
-        {% if method.get('variadic_kwargs') %}
-            , **kwargs
-        {% endif %}
-        ):
-        pass
-{% endfor %}
+{% if biz %}
+  {% for method in biz %}
+      {% if method.get('class_method') %}
+      @classmethod
+      {% elif method.get('static_method') %}
+      @staticmethod
+      {% endif %}
+      def {{ method['name'] }}(
+          {% if method.get('class_method') %}
+              cls
+          {% elif not method.get('static_method') %}
+              self
+          {% endif %}
+          {% if method.get('args') or method.get('kwargs') or method.get('variadic_args') or method.get('variadic_kwargs') %}
+              ,
+          {% endif %}
+          {% for arg in method.get('args', []) %}
+              {{ arg['name'] }}{{': ' + arg['type'] if arg.get('type') else ''}}
+              {%- if not loop.last %},{% endif %}
+          {% endfor %}
+          {% for kwarg in method.get('kwargs', []) %}
+              {{ kwarg['name'] }}: {{': ' + kwarg['type'] if kwarg.get('type') else ''}}={{ kwarg.get('default') }}
+              {%- if not loop.last %},{% endif %}
+          {% endfor %}
+          {% if method.get('variadic_args') %}
+              , *args
+          {% endif %}
+          {% if method.get('variadic_kwargs') %}
+              , **kwargs
+          {% endif %}
+          ):
+          pass
+  {% endfor %}
+{% else %}
+    pass
+{% endif %}
