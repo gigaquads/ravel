@@ -1,21 +1,26 @@
-from {{ project_name|snake }}.api import app
+from . import app
 
-
-{% for method in api %}
-@app.{{ method['http_method'].lower() }}('{{ method['url_path'] }}')
-def {{ method['name'] }}(
-    {% for arg in method.get('args', []) %}
-        {{ arg['name'] }}: {{ arg['type'] }}
-        {%- if not loop.last %},{% endif %}
-    {% endfor %}
-    {% for kwarg in method.get('kwargs', []) %}
-        {{ kwarg['name'] }}: {{ kwarg['type'] }}={{ kwarg.get('default') }}
-        {%- if not loop.last %},{% endif %}
-    {% endfor %}
-    ):
-    return {
-        'success': True,
-        'method': '{{ method['name'] }}',
-        'timestamp': datetime.now(),
-        }
-{% endfor %}
+{% if api %}
+  {% for method in api %}
+  @app.{{ method['http_method'].lower() }}('{{ method['url_path'] }}')
+  def {{ method['name'] }}(
+      {% for arg in method.get('args', []) %}
+          {{ arg['name'] }}: {{ arg['type'] }}
+          {%- if not loop.last %},{% endif %}
+      {% endfor %}
+      {% for kwarg in method.get('kwargs', []) %}
+          {{ kwarg['name'] }}: {{ kwarg['type'] }}={{ kwarg.get('default') }}
+          {%- if not loop.last %},{% endif %}
+      {% endfor %}
+      ):
+      return {
+          'success': True,
+          'method': '{{ method['name'] }}',
+          'timestamp': datetime.now(),
+          }
+  {% endfor %}
+{% else %}
+@app.get('/{{ project_name|dash }}/echo')
+def echo(msg):
+    return {'echo': msg}
+{% endif %}
