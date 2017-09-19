@@ -1,4 +1,6 @@
 - {{ biz_dir }}:
-    - {{ biz_class_name }}: biz()
+    - {{ project_name|snake }}.py: biz()
 - {{ dao_dir }}:
-    - {{ dao_class_name }}: dao()
+    - {{ project_name|snake }}_dao.py: dao()
+- {{ api_dir }}:
+    - {{ project_name|snake }}_api.py: api()
