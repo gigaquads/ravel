@@ -8,6 +8,6 @@ from . import app
 @app.get('/graphql')
 def execute_graphql_query(q: str=None):
     """
-    Execute a GraphQL query string.
+    Execute a GraphQL query.
     """
-    return GraphQLDocument.graphql_engine.query(q)
+    return GraphQLDocument.graphql.query(q)
