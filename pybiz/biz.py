@@ -284,13 +284,17 @@ class BizObjectCrudMethods(object):
 
     @classmethod
     def get(cls, _id=None, public_id=None, fields: dict = None):
-        return cls.get_dao().fetch(
-            _id=_id, public_id=public_id, fields=fields)
+        dao = cls.get_dao()
+        record = dao.fetch(_id=_id, public_id=public_id, fields=fields)
+        return cls(record)
 
     @classmethod
     def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
-        return cls.get_dao().fetch(
-            _ids=_ids, public_ids=public_ids, fields=fields)
+        return [
+            cls(record) for record in cls.get_dao().fetch(
+                _ids=_ids, public_ids=public_ids, fields=fields
+                )
+            ]
 
     @classmethod
     def delete_many(cls, bizobjs):

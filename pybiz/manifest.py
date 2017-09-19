@@ -117,4 +117,3 @@ class Manifest(object):
                 biz_class.Schema = schema_class
 
             manager.register(biz_class, dao_class)
-

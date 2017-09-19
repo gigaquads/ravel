@@ -89,11 +89,12 @@ class DictDao(Dao):
         return any(v in self.storage[k] for k, v in kwargs.items())
 
     def fetch(self, **kwargs) -> dict:
-        kwargs.pop('fields', None)
+        fields = kwargs.pop('fields', None)
         for k, v in kwargs.items():
             record = self.storage[k].get(v)
             if record:
                 return record
+        return None
 
     def fetch_many(self, **kwargs) -> dict:
         kwargs.pop('fields', None)
