@@ -70,13 +70,11 @@ class BizObjectMeta(ABCMeta):
         cls.build_all_properties(schema_class, relationships)
         cls.register_JsonPatch_hooks(bases)
         cls.register_dao()
-        cls.attach_venusian_callback()
 
-    def attach_venusian_callback(cls):
-        def callback(scanner, name, bizobj_class):
+        def venusian_callback(scanner, name, bizobj_class):
             scanner.bizobj_classes[name] = bizobj_class
 
-        venusian.attach(cls, callback, category='biz')
+        venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
         dao_class = cls.__dao__()
