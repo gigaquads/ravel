@@ -5,7 +5,6 @@ import re
 
 from setuptools import setup, find_packages
 
-
 if __name__ == '__main__':
     here = os.path.abspath(os.path.dirname(__file__))
     requirements = []
@@ -22,7 +21,8 @@ if __name__ == '__main__':
             if line.startswith('-e'):
                 # we're looking at a github repo dependency, so
                 # isntall from a github tarball.
-                match = re.search(r'(https://github.+?)#egg=(.+)$', line.strip())
+                match = re.search(r'(https://github.+?)#egg=(.+)$',
+                                  line.strip())
                 url, egg = match.groups()
                 if url.endswith('.git'):
                     url = url[:-4]
@@ -34,11 +34,11 @@ if __name__ == '__main__':
             else:
                 requirements.append(line.strip().replace('-', '_'))
 
-    setup(name='{{ project_name }}',
-          version='1.0',
-          description='{{ project_name }}',
-          long_description=readme,
-          install_requires=requirements,
-          dependency_links=dependency_links,
-          packages=find_packages(),
-          )
+    setup(
+        name='{{ name }}',
+        version='1.0',
+        description='{{ name }}',
+        long_description=readme,
+        install_requires=requirements,
+        dependency_links=dependency_links,
+        packages=find_packages(), )

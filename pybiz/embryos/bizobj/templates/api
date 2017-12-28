@@ -20,7 +20,7 @@ from . import app
           }
   {% endfor %}
 {% else %}
-@app.get('/{{ project_name|dash }}/echo')
+@app.get('/{{ name|dash }}/echo')
 def echo(msg):
     return {'echo': msg}
 {% endif %}

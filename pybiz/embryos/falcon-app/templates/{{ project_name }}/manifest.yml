@@ -1,9 +1,9 @@
-# {{ project_name }} PyBiz Manifest
+# {{ name }} PyBiz Manifest
 # ------------------------------------------------------------
 
 # The `package` field declares where the API functions, BizObject
 # classes and Dao classes are to be found and loaded.
-package: {{ project_name|snake }}
+package: {{ name|snake }}
 
 # The `bindings` section declares which Dao class is to be
 # utilized by each BizObject class as well as the
