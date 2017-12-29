@@ -1,6 +1,8 @@
 def pre_create(context):
-    biz_class_name = context.get('name', context['args'].get('name'))
+    name = context.get('name', context['args'].get('name'))
+    biz_class_name = name
 
+    context['name'] = name
     context['biz_class_name'] = biz_class_name
     context['dao_class_name'] = biz_class_name + 'Dao'
 
