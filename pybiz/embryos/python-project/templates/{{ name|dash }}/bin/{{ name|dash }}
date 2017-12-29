@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+# encoding=utf8
+# vim: set filetype=python
+
+import argparse
+import sys
+
+CONFIG = dict(
+    prog="{{ name|snake }}",
+    name="{{ name|title }}",
+    version="{{ version }}",
+    tagline="{{ tagline }}", )
+VERSION_FORMAT = "{name} {version}, {tagline}"
+
+
+def version():
+    return VERSION_FORMAT.format(**CONFIG)
+
+
+def build_parser():
+    """
+    Build parser for interactivity
+    """
+    # setup the parser with defaults and version information
+    parser = argparse.ArgumentParser(prog=CONFIG['prog'])
+    parser.set_defaults(action=None)
+    parser.add_argument(
+        '-v',
+        '--version',
+        action='version',
+        help='The version of this damn script',
+        version=version())
+
+    # build subparsers for actionable requests
+    subparsers = parser.add_subparsers(
+        title='subcommands', help='sub-command help')
+    create = subparsers.add_parser('create', help='Create')
+    create.set_defaults(action='create')
+    create.add_argument(
+        '--name',
+        type=str,
+        help='''
+        Give it a name
+        ''')
+
+    return parser
+
+
+def parse_args(parser):
+    args, unknown = parser.parse_known_args()
+
+    # now combine known and unknown arguments into a single dict
+    args_dict = {
+        k: getattr(args, k)
+        for k in dir(args) if not k.startswith('_')
+    }
+
+    for i in range(0, len(unknown), 2):
+        k = unknown[i]
+        v = unknown[i + 1]
+        args_dict[k.lstrip('-')] = v
+
+    # build a custom type with the combined argument names as attributes
+    arguments = type('Arguments', (object, ), args_dict)()
+
+    return arguments
+
+
+def main():
+    """
+    Main
+    """
+    parser = build_parser()
+    args = parse_args(parser)
+    action = args.action
+    # as `elif`, add additional routing here
+    # order is important
+    if action == 'create':
+        print('TODO Implement')
+    else:
+        parser.print_usage()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(error)
