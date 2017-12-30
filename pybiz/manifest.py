@@ -76,11 +76,12 @@ class Manifest(object):
         # get project directory (the parent dir to src dir)
         if filepath is None:
             root_pkg = importlib.import_module(root_pkg_name)
-            abs_root_dir = os.path.realpath(root_pkg.__file__)
-            proj_dir = '/'.join(abs_root_dir.split('/')[:-2])
-            filepath = os.path.join(proj_dir, 'manifest.yaml')
-            if not os.path.exists(filepath):
-                filepath = os.path.join(proj_dir, 'manifest.yml')
+            if hasattr(root_pkg, '__file__'):
+                abs_root_dir = os.path.realpath(root_pkg.__file__)
+                proj_dir = '/'.join(abs_root_dir.split('/')[:-2])
+                filepath = os.path.join(proj_dir, 'manifest.yaml')
+                if not os.path.exists(filepath):
+                    filepath = os.path.join(proj_dir, 'manifest.yml')
 
         if filepath is None:
             raise ManifestError('could not find pybiz manifest file')
