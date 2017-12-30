@@ -1,0 +1,11 @@
+---
+- {{ name|dash }}/:
+  - README.md
+  - requirements.txt
+  - setup.py
+  - {{ name|snake }}:
+    - __init__.py
+  - bin/:
+    - {{ name|dash }}
+  - tests/:
+...

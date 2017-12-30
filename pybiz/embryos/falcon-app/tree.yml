@@ -1,4 +1,4 @@
-- {{ project_name }}:
+- {{ name }}:
     - readme.md
     - requirements.txt
     - manifest.yml
@@ -9,7 +9,7 @@
        - dev.ini
     - bin:
         - debug
-    - {{ project_name|snake }}:
+    - {{ name|snake }}:
         - __init__.py
         - app.py
         - api:

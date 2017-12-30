@@ -1,4 +1,4 @@
-from {{ project_name|snake }}.app import App
+from {{ name|snake }}.app import App
 
 
 # instantiate the global app instance here instead of in the app.py module in

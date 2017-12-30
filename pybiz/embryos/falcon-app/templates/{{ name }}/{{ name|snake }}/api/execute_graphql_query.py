@@ -1,6 +1,6 @@
 from pybiz import BizObject, Relationship
 
-from {{ project_name|snake }}.biz.graphql_document import GraphQLDocument
+from {{ name|snake }}.biz.graphql_document import GraphQLDocument
 
 from . import app
 

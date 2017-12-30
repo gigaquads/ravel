@@ -1,17 +1,19 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+# encoding=utf-8
 
 import os
 import re
 
 from setuptools import setup, find_packages
 
-
 if __name__ == '__main__':
     here = os.path.abspath(os.path.dirname(__file__))
+    bin_path = os.path.join(here, 'bin')
     requirements = []
     dependency_links = []
+    scripts = []
 
-    with open(os.path.join(here, 'readme.md')) as f:
+    with open(os.path.join(here, 'README.md')) as f:
         readme = f.read()
 
     with open(os.path.join(here, 'requirements.txt')) as f:
@@ -22,7 +24,8 @@ if __name__ == '__main__':
             if line.startswith('-e'):
                 # we're looking at a github repo dependency, so
                 # isntall from a github tarball.
-                match = re.search(r'(https://github.+?)#egg=(.+)$', line.strip())
+                match = re.search(r'(https://github.+?)#egg=(.+)$',
+                                  line.strip())
                 url, egg = match.groups()
                 if url.endswith('.git'):
                     url = url[:-4]
@@ -34,11 +37,15 @@ if __name__ == '__main__':
             else:
                 requirements.append(line.strip().replace('-', '_'))
 
-    setup(name='{{ project_name }}',
-          version='1.0',
-          description='{{ project_name }}',
-          long_description=readme,
-          install_requires=requirements,
-          dependency_links=dependency_links,
-          packages=find_packages(),
-          )
+    for (dirpath, _, filenames) in os.walk(bin_path):
+        for filename in filenames:
+            scripts.append(os.path.join(bin_path, filename))
+
+    setup(
+        name='{{ name|title}}',
+        version='{{ version }}',
+        description='{{ description }}',
+        long_description=readme,
+        install_requires=requirements,
+        scripts=scripts,
+        packages=find_packages(), )
