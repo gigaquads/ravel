@@ -1,0 +1,4 @@
+ipdb
+pytest
+
+-e git+https://github.com/dgabriele/pybiz.git#egg=pybiz
