@@ -1,5 +1,5 @@
+import os
 import threading
-
 import venusian
 
 from abc import ABCMeta, abstractmethod
@@ -7,13 +7,14 @@ from importlib import import_module
 from collections import defaultdict
 from copy import deepcopy
 
+from appyratus.yaml import Yaml
+
 
 class DAOError(Exception):
     pass
 
 
 class DaoMeta(ABCMeta):
-
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
@@ -24,7 +25,6 @@ class DaoMeta(ABCMeta):
 
 
 class Dao(object, metaclass=DaoMeta):
-
     @abstractmethod
     def exists(self, _id=None, public_id=None) -> bool:
         pass
@@ -34,7 +34,10 @@ class Dao(object, metaclass=DaoMeta):
         pass
 
     @abstractmethod
-    def fetch_many(self, _ids: list=None, public_ids:list=None, fields: dict=None) -> dict:
+    def fetch_many(self,
+                   _ids: list=None,
+                   public_ids: list=None,
+                   fields: dict=None) -> dict:
         pass
 
     @abstractmethod
@@ -46,7 +49,10 @@ class Dao(object, metaclass=DaoMeta):
         pass
 
     @abstractmethod
-    def update_many(self, _ids: list=None, public_ids: list=None, data: list=None) -> dict:
+    def update_many(self,
+                    _ids: list=None,
+                    public_ids: list=None,
+                    data: list=None) -> dict:
         pass
 
     @abstractmethod
@@ -124,7 +130,10 @@ class DictDao(Dao):
             record.update(deepcopy(data))
         return record
 
-    def update_many(self, _ids: list=None, public_ids: list=None, data: list=None) -> list:
+    def update_many(self,
+                    _ids: list=None,
+                    public_ids: list=None,
+                    data: list=None) -> list:
         records = defaultdict(dict)
         data = deepcopy(data)
         for k, values in kwargs.items():
@@ -148,6 +157,60 @@ class DictDao(Dao):
                 record = self.storage[k].pop(_k)
                 records[k][_k] = record
         return records
+
+
+class YamlDao(DictDao):
+    @classmethod
+    def read_all(cls):
+        profile_data = []
+        for root, dirs, files in os.walk(self.data_path):
+            for yamlfile in files:
+                filepath = os.path.join(root, yamlfile)
+                with open(filepath) as yamlraw:
+                    res = yaml.load(yamlraw.read())
+                    profile_data.append(res)
+        return profile_data
+
+    @classmethod
+    def file_path(cls, key):
+        return os.path.join(cls.data_path, Yaml.format_file_name(key))
+
+    def exists(self, _id=None, public_id=None) -> bool:
+        raise NotImplementedError('override `exists` in subclass')
+
+    def fetch(self, _id=None, public_id=None, fields: dict=None) -> dict:
+        data = super().fetch(_id=_id, public_id=public_id, fields=fields)
+        if not data:
+            data = Yaml.from_file(self.file_path(_id or public_id))
+        return data
+
+    def fetch_many(self,
+                   _ids: list=None,
+                   public_ids: list=None,
+                   fields: dict=None) -> dict:
+        raise NotImplementedError('override in subclass')
+
+    def create(self, _id=None, public_id=None, data: dict=None) -> dict:
+        raise NotImplementedError('override `create` in subclass')
+
+    def update(self, _id=None, public_id=None, data: dict=None) -> dict:
+        data = super().update(_id=_id, public_id=public_id, data=data)
+
+        import ipdb
+        ipdb.set_trace()
+        pass
+
+    def update_many(self,
+                    _ids: list=None,
+                    public_ids: list=None,
+                    data: list=None) -> dict:
+        raise NotImplementedError('override in subclass')
+
+    def delete(self, _id=None, public_id=None) -> dict:
+        raise NotImplementedError('override in subclass')
+
+    def delete_many(self, _ids: list=None, public_ids: list=None) -> dict:
+        raise NotImplementedError('override in subclass')
 
 
 class DaoManager(object):
