@@ -1,11 +1,17 @@
-def pre_create(context):
-    args = context['args']
-    name = args.get('name', context.get('name'))
-    description = args.get('description', context.get('description'))
-    version = args.get('version', context.get('version'))
-    tagline = args.get('tagline', context.get('tagline'))
+from appyratus import schema
 
-    context['name'] = name
-    context['description'] = description
-    context['version'] = version
-    context['tagline'] = tagline
+from embryo import hooks
+
+
+class PythonProjectSchema(schema.Schema):
+    name = schema.Str()
+    description = schema.Str(default='')
+    version = schema.Anything()
+    tagline = schema.Str()
+    action = schema.Str()
+    butts = schema.Str(default='wat')
+
+
+def pre_create(context):
+    context = hooks.PreCreateHook.from_schema(PythonProjectSchema, context)
+    return context

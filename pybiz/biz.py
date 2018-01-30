@@ -20,12 +20,13 @@ from abc import ABCMeta, abstractmethod
 from types import MethodType
 from importlib import import_module
 
+from appyratus.schema import AbstractSchema, Schema, Field, Uuid, Anything
+
 from .patch import JsonPatchMixin
 from .graphql import GraphQLGetter, GraphQLEngine, GraphQLField
 from .dao import DaoManager, Dao
 from .dirty import DirtyDict, DirtyInterface
 from .util import is_bizobj
-from .schema import AbstractSchema, Schema, Field, Uuid, Anything
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -530,12 +531,12 @@ class BizObject(
 
     def __repr__(self):
         # extract the id or public id to display
-        _id = self._id
-        bizobj_id = ''
+        bizobj_id = '/???'
+        _id = self._data.get('_id', None)
         if _id is not None:
             bizobj_id = '/id={}'.format(_id)
         else:
-            public_id = self.public_id
+            public_id = self._data.get('public_id', None)
             if public_id is not None:
                 bizobj_id = '/public-id={}'.format(public_id)
 
