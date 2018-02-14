@@ -7,6 +7,7 @@ from importlib import import_module
 from collections import defaultdict
 from copy import deepcopy
 
+from appyratus.file import File
 from appyratus.yaml import Yaml
 
 
@@ -112,7 +113,7 @@ class DictDao(Dao):
                     records[k][_k] = record
         return records
 
-    def create(self, _id=None, data: dict=None) -> dict:
+    def create(self, _id=None, public_id=None, data: dict = None) -> dict:
         _id = _id or self.next_id()
         data['_id'] = _id
         self.storage['_id'][_id] = data

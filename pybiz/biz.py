@@ -342,7 +342,8 @@ class BizObjectCrudMethods(object):
 
         # Persist and refresh data
         if self._id is None:
-            updated_data = self.dao.create(data=data_to_save)
+            updated_data = self.dao.create(
+                public_id=self.public_id, data=data_to_save)
         else:
             updated_data = self.dao.update(
                     _id=self._id,
