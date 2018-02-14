@@ -33,15 +33,13 @@ from .const import (
     PATCH_PATH_ANNOTATION,
     PATCH_ANNOTATION,
     IS_BIZOBJ_ANNOTATION,
-    )
-
+)
 
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
 
 
 class Relationship(object):
-
     def __init__(self, bizobj_class, many=False, dump_to=None, load_from=None):
         self.bizobj_class = bizobj_class
         self.load_from = load_from
@@ -54,7 +52,6 @@ class Relationship(object):
 
 
 class BizObjectMeta(ABCMeta):
-
     def __new__(cls, name, bases, dict_):
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
         cls.add_is_bizobj_annotation(new_class)
@@ -87,6 +84,7 @@ class BizObjectMeta(ABCMeta):
         Builds cls.Schema from the fields declared on the business object. All
         business objects automatically inherit an _id and public_id fields
         """
+
         # We begin by building the `fields` dict that will become attributes
         # of our dynamic Schema class being created below.
         # Ensure each BizObject Schema class has
@@ -98,7 +96,7 @@ class BizObjectMeta(ABCMeta):
         fields = {
             '_id': Anything(load_only=True),
             'public_id': Anything(dump_to='id', default=default_public_id)
-            }
+        }
 
         # "inherit" fields of parent BizObject.Schema
         inherited_schema_class = getattr(cls, 'Schema', None)
@@ -114,7 +112,7 @@ class BizObjectMeta(ABCMeta):
         # Build string name of the new Schema class
         # and construct the Schema class object:
         schema_class_name = '{}Schema'.format(name)
-        cls.Schema = type(schema_class_name, (Schema,), fields)
+        cls.Schema = type(schema_class_name, (Schema, ), fields)
 
         return cls.Schema
 
@@ -214,6 +212,7 @@ class BizObjectMeta(ABCMeta):
         Create properties out of the fields declared on the schema associated
         with the class.
         """
+
         def build_property(k):
             def fget(self):
                 return self[k]
@@ -232,7 +231,6 @@ class BizObjectMeta(ABCMeta):
 
     def build_relationship_properties(cls, relationships):
         def build_relationship_property(k, rel):
-
             def fget(self):
                 """
                 Return the related BizObject instance or list.
@@ -292,10 +290,10 @@ class BizObjectCrudMethods(object):
     @classmethod
     def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
         return [
-            cls(record) for record in cls.get_dao().fetch(
-                _ids=_ids, public_ids=public_ids, fields=fields
-                )
-            ]
+            cls(record)
+            for record in cls.get_dao().fetch(
+                _ids=_ids, public_ids=public_ids, fields=fields)
+        ]
 
     @classmethod
     def delete_many(cls, bizobjs):
@@ -346,20 +344,13 @@ class BizObjectCrudMethods(object):
                 public_id=self.public_id, data=data_to_save)
         else:
             updated_data = self.dao.update(
-                    _id=self._id,
-                    public_id=self.public_id,
-                    data=data_to_save
-                    )
+                _id=self._id, public_id=self.public_id, data=data_to_save)
 
         if updated_data:
             self.merge(updated_data)
 
         if fetch:
-            self.merge(
-                self.dao.fetch(
-                    _id=self._id,
-                    public_id=self.public_id
-                ))
+            self.merge(self.dao.fetch(_id=self._id, public_id=self.public_id))
 
         self.clear_dirty()
         return self
@@ -442,10 +433,9 @@ class BizObject(
         BizObjectCrudMethods,
         BizObjectDirtyDict,
         BizObjectGraphQLGetter,
-        metaclass=BizObjectMeta
-        ):
+        metaclass=BizObjectMeta):
 
-    _schema = None       # set by metaclass
+    _schema = None  # set by metaclass
     relationships = {}  # set by metaclass
     _dao_manager = DaoManager.get_instance()
 
@@ -525,7 +515,7 @@ class BizObject(
             self._data[key] = value
         else:
             raise KeyError('{} not in {} schema'.format(
-                    key, self._schema.__class__.__name__))
+                key, self._schema.__class__.__name__))
 
     def __contains__(self, key):
         return key in self._data
@@ -545,9 +535,9 @@ class BizObject(
         dirty_flag = '*' if self._data.dirty else ''
 
         return '<{class_name}{dirty_flag}{bizobj_id}>'.format(
-                class_name=self.__class__.__name__,
-                bizobj_id=bizobj_id,
-                dirty_flag=dirty_flag)
+            class_name=self.__class__.__name__,
+            bizobj_id=bizobj_id,
+            dirty_flag=dirty_flag)
 
     @property
     def data(self):
@@ -589,8 +579,7 @@ class BizObject(
         BizObject's data. Note that this shadows AbstractSchema's load method.
         """
         self.merge(
-            self.get(_id=self._id, public_id=self.public_id, fields=fields)
-            )
+            self.get(_id=self._id, public_id=self.public_id, fields=fields))
         return self
 
     def dump(self):

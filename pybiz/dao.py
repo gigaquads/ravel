@@ -31,29 +31,27 @@ class Dao(object, metaclass=DaoMeta):
         pass
 
     @abstractmethod
-    def fetch(self, _id=None, public_id=None, fields: dict=None) -> dict:
+    def fetch(self, _id=None, public_id=None, fields: dict = None) -> dict:
         pass
 
     @abstractmethod
-    def fetch_many(self,
-                   _ids: list=None,
-                   public_ids: list=None,
-                   fields: dict=None) -> dict:
+    def fetch_many(
+        self, _ids: list = None, public_ids: list = None, fields: dict = None
+    ) -> dict:
         pass
 
     @abstractmethod
-    def create(self, _id=None, public_id=None, data: dict=None) -> dict:
+    def create(self, _id=None, public_id=None, data: dict = None) -> dict:
         pass
 
     @abstractmethod
-    def update(self, _id=None, public_id=None, data: dict=None) -> dict:
+    def update(self, _id=None, public_id=None, data: dict = None) -> dict:
         pass
 
     @abstractmethod
-    def update_many(self,
-                    _ids: list=None,
-                    public_ids: list=None,
-                    data: list=None) -> dict:
+    def update_many(
+        self, _ids: list = None, public_ids: list = None, data: list = None
+    ) -> dict:
         pass
 
     @abstractmethod
@@ -61,7 +59,7 @@ class Dao(object, metaclass=DaoMeta):
         pass
 
     @abstractmethod
-    def delete_many(self, _ids: list=None, public_ids: list=None) -> dict:
+    def delete_many(self, _ids: list = None, public_ids: list = None) -> dict:
         pass
 
 
@@ -121,7 +119,7 @@ class DictDao(Dao):
             self.storage['public_id'][data['public_id']] = data
         return data
 
-    def update(self, _id=None, public_id=None, data: dict=None) -> dict:
+    def update(self, _id=None, public_id=None, data: dict = None) -> dict:
         record = None
         if not record and _id:
             record = self.storage['_id'].get(_id)
@@ -131,10 +129,9 @@ class DictDao(Dao):
             record.update(deepcopy(data))
         return record
 
-    def update_many(self,
-                    _ids: list=None,
-                    public_ids: list=None,
-                    data: list=None) -> list:
+    def update_many(
+        self, _ids: list = None, public_ids: list = None, data: list = None
+    ) -> list:
         records = defaultdict(dict)
         data = deepcopy(data)
         for k, values in kwargs.items():
@@ -151,7 +148,7 @@ class DictDao(Dao):
                 results[k][v] = self.storage[k].pop(v)
         return results
 
-    def delete_many(self, _ids: list=None, public_ids: list=None) -> list:
+    def delete_many(self, _ids: list = None, public_ids: list = None) -> list:
         records = defaultdict(dict)
         for k, values in kwargs.items():
             for _k in values:
@@ -179,38 +176,42 @@ class YamlDao(DictDao):
     def exists(self, _id=None, public_id=None) -> bool:
         raise NotImplementedError('override `exists` in subclass')
 
-    def fetch(self, _id=None, public_id=None, fields: dict=None) -> dict:
+    def fetch(self, _id=None, public_id=None, fields: dict = None) -> dict:
         data = super().fetch(_id=_id, public_id=public_id, fields=fields)
         if not data:
-            data = Yaml.from_file(self.file_path(_id or public_id))
+            file_path = self.file_path(public_id or _id)
+            data = Yaml.from_file(file_path)
         return data
 
-    def fetch_many(self,
-                   _ids: list=None,
-                   public_ids: list=None,
-                   fields: dict=None) -> dict:
+    def fetch_many(
+        self, _ids: list = None, public_ids: list = None, fields: dict = None
+    ) -> dict:
         raise NotImplementedError('override in subclass')
 
-    def create(self, _id=None, public_id=None, data: dict=None) -> dict:
-        raise NotImplementedError('override `create` in subclass')
+    def create(self, _id=None, public_id=None, data: dict = None) -> dict:
+        data = super().create(_id=_id, public_id=public_id, data=data)
+        file_path = self.file_path(public_id or _id)
+        if File.exists(file_path):
+            raise Exception('File exists at {}'.format(file_path))
+        Yaml.to_file(file_path=file_path, data=data)
+        return data
 
-    def update(self, _id=None, public_id=None, data: dict=None) -> dict:
+    def update(self, _id=None, public_id=None, data: dict = None) -> dict:
+        file_path = self.file_path(public_id or _id)
+        if not File.exists(file_path):
+            raise Exception('File does not exist at {}'.format(file_path))
         data = super().update(_id=_id, public_id=public_id, data=data)
-
-        import ipdb
-        ipdb.set_trace()
         pass
 
-    def update_many(self,
-                    _ids: list=None,
-                    public_ids: list=None,
-                    data: list=None) -> dict:
+    def update_many(
+        self, _ids: list = None, public_ids: list = None, data: list = None
+    ) -> dict:
         raise NotImplementedError('override in subclass')
 
     def delete(self, _id=None, public_id=None) -> dict:
         raise NotImplementedError('override in subclass')
 
-    def delete_many(self, _ids: list=None, public_ids: list=None) -> dict:
+    def delete_many(self, _ids: list = None, public_ids: list = None) -> dict:
         raise NotImplementedError('override in subclass')
 
 
