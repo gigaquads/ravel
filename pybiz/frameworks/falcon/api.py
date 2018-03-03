@@ -74,27 +74,18 @@ class Api(ApiRegistry):
         Use the top-level properties of the request JSON payload object as the
         arguments to request handlers.
         """
-        args_dict = {}
-        kwargs_dict = kwargs.copy()
+        uri_template_path = request.uri_template.strip('/').split('/')
+        uri_path = request.path.strip('/').split('/')
 
-        for k, param in signature.parameters.items():
-            # naively skip params named kwargs and args because they
-            # are most likely **kwargs and *args rather than actual
-            # argument names.
-            if k in ('kwargs', 'args') or k in kwargs_dict:
-                continue
+        path_kwargs = {}
+        for k, v in zip(uri_template_path, uri_path):
+            if k.startswith('{'):
+                path_kwargs[k[1:-1]] = v 
 
-            if param.default is inspect._empty:
-                args_dict[k] = request.json[k]
-            else:
-                kwargs_dict[k] = request.json.get(k)
+        param_kwargs = request.params
+        param_kwargs
 
-        # careful not to overwrite properties in the JSON body
-        # with those in the query string params...
-        args_dict.update(kwargs_dict)
-        args_dict.update(request.params)
-
-        return args_dict
+        return dict(param_kwargs, **path_kwargs)
 
     def pack(self, data, request, response, *args, **kwargs):
         response.body = data

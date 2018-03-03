@@ -202,7 +202,7 @@ class ApiHandler(object):
     def __call__(self, *args, **kwargs):
         try:
             unpack = self.decorator.unpack
-            args_dict = unpack(self.signature, *args, **kwargs)
+            target_args_dict = unpack(self.signature, *args, **kwargs)
         except KeyError as exc:
             raise ApiError(
                 'Could not unpack request arguments. Missing '
@@ -214,7 +214,7 @@ class ApiHandler(object):
                 '{} - Could not unpack request arguments.'.format(msg)
             )
 
-        result = self.target(**args_dict)
+        result = self.target(**target_args_dict)
         self.decorator.registry.pack(result, *args, **kwargs)
         return result
 

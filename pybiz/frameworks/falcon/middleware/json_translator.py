@@ -33,10 +33,10 @@ class JsonTranslator(object):
         # schema-loaded data
         if 'params' in handler.schemas:
             schema = handler.schemas['params']
-            result = schema.load(params).data
+            result = schema.load(params)
             params.clear()
             params.update(result.data)
-            request.params = params
+            request.params.update(params)
 
     def process_response(self, request, response, resource):
         if response.body is not None:
