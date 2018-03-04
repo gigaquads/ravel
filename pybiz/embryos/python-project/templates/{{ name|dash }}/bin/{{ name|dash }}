@@ -34,14 +34,16 @@ def build_parser():
     # build subparsers for actionable requests
     subparsers = parser.add_subparsers(
         title='subcommands', help='sub-command help')
-    create = subparsers.add_parser('create', help='Create')
-    create.set_defaults(action='create')
+{% if action %}
+    {{ action }} = subparsers.add_parser('{{ action }}', help='{{ action|title }}')
+    {{ action }}.set_defaults(action='{{ action }}')
     create.add_argument(
         '--name',
         type=str,
         help='''
         Give it a name
         ''')
+{% endif %}
 
     return parser
 
@@ -73,12 +75,16 @@ def main():
     parser = build_parser()
     args = parse_args(parser)
     action = args.action
+    {% if action %}
     # as `elif`, add additional routing here
     # order is important
     if action == 'create':
         print('TODO Implement')
-    else:
-        parser.print_usage()
+        return 
+    {% endif %}
+
+    # nothing to do, print usage
+    parser.print_usage()
 
 
 if __name__ == "__main__":
