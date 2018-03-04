@@ -10,7 +10,8 @@ class JsonTranslator(object):
 
     def process_request(self, request, response):
         if request.content_length:
-            request.json = ujson.loads(request.stream.read().decode())
+            data = request.stream.read().decode()
+            request.json = ujson.loads(data)
         else:
             request.json = {}
 

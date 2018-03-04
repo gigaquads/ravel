@@ -4,8 +4,7 @@ import venusian
 from abc import ABCMeta, abstractmethod
 
 
-
-class DAOError(Exception):
+class DaoError(Exception):
     pass
 
 
@@ -55,8 +54,6 @@ class Dao(object, metaclass=DaoMeta):
     @abstractmethod
     def delete_many(self, _ids: list = None, public_ids: list = None) -> dict:
         pass
-
-
 
 
 class DaoManager(object):

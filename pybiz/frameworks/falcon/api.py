@@ -83,7 +83,7 @@ class Api(ApiRegistry):
                 path_kwargs[k[1:-1]] = v 
 
         param_kwargs = request.params
-        param_kwargs
+        param_kwargs.update(request.json)
 
         return dict(param_kwargs, **path_kwargs)
 
