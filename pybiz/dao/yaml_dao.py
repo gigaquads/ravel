@@ -1,7 +1,6 @@
 import os
 
-from appyratus.yaml import Yaml
-from appyratus.file import File
+from appyratus.io import File, Yaml
 
 from pybiz.dao.dict_dao import DictDao
 

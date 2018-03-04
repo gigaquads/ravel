@@ -5,7 +5,7 @@ import importlib
 import yaml
 import venusian
 
-from appyratus.validation import fields, Schema
+from appyratus.validation import Schema, fields
 
 from pybiz.dao.base import DaoManager
 

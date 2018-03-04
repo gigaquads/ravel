@@ -20,7 +20,7 @@ from abc import ABCMeta, abstractmethod
 from types import MethodType
 from importlib import import_module
 
-from appyratus.validation.schema import AbstractSchema, Schema
+from appyratus.validation import AbstractSchema, Schema
 from appyratus.validation.fields import Field, Uuid, Anything
 
 from .patch import JsonPatchMixin
