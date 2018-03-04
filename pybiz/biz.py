@@ -24,9 +24,9 @@ from appyratus.schema import AbstractSchema, Schema, Field, Uuid, Anything
 
 from .patch import JsonPatchMixin
 from .graphql import GraphQLGetter, GraphQLEngine, GraphQLField
-from .dao import DaoManager, Dao
+from .dao.base import Dao, DaoManager
 from .dirty import DirtyDict, DirtyInterface
-from .util import is_bizobj
+from .util.bizobj_util import is_bizobj
 from .const import (
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -151,7 +151,8 @@ class BizObjectMeta(ABCMeta):
             schema_class = getattr(schema_module, class_name)
         except Exception:
             raise ImportError(
-                'failed to import schema class {}'.format(class_name))
+                'failed to import schema class {}'.format(class_name)
+            )
 
         return schema_class
 
@@ -282,17 +283,17 @@ class BizObjectCrudMethods(object):
         return cls.get_dao().exists(_id=_id, public_id=public_id)
 
     @classmethod
-    def get(cls, _id=None, public_id=None, fields: dict = None):
+    def get(cls, _id=None, public_id=None, fields: dict=None):
         dao = cls.get_dao()
         record = dao.fetch(_id=_id, public_id=public_id, fields=fields)
         return cls(record)
 
     @classmethod
-    def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
+    def get_many(cls, _ids=None, public_ids=None, fields: dict=None):
         return [
             cls(record)
-            for record in cls.get_dao().fetch(
-                _ids=_ids, public_ids=public_ids, fields=fields)
+            for record in cls.get_dao()
+            .fetch(_ids=_ids, public_ids=public_ids, fields=fields)
         ]
 
     @classmethod
@@ -341,10 +342,12 @@ class BizObjectCrudMethods(object):
         # Persist and refresh data
         if self._id is None:
             updated_data = self.dao.create(
-                public_id=self.public_id, data=data_to_save)
+                public_id=self.public_id, data=data_to_save
+            )
         else:
             updated_data = self.dao.update(
-                _id=self._id, public_id=self.public_id, data=data_to_save)
+                _id=self._id, public_id=self.public_id, data=data_to_save
+            )
 
         if updated_data:
             self.merge(updated_data)
@@ -428,15 +431,16 @@ class BizObjectGraphQLGetter(GraphQLGetter):
 
 
 class BizObject(
-        BizObjectSchema,
-        BizObjectJsonPatch,
-        BizObjectCrudMethods,
-        BizObjectDirtyDict,
-        BizObjectGraphQLGetter,
-        metaclass=BizObjectMeta):
+    BizObjectSchema,
+    BizObjectJsonPatch,
+    BizObjectCrudMethods,
+    BizObjectDirtyDict,
+    BizObjectGraphQLGetter,
+    metaclass=BizObjectMeta
+):
 
-    _schema = None  # set by metaclass
-    relationships = {}  # set by metaclass
+    _schema = None    # set by metaclass
+    relationships = {}    # set by metaclass
     _dao_manager = DaoManager.get_instance()
 
     @classmethod
@@ -514,8 +518,10 @@ class BizObject(
         if key in self._schema.fields:
             self._data[key] = value
         else:
-            raise KeyError('{} not in {} schema'.format(
-                key, self._schema.__class__.__name__))
+            raise KeyError(
+                '{} not in {} schema'.
+                format(key, self._schema.__class__.__name__)
+            )
 
     def __contains__(self, key):
         return key in self._data
@@ -537,7 +543,8 @@ class BizObject(
         return '<{class_name}{dirty_flag}{bizobj_id}>'.format(
             class_name=self.__class__.__name__,
             bizobj_id=bizobj_id,
-            dirty_flag=dirty_flag)
+            dirty_flag=dirty_flag
+        )
 
     @property
     def data(self):
@@ -579,7 +586,8 @@ class BizObject(
         BizObject's data. Note that this shadows AbstractSchema's load method.
         """
         self.merge(
-            self.get(_id=self._id, public_id=self.public_id, fields=fields))
+            self.get(_id=self._id, public_id=self.public_id, fields=fields)
+        )
         return self
 
     def dump(self):
@@ -665,7 +673,8 @@ class BizObject(
                         related_bizobj_list.append(obj)
                     else:
                         related_bizobj_list.append(
-                            rel.bizobj_class(related_data))
+                            rel.bizobj_class(related_data)
+                        )
 
                 self._related_bizobjs[rel.name] = related_bizobj_list
 

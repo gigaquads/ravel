@@ -5,10 +5,10 @@ import importlib
 import yaml
 import venusian
 
-import pybiz.schema as fields
+import appyratus.schema as fields
+from appyratus.schema import Schema
 
-from pybiz.dao import DaoManager
-from pybiz.schema import Schema
+from pybiz.dao.base import DaoManager
 
 
 class ManifestSchema(Schema):
@@ -46,7 +46,7 @@ class Manifest(object):
             bizobj_classes={},
             schema_classes={},
             dao_classes={},
-            )
+        )
 
     def process(self):
         """

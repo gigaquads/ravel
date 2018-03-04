@@ -1,7 +1,7 @@
 import os
 import re
 
-import pybiz.schema
+from appyratus.schema import Schema
 
 from pybiz.exc import PyBizError
 
@@ -18,7 +18,7 @@ class EnvironmentValidationError(EnvironmentError):
     pass
 
 
-class Environment(pybiz.schema.Schema):
+class Environment(Schema):
 
     _instance = None  # <- the singleton instance
     _re_magic_attr = re.compile(r'^__\w+__$')
