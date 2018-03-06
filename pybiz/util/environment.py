@@ -1,7 +1,7 @@
 import os
 import re
 
-from appyratus.schema import Schema
+from appyratus.validation import Schema
 
 from pybiz.exc import PyBizError
 
@@ -20,7 +20,7 @@ class EnvironmentValidationError(EnvironmentError):
 
 class Environment(Schema):
 
-    _instance = None  # <- the singleton instance
+    _instance = None    # <- the singleton instance
     _re_magic_attr = re.compile(r'^__\w+__$')
 
     @classmethod
@@ -57,7 +57,8 @@ class Environment(Schema):
         key = key.lower()
         if key not in self._data:
             raise UndefinedVariableError(
-                '{} environment variable is undefined'.format(key))
+                '{} environment variable is undefined'.format(key)
+            )
 
         return self._data[key]
 

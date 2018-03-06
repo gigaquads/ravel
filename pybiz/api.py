@@ -7,7 +7,7 @@ import yaml
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict
 
-from pybiz.dao import DaoManager
+from pybiz.dao.base import DaoManager
 from pybiz.manifest import Manifest
 from appyratus.validation import Schema, fields
 

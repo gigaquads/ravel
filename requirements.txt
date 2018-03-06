@@ -6,9 +6,9 @@ graphql-py
 requests
 pycrypto
 google
-protobuf
 grpcio
 grpcio_tools
+protobuf
 
 pytest
 mock
