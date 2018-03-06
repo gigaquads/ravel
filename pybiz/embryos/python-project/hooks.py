@@ -1,15 +1,15 @@
-from appyratus import schema
+from appyratus.validation import fields, Schema
 
 from embryo import hooks
 
 
-class PythonProjectSchema(schema.Schema):
-    name = schema.Str()
-    description = schema.Str(default='')
-    version = schema.Anything()
-    tagline = schema.Str()
-    action = schema.Str()
-    butts = schema.Str(default='wat')
+class PythonProjectSchema(Schema):
+    name = fields.Str()
+    description = fields.Str(default='')
+    version = fields.Anything()
+    tagline = fields.Str()
+    action = fields.Str()
+    butts = fields.Str(default='wat')
 
 
 def pre_create(context):

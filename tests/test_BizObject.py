@@ -1,16 +1,15 @@
 import os
-
 import pytest
 import mock
 
-from pybiz import schema as fields
+from appyratus.validation import Schema, fields
+from appyratus.validation.fields import Int, Str, Object
+
 from pybiz.biz import BizObject, Relationship
-from pybiz.schema import Schema, Int, Str, Object
 
 
 @pytest.fixture(scope='module')
 def Child():
-
     class Child(BizObject):
         @classmethod
         def __dao__(cls):
@@ -25,7 +24,6 @@ def Child():
 
 @pytest.fixture(scope='module')
 def SuperParent(Child):
-
     class SuperParent(BizObject):
         @classmethod
         def __dao__(cls):
@@ -41,7 +39,6 @@ def SuperParent(Child):
 
 @pytest.fixture(scope='module')
 def Parent(SuperParent, Child):
-
     class Parent(SuperParent):
         @classmethod
         def __dao__(cls):
@@ -93,7 +90,7 @@ def test_BizObject_init(Parent):
 
 
 def test_BizObject_init_data(Parent, Child):
-    parent_data = {'my_str': 'x', 'public_id': '1'*32}
+    parent_data = {'my_str': 'x', 'public_id': '1' * 32}
     child = Child(my_str='z')
     parent = Parent(parent_data, my_child=child)
     assert parent.data == parent_data
@@ -183,13 +180,16 @@ def test_BizObject_save(Parent, Child):
                 'my_str': 'z',
                 'public_id': bizobj.my_child.public_id,
                 '_id': 2
-            }})
+            }
+        }
+    )
 
     bizobj.my_child.dao.create.assert_called_once_with(
-         data={
+        data={
             'my_str': 'z',
             'public_id': bizobj.my_child.public_id,
-            })
+        }
+    )
 
     assert bizobj._id == new_id
     assert bizobj.my_str == 'x'
@@ -213,15 +213,17 @@ def test_BizObject_save_and_fetch(Parent, Child):
     assert 'my_str' in bizobj.dirty
 
     bizobj.save(fetch=True)
-    bizobj.dao.create.assert_called_once_with(data={
-        'my_str': new_my_str,
-        'public_id': bizobj.public_id,
-        'my_child': {
-            'public_id': bizobj.my_child.public_id,
-            'my_str': 'z',
-            '_id': 2,
+    bizobj.dao.create.assert_called_once_with(
+        data={
+            'my_str': new_my_str,
+            'public_id': bizobj.public_id,
+            'my_child': {
+                'public_id': bizobj.my_child.public_id,
+                'my_str': 'z',
+                '_id': 2,
             }
-        })
+        }
+    )
 
     assert bizobj._id == new_id
     assert bizobj.my_str == new_my_str
@@ -250,10 +252,12 @@ def test_BizObject_save_nested(Parent, Child):
     bizobj.my_child.my_str = 'x'
     bizobj.my_child.save()
 
-    bizobj.my_child.dao.create.assert_any_call(data={
-        'public_id': bizobj.my_child.public_id,
-        'my_str': 'x',
-        })
+    bizobj.my_child.dao.create.assert_any_call(
+        data={
+            'public_id': bizobj.my_child.public_id,
+            'my_str': 'x',
+        }
+    )
 
 
 def test_BizObject_save_nested_through_parent(Parent, Child):
@@ -290,10 +294,12 @@ def test_BizObject_save_nested_through_parent(Parent, Child):
     assert not bizobj.my_child.dirty
     assert bizobj.dirty == {'public_id'}
 
-    bizobj.my_child.dao.create.assert_any_call(data={
-        'public_id': bizobj.my_child.public_id,
-        'my_str': 'x',
-        })
+    bizobj.my_child.dao.create.assert_any_call(
+        data={
+            'public_id': bizobj.my_child.public_id,
+            'my_str': 'x',
+        }
+    )
 
     bizobj.dao.create.assert_not_called()
 
