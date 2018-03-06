@@ -22,10 +22,11 @@ if __name__ == '__main__':
         # and translate these into data setuptools knows how to handle.
         for line in f.readlines():
             if line.startswith('-e'):
-                # we're looking at a github repo dependency, so
-                # isntall from a github tarball.
-                match = re.search(r'(https://github.+?)#egg=(.+)$',
-                                  line.strip())
+                # we're looking at a github repo dependency, so install
+                # from a github tarball.
+                match = re.search(
+                    r'(https://github.+?)#egg=(.+)$', line.strip()
+                )
                 url, egg = match.groups()
                 if url.endswith('.git'):
                     url = url[:-4]
@@ -47,5 +48,7 @@ if __name__ == '__main__':
         description='{{ description }}',
         long_description=readme,
         install_requires=requirements,
+        dependency_links=dependency_links,
         scripts=scripts,
-        packages=find_packages(), )
+        packages=find_packages(),
+    )

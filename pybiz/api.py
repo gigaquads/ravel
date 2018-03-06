@@ -2,18 +2,14 @@ import os
 import inspect
 import importlib
 import traceback
-
 import venusian
 import yaml
-
-import pybiz.schema as fields
-
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict
 
 from pybiz.dao import DaoManager
-from pybiz.schema import Schema
 from pybiz.manifest import Manifest
+from appyratus.validation import Schema, fields
 
 from .exc import ApiError
 from .const import (
@@ -22,7 +18,7 @@ from .const import (
     HTTP_PUT,
     HTTP_PATCH,
     HTTP_DELETE,
-    )
+)
 
 
 class ApiRegistry(object, metaclass=ABCMeta):
@@ -52,7 +48,7 @@ class ApiRegistry(object, metaclass=ABCMeta):
     def bootstrapped(self):
         return self._bootstrapped
 
-    def bootstrap(self, filepath: str=None):
+    def bootstrap(self, filepath: str = None):
         """
         Bootstrap the data, business, and service layers, wiring them up,
         according to the settings contained in a service manifest file.
@@ -122,32 +118,37 @@ class ApiRegistry(object, metaclass=ABCMeta):
     def get(self, path, schemas=None, hook=None, unpack=None):
         hook = hook or self.hook
         unpack = unpack or self.unpack
-        return ApiRegistryDecorator(self, HTTP_GET, path,
-            schemas=schemas, hook=hook, unpack=unpack)
+        return ApiRegistryDecorator(
+            self, HTTP_GET, path, schemas=schemas, hook=hook, unpack=unpack
+        )
 
     def post(self, path, schemas=None, hook=None, unpack=None):
         hook = hook or self.hook
         unpack = unpack or self.unpack
-        return ApiRegistryDecorator(self, HTTP_POST, path,
-            schemas=schemas, hook=hook, unpack=unpack)
+        return ApiRegistryDecorator(
+            self, HTTP_POST, path, schemas=schemas, hook=hook, unpack=unpack
+        )
 
     def put(self, path, schemas=None, hook=None, unpack=None):
         hook = hook or self.hook
         unpack = unpack or self.unpack
-        return ApiRegistryDecorator(self, HTTP_PUT, path,
-            schemas=schemas, hook=hook, unpack=unpack)
+        return ApiRegistryDecorator(
+            self, HTTP_PUT, path, schemas=schemas, hook=hook, unpack=unpack
+        )
 
     def patch(self, path, schemas=None, hook=None, unpack=None):
         hook = hook or self.hook
         unpack = unpack or self.unpack
-        return ApiRegistryDecorator(self, HTTP_PATCH, path,
-            schemas=schemas, hook=hook, unpack=unpack)
+        return ApiRegistryDecorator(
+            self, HTTP_PATCH, path, schemas=schemas, hook=hook, unpack=unpack
+        )
 
     def delete(self, path, schemas=None, hook=None, unpack=None):
         hook = hook or self.hook
         unpack = unpack or self.unpack
-        return ApiRegistryDecorator(self, HTTP_DELETE, path,
-            schemas=schemas, hook=hook, unpack=unpack)
+        return ApiRegistryDecorator(
+            self, HTTP_DELETE, path, schemas=schemas, hook=hook, unpack=unpack
+        )
 
     def route(self, http_method, path, handler_args=None, handler_kwargs=None):
         handler = self.handlers[path.lower()][http_method.lower()]
@@ -157,15 +158,15 @@ class ApiRegistry(object, metaclass=ABCMeta):
 
 
 class ApiRegistryDecorator(object):
-
-    def __init__(self,
-            registry,
-            http_method: str,
-            path: str,
-            schemas: dict=None,
-            hook=None,
-            unpack=None,
-            ):
+    def __init__(
+        self,
+        registry,
+        http_method: str,
+        path: str,
+        schemas: dict = None,
+        hook=None,
+        unpack=None,
+    ):
 
         self.registry = registry
         self.http_method = http_method.lower()
@@ -183,17 +184,20 @@ class ApiRegistryDecorator(object):
 
 
 class ApiHandler(object):
-
     def __init__(self, target, decorator):
         self.target = target
         self.signature = inspect.signature(self.target)
         self.decorator = decorator
 
     def __repr__(self):
-        return '<ApiHandler({})>'.format(', '.join([
-                'method={}'.format(self.decorator.http_method.upper()),
-                'path={}'.format(self.decorator.path),
-                ]))
+        return '<ApiHandler({})>'.format(
+            ', '.join(
+                [
+                    'method={}'.format(self.decorator.http_method.upper()),
+                    'path={}'.format(self.decorator.path),
+                ]
+            )
+        )
 
     def __call__(self, *args, **kwargs):
         try:
@@ -202,11 +206,13 @@ class ApiHandler(object):
         except KeyError as exc:
             raise ApiError(
                 'Could not unpack request arguments. Missing '
-                '{} argument.'.format(str(exc)))
+                '{} argument.'.format(str(exc))
+            )
         except Exception:
             msg = traceback.format_exc()
             raise ApiError(
-                '{} - Could not unpack request arguments.'.format(msg))
+                '{} - Could not unpack request arguments.'.format(msg)
+            )
 
         result = self.target(**args_dict)
         self.decorator.registry.pack(result, *args, **kwargs)

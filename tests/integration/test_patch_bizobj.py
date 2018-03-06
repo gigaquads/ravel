@@ -2,14 +2,14 @@ import pytest
 
 from mock import MagicMock
 
-from pybiz.schema import Schema, Str, Int, List, Uuid, Dict
+from appyratus.validation import Schema
+from appyratus.validation.fields import Str, Int, List, Uuid, Dict
 from pybiz.biz import BizObject, Relationship
 from pybiz.const import (
     OP_DELTA_REMOVE,
     OP_DELTA_ADD,
     OP_DELTA_REPLACE,
-    )
-
+)
 
 MOCK_PUBLIC_ID = '1234' * 8
 EMPTY_SET = set()
@@ -17,9 +17,7 @@ EMPTY_SET = set()
 
 @pytest.fixture(scope='function')
 def Album():
-
     class Album(BizObject):
-
         @classmethod
         def __dao__(cls):
             dao = MagicMock()
@@ -43,9 +41,7 @@ def Album():
 
 @pytest.fixture(scope='function')
 def Artist(Album):
-
     class Artist(BizObject):
-
         @classmethod
         def __dao__(cls):
             dao = MagicMock()
@@ -72,24 +68,22 @@ def Artist(Album):
 
 def test_patch_bizobj_scalar(Artist, Album):
     albums = [
-        Album(
-            title='Passages',
-            year=1990,
-            tracks=['Offering', 'Sadhanipa']),
+        Album(title='Passages', year=1990, tracks=['Offering', 'Sadhanipa']),
         Album(
             title='Inside the Kremlin',
             year=1989,
-            tracks=['Prarambh', 'Shanti-Mantra', 'Three Ragas']),
-        ]
+            tracks=['Prarambh', 'Shanti-Mantra', 'Three Ragas']
+        ),
+    ]
 
     for album in albums:
         album.clear_dirty()
 
     artist = Artist(
-        name='Ravi Shankar',
-        age=79,
-        things=[{'a': 1}],
-        albums=albums)
+        name='Ravi Shankar', age=79, things=[{
+            'a': 1
+        }], albums=albums
+    )
 
     artist.clear_dirty()
 
@@ -101,17 +95,57 @@ def test_patch_bizobj_scalar(Artist, Album):
     new_tags = ['Indian', 'classical', 'sitar']
 
     deltas = [
-        {'op': OP_DELTA_REPLACE, 'path': '/name', 'value': new_name},
-        {'op': OP_DELTA_REPLACE, 'path': '/albums/0', 'value': new_album_1},
-        {'op': OP_DELTA_ADD, 'path': '/albums', 'value': new_album_2},
-        {'op': OP_DELTA_ADD, 'path': '/albums/0/tracks', 'value': new_track_1},
-        {'op': OP_DELTA_REPLACE, 'path': '/albums/0/tracks/0', 'value': new_track_2},
-        {'op': OP_DELTA_ADD, 'path': '/tags', 'value': list(new_tags)},
-        {'op': OP_DELTA_REMOVE, 'path': '/albums/1/tracks/1', 'value': None},
-        {'op': OP_DELTA_REMOVE, 'path': '/tags/1', 'value': None},
-        {'op': OP_DELTA_REMOVE, 'path': '/age', 'value': None},
-        {'op': OP_DELTA_REPLACE, 'path': '/things/0/a', 'value': 2},
-        ]
+        {
+            'op': OP_DELTA_REPLACE,
+            'path': '/name',
+            'value': new_name
+        },
+        {
+            'op': OP_DELTA_REPLACE,
+            'path': '/albums/0',
+            'value': new_album_1
+        },
+        {
+            'op': OP_DELTA_ADD,
+            'path': '/albums',
+            'value': new_album_2
+        },
+        {
+            'op': OP_DELTA_ADD,
+            'path': '/albums/0/tracks',
+            'value': new_track_1
+        },
+        {
+            'op': OP_DELTA_REPLACE,
+            'path': '/albums/0/tracks/0',
+            'value': new_track_2
+        },
+        {
+            'op': OP_DELTA_ADD,
+            'path': '/tags',
+            'value': list(new_tags)
+        },
+        {
+            'op': OP_DELTA_REMOVE,
+            'path': '/albums/1/tracks/1',
+            'value': None
+        },
+        {
+            'op': OP_DELTA_REMOVE,
+            'path': '/tags/1',
+            'value': None
+        },
+        {
+            'op': OP_DELTA_REMOVE,
+            'path': '/age',
+            'value': None
+        },
+        {
+            'op': OP_DELTA_REPLACE,
+            'path': '/things/0/a',
+            'value': 2
+        },
+    ]
 
     # patch:
     assert artist.name != new_name
