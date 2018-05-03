@@ -3,92 +3,50 @@
 # vim: set filetype=python
 
 import argparse
-import sys
+from appyratus.util.argz import Prog, Subparser, Arg
 
-CONFIG = dict(
+PROG = dict(
     prog="{{ name|snake }}",
     name="{{ name|title }}",
     version="{{ version }}",
-    tagline="{{ tagline }}", )
-VERSION_FORMAT = "{name} {version}, {tagline}"
+    tagline="{{ tagline }}",
+)
 
-
-def version():
-    return VERSION_FORMAT.format(**CONFIG)
-
-
-def build_parser():
-    """
-    Build parser for interactivity
-    """
-    # setup the parser with defaults and version information
-    parser = argparse.ArgumentParser(prog=CONFIG['prog'])
-    parser.set_defaults(action=None)
-    parser.add_argument(
-        '-v',
-        '--version',
-        action='version',
-        help='The version of this damn script',
-        version=version())
-
-    # build subparsers for actionable requests
-    subparsers = parser.add_subparsers(
-        title='subcommands', help='sub-command help')
 {% if action %}
-    {{ action }} = subparsers.add_parser('{{ action }}', help='{{ action|title }}')
-    {{ action }}.set_defaults(action='{{ action }}')
-    create.add_argument(
-        '--name',
+class {{ name|camel }}{{ action|camel }}Subparser(Subparser):
+    name = '{{ action }}'
+    help = '{{ action_help }}'
+    defaults = dict(action='{{ action }}')
+
+    name_arg = Arg(
+        flags=('-{{ action[0] }}', '--{{ action|snake }}'),
         type=str,
-        help='''
-        Give it a name
-        ''')
+        default='',
+        help="The action is {{ action }}.. you should change me"
+    )
+
 {% endif %}
 
-    return parser
+class {{ name|camel }}Prog(Prog):
+{% if action %}
+    create_subparser = {{ name|camel }}Subparser()
 
-
-def parse_args(parser):
-    args, unknown = parser.parse_known_args()
-
-    # now combine known and unknown arguments into a single dict
-    args_dict = {
-        k: getattr(args, k)
-        for k in dir(args) if not k.startswith('_')
-    }
-
-    for i in range(0, len(unknown), 2):
-        k = unknown[i]
-        v = unknown[i + 1]
-        args_dict[k.lstrip('-')] = v
-
-    # build a custom type with the combined argument names as attributes
-    arguments = type('Arguments', (object, ), args_dict)()
-
-    return arguments
+    def create(self):
+        return {{ name|camel }}.from_args(self.args)
+{% endif %}
 
 
 def main():
     """
-    Main
+    Main exectuion for {{ name|title }} binary
     """
-    parser = build_parser()
-    args = parse_args(parser)
-    action = args.action
-    {% if action %}
-    # as `elif`, add additional routing here
-    # order is important
-    if action == 'create':
-        print('TODO Implement')
-        return 
-    {% endif %}
-
-    # nothing to do, print usage
-    parser.print_usage()
+    prog = {{ name|camel }}Prog(data=PROG)
+    prog.run()
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        print(error)
+        print("ERROR {}".format(error))
+        raise error
