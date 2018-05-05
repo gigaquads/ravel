@@ -5,6 +5,7 @@
   - setup.py
   - {{ name|snake }}:
     - __init__.py
+    - base.py
   - bin/:
     - {{ name|dash }}
   - tests/:

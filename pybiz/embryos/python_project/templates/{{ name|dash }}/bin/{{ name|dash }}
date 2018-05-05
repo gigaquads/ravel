@@ -5,12 +5,15 @@
 import argparse
 from appyratus.util.argz import Prog, Subparser, Arg
 
+from {{ name|snake }}.base import {{ name|camel }}
+
 PROG = dict(
     prog="{{ name|snake }}",
     name="{{ name|title }}",
     version="{{ version }}",
     tagline="{{ tagline }}",
 )
+
 
 {% if action %}
 class {{ name|camel }}{{ action|camel }}Subparser(Subparser):
@@ -29,10 +32,12 @@ class {{ name|camel }}{{ action|camel }}Subparser(Subparser):
 
 class {{ name|camel }}Prog(Prog):
 {% if action %}
-    create_subparser = {{ name|camel }}Subparser()
+    {{ action|snake }}_subparser = {{ name|camel }}{{ action|camel }}Subparser()
 
     def create(self):
-        return {{ name|camel }}.from_args(self.args)
+        # return {{ name|camel }}.{{ action|snake }}(self.args)
+        print('TODO')
+
 {% endif %}
 
 
