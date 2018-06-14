@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+# encoding=utf8
+# vim: set filetype=python
+
+import argparse
+from appyratus.util.argz import Prog, Subparser, Arg
+
+from {{ name|snake }}.base import {{ name|camel }}
+
+PROG = dict(
+    prog="{{ name|snake }}",
+    name="{{ name|title }}",
+    version="{{ version }}",
+    tagline="{{ tagline }}",
+)
+
+
+{% if action %}
+class {{ name|camel }}{{ action|camel }}Subparser(Subparser):
+    name = '{{ action }}'
+    help = '{{ action_help }}'
+    defaults = dict(action='{{ action }}')
+
+    name_arg = Arg(
+        flags=('-{{ action[0] }}', '--{{ action|snake }}'),
+        type=str,
+        default='',
+        help="The action is {{ action }}.. you should change me"
+    )
+
+{% endif %}
+
+class {{ name|camel }}Prog(Prog):
+{% if action %}
+    {{ action|snake }}_subparser = {{ name|camel }}{{ action|camel }}Subparser()
+
+    def create(self):
+        # return {{ name|camel }}.{{ action|snake }}(self.args)
+        print('TODO')
+
+{% endif %}
+
+
+def main():
+    """
+    Main exectuion for {{ name|title }} binary
+    """
+    prog = {{ name|camel }}Prog(data=PROG)
+    prog.run()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print("ERROR {}".format(error))
+        raise error

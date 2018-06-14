@@ -20,7 +20,8 @@ from abc import ABCMeta, abstractmethod
 from types import MethodType
 from importlib import import_module
 
-from appyratus.schema import AbstractSchema, Schema, Field, Uuid, Anything
+from appyratus.validation.schema import AbstractSchema, Schema
+from appyratus.validation.fields import Field, Uuid, Anything
 
 from .patch import JsonPatchMixin
 from .graphql import GraphQLGetter, GraphQLEngine, GraphQLField
