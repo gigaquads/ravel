@@ -3,9 +3,9 @@ from {{ name|snake }}.biz.graphql_document import GraphQLDocument
 from . import app
 
 
-@app.get('/graphql')
-def execute_graphql_query(q: str=None):
+@app.post('/graphql')
+def execute_graphql_query(query: str = None):
     """
     Execute a GraphQL query.
     """
-    return GraphQLDocument.graphql.query(q)
+    return GraphQLDocument.graphql.query(query)

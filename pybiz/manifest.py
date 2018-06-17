@@ -18,7 +18,6 @@ class ManifestSchema(Schema):
     class BindingSchema(Schema):
         biz = fields.Str(required=True)
         dao = fields.Str(required=True)
-        schema = fields.Str(required=False)
 
     package = fields.Str(required=True)
     bindings = fields.List(BindingSchema(), required=False)
@@ -110,11 +109,4 @@ class Manifest(object):
         for binding in self.data.get('bindings', []):
             biz_class = self.scanner.bizobj_classes[binding['biz']]
             dao_class = self.scanner.dao_classes[binding['dao']]
-
-            # bind schema class to bizobj class
-            if 'schema' in binding:
-                print(binding)
-                schema_class = self.scanner.schema_classes[binding['schema']]
-                biz_class.Schema = schema_class
-
             manager.register(biz_class, dao_class)
