@@ -1,0 +1,19 @@
+from pybiz import BizObject
+
+
+class {{ name|camel }}(BizObject):
+    """
+    {{ name|title }} business object
+    """
+    
+{% if fields %}
+{% for field in fields %}
+    {{ field['name'] }} = fields.{{ field['type'] }}()
+    """
+    {{ field['name']|title }}
+    """
+
+{% endfor %}
+{% else %}
+    pass
+{% endif %}
