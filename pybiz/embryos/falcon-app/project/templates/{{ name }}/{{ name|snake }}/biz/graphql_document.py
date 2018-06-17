@@ -1,4 +1,4 @@
-from pybiz import BizObject, Relationship
+from pybiz.biz import BizObject, Relationship
 
 
 class GraphQLDocument(BizObject):
@@ -7,13 +7,13 @@ class GraphQLDocument(BizObject):
     through the use of `Relationship` declarations, for example:
 
     ```python3
-    query = '''
-        {
-            user {
-                name
-                email
+        query = '''
+            {
+                user {
+                    name
+                    email
+                }
             }
-        }
     ```
 
     This example assumes that a `user` relationship exists below. i.e.

@@ -113,6 +113,7 @@ class Manifest(object):
 
             # bind schema class to bizobj class
             if 'schema' in binding:
+                print(binding)
                 schema_class = self.scanner.schema_classes[binding['schema']]
                 biz_class.Schema = schema_class
 

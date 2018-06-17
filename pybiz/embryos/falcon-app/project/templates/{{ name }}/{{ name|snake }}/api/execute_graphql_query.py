@@ -1,5 +1,3 @@
-from pybiz import BizObject, Relationship
-
 from {{ name|snake }}.biz.graphql_document import GraphQLDocument
 
 from . import app
