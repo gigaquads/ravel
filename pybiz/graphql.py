@@ -125,7 +125,8 @@ if __name__ == '__main__':
     import json
 
     from datetime import datetime
-    from pybiz import Schema, fields, BizObject, Relationship
+    from pybiz.biz import BizObject, Relationship
+    from appyratus.validation import Schema, fields
 
     class TestObject(BizObject, GraphQLGetter):
         created_at = fields.DateTime(default=lambda: datetime.now())
