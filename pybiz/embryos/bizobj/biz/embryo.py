@@ -1,14 +1,20 @@
-from appyratus.validation import schema, fields
+from appyratus.validation import Schema, fields
 from embryo.embryo import Embryo
 
 
 class BizEmbryo(Embryo):
     """
-    An embryo for Biz
+    # Biz Embryo
     """
 
-    class context_schema(fields.Schema):
+    class context_schema(Schema):
         """
+        # Context Schema
         The respective Biz schema
+        
+        ## Fields
+        * `name`: TODO
+        * `fields`: TODO
         """
-        pass
+        name = fields.Str()
+        fields = fields.List()
