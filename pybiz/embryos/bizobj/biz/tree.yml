@@ -1,2 +1,8 @@
 ---
+- {{ project_name|snake }}/:
+  - biz/:
+    - {{ name|snake }}.py: bizobj()
+- tests/:
+  - biz/:
+    - test_{{ name|snake }}.py: biztest()
 ...

@@ -11,10 +11,12 @@ class BizEmbryo(Embryo):
         """
         # Context Schema
         The respective Biz schema
-        
+
         ## Fields
+        * `project_name`: TODO
         * `name`: TODO
         * `fields`: TODO
         """
+        project_name = fields.Str()
         name = fields.Str()
-        fields = fields.List()
+        fields = fields.List(nested=fields.Dict())

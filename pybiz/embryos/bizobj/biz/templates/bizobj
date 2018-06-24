@@ -3,16 +3,20 @@ from pybiz import BizObject
 
 class {{ name|camel }}(BizObject):
     """
-    {{ name|title }} business object
+    # {{ name|camel }}
+    The {{ name|title }} business object.
+{% if fields %}
+
+    ## Fields
+{% for field in fields %}
+    - `{{ field['name'] }}`: TODO 
+{% endfor %}
+{% endif %}
     """
-    
+
 {% if fields %}
 {% for field in fields %}
     {{ field['name'] }} = fields.{{ field['type'] }}()
-    """
-    {{ field['name']|title }}
-    """
-
 {% endfor %}
 {% else %}
     pass
