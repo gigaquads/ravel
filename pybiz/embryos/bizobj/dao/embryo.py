@@ -2,15 +2,15 @@ from appyratus.validation import Schema, fields as schema_fields
 from embryo.embryo import Embryo
 
 
-class BizEmbryo(Embryo):
+class DaoEmbryo(Embryo):
     """
-    # Biz Embryo
+    # Dao Embryo
     """
 
     class context_schema(Schema):
         """
         # Context Schema
-        The respective Biz schema
+        The respective Dao schema
 
         ## Fields
         * `project_name`: TODO
@@ -19,4 +19,5 @@ class BizEmbryo(Embryo):
         """
         project_name = schema_fields.Str()
         name = schema_fields.Str()
+        dao_type = schema_fields.Str()
         fields = schema_fields.List(nested=schema_fields.Dict())

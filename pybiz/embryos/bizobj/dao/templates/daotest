@@ -1,0 +1,13 @@
+from appyratus.test import mark, BaseTests
+
+from {{ project_name }}.dao.{{ name|snake }} import {{ name|camel }}
+
+
+class Test{{ name|camel }}Dao(BaseTests):
+    """
+    Tests associated with the {{ name|title }} dao object.
+    """
+
+    @property
+    def klass(self):
+        return {{ name|camel }}Dao

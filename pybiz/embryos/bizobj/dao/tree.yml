@@ -1,0 +1,8 @@
+---
+- {{ project_name|snake }}/:
+  - dao/:
+    - {{ name|snake }}.py: daoobj()
+- tests/:
+  - dao/:
+    - test_{{ name|snake }}.py: daotest()
+...
