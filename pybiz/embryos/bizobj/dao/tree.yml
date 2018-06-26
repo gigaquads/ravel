@@ -1,8 +1,8 @@
 ---
 - {{ project_name|snake }}/:
   - dao/:
-    - {{ name|snake }}.py: daoobj()
+    - {{ dao.name|snake }}.py: daoobj()
 - tests/:
   - dao/:
-    - test_{{ name|snake }}.py: daotest()
+    - test_{{ dao.name|snake }}.py: daotest()
 ...

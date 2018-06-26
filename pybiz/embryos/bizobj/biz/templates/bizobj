@@ -1,21 +1,21 @@
 from pybiz import BizObject
 
 
-class {{ name|camel }}(BizObject):
+class {{ biz.name|camel }}(BizObject):
     """
-    # {{ name|camel }}
-    The {{ name|title }} business object.
-{% if fields %}
+    # {{ biz.name|camel }}
+    The {{ biz.name|title }} business object.
+{% if biz.fields %}
 
     ## Fields
-{% for field in fields %}
+{% for field in biz.fields %}
     - `{{ field['name'] }}`: TODO 
 {% endfor %}
 {% endif %}
     """
 
-{% if fields %}
-{% for field in fields %}
+{% if biz.fields %}
+{% for field in biz.fields %}
     {{ field['name'] }} = fields.{{ field['type'] }}()
 {% endfor %}
 {% else %}

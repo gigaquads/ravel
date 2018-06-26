@@ -1,11 +1,11 @@
 from appyratus.test import mark, BaseTests
 
 
-class Test{{ name|camel }}(BaseTests):
+class Test{{ biz.name|camel }}(BaseTests):
     """
-    Tests associated with the {{ name|title }} business object.
+    Tests associated with the {{ biz.name|title }} business object.
     """
 
     @property
     def klass(self):
-        return {{ name|camel }}
+        return {{ biz.name|camel }}

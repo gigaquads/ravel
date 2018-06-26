@@ -1,6 +1,7 @@
 ---
-name: 
-fields: 
+dao:
+  name: 
+  fields: 
+  type:
 project_name:
-dao_type:
 ...
