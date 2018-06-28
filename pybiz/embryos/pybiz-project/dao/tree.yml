@@ -1,5 +1,5 @@
 ---
-- {{ project_name|snake }}/:
+- {{ project.context.project.name|snake }}/:
   - dao/:
     - {{ dao.name|snake }}.py: daoobj()
 - tests/:

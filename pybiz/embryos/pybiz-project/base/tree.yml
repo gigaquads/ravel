@@ -1,5 +1,5 @@
 ---
-- {{ project_name|snake }}/:
+- {{ project.context.project.name|snake }}/:
   - biz/:
     - __init__.py
   - dao/:

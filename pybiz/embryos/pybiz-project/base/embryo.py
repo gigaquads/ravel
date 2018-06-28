@@ -1,4 +1,4 @@
-from appyratus.validation import fields as schema_fields
+from appyratus.validation import fields
 from embryo.embryo import Embryo, ContextSchema
 
 
@@ -13,10 +13,9 @@ class BaseEmbryo(Embryo):
         The respective Base schema
 
         ## Fields
-        * `project_name`: TODO
+        * `project`: TODO
+            * `name`: TODO
         """
-        project_name = schema_fields.Str()
-
-    @property
-    def project_name(self):
-        return self.context['project_name']
+        project = fields.Object({
+            'name': fields.Str(),
+        })

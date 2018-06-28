@@ -1,32 +1,29 @@
-from appyratus.validation import fields as schema_fields
-from embryo.embryo import Embryo, ContextSchema
+from appyratus.validation import fields
+from embryo import Embryo, Relationship
 
 
 class BizEmbryo(Embryo):
     """
     # Biz Embryo
+
+    ## Relationships
+    * `project`: TODO
     """
 
-    class context_schema(ContextSchema):
+    project = Relationship(name='pybiz-project/base', index=0)
+
+    class context_schema(Embryo.Schema):
         """
         # Context Schema
         The respective Biz schema
 
         ## Fields
-        * `biz`: 
+        * `biz`: TODO
+            * `fields`: TODO
             * `name`: TODO
             * `type`: TODO
-            * `fields`: TODO
+        * `project`: TODO
         """
-        project_name = schema_fields.Str(allow_none=True)
-        biz = schema_fields.Object(
-            dict(
-                name=schema_fields.Str(),
-                fields=schema_fields.List(nested=schema_fields.Dict())
-            )
+        biz = fields.Object(
+            dict(name=fields.Str(), fields=fields.List(nested=fields.Dict()))
         )
-
-    def on_create(self, project):
-        embryos = self.dot.find(name='bizobj/base')
-        if embryos:
-            self.context['project_name'] = embryos[0].project_name
