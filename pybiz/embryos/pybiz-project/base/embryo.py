@@ -1,5 +1,5 @@
 from appyratus.validation import fields
-from embryo.embryo import Embryo, ContextSchema
+from embryo import Embryo
 
 
 class BaseEmbryo(Embryo):
@@ -7,7 +7,7 @@ class BaseEmbryo(Embryo):
     # Base Embryo
     """
 
-    class context_schema(ContextSchema):
+    class context_schema(Embryo.Schema):
         """
         # Context Schema
         The respective Base schema
