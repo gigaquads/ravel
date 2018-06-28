@@ -1,0 +1,9 @@
+---
+- {{ project.name|snake }}/:
+  - biz/:
+    - __init__.py
+  - dao/:
+    - __init__.py
+- manifest.yml
+
+...
