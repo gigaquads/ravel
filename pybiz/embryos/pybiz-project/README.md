@@ -10,7 +10,7 @@ Base elements necessary for other layers
 ### Biz
 Build business object and related structure.
 
-`embryo create pybiz-project/biz --biz.name my-dao`
+`embryo create pybiz-project/biz --biz.name my-biz`
 
 ### Dao
 Dao object and related structures
