@@ -1,5 +1,5 @@
 from appyratus.validation import schema, fields
-from embryo.embryo import Embryo
+from embryo import Embryo
 
 
 class PythonProjectEmbryo(Embryo):
