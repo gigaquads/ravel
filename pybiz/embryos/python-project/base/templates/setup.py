@@ -23,9 +23,10 @@ if __name__ == '__main__':
         for line in f.readlines():
             if line.startswith('-e'):
                 # we're looking at a github repo dependency, so
-                # isntall from a github tarball.
-                match = re.search(r'(https://github.+?)#egg=(.+)$',
-                                  line.strip())
+                # install from a github tarball.
+                match = re.search(
+                    r'(https://github.+?)#egg=(.+)$', line.strip()
+                )
                 url, egg = match.groups()
                 if url.endswith('.git'):
                     url = url[:-4]
@@ -48,4 +49,5 @@ if __name__ == '__main__':
         long_description=readme,
         install_requires=requirements,
         scripts=scripts,
-        packages=find_packages(), )
+        packages=find_packages(),
+    )

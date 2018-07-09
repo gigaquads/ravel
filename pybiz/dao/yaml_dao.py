@@ -3,10 +3,10 @@ import os
 from appyratus.types import Yaml, File
 from appyratus.util import TextTransform
 
-from pybiz.dao.dict_dao import DictDao
+from pybiz.dao import Dao
 
 
-class YamlDao(DictDao):
+class YamlDao(Dao):
     """
     # Yaml DAO
     This is actually a File system Dao, with a yaml interpreter applied to the
@@ -41,7 +41,7 @@ class YamlDao(DictDao):
     def fetch(self, _id=None, public_id=None, fields: dict=None) -> dict:
         data = super().fetch(_id=_id, public_id=public_id, fields=fields)
         if not data:
-            file_path = self.file_path(public_id or _id)
+            file_path = self.file_path(_id or public_id)
             if not File.exists(file_path):
                 raise Exception('File does not exist, {}'.format(file_path))
             data = Yaml.from_file(file_path)
@@ -58,6 +58,8 @@ class YamlDao(DictDao):
         if File.exists(file_path):
             raise Exception('File exists at {}'.format(file_path))
         Yaml.to_file(file_path=file_path, data=data)
+        if not _id and '_id' not in data:
+            data['_id'] = public_id
         return data
 
     def update(self, _id=None, public_id=None, data: dict=None) -> dict:

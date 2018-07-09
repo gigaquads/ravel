@@ -2,37 +2,20 @@ from appyratus.validation import schema, fields
 from embryo import Embryo
 
 
-class PythonProjectEmbryo(Embryo):
+class BaseEmbryo(Embryo):
     """
-    An embryo for Python Project
+    An embryo for Base
     """
 
     class context_schema(schema.Schema):
         """
-        The respective Python Project schema
+        The respective Base schema
+        - `name`, the name of the python project
+        - `description`, a description
+        - `version`, a version identifying this project
+        - `tagline` a powerful tag line
         """
-
         name = fields.Str()
-        """
-        The name of the python project
-        """
-
         description = fields.Str(default='')
-        """
-        A description
-        """
-
         version = fields.Anything()
-        """
-        A version identifying this project
-        """
-
         tagline = fields.Str()
-        """
-        A sassy tag line
-        """
-
-        action = fields.Str()
-        """
-        Action being performed on the project
-        """
