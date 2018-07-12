@@ -19,10 +19,9 @@ class BizEmbryo(Embryo):
 
         ## Fields
         - `biz`: TODO
-            - `fields`: TODO
-            - `name`: TODO
-            - `type`: TODO
-        - `project`: TODO
+          - `fields`: TODO
+          - `name`: TODO
+          - `type`: TODO
         """
         biz = fields.Object(
             dict(name=fields.Str(), fields=fields.List(nested=fields.Dict()))

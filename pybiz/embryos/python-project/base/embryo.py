@@ -2,7 +2,7 @@ from appyratus.validation import schema, fields
 from embryo import Embryo
 
 
-class BaseEmbryo(Embryo):
+class PythonProjectBaseEmbryo(Embryo):
     """
     An embryo for Base
     """
@@ -16,6 +16,6 @@ class BaseEmbryo(Embryo):
         - `tagline` a powerful tag line
         """
         name = fields.Str()
-        description = fields.Str(default='')
-        version = fields.Anything()
-        tagline = fields.Str()
+        description = fields.Str(allow_none=True, default='')
+        version = fields.Anything(allow_none=True)
+        tagline = fields.Str(allow_none=True)
