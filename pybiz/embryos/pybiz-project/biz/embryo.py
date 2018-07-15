@@ -26,3 +26,4 @@ class BizEmbryo(Embryo):
         biz = fields.Object(
             dict(name=fields.Str(), fields=fields.List(nested=fields.Dict()))
         )
+        project = fields.Dict()

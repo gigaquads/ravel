@@ -1,0 +1,5 @@
+---
+- embryo: pybiz-project/dao()
+- embryo: pybiz-project/biz()
+- manifest.yml
+...
