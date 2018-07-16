@@ -284,13 +284,13 @@ class BizObjectCrudMethods(object):
         return cls.get_dao().exists(_id=_id, public_id=public_id)
 
     @classmethod
-    def get(cls, _id=None, public_id=None, fields: dict=None):
+    def get(cls, _id=None, public_id=None, fields: dict = None):
         dao = cls.get_dao()
         record = dao.fetch(_id=_id, public_id=public_id, fields=fields)
         return cls(record)
 
     @classmethod
-    def get_many(cls, _ids=None, public_ids=None, fields: dict=None):
+    def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
         return [
             cls(record)
             for record in cls.get_dao()
@@ -520,8 +520,9 @@ class BizObject(
             self._data[key] = value
         else:
             raise KeyError(
-                '{} not in {} schema'.
-                format(key, self._schema.__class__.__name__)
+                '{} not in {} schema'.format(
+                    key, self._schema.__class__.__name__
+                )
             )
 
     def __contains__(self, key):

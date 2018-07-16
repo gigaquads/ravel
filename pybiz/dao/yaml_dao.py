@@ -38,7 +38,7 @@ class YamlDao(Dao):
     def exists(self, _id=None, public_id=None) -> bool:
         return File.exists(self.file_path(public_id or _id))
 
-    def fetch(self, _id=None, public_id=None, fields: dict=None) -> dict:
+    def fetch(self, _id=None, public_id=None, fields: dict = None) -> dict:
         data = super().fetch(_id=_id, public_id=public_id, fields=fields)
         if not data:
             file_path = self.file_path(public_id or _id)
@@ -48,21 +48,21 @@ class YamlDao(Dao):
         return data
 
     def fetch_many(
-        self, _ids: list=None, public_ids: list=None, fields: dict=None
+        self, _ids: list = None, public_ids: list = None, fields: dict = None
     ) -> dict:
         raise NotImplementedError('override in subclass')
 
-    def create(self, _id=None, public_id=None, data: dict=None) -> dict:
-        data = super().create(_id=_id, public_id=public_id, data=data)
+    def create(self, _id=None, public_id=None, data: dict = None) -> dict:
+        super().create(_id=_id, public_id=public_id, data=data)
         file_path = self.file_path(public_id or _id)
         if self.exists(public_id=public_id, _id=_id):
             raise Exception('File exists at {}'.format(file_path))
-        Yaml.to_file(file_path=file_path, data=data)
         if not _id and '_id' not in data:
             data['_id'] = public_id
+        Yaml.to_file(file_path=file_path, data=data)
         return data
 
-    def update(self, _id=None, public_id=None, data: dict=None) -> dict:
+    def update(self, _id=None, public_id=None, data: dict = None) -> dict:
         file_path = self.file_path(public_id or _id)
         if not self.exists(public_id=public_id, _id=_id):
             raise Exception('File does not exist at {}'.format(file_path))
@@ -70,14 +70,14 @@ class YamlDao(Dao):
         pass
 
     def update_many(
-        self, _ids: list=None, public_ids: list=None, data: list=None
+        self, _ids: list = None, public_ids: list = None, data: list = None
     ) -> dict:
         raise NotImplementedError('override in subclass')
 
     def delete(self, _id=None, public_id=None) -> dict:
         raise NotImplementedError('override in subclass')
 
-    def delete_many(self, _ids: list=None, public_ids: list=None) -> dict:
+    def delete_many(self, _ids: list = None, public_ids: list = None) -> dict:
         raise NotImplementedError('override in subclass')
 
     @classmethod
