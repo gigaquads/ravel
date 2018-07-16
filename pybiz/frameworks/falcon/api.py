@@ -34,6 +34,9 @@ class Api(ApiRegistry):
         self._resource_manager = FalconResourceManager()
         self._resources = {}
 
+    def start(self, environ, start_response):
+        return self._falcon_api(environ, start_response)
+
     @property
     def middleware(self):
         return []
@@ -45,9 +48,6 @@ class Api(ApiRegistry):
     def scan(self, package: str):
         pkg = importlib.import_module(package)
         self._scanner.scan(pkg)
-
-    def __call__(self, environ, start_response):
-        return self._falcon_api(environ, start_response)
 
     def get(self, path, schemas=None):
         return super(Api, self).get(
