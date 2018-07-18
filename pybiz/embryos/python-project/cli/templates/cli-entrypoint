@@ -14,27 +14,24 @@ PROG = dict(
     tagline="{{ tagline }}",
 )
 
-
-{% if action %}
-class {{ name|camel }}{{ action|camel }}Subparser(Subparser):
-    name = '{{ action }}'
-    help = '{{ action_help }}'
-    defaults = dict(action='{{ action }}')
-
-    name_arg = Arg(
-        flags=('-{{ action[0] }}', '--{{ action|snake }}'),
-        type=str,
-        default='',
-        help="The action is {{ action }}.. you should change me"
-    )
-
-{% endif %}
-
 class {{ name|camel }}Prog(Prog):
+"""
+{{ name|title }} Program
+"""
 {% if action %}
-    {{ action|snake }}_subparser = {{ name|camel }}{{ action|camel }}Subparser()
+  class {{ name|camel }}{{ action|camel }}Subparser(Subparser):
+      name = '{{ action }}'
+      help = '{{ action_help }}'
+      defaults = dict(action='{{ action }}')
 
-    def create(self):
+      name_arg = Arg(
+          flags=('-{{ action[0] }}', '--{{ action|snake }}'),
+          type=str,
+          default='',
+          help="The action is {{ action }}.. you should change me"
+      )
+
+    def {{ action|name }}(self):
         # return {{ name|camel }}.{{ action|snake }}(self.args)
         print('TODO')
 

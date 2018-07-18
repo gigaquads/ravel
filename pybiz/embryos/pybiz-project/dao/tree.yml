@@ -5,4 +5,5 @@
 - tests/:
   - dao/:
     - test_{{ dao.name|snake }}.py: daotest()
+- manifest.yml
 ...

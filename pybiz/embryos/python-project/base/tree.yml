@@ -3,10 +3,8 @@
   - README.md
   - requirements.txt
   - setup.py
-  - {{ name|snake }}:
+  - {{ name|snake }}/:
     - __init__.py
     - base.py
-  - bin/:
-    - {{ name|dash }}
   - tests/:
 ...
