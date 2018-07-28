@@ -39,7 +39,7 @@ class JsonServer(HttpFunctionRegistry):
             params = self.extract_query_params(url)
 
             # Create a merged dict of body and params vars
-            # for use in the JsonServer unpack method:
+            # for use in the JsonServer on_request method:
             arguments = body.copy()
             arguments.update(params)
 
@@ -94,7 +94,7 @@ class JsonServer(HttpFunctionRegistry):
     def start(self, *args, **kwargs):
         self.server.serve_forever()
 
-    def unpack(self, signature, arguments: Dict) -> dict:
+    def on_request(self, signature, arguments: Dict) -> dict:
         args, kwargs = [], {}
 
         for k, param in signature.parameters.items():

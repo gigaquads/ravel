@@ -20,7 +20,7 @@ class HttpFunctionRegistry(FunctionRegistry):
     def function_proxy_type(self):
         return HttpRoute
 
-    def hook(self, route: 'HttpRoute'):
+    def on_decorate(self, route: 'HttpRoute'):
         pass
 
     def route(self, http_method, url_path, args=None, kwargs=None):
@@ -39,12 +39,12 @@ class HttpFunctionDecorator(FunctionDecorator):
         http_method: str,
         url_path: str,
         schemas: dict=None,
-        hook=None,
-        unpack=None,
+        on_decorate=None,
+        on_request=None,
         *args,
         **kwargs
     ):
-        super().__init__(registry, hook=hook, unpack=unpack, *args, **kwargs)
+        super().__init__(registry, on_decorate=on_decorate, on_request=on_request, *args, **kwargs)
         self.http_method = http_method.lower()
         self.url_path = url_path.lower()
         self.schemas = schemas

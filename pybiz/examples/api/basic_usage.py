@@ -1,34 +1,34 @@
 from pybiz import ApiRegistry
 
 
-def web_framework_hook(handler):
+def web_framework_on_decorate(handler):
     """
     Fictitious function, which does whatever is necessary to register a request
     handler/view function with your web framework, e.g. Django, Falcon, etc.
 
-    Note that in this example, we manually set this function as the `hook`
+    Note that in this example, we manually set this function as the `on_decorate`
     keyword argument each time with use the `app.post` decorator. There are two
-    alternative ways of setting this hook only once.
+    alternative ways of setting this on_decorate only once.
 
     The First option is to derive an `ApiRegistry` subclass along with its post,
-    get, patch, put, etc. methods, such that the `hook` kwarg is always set to
+    get, patch, put, etc. methods, such that the `on_decorate` kwarg is always set to
     the desired function by default. Like so:
 
     ```python
     class MyApiRegistry(ApiRegistry):
 
-        def hook(self, handler):
+        def on_decorate(self, handler):
             print('Registering handler with web framework!')
 
         def get(self, *args, **kwargs):
-            kwargs.setdefault('hook', self.hook)
+            kwargs.setdefault('on_decorate', self.on_decorate)
             return super().get(*args, **kwargs)
     ```
 
-    The second is to pass in the function as the `hook` constructor kwarg:
+    The second is to pass in the function as the `on_decorate` constructor kwarg:
 
     ```python
-    api = ApiRegistry(hook=web_framework_hook)
+    api = ApiRegistry(on_decorate=web_framework_on_decorate)
     ```
 
     """
@@ -56,12 +56,12 @@ api = MyApiRegistry()
 
 # Now, register some callables with the registry:
 
-@api.post('/login', hook=web_framework_hook)
+@api.post('/login', on_decorate=web_framework_on_decorate)
 def login(request, response):
     print('>>> Logging in...')
 
 
-@api.post('/logout', hook=web_framework_hook)
+@api.post('/logout', on_decorate=web_framework_on_decorate)
 def logout(request, response):
     print('>>> Logging out...')
 

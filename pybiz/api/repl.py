@@ -28,14 +28,14 @@ class Repl(FunctionRegistry):
     def function_proxy_type(self):
         return ReplFunctionProxy
 
-    def hook(self, proxy):
+    def on_decorate(self, proxy):
         """
         Collect each FunctionProxy, which contains a reference to a function
         we're going to inject into the namespace of the REPL.
         """
         self._proxies.append(proxy)
 
-    def unpack(self, signature, *args, **kwargs):
+    def on_request(self, signature, *args, **kwargs):
         if args and isinstance(args[0], CliProgram):
             prog = args[0]
             arguments = prog.args

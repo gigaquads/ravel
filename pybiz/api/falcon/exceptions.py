@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 import ujson
 
 from falcon import HTTPError, status_codes
