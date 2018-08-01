@@ -287,22 +287,30 @@ class BizObjectCrudMethods(object):
     def get(cls, _id=None, public_id=None, fields: dict = None):
         dao = cls.get_dao()
         record = dao.fetch(_id=_id, public_id=public_id, fields=fields)
-        return cls(record)
+        bizobj = cls(record).clear_dirty()
+        return bizobj
 
     @classmethod
     def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
+        dao = cls.get_dao()
         return [
-            cls(record)
-            for record in cls.get_dao()
-            .fetch(_ids=_ids, public_ids=public_ids, fields=fields)
+            cls(record).clear_dirty() for record in dao.fetch_many(
+                _ids=_ids, public_ids=public_ids, fields=fields
+            )
         ]
 
     @classmethod
     def delete_many(cls, bizobjs):
-        cls.get_dao().delete_many([obj._id for obj in bizobjs])
+        bizobj_ids = []
+        for obj in bizobjs:
+            obj.mark_dirty()
+            bizobj_ids.append(obj._id)
+        cls.get_dao().delete_many(bizobj_ids)
 
     def delete(self):
+        self.delete_man
         self.dao.delete(_id=self._id, public_id=self.public_id)
+        self.mark_dirty()
 
     def save(self, fetch=False):
         nested_bizobjs = []
@@ -343,7 +351,7 @@ class BizObjectCrudMethods(object):
         # Persist and refresh data
         if self._id is None:
             updated_data = self.dao.create(
-                public_id=self.public_id, data=data_to_save
+                public_id=self.public_id, record=data_to_save
             )
         else:
             updated_data = self.dao.update(
@@ -391,6 +399,7 @@ class BizObjectDirtyDict(DirtyInterface):
 
     def clear_dirty(self, keys=None):
         self._data.clear_dirty(keys=keys)
+        return self
 
 
 class BizObjectSchema(AbstractSchema):

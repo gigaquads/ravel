@@ -24,27 +24,6 @@ class FalconWsgiService(WsgiService):
             request_type=self.request_type
         )
 
-    def start(self, environ=None, start_response=None, *args, **kwargs):
-        return self.falcon_api(environ, start_response)
-
-    def on_decorate(self, route):
-        resource = self.resource_manager.add_route(route)
-        self.falcon_api.add_route(route.url_path, resource)
-
-    def on_request(self, signature, request, response, *args, **kwargs) -> Dict:
-        args = ()
-        kwargs = {
-            'request': request,
-            'response': response,
-        }
-        kwargs.update(request.json)
-        kwargs.update(request.params)
-        return (args, kwargs)
-
-    def on_response(self, result, request, response):
-        # The `result` object needs to be serialized by middleware.
-        response.unserialized_body = result
-
     @property
     def middleware(self):
         return []
@@ -52,3 +31,20 @@ class FalconWsgiService(WsgiService):
     @property
     def request_type(self):
         return self.Request
+
+    def start(self, environ=None, start_response=None, *args, **kwargs):
+        return self.falcon_api(environ, start_response)
+
+    def on_decorate(self, route):
+        resource = self.resource_manager.add_route(route)
+        if resource:
+            self.falcon_api.add_route(route.url_path, resource)
+
+    def on_request(self, signature, req, resp, *args, **kwargs) -> Dict:
+        api_kwargs = req.json.copy()
+        api_kwargs.update(req.params)
+        return (args, api_kwargs)
+
+    def on_response(self, result, request, response, *args, **kwargs):
+        # The `result` object needs to be serialized by middleware.
+        response.unserialized_body = result

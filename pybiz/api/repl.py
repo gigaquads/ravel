@@ -13,7 +13,14 @@ class Repl(FunctionRegistry):
     experimenting with an API from a command-line interface.
     """
 
-    def __init__(self, name=None, version=None, tagline=None, defaults=None, *args, **kwargs):
+    def __init__(
+        self,
+        name=None,
+        version=None,
+        tagline=None,
+        defaults=None,
+        *args, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self._proxies = []  # FunctionProxy objects wrap decorated functions
         self._ipython = None

@@ -7,6 +7,7 @@ import venusian
 import yaml
 
 from collections import defaultdict
+from threading import local
 from appyratus.validation import Schema, fields
 
 from pybiz.dao.base import Dao
@@ -16,6 +17,7 @@ from pybiz.exc import ApiError
 
 class FunctionRegistry(object):
     def __init__(self, manifest=None):
+        self.thread_local = local()
         self._manifest = manifest
         self._bootstrapped = False
         self._decorators = []

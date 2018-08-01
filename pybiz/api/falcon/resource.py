@@ -56,5 +56,8 @@ class ResourceManager(object):
         if resource is None:
             resource = Resource(route.url_path)
             self.resources[route.url_path] = resource
-        resource.add_route(route)
-        return resource
+            resource.add_route(route)
+            return resource
+        else:
+            resource.add_route(route)
+            return None

@@ -17,4 +17,8 @@ class JsonTranslator(object):
         pass
 
     def process_response(self, request, response, resource):
-        response.body = self.encode(response.unserialized_body or {})
+        unserialized_body = response.unserialized_body
+        if unserialized_body:
+            if is_bizobj(unserialized_body):
+                unserialized_body = unserialized_body.dump()
+        response.body = self.encode(unserialized_body or {})
