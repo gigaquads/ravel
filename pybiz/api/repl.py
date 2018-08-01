@@ -96,3 +96,10 @@ class ReplFunctionProxy(FunctionProxy):
         self.parser = decorator.params.get('parser')
         if self.parser is not None:
             self.parser.perform = self
+
+    @property
+    def source(self):
+        func_name = func_name.lower()
+        source = inspect.getsource(self.func)
+        print(source)
+

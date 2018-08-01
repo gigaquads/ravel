@@ -64,7 +64,7 @@ class JsonServer(HttpFunctionRegistry):
             return body
 
         def extract_query_params(self, url) -> Dict:
-            params = parse_qs(url.query) if url.query else None
+            params = parse_qs(url.query) if url.query else {}
             for k, v in params.items():
                 if len(v) == 1:
                     params[k] = v[0]
@@ -90,8 +90,11 @@ class JsonServer(HttpFunctionRegistry):
         self.handler = type('Handler', (self.Handler, ), {'service': self})
         self.json_encode = json_encode or JsonEncoder().encode
         self.server = HTTPServer((host, port), self.handler)
+        self.host = host
+        self.port = port
 
     def start(self, *args, **kwargs):
+        print('Listening on http://{}:{}'.format(self.host, self.port))
         self.server.serve_forever()
 
     def on_request(self, signature, arguments: Dict) -> dict:
@@ -107,5 +110,4 @@ class JsonServer(HttpFunctionRegistry):
                 args.append(arguments.get(k))
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
                 kwargs[k] = arguments.get(k)
-
         return (args, kwargs)
