@@ -23,6 +23,7 @@ from importlib import import_module
 from appyratus.validation.schema import AbstractSchema, Schema
 from appyratus.validation.fields import Field, Uuid, Anything
 
+from .predicate import ConditionalPredicate, BooleanPredicate
 from .patch import JsonPatchMixin
 from .graphql import GraphQLGetter, GraphQLEngine, GraphQLField
 from .dao.base import Dao, DaoManager
@@ -38,6 +39,24 @@ from .const import (
 
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
+
+
+class ComparableProperty(property):
+    def __init__(self, key, **kwargs):
+        super().__init__(**kwargs)
+        self._key = key
+
+    def __lt__(self, other):
+        return ConditionalPredicate(self._key, '<', other)
+
+    def __le__(self, other):
+        return ConditionalPredicate(self._key, '<=', other)
+
+    def __gt__(self, other):
+        return ConditionalPredicate(self._key, '>', other)
+
+    def __ge__(self, other):
+        return ConditionalPredicate(self._key, '>=', other)
 
 
 class Relationship(object):
@@ -214,7 +233,6 @@ class BizObjectMeta(ABCMeta):
         Create properties out of the fields declared on the schema associated
         with the class.
         """
-
         def build_property(k):
             def fget(self):
                 return self[k]
@@ -225,7 +243,7 @@ class BizObjectMeta(ABCMeta):
             def fdel(self):
                 del self[k]
 
-            return property(fget=fget, fset=fset, fdel=fdel)
+            return ComparableProperty(k, fget=fget, fset=fset, fdel=fdel)
 
         for field_name in schema.fields:
             if field_name not in relationships:
