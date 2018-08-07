@@ -22,14 +22,7 @@ class FunctionRegistry(object):
         self._bootstrapped = False
         self._decorators = []
 
-    def __call__(
-        self,
-        on_decorate=None,
-        on_request=None,
-        on_response=None,
-        *args,
-        **kwargs
-    ):
+    def __call__(self, *args, **kwargs):
         """
         Use this to decorate functions, adding them to this FunctionRegistry.
         Each time a function is decorated, it arives at the "on_decorate"
@@ -46,13 +39,7 @@ class FunctionRegistry(object):
                 pass
         ```
         """
-        decorator = self.function_decorator_type(
-            self,
-            on_decorate=on_decorate or self.on_decorate,
-            on_request=on_request or self.on_request,
-            on_response=on_response or self.on_response,
-            *args, **kwargs
-        )
+        decorator = self.function_decorator_type(self, *args, **kwargs)
         self._decorators.append(decorator)
         return decorator
 
@@ -80,13 +67,12 @@ class FunctionRegistry(object):
         Args:
             - filepath: Path to manifest.yml file
         """
-        if self._bootstrapped:
-            return
-        self._bootstrapped = True
-        if self._manifest is None or filepath is not None:
-            self._manifest = Manifest(self, filepath=filepath)
-        if self._manifest is not None:
-            self._manifest.process()
+        if not self.bootstrapped:
+            if self._manifest is None or filepath is not None:
+                self._manifest = Manifest(self, filepath=filepath)
+            if self.manifest is not None:
+                self._manifest.process()
+            self._bootstrapped = True
 
     def start(self, *args, **kwargs):
         """
@@ -120,23 +106,13 @@ class FunctionRegistry(object):
 
 
 class FunctionDecorator(object):
-    def __init__(self,
-        registry,
-        on_decorate=None,
-        on_request=None,
-        on_response=None,
-        **params
-    ):
+    def __init__(self, registry, *args, **params):
         self.registry = registry
-        self.on_decorate = on_decorate
-        self.on_request = on_request
-        self.on_response = on_response
         self.params = params
 
     def __call__(self, func):
         proxy = self.registry.function_proxy_type(func, self)
-        if self.on_decorate is not None:
-            self.on_decorate(proxy)
+        self.registry.on_decorate(proxy)
         return proxy
 
 
@@ -145,23 +121,30 @@ class FunctionProxy(object):
         self.func = func
         self.signature = inspect.signature(self.func)
         self.decorator = decorator
+        self.target = self.resolve(func)
 
     def __repr__(self):
-        return '<FunctionProxy({})>'.format(', '.join([
-                'method={}'.format(self.func.__name__)
-            ]))
+        return '<{}({})>'.format(
+            self.__class__.__name__,
+            ', '.join(['method={}'.format(self.func.__name__)])
+        )
 
     def __call__(self, *args, **kwargs):
-        on_request = self.decorator.on_request
+        on_request = self.decorator.registry.on_request
         on_request_retval = on_request(self.signature, *args, **kwargs)
         if on_request_retval:
             prepared_args, prepared_kwargs = on_request_retval
         else:
             prepared_args, prepared_kwargs = args, kwargs
-        result = self.func(*prepared_args, **prepared_kwargs)
-        self.decorator.on_response(result, *args, **kwargs)
+        result = self.resolved_func(*prepared_args, **prepared_kwargs)
+        self.decorator.registry.on_response(result, *args, **kwargs)
         return result
 
-    @property
-    def func_name(self):
-        return self.func.__name__ if self.func else None
+    def __getattr__(self, attr):
+        return getattr(self.func, attr)
+
+    def resolve(self, func):
+        if isinstance(func, FunctionProxy):
+            return func.target
+        else:
+            return func

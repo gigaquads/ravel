@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 
-from os import environ
 from os.path import join, dirname, realpath
+from demo.api import repl
 
 
-API_TYPE = 'repl'
-MANIFEST_FILEPATH = join(dirname(realpath(__file__)), '..', 'manifest.yml')
-
-
-environ['API_TYPE'] = API_TYPE
-
-
-if __name__ == '__main__':
-  from demo.api import api
-
-  api.bootstrap(MANIFEST_FILEPATH)
-  api.start()
+manifest_filepath = join(
+  dirname(realpath(__file__)), '..', 'manifest.yml'
+)
+print(manifest_filepath)
+repl.bootstrap(manifest_filepath)
+repl.start()

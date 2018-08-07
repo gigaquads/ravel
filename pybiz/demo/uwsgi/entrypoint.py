@@ -1,5 +1,5 @@
-from demo.api import api
+from demo.api import http
 
 
-uwsgi_callable = api.start
-api.bootstrap()  # processes the manifest file
+uwsgi_callable = http.start
+http.bootstrap()  # processes the manifest file

@@ -62,32 +62,23 @@ class Repl(FunctionRegistry):
 
         return (args, kwargs)
 
-    def start(self, interactive=True, *args, **kwargs):
+    def start(self, *args, **kwargs):
         """
         Start a new REPL with all registered functions available in the REPL
         namespace.
         """
-        if interactive:
-            self._ipython = InteractiveShellEmbed()
-            self._ipython.mainloop(local_ns=dict(
-                {p.func_name: p.func for p in self._proxies},
-                repl=self
-            ))
-        else:
-            class DynamicCliProgram(CliProgram):
-                @staticmethod
-                def subparsers():
-                    return [p.parser for p in self._proxies if p.parser]
-
-            prog = DynamicCliProgram(**self._cli_program_kwargs)
-            prog.run()
+        self._ipython = InteractiveShellEmbed()
+        self._ipython.mainloop(local_ns=dict(
+            {p.target.__name__: p for p in self._proxies},
+            repl=self
+        ))
 
     @property
     def function_names(self):
         """
         Get list of names of all registered functions in the REPL.
         """
-        return sorted(p.func_name for p in self._proxies)
+        return sorted(p.target.__name__ for p in self._proxies)
 
 
 class ReplFunctionProxy(FunctionProxy):
@@ -97,9 +88,5 @@ class ReplFunctionProxy(FunctionProxy):
         if self.parser is not None:
             self.parser.perform = self
 
-    @property
-    def source(self):
-        func_name = func_name.lower()
-        source = inspect.getsource(self.func)
-        print(source)
-
+    def show_source(self):
+        print(inspect.getsource(self.target))
