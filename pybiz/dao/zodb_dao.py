@@ -1,5 +1,6 @@
 import threading
 import bisect
+import inspect
 
 import numpy as np
 import persistent
@@ -20,7 +21,7 @@ from .base import Dao
 
 
 class ZODBObject(persistent.Persistent):
-    def __init__(self, record: Dict, schema: Schema):
+    def __init__(self, record: Dict, schema: Schema = None):
         super().__init__()
         for k in (schema.fields if schema else record):
             setattr(self, k, record.get(k))
@@ -119,6 +120,11 @@ class ZODBDao(Dao, metaclass=ZODBDaoMeta):
             cls.local.conn.transaction_manager.commit()
 
     @classmethod
+    def rollback(cls):
+        if cls.local.conn:
+            cls.local.conn.transaction_manager.abort()
+
+    @classmethod
     def close(cls):
         if cls.local.db:
             cls.local.db.close()
@@ -172,16 +178,24 @@ class ZODBDao(Dao, metaclass=ZODBDaoMeta):
     @classmethod
     def to_dict(cls, model):
         schema = cls._memoized_attrs['schema']
-        return {k: getattr(model, k) for k in schema.fields}
+        if schema is not None:
+            attrs = schema.fields.keys()
+            return {k: getattr(model, k) for k in schema.fields}
+        else:
+            return {
+                k: v for k, v in inspect.getmembers(model)
+                if not (hasattr(persistent.Persistent, k) or callable(v))
+            }
 
     @classmethod
     def memoize(cls):
         if not cls._memoized_attrs:
             with cls._memoization_lock:
+                schema_type = cls.__schema__
                 cls._memoized_attrs = {
                     'collection': cls.__collection__() or cls.__name__,
                     'object_type': cls.__object_type__(),
-                    'schema': cls.__schema__()(),
+                    'schema': schema_type() if schema_type else None,
                     'indexes': cls.__indexes__(),
                 }
 

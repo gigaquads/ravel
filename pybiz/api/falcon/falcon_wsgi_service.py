@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+import traceback
+
 import falcon
 
 from typing import Dict
@@ -23,6 +25,9 @@ class FalconWsgiService(WsgiService):
             middleware=self.middleware,
             request_type=self.request_type
         )
+        self.falcon_api.add_error_handler(
+            Exception, self.handle_error
+        )
 
     @property
     def middleware(self):
@@ -31,6 +36,11 @@ class FalconWsgiService(WsgiService):
     @property
     def request_type(self):
         return self.Request
+
+    @staticmethod
+    def handle_error(exc, req, resp, params):
+        resp.status = falcon.HTTP_500
+        traceback.print_exc()
 
     def start(self, environ=None, start_response=None, *args, **kwargs):
         return self.falcon_api(environ, start_response)

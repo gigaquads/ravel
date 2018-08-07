@@ -17,7 +17,7 @@ class JsonTranslator(object):
         pass
 
     def process_response(self, request, response, resource):
-        unserialized_body = response.unserialized_body
+        unserialized_body = getattr(response, 'unserialized_body', None)
         if unserialized_body:
             if is_bizobj(unserialized_body):
                 unserialized_body = unserialized_body.dump()
