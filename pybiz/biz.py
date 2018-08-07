@@ -46,6 +46,9 @@ class ComparableProperty(property):
         super().__init__(**kwargs)
         self._key = key
 
+    def __eq__(self, other):
+        return ConditionalPredicate(self._key, '=', other)
+
     def __lt__(self, other):
         return ConditionalPredicate(self._key, '<', other)
 
@@ -182,7 +185,7 @@ class BizObjectMeta(ABCMeta):
 
         # scan class methods for those annotated as patch hooks
         # and register them as such.
-        for k in dir(cls):
+        for k in dir(cls): # TODO: use getmembers
             v = getattr(cls, k)
             if isinstance(v, MethodType):
                 path = getattr(v, PATCH_PATH_ANNOTATION, None)
@@ -202,7 +205,7 @@ class BizObjectMeta(ABCMeta):
         direct_relationships = {}
         inherited_relationships = {}
 
-        for k in dir(cls):
+        for k in dir(cls):  # TODO: use getmembers
             rel = getattr(cls, k)
             is_relationship = isinstance(rel, Relationship)
 
@@ -316,6 +319,15 @@ class BizObjectCrudMethods(object):
                 _ids=_ids, public_ids=public_ids, fields=fields
             )
         ]
+
+    @classmethod
+    def query(cls, predicate, **kwargs):
+        result = cls.get_dao().query(predicate, **kwargs)
+        if isinstance(result, dict):
+            return cls(result)
+        else:
+            # assume it's a list of dicts
+            return [cls(record) for record in result]
 
     @classmethod
     def delete_many(cls, bizobjs):

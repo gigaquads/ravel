@@ -136,7 +136,7 @@ class FunctionProxy(object):
             prepared_args, prepared_kwargs = on_request_retval
         else:
             prepared_args, prepared_kwargs = args, kwargs
-        result = self.resolved_func(*prepared_args, **prepared_kwargs)
+        result = self.target(*prepared_args, **prepared_kwargs)
         self.decorator.registry.on_response(result, *args, **kwargs)
         return result
 

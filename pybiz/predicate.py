@@ -17,10 +17,10 @@ class ConditionalPredicate(Predicate):
         )
 
     def __or__(self, other):
-        return BooleanPredicate('or', self, other)
+        return BooleanPredicate('|', self, other)
 
     def __and__(self, other):
-        return BooleanPredicate('and', self, other)
+        return BooleanPredicate('&', self, other)
 
 
 class BooleanPredicate(Predicate):

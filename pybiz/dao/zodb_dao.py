@@ -8,7 +8,7 @@ import BTrees.IOBTree
 import ZODB.FileStorage
 import ZODB
 
-from typing import Dict
+from typing import Dict, List
 from functools import reduce
 
 from persistent.mapping import PersistentMapping
@@ -16,9 +16,11 @@ from appyratus.validation.schema import Schema
 
 from pybiz.predicate import ConditionalPredicate, BooleanPredicate
 
+from .base import Dao
 
-class ZODBModel(persistent.Persistent):
-    def __init__(self, record: Dict, schema: Schema = None):
+
+class ZODBObject(persistent.Persistent):
+    def __init__(self, record: Dict, schema: Schema):
         super().__init__()
         for k in (schema.fields if schema else record):
             setattr(self, k, record.get(k))
@@ -45,20 +47,15 @@ class ZODBModel(persistent.Persistent):
         return self._id
 
 
-class ZODBDao(object):
+class ZODBDaoMeta(type(Dao)):
+    def __new__(typ, name, bases, dct):
+        cls = super().__new__(typ, name, bases, dct)
+        if name != 'ZODBDao':
+            cls.memoize()
+        return cls
 
-    class Index(object):
-        def __init__(self, index_type: type, unique=False):
-            self.index_type = index_type
-            self.unique = unique
 
-    class OOBTreeIndex(Index):
-        def __init__(self, **kwargs):
-            super().__init__(BTrees.OOBTree.BTree, **kwargs)
-
-    class IOBTreeIndex(Index):
-        def __init__(self, **kwargs):
-            super().__init__(BTrees.IOBTree.BTree, **kwargs)
+class ZODBDao(Dao, metaclass=ZODBDaoMeta):
 
     local = threading.local()
     local.storage = None
@@ -66,13 +63,43 @@ class ZODBDao(object):
     local.conn = None
     local.root = None
 
-    __model_type__ = ZODBModel
-    __schema__ = None
-    __collection__ = None
-    __indexes__ = {
-        '_id': IOBTreeIndex(unique=True),
-        'public_id': OOBTreeIndex(unique=True),
-    }
+    _memoized_attrs = {}
+    _memoization_lock = threading.RLock()
+
+    class IndexSpec(object):
+        """specification for a BTree index"""
+        def __init__(self, index_type: type, unique=False):
+            self.index_type = index_type
+            self.unique = unique
+
+    class OOBTreeIndex(IndexSpec):
+        """index with string/generic object keys"""
+        def __init__(self, **kwargs):
+            super().__init__(BTrees.OOBTree.BTree, **kwargs)
+
+    class IOBTreeIndex(IndexSpec):
+        """index with integer keys"""
+        def __init__(self, **kwargs):
+            super().__init__(BTrees.IOBTree.BTree, **kwargs)
+
+    @staticmethod
+    def __collection__():
+        return None
+
+    @staticmethod
+    def __object_type__():
+        return ZODBObject
+
+    @staticmethod
+    def __schema__():
+        raise NotImplementedError('override in subclass')
+
+    @staticmethod
+    def __indexes__():
+        return {
+            '_id': ZODBDao.OOBTreeIndex(unique=True),
+            'public_id': ZODBDao.OOBTreeIndex(unique=True),
+        }
 
     @classmethod
     def connect(cls, db_name: str):
@@ -104,24 +131,27 @@ class ZODBDao(object):
             indexes = PersistentMapping()
             col['indexes'] = indexes
         if attr_name not in indexes:
-            index_spec = cls.__indexes__[attr_name]
-            indexes[attr_name] = index_spec.index_type()
+            index_spec = cls._memoized_attrs['indexes'][attr_name]
+            if attr_name == '_id':
+                indexes[attr_name] = cls.OOBTreeIndex(unique=True)
+            else:
+                indexes[attr_name] = index_spec.index_type()
         return indexes[attr_name]
 
     @classmethod
     def get_collection(cls):
-        if cls.__collection__ is None:
-            cls.__collection__ = cls.__name__.lower()
         root = cls.root()
-        if cls.__collection__ not in root:
-            root[cls.__collection__] = PersistentMapping()
-        if cls.__collection__ not in root:
-            root[cls.__collection__] = PersistentMapping()
-        return root[cls.__collection__]
+        col_name = cls._memoized_attrs['collection']
+        if col_name not in root:
+            root[col_name] = PersistentMapping()
+        if col_name not in root:
+            root[col_name] = PersistentMapping()
+        return root[col_name]
 
     @classmethod
     def update_indexes(cls, model):
-        for k, index_spec in cls.__indexes__.items():
+        index_specs = cls._memoized_attrs['indexes']
+        for k, index_spec in index_specs.items():
             index = cls.get_index(k)
             v = getattr(model, k, None)
             if v is not None:
@@ -134,15 +164,48 @@ class ZODBDao(object):
 
     @classmethod
     def next_id(cls):
-        raise NotImplementedError()
+        col = cls.get_collection()
+        next_id = col.setdefault('id_counter', 1)
+        col['id_counter'] = next_id + 1
+        return str(next_id)
 
     @classmethod
     def to_dict(cls, model):
-        return {k: getattr(model, k) for k in cls.__schema__.fields}
+        schema = cls._memoized_attrs['schema']
+        return {k: getattr(model, k) for k in schema.fields}
+
+    @classmethod
+    def memoize(cls):
+        if not cls._memoized_attrs:
+            with cls._memoization_lock:
+                cls._memoized_attrs = {
+                    'collection': cls.__collection__() or cls.__name__,
+                    'object_type': cls.__object_type__(),
+                    'schema': cls.__schema__()(),
+                    'indexes': cls.__indexes__(),
+                }
+
+    @property
+    def schema(self) -> Schema:
+        return self._memoized_attrs['schema']
+
+    @property
+    def object_type(self) -> ZODBObject:
+        return self._memoized_attrs['object_type']
+
+    @property
+    def indexes(self) -> List[IndexSpec]:
+        return self._memoized_attrs['indexes']
+
+    @property
+    def collection(self) -> str:
+        return self._memoized_attrs['collection']
 
     def query(self, predicate, first=False, as_dict=True):
         def query_dfs(pred, empty=BTrees.OOBTree.TreeSet()):
             if isinstance(pred, ConditionalPredicate):
+                if pred.attr_name == '_id':
+                    pred.value = str(pred.value)
                 index = self.get_index(pred.attr_name)
                 if pred.op == '=':
                     return index.get(pred.value, empty)
@@ -162,20 +225,23 @@ class ZODBDao(object):
                     if pred.value > index.minKey():
                         keys = np.array(index.keys(), dtype=object)
                         offset = bisect.bisect_left(keys, pred.value)
-                        key_slice = slice(0, offset, 1) 
+                        key_slice = slice(0, offset, 1)
                 elif pred.op == '<=':
                     if pred.value >= index.minKey():
                         keys = np.array(index.keys(), dtype=object)
                         offset = bisect.bisect(keys, pred.value)
-                        key_slice = slice(0, offset, 1) 
+                        key_slice = slice(0, offset, 1)
                 if key_slice:
-                    result = reduce(BTrees.OOBTree.union, (index[k] for k in keys[key_slice]))
+                    result = reduce(
+                        BTrees.OOBTree.union,
+                        (index[k] for k in keys[key_slice])
+                    )
                 return result
             elif isinstance(pred, BooleanPredicate):
-                if pred.op == 'and':
+                if pred.op == '&':
                     operation = BTrees.OOBTree.intersection
                     left_result = query_dfs(pred.lhs)
-                if pred.op == 'or':
+                if pred.op == '|':
                     operation = BTrees.OOBTree.union
                 left_result = query_dfs(pred.lhs)
                 if left_result:
@@ -200,7 +266,7 @@ class ZODBDao(object):
 
     def fetch(self, _id=None, public_id=None, fields=None, as_dict=True):
         if _id is not None:
-            predicate = ConditionalPredicate('_id', '=', _id)
+            predicate = ConditionalPredicate('_id', '=', str(_id))
         else:
             predicate = ConditionalPredicate('public_id', '=', public_id)
         return self.query(predicate, first=True, as_dict=as_dict)
@@ -226,7 +292,7 @@ class ZODBDao(object):
         record['_id'] = _id if _id is not None else self.next_id()
         if public_id is not None:
             record['public_id'] = public_id
-        model = self.__model_type__(record, schema=self.__schema__)
+        model = self.object_type(record, schema=self.schema)
         self.update_indexes(model)
         return self.to_dict(model)
 
@@ -256,29 +322,42 @@ if __name__ == '__main__':
         public_id = fields.Str(allow_none=True)
         name = fields.Str()
 
+    class UserDao(ZODBDao):
+
+        @staticmethod
+        def __collection__():
+            return 'things'
+
+        @staticmethod
+        def __schema__():
+            return UserSchema
+
+        @staticmethod
+        def __indexes__():
+            return {
+                '_id': ZODBDao.OOBTreeIndex(unique=True),
+                'public_id': ZODBDao.OOBTreeIndex(unique=True),
+                'name': ZODBDao.OOBTreeIndex(unique=False),
+            }
+
     class User(BizObject):
         @classmethod
         def __schema__(cls):
             return UserSchema
 
-    class UserDao(ZODBDao):
-        __collection__ = 'things'
-        __schema__ = UserSchema()
-        __indexes__ = {
-            '_id': ZODBDao.IOBTreeIndex(unique=True),
-            'public_id': ZODBDao.OOBTreeIndex(unique=True),
-            'name': ZODBDao.OOBTreeIndex(unique=False),
-        }
+        @classmethod
+        def __dao__(cls):
+            return UserDao
 
     dao = UserDao()
     dao.connect('things.fs')
 
     if sys.argv[1] == 'create':
-        dao.create(_id=1, record={'name': 'Daniel'})
-        dao.create(_id=2, record={'name': 'Jeff'})
-        dao.create(_id=3, record={'name': 'KC'})
+        dao.create(record={'name': 'Daniel'})
+        dao.create(record={'name': 'Jeff'})
+        dao.create(record={'name': 'KC'})
         dao.commit()
         dao.close()
     elif sys.argv[1] == 'fetch':
-        print(User(dao.fetch(_id=1)))
-        print(dao.query((User._id > 2) & (User.name > 'Je')))
+        print(User.get(_id=1))
+        print(User.query((User._id > 2) & (User.name > 'Je')))

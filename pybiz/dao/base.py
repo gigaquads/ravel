@@ -19,6 +19,9 @@ class DaoMeta(ABCMeta):
 
 
 class Dao(object, metaclass=DaoMeta):
+    def query(self, predicate, **kwargs):
+        raise NotImplementedError()
+
     @abstractmethod
     def exists(self, _id=None, public_id=None) -> bool:
         pass
