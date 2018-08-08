@@ -20,7 +20,7 @@ from pybiz.predicate import ConditionalPredicate, BooleanPredicate
 from .base import Dao
 
 
-class ZODBObject(persistent.Persistent):
+class ZodbObject(persistent.Persistent):
     def __init__(self, record: Dict, schema: Schema = None):
         super().__init__()
         for k in (schema.fields if schema else record):
@@ -48,15 +48,15 @@ class ZODBObject(persistent.Persistent):
         return self._id
 
 
-class ZODBDaoMeta(type(Dao)):
+class ZodbDaoMeta(type(Dao)):
     def __new__(typ, name, bases, dct):
         cls = super().__new__(typ, name, bases, dct)
-        if name != 'ZODBDao':
+        if name != 'ZodbDao':
             cls.memoize()
         return cls
 
 
-class ZODBDao(Dao, metaclass=ZODBDaoMeta):
+class ZodbDao(Dao, metaclass=ZodbDaoMeta):
 
     local = threading.local()
     local.storage = None
@@ -89,7 +89,7 @@ class ZODBDao(Dao, metaclass=ZODBDaoMeta):
 
     @staticmethod
     def __object_type__():
-        return ZODBObject
+        return ZodbObject
 
     @staticmethod
     def __schema__():
@@ -98,8 +98,8 @@ class ZODBDao(Dao, metaclass=ZODBDaoMeta):
     @staticmethod
     def __indexes__():
         return {
-            '_id': ZODBDao.OOBTreeIndex(unique=True),
-            'public_id': ZODBDao.OOBTreeIndex(unique=True),
+            '_id': ZodbDao.OOBTreeIndex(unique=True),
+            'public_id': ZodbDao.OOBTreeIndex(unique=True),
         }
 
     @classmethod
@@ -204,7 +204,7 @@ class ZODBDao(Dao, metaclass=ZODBDaoMeta):
         return self._memoized_attrs['schema']
 
     @property
-    def object_type(self) -> ZODBObject:
+    def object_type(self) -> ZodbObject:
         return self._memoized_attrs['object_type']
 
     @property
@@ -336,7 +336,7 @@ if __name__ == '__main__':
         public_id = fields.Str(allow_none=True)
         name = fields.Str()
 
-    class UserDao(ZODBDao):
+    class UserDao(ZodbDao):
 
         @staticmethod
         def __collection__():
@@ -349,9 +349,9 @@ if __name__ == '__main__':
         @staticmethod
         def __indexes__():
             return {
-                '_id': ZODBDao.OOBTreeIndex(unique=True),
-                'public_id': ZODBDao.OOBTreeIndex(unique=True),
-                'name': ZODBDao.OOBTreeIndex(unique=False),
+                '_id': ZodbDao.OOBTreeIndex(unique=True),
+                'public_id': ZodbDao.OOBTreeIndex(unique=True),
+                'name': ZodbDao.OOBTreeIndex(unique=False),
             }
 
     class User(BizObject):

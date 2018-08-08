@@ -23,7 +23,7 @@ from importlib import import_module
 from appyratus.validation.schema import AbstractSchema, Schema
 from appyratus.validation.fields import Field, Uuid, Anything
 
-from .predicate import ConditionalPredicate, BooleanPredicate
+from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from .patch import JsonPatchMixin
 from .graphql import GraphQLGetter, GraphQLEngine, GraphQLField
 from .dao.base import Dao, DaoManager
@@ -63,12 +63,20 @@ class ComparableProperty(property):
 
 
 class Relationship(object):
-    def __init__(self, bizobj_class, many=False, dump_to=None, load_from=None):
+    def __init__(
+        self,
+        bizobj_class,
+        many=False,
+        dump_to=None,
+        load_from=None,
+        query=None
+    ):
         self.bizobj_class = bizobj_class
         self.load_from = load_from
         self.dump_to = dump_to
         self.many = many
         self.name = None
+        self.query = query
 
     def copy(self):
         return copy.deepcopy(self)
@@ -258,7 +266,17 @@ class BizObjectMeta(ABCMeta):
                 """
                 Return the related BizObject instance or list.
                 """
-                return self._related_bizobjs.get(k)
+                DNE = '%{}%'.format(sys.maxsize)
+                retval = self._related_bizobjs.get(k, DNE)
+                if retval is DNE:
+                    if rel.query is not None:
+                        retval = rel.query(self)
+                        setattr(self, k, retval)  # go through fset
+                    elif rel.many:
+                        retval = []
+                    else:
+                        retval = None
+                return retval
 
             def fset(self, value):
                 """
