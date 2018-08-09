@@ -4,6 +4,8 @@ from abc import ABCMeta, abstractmethod
 
 from graphql.parser import GraphQLParser
 
+from pybiz.util import is_bizobj
+
 
 class GraphQLNode(object):
     pass
@@ -19,6 +21,7 @@ class GraphQLField(GraphQLNode):
         self.value = getattr(ast_field, 'value', None)
         self.relationships = {}
         self.fields = {}
+        self.context = {}
 
         # these are kwargs to pass into the get method of
         # the related bizobj class (if there is one)
@@ -61,10 +64,13 @@ class GraphQLField(GraphQLNode):
         ```
         """
         results = func(self)
-        results.update({
-            child.key: child.execute(func)
-            for child in self.relationships.values()
+        if isinstance(results, dict):
+            results.update({
+                child.key: child.execute(func)
+                for child in self.relationships.values()
             })
+        else:
+            assert isinstance(results, (list, tuple))
         return results
 
 
@@ -113,13 +119,28 @@ class GraphQLEngine(object):
         # when passed down into the DAL.
         selected = field.bizobj_class.Schema.load_keys(field.fields.keys())
 
+        # ensure that the public ID is always selected
+        if 'public_id' in field.bizobj_class.Schema.fields:
+            selected.append('public_id')
+
         # load the BizObject with the requested fields
-        bizobj = field.bizobj_class.graphql_get(
-            field, fields=selected, **field.kwargs)
+        getter_result = field.bizobj_class.graphql_get(
+            field,
+            fields=selected,  # TODO: confusing use of field.fields
+            **field.kwargs,
+        )
 
-        # return said fields in a JSON object
-        return bizobj.dump()
+        def format_result(result):
+            if is_bizobj(result):
+                return result.dump()
+            elif isinstance(result, (list, tuple, set)):
+                return [format_result(obj) for obj in result]
+            elif isinstance(result, dict):
+                return result
+            raise ValueError(str(result))
 
+        # return a plain dict or list of dicts from the result object
+        return format_result(getter_result)
 
 if __name__ == '__main__':
     import json

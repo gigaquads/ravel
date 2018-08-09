@@ -11,6 +11,7 @@ Relationship Load/Dump Mechanics:
 """
 
 import os
+import sys
 import copy
 import re
 
@@ -339,13 +340,16 @@ class BizObjectCrudMethods(object):
         ]
 
     @classmethod
-    def query(cls, predicate, **kwargs):
-        result = cls.get_dao().query(predicate, **kwargs)
+    def query(cls, predicate, first=False, **kwargs):
+        result = cls.get_dao().query(predicate, first=first, **kwargs)
         if isinstance(result, dict):
             return cls(result)
-        else:
-            # assume it's a list of dicts
+        elif isinstance(result, (list, tuple, set)):
             return [cls(record) for record in result]
+        elif first:
+            return None
+        else:
+            return []
 
     @classmethod
     def delete_many(cls, bizobjs):

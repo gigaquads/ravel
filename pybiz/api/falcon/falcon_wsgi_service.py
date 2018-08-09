@@ -53,7 +53,16 @@ class FalconWsgiService(WsgiService):
     def on_request(self, signature, req, resp, *args, **kwargs) -> Dict:
         api_kwargs = req.json.copy()
         api_kwargs.update(req.params)
-        return (args, api_kwargs)
+
+        api_args = []
+        url_path = req.path.strip('/').split('/')
+        url_path_template = req.uri_template.strip('/').split('/')
+        for k, v in zip(url_path_template, url_path):
+            if k[0] == '{' and k[-1] == '}':
+                api_args.append(v)
+
+        api_args.extend(args)
+        return (api_args, api_kwargs)
 
     def on_response(self, result, request, response, *args, **kwargs):
         # The `result` object needs to be serialized by middleware.

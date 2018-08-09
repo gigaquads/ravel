@@ -20,6 +20,8 @@ from pybiz.predicate import ConditionalPredicate, BooleanPredicate
 from .base import Dao
 
 
+# TODO: by default, create index for each schema field
+
 class ZodbObject(persistent.Persistent):
     def __init__(self, record: Dict, schema: Schema = None):
         super().__init__()
@@ -138,10 +140,7 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
             col['indexes'] = indexes
         if attr_name not in indexes:
             index_spec = cls._memoized_attrs['indexes'][attr_name]
-            if attr_name == '_id':
-                indexes[attr_name] = cls.OOBTreeIndex(unique=True)
-            else:
-                indexes[attr_name] = index_spec.index_type()
+            indexes[attr_name] = index_spec.index_type()
         return indexes[attr_name]
 
     @classmethod
@@ -192,6 +191,9 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
         if not cls._memoized_attrs:
             with cls._memoization_lock:
                 schema_type = cls.__schema__
+                index_specs = cls.__indexes__()
+                if '_id' not in index_specs:
+                    index_specs['_id'] = cls.OOBTreeIndex(unique=True)
                 cls._memoized_attrs = {
                     'collection': cls.__collection__() or cls.__name__,
                     'object_type': cls.__object_type__(),
