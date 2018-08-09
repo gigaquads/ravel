@@ -27,9 +27,9 @@ class CommandLineInterface(FunctionRegistry):
         self._cli_program = None
         self._cli_program_kwargs = {
             'name': name,
-            'version': version,
-            'tagline': tagline,
-            'defaults': defaults,
+            'version': kwargs.get('version'),
+            'tagline': kwargs.get('tagline'),
+            'defaults': kwargs.get('defaults'),
         }
 
     @property
@@ -68,7 +68,7 @@ class CommandLineInterface(FunctionRegistry):
         """
         self._cli_program = CliProgram(
             subparsers=[
-                p.cli_parser for p in self._commands if p.cli_parser
+                c.subparser for c in self._commands if c.subparser
             ], **self._cli_program_kwargs
         )
         safe_main(self._cli_program.run, debug_level=2)
@@ -81,8 +81,8 @@ class Command(FunctionProxy):
 
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
-        self.cli_parser_kwargs = self._build_subparser_kwargs(func, decorator)
-        self.cli_parser = Subparser(**self.cli_parser_kwargs)
+        self.subparser_kwargs = self._build_subparser_kwargs(func, decorator)
+        self.subparser = Subparser(**self.subparser_kwargs)
 
     def _build_subparser_kwargs(self, func, decorator):
         parser_kwargs = decorator.params.get('parser') or {}
