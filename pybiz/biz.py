@@ -13,6 +13,7 @@ Relationship Load/Dump Mechanics:
 import os
 import sys
 import copy
+import inspect
 import re
 
 import venusian
@@ -26,20 +27,40 @@ from appyratus.validation.fields import Field, Uuid, Anything
 
 from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from .patch import JsonPatchMixin
-from .graphql import GraphQLGetter, GraphQLEngine, GraphQLField
+from .graphql import GraphQLObject, GraphQLEngine
 from .dao.base import Dao, DaoManager
 from .dirty import DirtyDict, DirtyInterface
 from .util.bizobj_util import is_bizobj
 from .const import (
+    IS_BIZOBJ_ANNOTATION,
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
     PATCH_PATH_ANNOTATION,
     PATCH_ANNOTATION,
-    IS_BIZOBJ_ANNOTATION,
 )
 
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
+
+
+class Relationship(object):
+    def __init__(
+        self,
+        bizobj_class,
+        many=False,
+        dump_to=None,
+        load_from=None,
+        query=None
+    ):
+        self.bizobj_class = bizobj_class
+        self.load_from = load_from
+        self.dump_to = dump_to
+        self.many = many
+        self.name = None
+        self.query = query
+
+    def copy(self):
+        return copy.deepcopy(self)
 
 
 class ComparableProperty(property):
@@ -63,24 +84,9 @@ class ComparableProperty(property):
         return ConditionalPredicate(self._key, '>=', other)
 
 
-class Relationship(object):
-    def __init__(
-        self,
-        bizobj_class,
-        many=False,
-        dump_to=None,
-        load_from=None,
-        query=None
-    ):
-        self.bizobj_class = bizobj_class
-        self.load_from = load_from
-        self.dump_to = dump_to
-        self.many = many
-        self.name = None
-        self.query = query
-
-    def copy(self):
-        return copy.deepcopy(self)
+class RelationshipProperty(property):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
 
 class BizObjectMeta(ABCMeta):
@@ -149,26 +155,38 @@ class BizObjectMeta(ABCMeta):
         return cls.Schema
 
     def add_is_bizobj_annotation(new_class):
-        # set this attribute in order to be able to
-        # use duck typing to check isinstance of BizObjects
+        """
+        Set this attribute in order to be able to use duck typing to check
+        isinstance of BizObjects.
+        """
         setattr(new_class, IS_BIZOBJ_ANNOTATION, True)
 
     def build_all_properties(cls, schema_class, relationships):
-        # the names of Fields declared in the Schema and Relationships
-        # declared on the BizObject will overwrite any methods or attributes
-        # defined explicitly on the BizObject class. This happens here.
+        """
+        The names of Fields declared in the Schema and Relationships declared on
+        the BizObject will overwrite any methods or attributes defined
+        explicitly on the BizObject class. This happens here.
+        """
         cls.build_relationship_properties(relationships)
         cls.relationships = relationships
 
         # use the schema class override if defined
-        schema_class_override = cls.__schema__()
-        if schema_class_override:
-            if isinstance(schema_class_override, str):
-                schema_class = cls.import_schema_class(schema_class_override)
+        obj = cls.__schema__()
+        if obj:
+            if isinstance(obj, str):
+                schema_class = cls.import_schema_class(obj)
+                cls._schema = schema_class(strict=True, allow_additional=False)
+            elif isinstance(obj, Schema):
+                cls._schema = obj
+            elif isinstance(obj, type) and issubclass(obj, Schema):
+                schema_class = obj
+                cls._schema = schema_class(strict=True, allow_additional=False)
             else:
-                schema_class = schema_class_override
+                raise ValueError(str(obj))
+        else:
+            cls._schema = schema_class(strict=True, allow_additional=False)
 
-        cls._schema = schema_class(strict=True, allow_additional=False)
+
         cls.build_field_properties(cls._schema, relationships)
 
     def import_schema_class(self, class_path_str):
@@ -194,19 +212,17 @@ class BizObjectMeta(ABCMeta):
 
         # scan class methods for those annotated as patch hooks
         # and register them as such.
-        for k in dir(cls): # TODO: use getmembers
-            v = getattr(cls, k)
-            if isinstance(v, MethodType):
-                path = getattr(v, PATCH_PATH_ANNOTATION, None)
-                if hasattr(v, PRE_PATCH_ANNOTATION):
-                    assert path
-                    cls.add_pre_patch_hook(path, k)
-                elif hasattr(v, PATCH_ANNOTATION):
-                    assert path
-                    cls.set_patch_hook(path, k)
-                elif hasattr(v, POST_PATCH_ANNOTATION):
-                    assert path
-                    cls.add_post_patch_hook(path, k)
+        for k, v in inspect.getmembers(cls, predicate=inspect.ismethod):
+            path = getattr(v, PATCH_PATH_ANNOTATION, None)
+            if hasattr(v, PRE_PATCH_ANNOTATION):
+                assert path
+                cls.add_pre_patch_hook(path, k)
+            elif hasattr(v, PATCH_ANNOTATION):
+                assert path
+                cls.set_patch_hook(path, k)
+            elif hasattr(v, POST_PATCH_ANNOTATION):
+                assert path
+                cls.add_post_patch_hook(path, k)
 
     def build_relationships(cls):
         # aggregate all relationships delcared on the bizobj
@@ -214,19 +230,16 @@ class BizObjectMeta(ABCMeta):
         direct_relationships = {}
         inherited_relationships = {}
 
-        for k in dir(cls):  # TODO: use getmembers
-            rel = getattr(cls, k)
+        is_not_method = lambda x: not inspect.ismethod(x)
+        for k, rel in inspect.getmembers(cls, predicate=is_not_method):
             is_relationship = isinstance(rel, Relationship)
-
             if not is_relationship:
                 is_super_relationship = k in cls.relationships
-
                 if is_super_relationship:
                     super_rel = cls.relationships[k]
                     rel = super_rel.copy()
                     rel.name = k
                     inherited_relationships[k] = rel
-
             else:
                 direct_relationships[k] = rel
                 rel.name = k
@@ -306,18 +319,128 @@ class BizObjectMeta(ABCMeta):
                 """
                 del self._related_bizobjs[k]
 
-            return property(fget=fget, fset=fset, fdel=fdel)
+            return RelationshipProperty(fget=fget, fset=fset, fdel=fdel)
 
         for rel in relationships.values():
             setattr(cls, rel.name, build_relationship_property(rel.name, rel))
 
 
-class BizObjectCrudMethods(object):
-    """
-    BizObjectCrudMethods endows the BizObject with general boilerplate CRUD
-    methods, which interface with the DAO. Note that the `save` method is
-    actually an upsert.
-    """
+class BizObject(
+    DirtyInterface,
+    AbstractSchema,
+    JsonPatchMixin,
+    GraphQLObject,
+    metaclass=BizObjectMeta
+):
+    _schema = None    # set by metaclass
+    relationships = {}    # set by metaclass
+    _dao_manager = DaoManager.get_instance()
+
+    @classmethod
+    def __schema__(cls):
+        """
+        Return a dotted path to the Schema class, like 'path.to.MySchema'. This
+        is only used if a Schema subclass is returned. If None is returned,
+        this is ignored.
+        """
+
+    @classmethod
+    def __dao__(cls):
+        """
+        Returns a dotted path or Python reference to a Dao class to back this
+        BizObject. Normally, this information should be declared in a manifest.
+        """
+
+    @classmethod
+    def get_dao(cls):
+        return cls._dao_manager.get_dao(cls)
+
+    def __init__(self, data=None, **kwargs_data):
+        self._data = self._load(data, kwargs_data)
+
+        # storage for BizObjects, declared through Relationships
+        self._related_bizobjs = {}
+
+        # memoized dump() retval goes here
+        self._cached_dump_data = None
+
+        # the order of these super class constructors matters.
+        # each of these is a "partial" class, used this way for
+        # organizational purpose, as this would be a very large
+        # class otherwise.
+        JsonPatchMixin.__init__(self)
+        DirtyInterface.__init__(self)
+        AbstractSchema.__init__(self)
+        GraphQLObject.__init__(self)
+
+    def __getitem__(self, key):
+        """
+        If the key is the name of a field, return it. If it's a relationship,
+        return the related BizObject or list of BizObjects. Otherwise, raise
+        a KeyError.
+        """
+        if key in self._data:
+            return self._data[key]
+        elif key in self._related_bizobjs:
+            return self._related_bizobjs[key]
+        elif key in self._schema.fields:
+            return None
+
+        raise KeyError(key)
+
+    def __setitem__(self, key, value):
+        """
+        Set the field or related BizObject on the instance, but if the key does
+        not correspond to either a field or Relationship, raise KeyError.
+        """
+        # if the data being set is a BizObject associated through a declared
+        # Relationship, add it to the "related_bizobj" storage dict.
+        if key in self.relationships:
+            rel = self.relationships[key]
+            is_sequence = isinstance(value, (list, tuple, set))
+
+            if rel.many:
+                assert is_sequence
+            else:
+                assert not is_sequence
+
+            self._related_bizobjs[key] = value
+            return
+
+        # disallow assignment of any field not declared in the Schema class
+        # otherwise, set it on the data dict.
+        if key in self._schema.fields:
+            self._data[key] = value
+        else:
+            raise KeyError(
+                '{} not in {} schema'.
+                format(key, self._schema.__class__.__name__)
+            )
+
+    def __contains__(self, key):
+        return key in self._data
+
+    def __repr__(self):
+        # extract the id or public id to display
+        bizobj_id = '/?'
+        _id = self._data.get('_id', None)
+        if _id is not None:
+            bizobj_id = '/id={}'.format(_id)
+        else:
+            public_id = self._data.get('public_id', None)
+            if public_id is not None:
+                bizobj_id = '/public-id={}'.format(public_id)
+
+        # an indication that the bizobj has unsaved data
+        dirty_flag = '*' if self._data.dirty else ''
+
+        return '<{class_name}{dirty_flag}{bizobj_id}>'.format(
+            class_name=self.__class__.__name__,
+            bizobj_id=bizobj_id,
+            dirty_flag=dirty_flag
+        )
+
+    # -- CRUD Interface --------------------------------------------
 
     @classmethod
     def exists(cls, _id=None, public_id=None):
@@ -343,9 +466,9 @@ class BizObjectCrudMethods(object):
     def query(cls, predicate, first=False, **kwargs):
         result = cls.get_dao().query(predicate, first=first, **kwargs)
         if isinstance(result, dict):
-            return cls(result)
+            return cls(result).clear_dirty()
         elif isinstance(result, (list, tuple, set)):
-            return [cls(record) for record in result]
+            return [cls(record).clear_dirty() for record in result]
         elif first:
             return None
         else:
@@ -419,18 +542,7 @@ class BizObjectCrudMethods(object):
         self.clear_dirty()
         return self
 
-
-class BizObjectDirtyDict(DirtyInterface):
-    """
-    BizObjectDirtyDict implements the DirtyInterface, meaning that it has the
-    facility to keep track of what fields in its internal data dictionary have
-    been modified as well as the ability to notify its parent dictionary of
-    said changes, provided it has a parent.
-    """
-
-    def __init__(self, data, kwargs_data):
-        DirtyInterface.__init__(self)
-        self._data = self._load(data, kwargs_data)
+    # -- DirtyInterface --------------------------------------------
 
     @property
     def dirty(self):
@@ -453,6 +565,7 @@ class BizObjectDirtyDict(DirtyInterface):
         self._data.clear_dirty(keys=keys)
         return self
 
+<<<<<<< 604864017cda07eae228509d78d243abf031c8a2
 
 class BizObjectSchema(AbstractSchema):
     """
@@ -609,6 +722,8 @@ class BizObject(
             dirty_flag=dirty_flag
         )
 
+    # --------------------------------------------------------------
+
     @property
     def data(self):
         return self._data
@@ -653,7 +768,7 @@ class BizObject(
         )
         return self
 
-    def dump(self):
+    def dump(self, fields=True, relationships=True):
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
@@ -661,15 +776,18 @@ class BizObject(
         # as an optimization, we memoize the return value of dump per instance.
         # first. This only applies to fields. Each BizObject associated through
         # a Relationship memoizes its own dump dict.
-        if self._cached_dump_data:
+        data = {}
+
+        if fields:
+            if not self._cached_dump_data:
+                data = self._dump_fields()
+                self._cached_dump_data = data
             data = self._cached_dump_data
-        else:
-            data = self._dump_fields()
-            self._cached_dump_data = data
 
         # recursively dump related BizObjects and add to final dump dict
-        related_data = self._dump_relationships()
-        data.update(related_data)
+        if relationships:
+            related_data = self._dump_relationships()
+            data.update(related_data)
 
         return data
 

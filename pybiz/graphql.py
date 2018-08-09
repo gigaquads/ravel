@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-from abc import ABCMeta, abstractmethod
+from typing import Dict
 
 from graphql.parser import GraphQLParser
 
@@ -11,7 +11,7 @@ class GraphQLNode(object):
     pass
 
 
-class GraphQLField(GraphQLNode):
+class GraphQLFieldNode(GraphQLNode):
 
     def __init__(self, relationship, ast_field, parent):
         self.relationship = relationship
@@ -25,7 +25,7 @@ class GraphQLField(GraphQLNode):
 
         # these are kwargs to pass into the get method of
         # the related bizobj class (if there is one)
-        self.kwargs = {
+        self.args = {
             arg.name: arg.value for arg in
             getattr(ast_field, 'arguments', ())
             }
@@ -35,10 +35,10 @@ class GraphQLField(GraphQLNode):
             child_name = child_ast_field.name
             rel = self.bizobj_class.relationships.get(child_name)
             if rel is not None:
-                child = GraphQLField(rel, child_ast_field, self)
+                child = GraphQLFieldNode(rel, child_ast_field, self)
                 self.relationships[child_name] = child
             else:
-                child = GraphQLField(None, child_ast_field, self)
+                child = GraphQLFieldNode(None, child_ast_field, self)
                 self.fields[child_name] = child
 
     @property
@@ -74,12 +74,11 @@ class GraphQLField(GraphQLNode):
         return results
 
 
-class GraphQLGetter(object, metaclass=ABCMeta):
+class GraphQLObject(object):
 
     @classmethod
-    @abstractmethod
-    def graphql_get(self, node: GraphQLField, fields: list=None, **kwargs):
-        pass
+    def graphql_query(self, node: GraphQLFieldNode, fields: Dict = None):
+        raise NotImplementedError('override in subclass')
 
 
 class GraphQLEngine(object):
@@ -92,8 +91,8 @@ class GraphQLEngine(object):
         tree = self._parse_query(query)
         results = {}
 
-        for field in tree.values():
-            results.update(field.execute(self._evaluate_field))
+        for node in tree.values():
+            results.update(node.execute(self._eval_field_node))
 
         return results
 
@@ -104,83 +103,36 @@ class GraphQLEngine(object):
         for field in ast_query.selections:
             rel = self._root.relationships.get(field.name)
             if rel:
-                graphql_field = GraphQLField(rel, field, None)
-                tree[graphql_field.key] = graphql_field
+                node = GraphQLFieldNode(rel, field, None)
+                tree[node.key] = node
             else:
                 # TODO: use custom exception type
                 raise Exception('unrecognized field: {}'.format(field.name))
 
         return tree
 
-    def _evaluate_field(self, field):
-        assert issubclass(field.bizobj_class, GraphQLGetter)
+    def _eval_field_node(self, node):
+        assert issubclass(node.bizobj_class, GraphQLObject)
 
-        # we "load" the field names so that they appear as they should
-        # when passed down into the DAL.
-        selected = field.bizobj_class.Schema.load_keys(field.fields.keys())
+        bizobj_class = node.bizobj_class
+        schema_class = bizobj_class.Schema
 
-        # ensure that the public ID is always selected
-        if 'public_id' in field.bizobj_class.Schema.fields:
-            selected.append('public_id')
+        # "load" the field names so that they appear as they should
+        # when received by the bizobj instance.
+        fields = schema_class.load_keys(node.fields.keys())
 
         # load the BizObject with the requested fields
-        getter_result = field.bizobj_class.graphql_get(
-            field,
-            fields=selected,  # TODO: confusing use of field.fields
-            **field.kwargs,
-        )
-
-        def format_result(result):
-            if is_bizobj(result):
-                return result.dump()
-            elif isinstance(result, (list, tuple, set)):
-                return [format_result(obj) for obj in result]
-            elif isinstance(result, dict):
-                return result
-            raise ValueError(str(result))
+        getter_result = bizobj_class.graphql_query(node, fields=fields)
 
         # return a plain dict or list of dicts from the result object
-        return format_result(getter_result)
+        return self._format_result(getter_result)
 
-if __name__ == '__main__':
-    import json
+    def _format_result(self, result):
+        if is_bizobj(result):
+            return result.dump()
+        elif isinstance(result, (list, tuple, set)):
+            return [self._format_result(obj) for obj in result]
+        elif isinstance(result, dict):
+            return result
+        raise ValueError(str(result))
 
-    from datetime import datetime
-    from pybiz.biz import BizObject, Relationship
-    from appyratus.validation import Schema, fields
-
-    class TestObject(BizObject, GraphQLGetter):
-        created_at = fields.DateTime(default=lambda: datetime.now())
-
-        @classmethod
-        def graphql_get(cls, node, fields=None, id=None, **kwargs):
-            return cls(**{k: '1' for k in fields})
-
-    class Account(TestObject):
-        name = fields.Str()
-        account_type = fields.Str(load_from='type', dump_to='type')
-
-    class User(TestObject):
-        name = fields.Str()
-        email = fields.Str()
-        account = Relationship(Account)
-
-    class Document(TestObject):
-        user = Relationship(User)
-        account = Relationship(Account)
-
-
-    query = '''
-    {
-        user(id: 123) {
-            name
-            email
-            account {
-                name
-                type
-            }
-        }
-    }'''
-
-    engine = GraphQLEngine(Document)
-    print(json.dumps(engine.query(query), indent=2, sort_keys=True))
