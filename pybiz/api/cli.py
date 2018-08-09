@@ -100,7 +100,7 @@ class Command(FunctionProxy):
 
     def _build_cli_args(self, func):
         required_args = []
-        optional_args = [] 
+        optional_args = []
         signature = inspect.signature(func)
         args = []
         for k, param in signature.parameters.items():
