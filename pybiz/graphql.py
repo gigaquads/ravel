@@ -78,7 +78,7 @@ class GraphQLObject(object):
 
     @classmethod
     def graphql_query(self, node: GraphQLFieldNode, fields: Dict = None):
-        raise NotImplementedError('override in subclass')
+        return {}
 
 
 class GraphQLEngine(object):

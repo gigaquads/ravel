@@ -3,7 +3,7 @@ import ujson
 from pybiz.util import is_bizobj
 
 
-class JsonTranslator(object):
+class JsonBodyMiddleware(object):
     def __init__(self, encode=None):
         self.encode = encode or ujson.dumps
 
