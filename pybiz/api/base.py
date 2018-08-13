@@ -87,7 +87,7 @@ class FunctionRegistry(object):
         can add the decorated function to, say, a web framework as a route.
         """
 
-    def on_request(self, signature, *args, **kwargs):
+    def on_request(self, proxy, signature, *args, **kwargs):
         """
         This executes immediately before calling a registered function. You
         must return re-packaged args and kwargs here. However, if nothing is
@@ -95,7 +95,7 @@ class FunctionRegistry(object):
         """
         return (args, kwargs)
 
-    def on_response(self, result, *args, **kwargs):
+    def on_response(self, proxy, result, *args, **kwargs):
         """
         The return value of registered callables come here as `result`. Here
         any global post-processing can be done. Args and kwargs consists of
@@ -131,13 +131,13 @@ class FunctionProxy(object):
 
     def __call__(self, *args, **kwargs):
         on_request = self.decorator.registry.on_request
-        on_request_retval = on_request(self.signature, *args, **kwargs)
+        on_request_retval = on_request(self, self.signature, *args, **kwargs)
         if on_request_retval:
             prepared_args, prepared_kwargs = on_request_retval
         else:
             prepared_args, prepared_kwargs = args, kwargs
         result = self.target(*prepared_args, **prepared_kwargs)
-        self.decorator.registry.on_response(result, *args, **kwargs)
+        self.decorator.registry.on_response(self, result, *args, **kwargs)
         return result
 
     def __getattr__(self, attr):

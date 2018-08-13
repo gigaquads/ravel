@@ -16,6 +16,7 @@ class FalconWsgiService(WsgiService):
     class Request(falcon.Request):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
+            self.session = None
             self.json = {}
 
     def __init__(self, *args, **kwargs):
@@ -50,9 +51,13 @@ class FalconWsgiService(WsgiService):
         if resource:
             self.falcon_api.add_route(route.url_path, resource)
 
-    def on_request(self, signature, req, resp, *args, **kwargs) -> Dict:
+    def on_request(self, route, signature, req, resp, *args, **kwargs):
         api_kwargs = req.json.copy()
         api_kwargs.update(req.params)
+        api_kwargs['session'] = req.session
+
+        if route.authorize is not None:
+            route.authorize(req, resp)
 
         api_args = []
         url_path = req.path.strip('/').split('/')
@@ -64,6 +69,6 @@ class FalconWsgiService(WsgiService):
         api_args.extend(args)
         return (api_args, api_kwargs)
 
-    def on_response(self, result, request, response, *args, **kwargs):
+    def on_response(self, route, result, request, response, *args, **kwargs):
         # The `result` object needs to be serialized by middleware.
         response.unserialized_body = result

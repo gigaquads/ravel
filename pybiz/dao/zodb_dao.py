@@ -163,8 +163,9 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
                 if v not in index:
                     index[v] = BTrees.OOBTree.TreeSet()
                 if index_spec.unique and index[v]:
-                    # TODO: raise constraint error if already set
-                    raise Exception('unique constraint violation')
+                    stored_model = list(index[v])[0]
+                    if stored_model._id != model._id:
+                        raise Exception('unique constraint violation')
                 index[v].insert(model)
 
     @classmethod

@@ -356,22 +356,13 @@ class BizObject(
         return cls._dao_manager.get_dao(cls)
 
     def __init__(self, data=None, **kwargs_data):
-        self._data = self._load(data, kwargs_data)
-
-        # storage for BizObjects, declared through Relationships
-        self._related_bizobjs = {}
-
-        # memoized dump() retval goes here
-        self._cached_dump_data = None
-
-        # the order of these super class constructors matters.
-        # each of these is a "partial" class, used this way for
-        # organizational purpose, as this would be a very large
-        # class otherwise.
         JsonPatchMixin.__init__(self)
         DirtyInterface.__init__(self)
         AbstractSchema.__init__(self)
         GraphQLObject.__init__(self)
+        self._related_bizobjs = {}
+        self._cached_dump_data = None
+        self._data = self._load(data, kwargs_data)
 
     def __getitem__(self, key):
         """
@@ -674,6 +665,8 @@ class BizObject(
         """
         data = data or {}
         data.update(kwargs_data)
+
+        self._related_bizobjs = {}
 
         # NOTE: When bizobjs are passed into the ctor instead of raw dicts, the
         # bizobjs are not copied, which means that if some other bizobj also

@@ -39,15 +39,24 @@ class HttpFunctionDecorator(FunctionDecorator):
         http_method: str,
         url_path: str,
         schemas: dict=None,
+        authorize=None,
         on_decorate=None,
         on_request=None,
+        on_response=None,
         *args,
         **kwargs
     ):
-        super().__init__(registry, on_decorate=on_decorate, on_request=on_request, *args, **kwargs)
+        super().__init__(
+            registry,
+            on_decorate=on_decorate,
+            on_request=on_request,
+            on_response=on_response,
+            *args, **kwargs,
+        )
         self.http_method = http_method.lower()
         self.url_path = url_path.lower()
         self.schemas = schemas
+        self.authorize = authorize
 
     def __call__(self, func):
         """
@@ -71,6 +80,7 @@ class HttpRoute(FunctionProxy):
         self.http_method = decorator.http_method
         self.url_path = decorator.url_path
         self.schemas = decorator.schemas
+        self.authorize = decorator.authorize
 
     def __repr__(self):
         return '<{}({})>'.format(
