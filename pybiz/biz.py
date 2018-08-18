@@ -71,6 +71,9 @@ class ComparableProperty(property):
     def __eq__(self, other):
         return ConditionalPredicate(self._key, '=', other)
 
+    def __ne__(self, other):
+        return ConditionalPredicate(self._key, '!=', other)
+
     def __lt__(self, other):
         return ConditionalPredicate(self._key, '<', other)
 
@@ -79,6 +82,9 @@ class ComparableProperty(property):
 
     def __gt__(self, other):
         return ConditionalPredicate(self._key, '>', other)
+
+    def __ge__(self, other):
+        return ConditionalPredicate(self._key, '>=', other)
 
     def __ge__(self, other):
         return ConditionalPredicate(self._key, '>=', other)
@@ -115,7 +121,7 @@ class BizObjectMeta(ABCMeta):
     def register_dao(cls):
         dao_class = cls.__dao__()
         if dao_class:
-            cls._dao_manager.register(cls, dao_class)
+            cls.dao_manager.register(cls, dao_class)
 
     def build_schema_class(cls, name):
         """
@@ -128,13 +134,17 @@ class BizObjectMeta(ABCMeta):
         # Ensure each BizObject Schema class has
         # both _id and public_id fields.
 
-        def default_public_id():
-            return Uuid.next_uuid().hex
+        # use the schema class override if defined
+        obj = cls.__schema__()
+        if obj:
+            if isinstance(obj, str):
+                schema_class = cls.import_schema_class(obj)
+            elif isinstance(obj, type) and issubclass(obj, Schema):
+                schema_class = obj
+            else:
+                raise ValueError(str(obj))
 
-        fields = {
-            '_id': Anything(load_only=True),
-            'public_id': Anything(dump_to='id', default=default_public_id)
-        }
+        fields = {}
 
         # "inherit" fields of parent BizObject.Schema
         inherited_schema_class = getattr(cls, 'Schema', None)
@@ -147,10 +157,13 @@ class BizObjectMeta(ABCMeta):
             if isinstance(v, Field):
                 fields[k] = v
 
+        fields.setdefault('_id',
+            Uuid(dump_to='id', default=Uuid.next_uuid))
+
         # Build string name of the new Schema class
         # and construct the Schema class object:
-        schema_class_name = '{}Schema'.format(name)
-        cls.Schema = type(schema_class_name, (Schema, ), fields)
+        cls.Schema = type('{}Schema'.format(name), (Schema, ), fields)
+        cls.schema = cls.Schema(strict=True, allow_additional=False)
 
         return cls.Schema
 
@@ -169,25 +182,7 @@ class BizObjectMeta(ABCMeta):
         """
         cls.build_relationship_properties(relationships)
         cls.relationships = relationships
-
-        # use the schema class override if defined
-        obj = cls.__schema__()
-        if obj:
-            if isinstance(obj, str):
-                schema_class = cls.import_schema_class(obj)
-                cls._schema = schema_class(strict=True, allow_additional=False)
-            elif isinstance(obj, Schema):
-                cls._schema = obj
-            elif isinstance(obj, type) and issubclass(obj, Schema):
-                schema_class = obj
-                cls._schema = schema_class(strict=True, allow_additional=False)
-            else:
-                raise ValueError(str(obj))
-        else:
-            cls._schema = schema_class(strict=True, allow_additional=False)
-
-
-        cls.build_field_properties(cls._schema, relationships)
+        cls.build_field_properties(cls.schema, relationships)
 
     def import_schema_class(self, class_path_str):
         class_path = class_path_str.split('.')
@@ -332,9 +327,10 @@ class BizObject(
     GraphQLObject,
     metaclass=BizObjectMeta
 ):
-    _schema = None    # set by metaclass
+    dao_manager = DaoManager.get_instance()
+
+    schema = None         # set by metaclass
     relationships = {}    # set by metaclass
-    _dao_manager = DaoManager.get_instance()
 
     @classmethod
     def __schema__(cls):
@@ -353,7 +349,7 @@ class BizObject(
 
     @classmethod
     def get_dao(cls):
-        return cls._dao_manager.get_dao(cls)
+        return cls.dao_manager.get_dao(cls)
 
     def __init__(self, data=None, **kwargs_data):
         JsonPatchMixin.__init__(self)
@@ -374,7 +370,7 @@ class BizObject(
             return self._data[key]
         elif key in self._related_bizobjs:
             return self._related_bizobjs[key]
-        elif key in self._schema.fields:
+        elif key in self.schema.fields:
             return None
 
         raise KeyError(key)
@@ -389,46 +385,31 @@ class BizObject(
         if key in self.relationships:
             rel = self.relationships[key]
             is_sequence = isinstance(value, (list, tuple, set))
-
             if rel.many:
                 assert is_sequence
             else:
                 assert not is_sequence
-
             self._related_bizobjs[key] = value
             return
 
         # disallow assignment of any field not declared in the Schema class
         # otherwise, set it on the data dict.
-        if key in self._schema.fields:
+        if key in self.schema.fields:
             self._data[key] = value
         else:
             raise KeyError(
                 '{} not in {} schema'.
-                format(key, self._schema.__class__.__name__)
+                format(key, self.schema.__class__.__name__)
             )
 
     def __contains__(self, key):
         return key in self._data
 
     def __repr__(self):
-        # extract the id or public id to display
-        bizobj_id = '/?'
-        _id = self._data.get('_id', None)
-        if _id is not None:
-            bizobj_id = '/id={}'.format(_id)
-        else:
-            public_id = self._data.get('public_id', None)
-            if public_id is not None:
-                bizobj_id = '/public-id={}'.format(public_id)
-
-        # an indication that the bizobj has unsaved data
-        dirty_flag = '*' if self._data.dirty else ''
-
-        return '<{class_name}{dirty_flag}{bizobj_id}>'.format(
+        return '<{dirty}{class_name}:{_id}>'.format(
             class_name=self.__class__.__name__,
-            bizobj_id=bizobj_id,
-            dirty_flag=dirty_flag
+            dirty='*' if self._data.dirty else '',
+            _id=self._data.get('_id') or '?',
         )
 
     # -- CRUD Interface --------------------------------------------
@@ -436,6 +417,18 @@ class BizObject(
     @classmethod
     def exists(cls, _id=None, public_id=None):
         return cls.get_dao().exists(_id=_id, public_id=public_id)
+
+    @classmethod
+    def query(cls, predicate, first=False, **kwargs):
+        result = cls.get_dao().query(predicate, first=first, **kwargs)
+        if isinstance(result, dict):
+            return cls(result).clear_dirty()
+        elif isinstance(result, (list, tuple, set)):
+            return [cls(record).clear_dirty() for record in result]
+        elif first:
+            return None
+        else:
+            return []
 
     @classmethod
     def get(cls, _id=None, public_id=None, fields: dict = None):
@@ -452,18 +445,6 @@ class BizObject(
                 _ids=_ids, public_ids=public_ids, fields=fields
             )
         ]
-
-    @classmethod
-    def query(cls, predicate, first=False, **kwargs):
-        result = cls.get_dao().query(predicate, first=first, **kwargs)
-        if isinstance(result, dict):
-            return cls(result).clear_dirty()
-        elif isinstance(result, (list, tuple, set)):
-            return [cls(record).clear_dirty() for record in result]
-        elif first:
-            return None
-        else:
-            return []
 
     @classmethod
     def delete_many(cls, bizobjs):
@@ -506,22 +487,27 @@ class BizObject(
 
             elif v.dirty:
                 # this is a scalar relationship
-                v.save()
+                v.save(fetch=fetch)
                 data_to_save[k] = copy.deepcopy(v.data)
-                if '_id' in v.data:
-                    data_to_save[k]['_id'] = v.data['_id']
 
         for k in self._data.dirty:
             data_to_save[k] = self[k]
 
         # Persist and refresh data
         if self._id is None:
+            # the default value for the _id field is defered
+            # until we reach this point.
+            default_id = self.Schema.fields['_id'].default
+            if default_id:
+                self._id = (
+                    default_id() if callable(default_id) else default_id
+                )
             updated_data = self.dao.create(
-                public_id=self.public_id, record=data_to_save
+                _id=self._id, record=data_to_save
             )
         else:
             updated_data = self.dao.update(
-                _id=self._id, public_id=self.public_id, data=data_to_save
+                _id=self._id, data=data_to_save
             )
 
         if updated_data:
@@ -629,7 +615,7 @@ class BizObject(
         """
         Dump all scalar fields of the instance to a dict. If a
         """
-        return self._schema.dump(self._data).data
+        return self.schema.dump(self._data).data
 
     def _dump_relationships(self):
         """
@@ -711,7 +697,12 @@ class BizObject(
                     related_bizobj = related_data
                     self._related_bizobjs[rel.name] = related_bizobj
 
-        result = self._schema.load(data)
+        result = self.schema.load(data)
+
+        defer_default_id = data.get('_id') is None
+        if defer_default_id:
+            result.data.pop('_id', None)
+
         if result.errors:
             # TODO: raise custom exception
             raise Exception(str(result.errors))
