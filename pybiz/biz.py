@@ -89,6 +89,18 @@ class ComparableProperty(property):
     def __ge__(self, other):
         return ConditionalPredicate(self._key, '>=', other)
 
+    @property
+    def key(self):
+        return self._key
+
+    @property
+    def asc(self):
+        return (self._key, +1)
+
+    @property
+    def desc(self):
+        return (self._key, -1)
+
 
 class RelationshipProperty(property):
     def __init__(self, **kwargs):
@@ -126,13 +138,12 @@ class BizObjectMeta(ABCMeta):
     def build_schema_class(cls, name):
         """
         Builds cls.Schema from the fields declared on the business object. All
-        business objects automatically inherit an _id and public_id fields
+        business objects automatically inherit an _id field.
         """
 
         # We begin by building the `fields` dict that will become attributes
         # of our dynamic Schema class being created below.
-        # Ensure each BizObject Schema class has
-        # both _id and public_id fields.
+        # Ensure each BizObject Schema class has an _id Field
 
         # use the schema class override if defined
         obj = cls.__schema__()
@@ -143,8 +154,10 @@ class BizObjectMeta(ABCMeta):
                 schema_class = obj
             else:
                 raise ValueError(str(obj))
+        else:
+            schema_class = None
 
-        fields = {}
+        fields = schema_class.fields if schema_class else {}
 
         # "inherit" fields of parent BizObject.Schema
         inherited_schema_class = getattr(cls, 'Schema', None)
@@ -157,8 +170,7 @@ class BizObjectMeta(ABCMeta):
             if isinstance(v, Field):
                 fields[k] = v
 
-        fields.setdefault('_id',
-            Uuid(dump_to='id', default=Uuid.next_uuid))
+        fields.setdefault('_id', Uuid(dump_to='id', allow_none=True))
 
         # Build string name of the new Schema class
         # and construct the Schema class object:
@@ -406,21 +418,21 @@ class BizObject(
         return key in self._data
 
     def __repr__(self):
-        return '<{dirty}{class_name}:{_id}>'.format(
-            class_name=self.__class__.__name__,
+        return '<{name}({id}){dirty}>'.format(
+            id=self._data.get('_id') or '?',
+            name=self.__class__.__name__,
             dirty='*' if self._data.dirty else '',
-            _id=self._data.get('_id') or '?',
         )
 
     # -- CRUD Interface --------------------------------------------
 
     @classmethod
-    def exists(cls, _id=None, public_id=None):
-        return cls.get_dao().exists(_id=_id, public_id=public_id)
+    def exists(cls, _id=None):
+        return cls.get_dao().exists(_id=_id)
 
     @classmethod
-    def query(cls, predicate, first=False, **kwargs):
-        result = cls.get_dao().query(predicate, first=first, **kwargs)
+    def query(cls, predicate, first=False, fields=None, **kwargs):
+        result = cls.get_dao().query(predicate, first=first, fields=fields, **kwargs)
         if isinstance(result, dict):
             return cls(result).clear_dirty()
         elif isinstance(result, (list, tuple, set)):
@@ -431,18 +443,18 @@ class BizObject(
             return []
 
     @classmethod
-    def get(cls, _id=None, public_id=None, fields: dict = None):
+    def get(cls, _id, fields: dict = None):
         dao = cls.get_dao()
-        record = dao.fetch(_id=_id, public_id=public_id, fields=fields)
+        record = dao.fetch(_id=_id, fields=fields)
         bizobj = cls(record).clear_dirty()
         return bizobj
 
     @classmethod
-    def get_many(cls, _ids=None, public_ids=None, fields: dict = None):
+    def get_many(cls, _ids, fields: dict = None):
         dao = cls.get_dao()
         return [
             cls(record).clear_dirty() for record in dao.fetch_many(
-                _ids=_ids, public_ids=public_ids, fields=fields
+                _ids=_ids, fields=fields
             )
         ]
 
@@ -456,7 +468,7 @@ class BizObject(
 
     def delete(self):
         self.delete_man
-        self.dao.delete(_id=self._id, public_id=self.public_id)
+        self.dao.delete(_id=self._id)
         self.mark_dirty()
 
     def save(self, fetch=False):
@@ -495,26 +507,15 @@ class BizObject(
 
         # Persist and refresh data
         if self._id is None:
-            # the default value for the _id field is defered
-            # until we reach this point.
-            default_id = self.Schema.fields['_id'].default
-            if default_id:
-                self._id = (
-                    default_id() if callable(default_id) else default_id
-                )
-            updated_data = self.dao.create(
-                _id=self._id, record=data_to_save
-            )
+            updated_data = self.dao.create(self._id, data_to_save)
         else:
-            updated_data = self.dao.update(
-                _id=self._id, data=data_to_save
-            )
+            updated_data = self.dao.update(self._id, data_to_save)
 
         if updated_data:
             self.merge(updated_data)
 
         if fetch:
-            self.merge(self.dao.fetch(_id=self._id, public_id=self.public_id))
+            self.merge(self.dao.fetch(_id=self._id))
 
         self.clear_dirty()
         return self
@@ -580,12 +581,10 @@ class BizObject(
 
     def load(self, fields=None):
         """
-        Assuming _id or public_id is not None, this will load the rest of the
-        BizObject's data. Note that this shadows AbstractSchema's load method.
+        Assuming _id is not None, this will load the rest of the BizObject's
+        data. Note that this shadows AbstractSchema's load method.
         """
-        self.merge(
-            self.get(_id=self._id, public_id=self.public_id, fields=fields)
-        )
+        self.merge(self.get(_id=self._id, fields=fields))
         return self
 
     def dump(self, fields=True, relationships=True):
@@ -698,11 +697,6 @@ class BizObject(
                     self._related_bizobjs[rel.name] = related_bizobj
 
         result = self.schema.load(data)
-
-        defer_default_id = data.get('_id') is None
-        if defer_default_id:
-            result.data.pop('_id', None)
-
         if result.errors:
             # TODO: raise custom exception
             raise Exception(str(result.errors))

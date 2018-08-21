@@ -1,4 +1,5 @@
 import traceback
+import requests
 
 from collections import defaultdict
 
@@ -31,6 +32,9 @@ class HttpFunctionRegistry(FunctionRegistry):
             route = http_method2proxy.get(http_method)
             return route(*(args or tuple()), **(kwargs or dict()))
         return None
+
+    def client(self, host, port, scheme='http'):
+        return HttpClient(self, scheme, host, port)
 
 
 class HttpFunctionDecorator(FunctionDecorator):
@@ -90,3 +94,41 @@ class HttpRoute(FunctionProxy):
                 'path={}'.format(self.decorator.url_path),
             ])
         )
+
+
+class HttpClient(object):
+    def __init__(self, registry: HttpFunctionRegistry, scheme, host, port):
+        self._registry = registry
+        self._handlers = {}
+        self._host = host
+        self._port = port
+        self._scheme = scheme
+        for http_method2route in self._registry.routes.values():
+            for http_method, route in http_method2route.items():
+                self._handlers[route.target_name] = self._build_handler(
+                    http_method, route
+                )
+
+    def _build_handler(self, http_method, route):
+        def handler(data=None, json=None, params=None, headers=None, path=None):
+            url_path = (
+                route.url_path if not path
+                else route.url_path.format(**path)
+            )
+            url = ('{}://{}:{}/' + url_path.strip('/')).format(
+                self._scheme, self._host, self._port
+            )
+            return requests.request(
+                method=http_method,
+                url=url,
+                json=json,
+                params=params,
+                headers=headers,
+            )
+        return handler
+
+    def __getattr__(self, route_name):
+        handler = self._handlers[route_name]
+        return handler
+
+

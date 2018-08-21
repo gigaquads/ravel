@@ -22,6 +22,12 @@ class ConditionalPredicate(Predicate):
     def __and__(self, other):
         return BooleanPredicate('&', self, other)
 
+    @property
+    def display_string(self):
+        return '({} {} {})'.format(
+            self.attr_name, self.op, self.value
+        )
+
 
 class BooleanPredicate(Predicate):
     def __init__(self, op, lhs, rhs=None):
@@ -36,3 +42,25 @@ class BooleanPredicate(Predicate):
             self.op,
             self.rhs,
         )
+    def __or__(self, other):
+        return BooleanPredicate('|', self, other)
+
+    def __and__(self, other):
+        return BooleanPredicate('&', self, other)
+
+
+    @property
+    def display_string(self):
+        def recurse(p):
+            substr = ''
+            if isinstance(p.lhs, BooleanPredicate):
+                substr += recurse(p.lhs)
+            else:
+                substr += p.lhs.display_string
+            substr += ' {} '.format(p.op)
+            if isinstance(p.rhs, BooleanPredicate):
+                substr += recurse(p.rhs)
+            else:
+                substr += p.rhs.display_string
+            return '(' + substr + ')'
+        return recurse(self)

@@ -143,6 +143,10 @@ class FunctionProxy(object):
     def __getattr__(self, attr):
         return getattr(self.func, attr)
 
+    @property
+    def target_name(self):
+        return self.target.__name__
+
     def resolve(self, func):
         if isinstance(func, FunctionProxy):
             return func.target

@@ -21,14 +21,8 @@ class FalconWsgiService(WsgiService):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.resource_manager = ResourceManager()
-        self.falcon_api = falcon.API(
-            middleware=self.middleware,
-            request_type=self.request_type
-        )
-        self.falcon_api.add_error_handler(
-            Exception, self.handle_error
-        )
+        self._resource_manager = ResourceManager()
+        self._url_path2resource = {}
 
     @property
     def middleware(self):
@@ -44,12 +38,19 @@ class FalconWsgiService(WsgiService):
         traceback.print_exc()
 
     def start(self, environ=None, start_response=None, *args, **kwargs):
-        return self.falcon_api(environ, start_response)
+        falcon_api = falcon.API(
+            middleware=self.middleware,
+            request_type=self.request_type
+        )
+        falcon_api.add_error_handler(Exception, self.handle_error)
+        for url_path, resource in self._url_path2resource.items():
+            falcon_api.add_route(url_path, resource)
+        return falcon_api(environ, start_response)
 
     def on_decorate(self, route):
-        resource = self.resource_manager.add_route(route)
+        resource = self._resource_manager.add_route(route)
         if resource:
-            self.falcon_api.add_route(route.url_path, resource)
+            self._url_path2resource[route.url_path] = resource
 
     def on_request(self, route, signature, req, resp, *args, **kwargs):
         api_kwargs = req.json.copy()

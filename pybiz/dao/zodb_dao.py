@@ -1,6 +1,5 @@
 import threading
 import bisect
-import inspect
 
 import numpy as np
 import persistent
@@ -16,6 +15,7 @@ from persistent.mapping import PersistentMapping
 from appyratus.validation import Schema, fields
 
 from pybiz.predicate import ConditionalPredicate, BooleanPredicate
+from pybiz.util import is_bizobj
 
 from .base import Dao
 
@@ -52,17 +52,21 @@ class ZodbObject(persistent.Persistent):
 
 
 class ZodbCollection(object):
-    def __init__(self, name: str, schema: Schema, specs=None):
+    def __init__(self, name: str, schema: Schema, zodb_fields=None):
         self.name = name
         self.schema = schema
-        self.specs = {s.field_name: s for s in (specs or [])}
+        self.zodb_fields = {s.name: s for s in (zodb_fields or [])}
+        self.defaults = {
+            s.name: s.default if callable(s.default) else lambda: s.default
+            for s in self.zodb_fields.values() if s.default
+        }
         self.root = None  # set in initialize
         self.data = None  # set in initialize
 
     def initialize(self, root: PersistentMapping, clear=False):
         self.root = root
         self.data = self.root.get(self.name)
-        self.specs['_id'] = ZodbDao.IndexSpec('_id', unique=True)
+        self.zodb_fields['_id'] = ZodbDao.Field('_id', unique=True)
         if (not self.data) or clear:
             self.root[self.name] = PersistentMapping()
             self.data = self.root[self.name]
@@ -85,11 +89,18 @@ class ZodbCollection(object):
                 idx = BTrees.OOBTree.BTree()
                 self.data['indexes'][field.load_key] = idx
 
-    def insert(self, obj):
-        if self.population.has_key(obj._id):
+    def insert(self, record: dict):
+        for name, default in self.defaults.items():
+            if record.get(name) is None:
+                record[name] = default()
+        _id = record.get('_id')
+        assert _id is not None
+        if self.population.has_key(_id):
             raise Exception('unique constraint')
-        self.population[obj._id] = obj
+        obj = ZodbObject(record, schema=self.schema)
+        self.population[_id] = obj
         self._insert_to_indexes(obj)
+        return record
 
     def update(self, obj, updates: dict = None):
         if not self.population.has_key(obj._id):
@@ -107,9 +118,9 @@ class ZodbCollection(object):
     def _insert_to_indexes(self, obj):
         for idx_name, btree in self.indexes.items():
             key = getattr(obj, idx_name, None)
-            spec = self.specs.get(idx_name)
+            zodb_field = self.zodb_fields.get(idx_name)
             tree_set = btree.get(key)
-            if spec and spec.unique and tree_set:
+            if zodb_field and zodb_field.unique and tree_set:
                 raise Exception('unique constraint')
             if tree_set is None:
                 tree_set = BTrees.OOBTree.TreeSet()
@@ -143,7 +154,7 @@ class ZodbDaoMeta(type(Dao)):
             cls.collection = ZodbCollection(
                 cls.__collection__(),
                 cls.__schema__(),
-                cls.__specs__(),
+                cls.__fields__(),
             )
         return cls
 
@@ -156,10 +167,10 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
     local.conn = None
     local.root = None
 
-    class IndexSpec(object):
-        """specification for a BTree index"""
-        def __init__(self, field_name, unique=False):
-            self.field_name = field_name
+    class Field(object):
+        def __init__(self, name, default=None, unique=False):
+            self.name = name
+            self.default = default
             self.unique = unique
 
     @staticmethod
@@ -167,7 +178,7 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
         return None
 
     @staticmethod
-    def __specs__() -> Set[IndexSpec]:
+    def __fields__() -> Set[Field]:
         return {}
 
     @staticmethod
@@ -198,11 +209,12 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
             raise Exception('ZodbDao.connect() not called')
 
     @classmethod
-    def _to_dict(cls, obj):
+    def to_dict(cls, obj, whitelist: Set[Text] = None):
         record = {'_id': getattr(obj, '_id')}
         for field in cls.collection.schema.fields.values():
             key = field.load_key
-            record[key] = getattr(obj, key, None)
+            if (whitelist is None) or (key in whitelist):
+                record[key] = getattr(obj, key, None)
         return record
 
     def __init__(self, *args, **kwargs):
@@ -210,17 +222,36 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
         if not self.collection.is_initialized:
             self.collection.initialize(self.local.root, clear=False)
 
-    def query(self, predicate, first=False, as_dict=True):
-        results = list(self._query_dfs(predicate))
+    def query(
+        self,
+        predicate,
+        first=False,
+        fields=None,
+        order_by=None,
+        as_dict=True
+    ):
+        zodb_objects = list(self._query_dfs(predicate))
+        data = None
+
+        if not zodb_objects:
+            return None if first else []
+
+        # return only first result in result list
         if first:
-            if results:
-                return self._to_dict(results[0]) if as_dict else results[0]
-            return None
+            obj = zodb_objects[0]
+            return self.to_dict(obj, fields) if as_dict else obj
+
+        # sort the results
+        for name, sort_dir in (order_by or []):
+            reverse = (sort_dir == -1)  # -1 means DESC
+            cmp_key = lambda obj: getattr(obj, name, None)
+            zodb_objects = sorted(zodb_objects, key=cmp_key, reverse=reverse)
+
+        # convert ZodbObjects to dicts
+        if as_dict:
+            return [self.to_dict(obj, fields) for obj in zodb_objects]
         else:
-            if as_dict:
-                return [self._to_dict(result) for result in results]
-            else:
-                return results
+            return zodb_objects
 
     def _query_dfs(self, pred, empty=BTrees.OOBTree.TreeSet()):
         if isinstance(pred, ConditionalPredicate):
@@ -228,27 +259,17 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
 
             if pred.op == '=':
                 if isinstance(pred.value, (list, tuple, set)):
-                    return reduce(
-                        BTrees.OOBTree.union,
-                        (index[k] for k in pred.value)
-                    )
+                    sets = [index[k] for k in pred.value]
+                    return self._reduce(BTrees.OOBTree.union, sets)
                 else:
                     return index.get(pred.value, empty)
 
             if pred.op == '!=':
                 if isinstance(pred.value, (list, tuple, set)):
-                    return reduce(
-                        BTrees.OOBTree.union,
-                        (
-                            v for k, v in index.items()
-                            if k not in pred.value
-                        )
-                    )
+                    sets = [v for k, v in index.items() if k not in pred.value]
                 else:
-                    return reduce(
-                        BTrees.OOBTree.union,
-                        (v for k, v in index.items() if k != pred.value)
-                    )
+                    sets = [v for k, v in index.items() if k != pred.value]
+                return self._reduce(BTrees.OOBTree.union, sets)
 
             result = empty
             key_slice = None
@@ -269,89 +290,80 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
                 keys = np.array(index.keys(), dtype=object)
                 offset = bisect.bisect(keys, pred.value)
                 key_slice = slice(0, offset, 1)
+
             if key_slice:
-                tree_sets = [
+                result = self._reduce(BTrees.OOBTree.union, [
                     index[k] for k in keys[key_slice] if k is not None
-                ]
-                if tree_sets:
-                    result = reduce(BTrees.OOBTree.union, tree_sets)
+                ])
             return result
 
         elif isinstance(pred, BooleanPredicate):
             if pred.op == '&':
-                operation = BTrees.OOBTree.intersection
-                left_result = self._query_dfs(pred.lhs)
+                lhs_result = self._query_dfs(pred.lhs)
+                if lhs_result:
+                    rhs_result = self._query_dfs(pred.rhs)
+                    return BTrees.OOBTree.intersection(lhs_result, rhs_result)
             elif pred.op == '|':
-                operation = BTrees.OOBTree.union
-            left_result = self._query_dfs(pred.lhs)
-            if left_result:
-                return operation(left_result, query_dfs(pred.rhs))
+                lhs_result = self._query_dfs(pred.lhs)
+                rhs_result = self._query_dfs(pred.rhs)
+                return BTrees.OOBTree.union(lhs_result, rhs_result)
             else:
-                return left_result  # the empty set
+                raise Exception('unrecognized boolean predicate')
 
-    def exists(self, _id=None, public_id=None) -> bool:
-        if _id is not None:
-            return _id in self.collection.population
-        if public_id and 'public_id' in self.collection.indexes:
-            return public_id in self.collection.indexes['public_id']
-        return False
-
-    def fetch(self, _id=None, public_id=None, fields=None, as_dict=True):
-        record = None
-        if _id is not None:
-            obj = self.collection.population.get(_id)
-            if obj is not None:
-                record = self._to_dict(obj) if as_dict else obj
+    def _reduce(self, func, sequences):
+        if sequences:
+            if len(sequences) == 1:
+                return sequences[0]
+            else:
+                return reduce(func, sequences)
         else:
-            predicate = ConditionalPredicate('public_id', '=', public_id)
-            record = self.query(predicate, first=True, as_dict=as_dict)
-        return record
+            return BTrees.OOBTree.TreeSet()
 
-    def fetch_many(
-        self, _ids: list=None, public_ids: list=None, fields: dict=None
-    ) -> dict:
-        results = {}
-        if _ids:
-            results = {
-                _id: self.fetch(_id=_id, fields=fields, as_dict=False)
-                for _id in _ids
-            }
-        if public_id:
-            results = {
-                public_id: self.fetch(
-                    public_id=public_id, fields=fields, as_dict=False
-                )
-                for public_id in public_ids
-            }
-        return [self._to_dict(r) for r in results]
+    def exists(self, _id) -> bool:
+        return _id in self.collection.population
 
-    def create(self, _id=None, public_id=None, record: dict=None):
-        record = record or {}
-        record['_id'] = _id
-        record['public_id'] = public_id or record.get('public_id')
-        zodb_obj = ZodbObject(record, schema=self.collection.schema)
-        self.collection.insert(zodb_obj)
-        return self._to_dict(zodb_obj)
+    def fetch(self, _id, fields=None, as_dict=True):
+        obj = self.collection.population.get(_id)
+        if obj is not None and as_dict:
+            return self.to_dict(obj, fields)
+        return obj
 
-    def update(self, _id=None, public_id=None, data: dict=None) -> dict:
-        zodb_obj = self.fetch(_id=_id, public_id=public_id, as_dict=False)
-        self.collection.update(zodb_obj, data)
-        return self._to_dict(zodb_obj)
+    def fetch_many(self, _ids: list, fields: dict=None) -> dict:
+        results = {
+            _id: self.fetch(_id=_id, fields=fields, as_dict=False)
+            for _id in _ids
+        }
+        return [self.to_dict(r) for r in results]
 
-    def update_many(
-        self, _ids: list=None, public_ids: list=None, data: list=None
-    ) -> dict:
-        pass
+    def create(self, _id, record: dict):
+        record = dict(record or {}, _id=_id)
+        return self.collection.insert(record)
 
-    def delete(self, _id=None, public_id=None) -> dict:
-        if _id is not None:
-            obj = self.fetch(_id=_id, as_dict=False)
-            if obj is None:
-                raise Exception('not found')
+    def update(self, _id, data: dict) -> dict:
+        zodb_obj = self.fetch(_id=_id, as_dict=False)
+        if zodb_obj is not None:
+            self.collection.update(zodb_obj, data)
+            return self.to_dict(zodb_obj)
+        else:
+            raise Exception('not found')
+
+    def update_many(self, _ids: list, data: list) -> dict:
+        zodb_objects = self.fetch_many(_ids=_ids)
+        for obj, changes in zip(zodb_objects, data):
+            if obj is not None:
+                self.collection.update(obj, changes)
+
+    def delete(self, _id) -> dict:
+        obj = self.fetch(_id=_id, as_dict=False)
+        if obj is not None:
             self.collection.remove(obj)
-        elif public_id:
-            raise NotImplementedError()
+        else:
+            raise Exception('not found')
 
-
-    def delete_many(self, _ids: list=None, public_ids: list=None) -> dict:
-        pass
+    def delete_many(self, _ids: list) -> dict:
+        zodb_objects = self.fetch_many(_ids=_ids)
+        for obj in zodb_objects:
+            if obj is not None:
+                self.collection.remove(obj)
+            else:
+                raise Exception('not found')
