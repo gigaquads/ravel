@@ -19,6 +19,7 @@ import re
 import venusian
 
 from abc import ABCMeta, abstractmethod
+from typing import List
 from types import MethodType
 from importlib import import_module
 
@@ -431,8 +432,25 @@ class BizObject(
         return cls.get_dao().exists(_id=_id)
 
     @classmethod
-    def query(cls, predicate, first=False, fields=None, **kwargs):
-        result = cls.get_dao().query(predicate, first=first, fields=fields, **kwargs)
+    def query(
+        cls,
+        predicate: Predicate,
+        fields: List = None,
+        order_by: List = None,
+        limit: int = None,
+        offset: int = None,
+        first: bool = False,
+        **kwargs
+    ):
+        result = cls.get_dao().query(
+            predicate=predicate,
+            fields=fields,
+            order_by=order_by,
+            limit=limit,
+            offset=offset,
+            first=first,
+            **kwargs
+        )
         if isinstance(result, dict):
             return cls(result).clear_dirty()
         elif isinstance(result, (list, tuple, set)):
