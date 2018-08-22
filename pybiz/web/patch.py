@@ -1,6 +1,6 @@
 from collections import defaultdict
 
-from . import util
+from pybiz.util import is_bizobj
 
 from .constants import (
     ROOT_ATTR,
@@ -128,7 +128,7 @@ class JsonPatchMixin(object):
                 if key not in obj:
                     die('key "{}" not found in {}', key, obj)
                 obj[key] = None
-            elif util.is_bizobj(obj):
+            elif is_bizobj(obj):
                 attr = getattr(obj, key, None)
                 if attr is None:
                     die('{} has no attribute "{}"', obj, key)
@@ -145,7 +145,7 @@ class JsonPatchMixin(object):
                 if key in obj:
                     die('key "{}" already in {}', key, obj)
                 obj[key] = value
-            elif util.is_bizobj(obj):
+            elif is_bizobj(obj):
                 attr = getattr(obj, key, None)
                 if attr is not None:
                     die('{} already has attribute "{}"', obj, key)
@@ -163,7 +163,7 @@ class JsonPatchMixin(object):
                 if key not in obj:
                     die('key "{}" not found in {}', key, obj)
                 obj[key] = value
-            elif util.is_bizobj(obj):
+            elif is_bizobj(obj):
                 if not hasattr(obj, key):
                     die('{} has no attribute "{}"', obj, key)
                 setattr(obj, key, value)
@@ -179,7 +179,7 @@ class JsonPatchMixin(object):
                 continue
             if obj is None:
                 break
-            is_bizobj = util.is_bizobj(obj)
+            is_bizobj = is_bizobj(obj)
             if is_bizobj:
                 sub_obj = getattr(obj, token, None)
             elif token.isdigit():
@@ -195,7 +195,7 @@ class JsonPatchMixin(object):
 
             objs.append(sub_obj)
 
-            if util.is_bizobj(sub_obj):
+            if is_bizobj(sub_obj):
                 bizobjs.append((i, sub_obj))
 
             obj = sub_obj
