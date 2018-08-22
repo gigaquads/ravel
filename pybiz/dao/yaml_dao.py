@@ -100,3 +100,6 @@ class YamlDao(Dao):
 
     def delete_many(self, _ids: list) -> dict:
         raise NotImplementedError('does not make sense to implement')
+
+    def query(self, predicate, **kwargs):
+        raise NotImplementedError('')

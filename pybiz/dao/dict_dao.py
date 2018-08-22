@@ -74,3 +74,6 @@ class DictDao(Dao):
     def delete_many(self, _ids: list) -> list:
         with self._id_2_record_lock:
             return [self._id_2_record.pop(_id, None) for _id in _ids]
+
+    def query(self, predicate, **kwargs):
+        raise NotImplementedError('')

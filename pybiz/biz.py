@@ -24,7 +24,7 @@ from types import MethodType
 from importlib import import_module
 
 from appyratus.validation.schema import AbstractSchema, Schema
-from appyratus.validation.fields import Field, Uuid, Anything
+from appyratus.validation.fields import Field, Anything
 
 from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from .web.patch import JsonPatchMixin
@@ -171,7 +171,7 @@ class BizObjectMeta(ABCMeta):
             if isinstance(v, Field):
                 fields[k] = v
 
-        fields.setdefault('_id', Uuid(dump_to='id', allow_none=True))
+        fields.setdefault('_id', Anything(dump_to='id', allow_none=True))
 
         # Build string name of the new Schema class
         # and construct the Schema class object:

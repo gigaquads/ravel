@@ -11,7 +11,7 @@ class DaoMeta(ABCMeta):
         ABCMeta.__init__(cls, name, bases, dict_)
 
         def callback(scanner, name, dao_class):
-            scanner.bizobj_classes[name] = dao_class
+            scanner.dao_classes[name] = dao_class
 
         venusian.attach(cls, callback, category='dao')
 
