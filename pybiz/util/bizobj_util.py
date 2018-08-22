@@ -1,4 +1,4 @@
-from pybiz.const import IS_BIZOBJ_ANNOTATION
+from pybiz.constants import IS_BIZOBJ_ANNOTATION
 
 
 def is_bizobj(obj):

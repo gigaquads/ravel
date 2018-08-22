@@ -32,7 +32,7 @@ from .graphql import GraphQLObject, GraphQLEngine
 from .dao.base import Dao, DaoManager
 from .dirty import DirtyDict, DirtyInterface
 from .util.bizobj_util import is_bizobj
-from .const import (
+from .constants import (
     IS_BIZOBJ_ANNOTATION,
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,

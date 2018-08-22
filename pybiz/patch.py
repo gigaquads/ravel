@@ -2,7 +2,7 @@ from collections import defaultdict
 
 from . import util
 
-from .const import (
+from .constants import (
     ROOT_ATTR,
     PATCH_PATH_ANNOTATION,
     PRE_PATCH_ANNOTATION,
