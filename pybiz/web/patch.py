@@ -1,8 +1,7 @@
 from collections import defaultdict
 
 from pybiz.util import is_bizobj
-
-from .constants import (
+from pybiz.constants import (
     ROOT_ATTR,
     PATCH_PATH_ANNOTATION,
     PRE_PATCH_ANNOTATION,
@@ -13,9 +12,6 @@ from .constants import (
     OP_DELTA_REPLACE,
     RECOGNIZED_DELTA_OPS,
     )
-
-# TODO: write JsonPatch patch method test
-# TODO: write JsonPatch hook method tests
 
 
 class JsonPatchMixin(object):
