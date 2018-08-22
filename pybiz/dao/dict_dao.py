@@ -25,7 +25,7 @@ class DictDao(Dao):
             cls._id_counter += 1
             return next_id
 
-    def exists(self, _id-> bool:
+    def exists(self, _id) -> bool:
         with self._id_2_record_lock:
             return _id in self._id_2_record
 
