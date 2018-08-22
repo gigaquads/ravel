@@ -1,11 +1,12 @@
 import requests
 
 from datetime import timedelta
-from abc import ABCMeta, abstractmethod
 from urllib.parse import urlencode
+from abc import ABCMeta, abstractmethod
 
-from pybiz.util import Environment, utc_now
-from pybiz import Schema, fields
+from appyratus.io import Environment
+from appyratus.time import utc_now
+from appyratus.validation import Schema, fields
 
 from .oauth2_authenticator import Oauth2Authenticator, AccessToken, RemoteUser
 
@@ -73,4 +74,4 @@ class FacebookOauth2Authenticator(Oauth2Authenticator):
         return RemoteUser(
             user_id=data['id'],
             email=data['email'],
-            )
+        )
