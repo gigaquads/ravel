@@ -2,13 +2,17 @@ import inspect
 
 from IPython.terminal.embed import InteractiveShellEmbed
 from appyratus.cli import (
-    CliProgram, Subparser, OptionalArg, PositionalArg, safe_main,
+    CliProgram,
+    Subparser,
+    OptionalArg,
+    PositionalArg,
+    safe_main,
 )
 
 from .base import FunctionRegistry, FunctionDecorator, FunctionProxy
 
 
-class CommandLineInterface(FunctionRegistry):
+class CliApplication(FunctionRegistry):
     """
     This FunctionRegistry subclass will create a CliProgram (command-line
     interace) out of the registered functions.
@@ -20,7 +24,8 @@ class CommandLineInterface(FunctionRegistry):
         version=None,
         tagline=None,
         defaults=None,
-        *args, **kwargs
+        *args,
+        **kwargs
     ):
         super().__init__(*args, **kwargs)
         self._commands = []
@@ -36,14 +41,14 @@ class CommandLineInterface(FunctionRegistry):
     def function_proxy_type(self):
         return Command
 
-    def on_decorate(self, proxy):
+    def on_decorate(self, command):
         """
         Collect each FunctionProxy, which contains a reference to a function
         we're going to inject into the namespace of the REPL.
         """
-        self._commands.append(proxy)
+        self._commands.append(command)
 
-    def on_request(self, signature, prog, *args, **kwargs):
+    def on_request(self, command, signature, prog, *args, **kwargs):
         """
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
@@ -67,9 +72,8 @@ class CommandLineInterface(FunctionRegistry):
         Build and run the CliProgram.
         """
         self._cli_program = CliProgram(
-            subparsers=[
-                c.subparser for c in self._commands if c.subparser
-            ], **self._cli_program_kwargs
+            subparsers=[c.subparser for c in self._commands if c.subparser],
+            **self._cli_program_kwargs
         )
         safe_main(self._cli_program.run, debug_level=2)
 
@@ -113,9 +117,9 @@ class Command(FunctionProxy):
                 if param.default is inspect._empty:
                     arg = PositionalArg(name=k, dtype=dtype)
                 else:
-                    arg = OptionalArg(name=k,  dtype=dtype)
+                    arg = OptionalArg(name=k, dtype=dtype)
             elif param.kind == inspect.Parameter.POSITIONAL_ONLY:
-                 arg = PositionalArg(name=k, dtype=dtype)
+                arg = PositionalArg(name=k, dtype=dtype)
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
                 arg = OptionalArg(name=k, dtype=dtype)
             if arg is not None:
