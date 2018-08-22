@@ -42,7 +42,7 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def create(self, _id=None, data: Dict) -> Dict:
+    def create(self, _id, data: Dict) -> Dict:
         """
         Create a new record with the _id. If the _id is contained is not
         contained in the data dict nor provided as the _id argument, it is the

@@ -61,7 +61,7 @@ class YamlDao(Dao):
         data = Yaml.from_file(file_path)
         return data
 
-    def create(self, _id=None, data: dict) -> dict:
+    def create(self, _id, data: dict) -> dict:
         """
         Create the YAML file.
         """
