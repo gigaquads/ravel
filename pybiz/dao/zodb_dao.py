@@ -225,10 +225,11 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
     def query(
         self,
         predicate,
-        first=False,
         fields=None,
         order_by=None,
-        as_dict=True
+        first=False,
+        as_dict=True,
+        **kwargs
     ):
         zodb_objects = list(self._query_dfs(predicate))
         data = None
@@ -242,7 +243,7 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
             return self.to_dict(obj, fields) if as_dict else obj
 
         # sort the results
-        for name, sort_dir in (order_by or []):
+        for name, sort_dir in (order or []):
             reverse = (sort_dir == -1)  # -1 means DESC
             cmp_key = lambda obj: getattr(obj, name, None)
             zodb_objects = sorted(zodb_objects, key=cmp_key, reverse=reverse)
