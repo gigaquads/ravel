@@ -12,6 +12,9 @@ class YamlDao(Dao):
     This DAO simply reads and write a single YAML file stored in a data
     directory read from the YAML_DAO_DATA_DIR environment variable.
     """
+    def __init__(self, id_key=None, *args, **kwargs):
+        self._id_key = id_key or '_id'
+        super().__init__(*args, **kwargs)
 
     @classmethod
     def data_path(cls) -> str:
@@ -65,12 +68,15 @@ class YamlDao(Dao):
         """
         Create the YAML file.
         """
+        if not _id and self._id_key in data:
+            _id = data[self._id_key]
+        assert _id
         file_path = self.file_path(_id)
         if self.exists(_id):
             raise Exception('File exists at {}'.format(file_path))
         if _id and '_id' not in data:
             data['_id'] = _id
-        assert _id in data
+        assert '_id' in data
         Yaml.to_file(file_path=file_path, data=data)
         return data
 
