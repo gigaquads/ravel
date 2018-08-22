@@ -27,8 +27,8 @@ from appyratus.validation.schema import AbstractSchema, Schema
 from appyratus.validation.fields import Field, Uuid, Anything
 
 from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
-from .patch import JsonPatchMixin
-from .graphql import GraphQLObject, GraphQLEngine
+from .web.patch import JsonPatchMixin
+from .web.graphql import GraphQLObject, GraphQLEngine
 from .dao.base import Dao, DaoManager
 from .dirty import DirtyDict, DirtyInterface
 from .util.bizobj_util import is_bizobj

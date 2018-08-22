@@ -1,5 +1,5 @@
 from pybiz import BizObject, fields
-from pybiz.graphql import GraphQLField
+from pybiz.web.graphql import GraphQLField
 
 
 class {{ biz_class_name }}(BizObject):
