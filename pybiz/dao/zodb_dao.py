@@ -90,16 +90,26 @@ class ZodbCollection(object):
                 self.data['indexes'][field.load_key] = idx
 
     def insert(self, record: dict):
+        # get default values for non-specified keys in the record, ensuring
+        # that these values are marshalled by the schema.  so that they are of
+        # the same type as values provided by other business objects which *do*
+        # define them.
         for name, default in self.defaults.items():
             if record.get(name) is None:
-                record[name] = default()
+                val = default()
+                record[name] = self.schema.fields[name].load(val).value
+
+        # get the _id and ensure uniqueness
         _id = record.get('_id')
         assert _id is not None
         if self.population.has_key(_id):
             raise Exception('unique constraint')
+
+        # create the persistent zodb object
         obj = ZodbObject(record, schema=self.schema)
         self.population[_id] = obj
         self._insert_to_indexes(obj)
+
         return record
 
     def update(self, obj, updates: dict = None):
@@ -243,7 +253,7 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
             return self.to_dict(obj, fields) if as_dict else obj
 
         # sort the results
-        for name, sort_dir in (order or []):
+        for name, sort_dir in (order_by or []):
             reverse = (sort_dir == -1)  # -1 means DESC
             cmp_key = lambda obj: getattr(obj, name, None)
             zodb_objects = sorted(zodb_objects, key=cmp_key, reverse=reverse)

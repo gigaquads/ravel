@@ -2,8 +2,10 @@ import ujson
 
 from pybiz.util import is_bizobj
 
+from .base import Middleware
 
-class JsonBodyMiddleware(object):
+
+class JsonBodyMiddleware(Middleware):
     def __init__(self, encode=None):
         self.encode = encode or ujson.dumps
 

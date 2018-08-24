@@ -158,20 +158,23 @@ class BizObjectMeta(ABCMeta):
         else:
             schema_class = None
 
-        fields = schema_class.fields if schema_class else {}
+        fields = copy.deepcopy(schema_class.fields) if schema_class else {}
 
         # "inherit" fields of parent BizObject.Schema
         inherited_schema_class = getattr(cls, 'Schema', None)
         if inherited_schema_class is not None:
-            fields.update(inherited_schema_class.fields.copy())
+            for k, v in inherited_schema_class.fields.items():
+                fields.setdefault(k, copy.deepcopy(v))
 
         # Collect and field declared on this BizObject class
-        for k in dir(cls):
-            v = getattr(cls, k)
-            if isinstance(v, Field):
-                fields[k] = v
+        for k, v in inspect.getmembers(
+            cls, predicate=lambda x: isinstance(x, Field)
+        ):
+            fields[k] = v
 
-        fields.setdefault('_id', Anything(dump_to='id', allow_none=True))
+        # bless each bizobj with a mandatory _id field.
+        if '_id' not in fields:
+            fields['_id'] = Anything(dump_to='id', allow_none=True)
 
         # Build string name of the new Schema class
         # and construct the Schema class object:
@@ -442,8 +445,19 @@ class BizObject(
         first: bool = False,
         **kwargs
     ):
+        def load_predicate_values(pred):
+            if isinstance(pred, ConditionalPredicate):
+                field = cls.Schema.fields.get(pred.attr_name)
+                if field is None:
+                    field = Anything()
+                pred.value = field.load(pred.value).value
+            elif isinstance(pred, BooleanPredicate):
+                load_predicate_values(pred.lhs)
+                load_predicate_values(pred.rhs)
+            return pred
+
         result = cls.get_dao().query(
-            predicate=predicate,
+            predicate=load_predicate_values(predicate),
             fields=fields,
             order_by=order_by,
             limit=limit,
