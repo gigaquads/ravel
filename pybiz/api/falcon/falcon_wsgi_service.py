@@ -6,6 +6,8 @@ import falcon
 
 from typing import Dict
 
+from appyratus.decorators import memoized_property
+
 from pybiz.api.wsgi_service import WsgiService
 
 from .resource import ResourceManager
@@ -20,6 +22,15 @@ class FalconWsgiService(WsgiService):
             self.session = None
             self.json = {}
 
+    class Response(falcon.Response):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+        @memoized_property
+        def ok(self):
+            status_code = int(self.status[:3])
+            return (200 <= status_code < 300)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._resource_manager = ResourceManager()
@@ -33,6 +44,10 @@ class FalconWsgiService(WsgiService):
     def request_type(self):
         return self.Request
 
+    @property
+    def response_type(self):
+        return self.Response
+
     @staticmethod
     def handle_error(exc, req, resp, params):
         resp.status = falcon.HTTP_500
@@ -45,7 +60,8 @@ class FalconWsgiService(WsgiService):
                 m.bind(self)
         falcon_api = falcon.API(
             middleware=middleware,
-            request_type=self.request_type
+            request_type=self.request_type,
+            response_type=self.response_type,
         )
         falcon_api.add_error_handler(Exception, self.handle_error)
         for url_path, resource in self._url_path2resource.items():
