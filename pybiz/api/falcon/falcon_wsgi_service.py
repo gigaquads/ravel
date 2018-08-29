@@ -7,6 +7,7 @@ import falcon
 from typing import Dict
 
 from appyratus.decorators import memoized_property
+from appyratus.io import Environment
 
 from pybiz.api.wsgi_service import WsgiService
 
@@ -15,6 +16,8 @@ from .middleware import Middleware
 
 
 class FalconWsgiService(WsgiService):
+
+    env = Environment()
 
     class Request(falcon.Request):
         def __init__(self, *args, **kwargs):
@@ -81,6 +84,7 @@ class FalconWsgiService(WsgiService):
         if route.authorize is not None:
             route.authorize(req, resp)
 
+        # append URL path variables to positional args list
         api_args = []
         url_path = req.path.strip('/').split('/')
         url_path_template = req.uri_template.strip('/').split('/')
