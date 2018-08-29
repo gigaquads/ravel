@@ -10,14 +10,14 @@ from .base import Dao
 
 
 class Join(object):
-    def __init__(self, table, condition, fields, side='left'):
+    def __init__(self, name: Text, table, conditions, side='left'):
+        self.name = name
         self.table = table
-        self.fields = fields
         self.side = side
-        if not callable(condition):
-            self.condition = lambda: condition
+        if not callable(conditions):
+            self.conditions = lambda: conditions
         else:
-            self.condition = lambda: condition(self)
+            self.conditions = lambda: conditions(self)
 
     def get_columns(self):
         return [getattr(self.table.c, k) for k in self.fields]
@@ -38,14 +38,18 @@ class SqlalchemyExpressionLanguageDao(object):
         return []
 
     @classmethod
-    def create_engine(cls, db_url):
+    def create_engine(cls, db_url, echo=False):
         if cls.local.engine is not None:
             cls.local.engine.dispose()
-        cls.local.engine = sa.create_engine(db_url)
+        cls.local.engine = sa.create_engine(db_url, echo=echo)
 
     @classmethod
     def connect(cls):
         cls.local.connection = cls.local.engine.connect()
+
+    @classmethod
+    def create_tables(cls, metadata):
+        metadata.create_all(cls.local.engine)
 
     @classmethod
     def close(cls):
@@ -69,14 +73,7 @@ class SqlalchemyExpressionLanguageDao(object):
 
     @memoized_property
     def joins(self):
-        return self.__joins__()
-
-    @memoized_property
-    def field2join(self):
-        field2join = {}
-        for join in self.joins:
-            field2join.update({k: join for k in join.fields})
-        return field2join
+        return {join.name: join for join in self.__joins__()}
 
     @property
     def conn(self):
@@ -84,9 +81,6 @@ class SqlalchemyExpressionLanguageDao(object):
 
     def __init__(self):
         self.table.metadata.bind = self.local.engine
-
-    def create_table(self):
-        self.table.metadata.create_all(self.local.engine)
 
     def exists(self, _id) -> bool:
         columns = [sa.func.count(self.table.c._id)]
@@ -101,27 +95,50 @@ class SqlalchemyExpressionLanguageDao(object):
         # TODO: get field names from __schema__
         # TODO: rename __joins__ to __relationships__
 
-        fields = fields or self.table.c.keys()
-        field2join = self._resolve_joins(fields)
-        joins = set(field2join.values())
+        joins = []
+        columns = []
+        sub_objects = {}
+        for k in (fields or self.table.c.keys()):
+            join = self.joins.get(k)
+            if join:
+                joins.append(join)
+                columns.extend([
+                    getattr(join.table.c, k).label('_{}_{}'.format(join.table.name, k))
+                    for k in join.table.c.keys()
+                ])
+                sub_objects[join.table.name] = {}
+            else:
+                column = getattr(self.table.c, k)
+                columns.append(column)
 
-        # build list of columns to select, from driving and joined tables
-        columns = self._get_columns(set(fields) - field2join.keys())
-        for join in field2join.values():
-            columns.extend(join.get_columns())
-
-        # select row by _id
+        # get row by id
         query = sa.select(columns).where(self.table.c._id == _id)
 
         # add the joins
-        for join in field2join.values():
-            query = query.select_from(
-                self.table.join(join.table, join.condition())
-            )
+        if joins:
+            join_stmt = self.table
+            for join in joins:
+                for (join_table, join_cond) in join.conditions():
+                    join_stmt = sa.outerjoin(join_stmt, join_table, join_cond)
+            query = query.select_from(join_stmt)
 
-        # return a list of dicts
-        rows = self.conn.execute(query).fetchall()
-        return self._rows_to_dict(rows)[0] if rows else None
+
+        record = {}
+        record.update(sub_objects)
+
+        import re
+        row = self.conn.execute(query).fetchone()
+        for k, v in row.items():
+            if k.startswith('_'):
+                match = re.match(r'_(\w+)_', k)
+                if match:
+                    sub_objects[match.group()] = v
+                    continue
+            record[k] = v
+
+        return record
+        #rows = self.conn.execute(query).fetchall()
+        #return self.to_dict(rows)[0] if rows else None
 
     def create(self, record: dict) -> dict:
         query = (
@@ -132,16 +149,7 @@ class SqlalchemyExpressionLanguageDao(object):
         result = self.conn.execute(query)
         return self.fetch(_id=result.lastrowid)
 
-    def _get_columns(self, column_names: List[Text]) -> List:
-        return [getattr(self.table.c, k) for k in column_names]
-
-    def _resolve_joins(self, column_names: List[Text]) -> Dict:
-        return {
-            k: self.field2join[k] for k in column_names
-            if k in self.field2join
-        }
-
-    def _rows_to_dict(self, rows: List) -> List[Dict]:
+    def to_dict(self, rows: List) -> List[Dict]:
         columns = self.table.c
         return [
             {
@@ -152,16 +160,27 @@ class SqlalchemyExpressionLanguageDao(object):
         ]
 
 
+meta = sa.MetaData()
 
-t_cat = sa.Table('cat', sa.MetaData(), *[
+t_cat = sa.Table('cat', meta, *[
     sa.Column('_id', sa.Integer(), primary_key=True),
     sa.Column('owner_user_id', sa.Integer(), index=True),
     sa.Column('color', sa.String())
 ])
 
-t_user = sa.Table('user', sa.MetaData(), *[
+t_dog = sa.Table('dog', meta, *[
+    sa.Column('_id', sa.Integer(), primary_key=True),
+    sa.Column('breed', sa.String())
+])
+
+t_user = sa.Table('user', meta, *[
     sa.Column('_id', sa.Integer(), primary_key=True),
     sa.Column('name', sa.String(), default='Barb')
+])
+
+t_user_dog = sa.Table('user_dog', meta, *[
+    sa.Column('user_id', sa.Integer(), primary_key=True),
+    sa.Column('dog_id', sa.String(), primary_key=True)
 ])
 
 
@@ -175,10 +194,20 @@ class UserDao(SqlalchemyExpressionLanguageDao):
     def __joins__():
         return [
             Join(
+                name='cat',
                 table=t_cat,
-                condition=t_cat.c.owner_user_id == t_user.c._id,
-                fields={'color'}
-            )
+                conditions=[
+                    (t_cat, t_cat.c.owner_user_id == t_user.c._id)
+                ]
+            ),
+            Join(
+                name='dogs',
+                table=t_dog,
+                conditions=[
+                    (t_user_dog, t_user_dog.c.user_id == t_user.c._id),
+                    (t_dog, t_dog.c._id == t_user_dog.c.dog_id),
+                ]
+            ),
         ]
 
 
@@ -189,108 +218,15 @@ class CatDao(SqlalchemyExpressionLanguageDao):
         return t_cat
 
 
-SqlalchemyExpressionLanguageDao.create_engine('sqlite://')
+SqlalchemyExpressionLanguageDao.create_engine('sqlite://', echo=False)
+SqlalchemyExpressionLanguageDao.create_tables(meta)
 SqlalchemyExpressionLanguageDao.connect()
 
 cat_dao = CatDao()
-cat_dao.create_table()
-
 user_dao = UserDao()
-user_dao.create_table()
 
 print(user_dao.create({'_id': 1}))
 print(user_dao.exists(1))
-print(user_dao.fetch(_id=1, fields={'_id', 'name', 'color'}))
+print(user_dao.fetch(_id=1, fields={'_id', 'name', 'dogs'}))
 
 SqlalchemyExpressionLanguageDao.close()
-
-
-'''
-class SqlalchemyOrmDao(Dao):
-    """
-    """
-
-    @staticmethod
-    def __model__():
-        raise NotImplementedError()
-
-    @staticmethod
-    def __schema__():
-        raise NotImplementedError()
-
-    @classmethod
-    def connect():
-        pass
-
-    @property
-    def db_session(self):
-        pass
-
-    @memoized_property
-    def model_type(self):
-        return self.__model__()
-
-    @memoized_property
-    def model_type(self):
-        return self.__schema__()()
-
-    def exists(self, _id) -> bool:
-        return bool(
-            self.db_session
-                .query(self.model_type)
-                .filter_by(_id=_id)
-                .count()
-            )
-
-    def fetch(self, _id, fields=None) -> dict:
-        fields = fields or self.schema.fields.keys()
-        columns = [getattr(self.model_type, k) for k in fields]
-        values = (
-            self.db_session
-                .query(*columns)
-                .filter_by(_id=_id)
-                .first()
-            )
-        return dict(zip(fields, values))
-
-    def fetch_many(self, _ids, fields=None) -> list:
-        fields = fields or self.schema.fields.keys()
-        model_type = self.model_type
-        columns = [getattr(model_type, k) for k in fields]
-        values_list = (
-            self.db_session
-                .query(*columns)
-                .filter(model_type._id.in_(_ids))
-            )
-        return [dict(zip(fields, values)) for values in values_list]
-
-    def create(self, record: dict) -> dict:
-        model = self.model_type()
-        for k, v in record.items():
-            setattr(model, k, v)
-        self.db_session.begin_nested()
-        self.db_session.add(model)
-        self.db_session.commit()
-        return {
-            k: getattr(model, k) for k in self.schema.fields
-        }
-
-    def create_many(self, records: list) -> dict:
-        raise NotImplementedError()
-
-    def update(self, _id=None, data: dict=None) -> dict:
-        raise NotImplementedError()
-
-    def update_many(self, _ids: list, data: list=None) -> list:
-        raise NotImplementedError()
-
-    def delete(self, _id) -> dict:
-        raise NotImplementedError()
-
-    def delete_many(self, _ids: list) -> list:
-        raise NotImplementedError()
-
-    def query(self, predicate, **kwargs):
-        raise NotImplementedError()
-
-'''
