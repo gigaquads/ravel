@@ -1,3 +1,5 @@
+import re
+
 import sqlalchemy as sa
 
 from copy import deepcopy
@@ -6,21 +8,9 @@ from threading import local
 
 from appyratus.decorators import memoized_property
 
+from pybiz.predicate import ConditionalPredicate, BooleanPredicate
+
 from .base import Dao
-
-
-class Join(object):
-    def __init__(self, name: Text, table, conditions, side='left'):
-        self.name = name
-        self.table = table
-        self.side = side
-        if not callable(conditions):
-            self.conditions = lambda: conditions
-        else:
-            self.conditions = lambda: conditions(self)
-
-    def get_columns(self):
-        return [getattr(self.table.c, k) for k in self.fields]
 
 
 class SqlalchemyExpressionLanguageDao(object):
@@ -33,23 +23,20 @@ class SqlalchemyExpressionLanguageDao(object):
     def __table__():
         raise NotImplementedError()
 
-    @staticmethod
-    def __joins__() -> List[Join]:
-        return []
-
     @classmethod
-    def create_engine(cls, db_url, echo=False):
+    def initialize(cls, url: Text, meta=None, echo=False):
         if cls.local.engine is not None:
             cls.local.engine.dispose()
-        cls.local.engine = sa.create_engine(db_url, echo=echo)
+        cls.local.metadata = meta or sa.MetaData()
+        cls.local.engine = sa.create_engine(url, echo=echo)
+
+    @classmethod
+    def create_tables(cls):
+        cls.local.metadata.create_all(cls.local.engine)
 
     @classmethod
     def connect(cls):
         cls.local.connection = cls.local.engine.connect()
-
-    @classmethod
-    def create_tables(cls, metadata):
-        metadata.create_all(cls.local.engine)
 
     @classmethod
     def close(cls):
@@ -71,10 +58,6 @@ class SqlalchemyExpressionLanguageDao(object):
     def table(self):
         return self.__table__()
 
-    @memoized_property
-    def joins(self):
-        return {join.name: join for join in self.__joins__()}
-
     @property
     def conn(self):
         return self.local.connection
@@ -91,142 +74,173 @@ class SqlalchemyExpressionLanguageDao(object):
         result = self.conn.execute(query)
         return bool(result.scalar())
 
-    def fetch(self, _id, fields=None) -> dict:
-        # TODO: get field names from __schema__
-        # TODO: rename __joins__ to __relationships__
+    def query(
+        self,
+        predicate,
+        fields=None,
+        order_by=None,
+        first=False,
+        **kwargs,
+    ):
+        fields = fields or self.table.c.keys()
+        filters = self._prepare_predicate(predicate)
+        columns = [getattr(self.table.c, k) for k in fields]
+        query = sa.select(columns).where(filters)
+        cursor = self.conn.execute(query)
+        results = []
 
-        joins = []
-        columns = []
-        sub_objects = {}
-        for k in (fields or self.table.c.keys()):
-            join = self.joins.get(k)
-            if join:
-                joins.append(join)
-                columns.extend([
-                    getattr(join.table.c, k).label('_{}_{}'.format(join.table.name, k))
-                    for k in join.table.c.keys()
-                ])
-                sub_objects[join.table.name] = {}
+        while True:
+            page = [dict(row.items()) for row in cursor.fetchmany(256)]
+            if page:
+                results.extend(page)
             else:
-                column = getattr(self.table.c, k)
-                columns.append(column)
+                return results
 
-        # get row by id
-        query = sa.select(columns).where(self.table.c._id == _id)
+    def _prepare_predicate(self, pred, empty=set()):
+        if isinstance(pred, ConditionalPredicate):
+            col = getattr(self.table.c, pred.attr_name)
+            if pred.op == '=':
+                if isinstance(pred.value, (list, tuple, set)):
+                    return col.in_(pred.value)
+                else:
+                    return col == pred.value
+            elif pred.op == '!=':
+                if isinstance(pred.value, (list, tuple, set)):
+                    return sa.not_(col.in_(pred.value))
+                else:
+                    return col != pred.value
+            if pred.op == '>=':
+                return col >= pred.value
+            elif pred.op == '>':
+                return col > pred.value
+            elif pred.op == '<':
+                return col < pred.value
+            elif pred.op == '<=':
+                return col <= pred.value
+            else:
+                raise Exception('unrecognized conditional predicate')
+        elif isinstance(pred, BooleanPredicate):
+            if pred.op == '&':
+                lhs_result = self._query_dfs(pred.lhs)
+                rhs_result = self._query_dfs(pred.rhs)
+                return sa.and_(lhs_result, rhs_result)
+            elif pred.op == '|':
+                lhs_result = self._query_dfs(pred.lhs)
+                rhs_result = self._query_dfs(pred.rhs)
+                return sa.or_(lhs_result, rhs_result)
+            else:
+                raise Exception('unrecognized boolean predicate')
+        else:
+            raise Exception('unrecognized predicate type')
 
-        # add the joins
-        if joins:
-            join_stmt = self.table
-            for join in joins:
-                for (join_table, join_cond) in join.conditions():
-                    join_stmt = sa.outerjoin(join_stmt, join_table, join_cond)
-            query = query.select_from(join_stmt)
+    def fetch(self, _id, fields=None) -> Dict:
+        records = self.fetch_many(_ids=[_id], fields=fields)
+        return records[_id] if records else None
 
-
-        record = {}
-        record.update(sub_objects)
-
-        import re
-        row = self.conn.execute(query).fetchone()
-        for k, v in row.items():
-            if k.startswith('_'):
-                match = re.match(r'_(\w+)_', k)
-                if match:
-                    sub_objects[match.group()] = v
-                    continue
-            record[k] = v
-
-        return record
-        #rows = self.conn.execute(query).fetchall()
-        #return self.to_dict(rows)[0] if rows else None
+    def fetch_many(self, _ids: List, fields=None) -> Dict:
+        # TODO: get field names from __schema__
+        fields = set(fields or self.table.c.keys())
+        fields.add('_id')
+        columns = [
+            getattr(self.table.c, k)
+            for k in (fields or self.table.c.keys())
+        ]
+        query = sa.select(columns).where(self.table.c._id.in_(_ids))
+        return {
+            row._id: dict(row.items())
+            for row in self.conn.execute(query).fetchmany()
+        }
 
     def create(self, record: dict) -> dict:
-        query = (
-            self.table
-                .insert()
-                .values(**record)
-        )
+        query = self.table.insert().values(**record)
         result = self.conn.execute(query)
         return self.fetch(_id=result.lastrowid)
 
-    def to_dict(self, rows: List) -> List[Dict]:
-        columns = self.table.c
-        return [
-            {
-                c.name: getattr(row, c.name)
-                for c in columns
-            }
-            for row in rows
-        ]
+
+if __name__ == '__main__':
+    import json
+
+    from pybiz.biz import BizObject, Relationship
+    from appyratus.validation import Schema, fields
+
+    meta = sa.MetaData()
+
+    t_user = sa.Table('user', meta, *[
+        sa.Column('_id', sa.Integer(), primary_key=True),
+        sa.Column('name', sa.String(), default='Barb')
+    ])
+
+    t_dog = sa.Table('dog', meta, *[
+        sa.Column('_id', sa.Integer(), primary_key=True),
+        sa.Column('owner_id', sa.Integer(), index=True),
+        sa.Column('breed', sa.String())
+    ])
 
 
-meta = sa.MetaData()
+    # Daos
+    # ------------------------------------------------------------ 
+    class UserDao(SqlalchemyExpressionLanguageDao):
+        @staticmethod
+        def __table__():
+            return t_user
 
-t_cat = sa.Table('cat', meta, *[
-    sa.Column('_id', sa.Integer(), primary_key=True),
-    sa.Column('owner_user_id', sa.Integer(), index=True),
-    sa.Column('color', sa.String())
-])
-
-t_dog = sa.Table('dog', meta, *[
-    sa.Column('_id', sa.Integer(), primary_key=True),
-    sa.Column('breed', sa.String())
-])
-
-t_user = sa.Table('user', meta, *[
-    sa.Column('_id', sa.Integer(), primary_key=True),
-    sa.Column('name', sa.String(), default='Barb')
-])
-
-t_user_dog = sa.Table('user_dog', meta, *[
-    sa.Column('user_id', sa.Integer(), primary_key=True),
-    sa.Column('dog_id', sa.String(), primary_key=True)
-])
+    class DogDao(SqlalchemyExpressionLanguageDao):
+        @staticmethod
+        def __table__():
+            return t_dog
 
 
-class UserDao(SqlalchemyExpressionLanguageDao):
+    # Schemas
+    # ------------------------------------------------------------ 
+    class UserSchema(Schema):
+        name = fields.Str()
 
-    @staticmethod
-    def __table__():
-        return t_user
-
-    @staticmethod
-    def __joins__():
-        return [
-            Join(
-                name='cat',
-                table=t_cat,
-                conditions=[
-                    (t_cat, t_cat.c.owner_user_id == t_user.c._id)
-                ]
-            ),
-            Join(
-                name='dogs',
-                table=t_dog,
-                conditions=[
-                    (t_user_dog, t_user_dog.c.user_id == t_user.c._id),
-                    (t_dog, t_dog.c._id == t_user_dog.c.dog_id),
-                ]
-            ),
-        ]
+    class DogSchema(Schema):
+        breed = fields.Str()
+        owner_id = fields.Int(load_only=True)
 
 
-class CatDao(SqlalchemyExpressionLanguageDao):
+    # BizObjects
+    # ------------------------------------------------------------ 
+    class User(BizObject):
 
-    @staticmethod
-    def __table__():
-        return t_cat
+        dogs = Relationship(
+            target=lambda: Dog,
+            query=lambda user, fields=None:
+                Dog.query(Dog.owner_id == user._id, fields=fields),
+            many=True,
+        )
+
+        @staticmethod
+        def __dao__():
+            return UserDao
+
+        @staticmethod
+        def __schema__():
+            return UserSchema
+
+    class Dog(BizObject):
+        @staticmethod
+        def __dao__():
+            return DogDao
+
+        @staticmethod
+        def __schema__():
+            return DogSchema
 
 
-SqlalchemyExpressionLanguageDao.create_engine('sqlite://', echo=False)
-SqlalchemyExpressionLanguageDao.create_tables(meta)
-SqlalchemyExpressionLanguageDao.connect()
+    # Test scenario
+    # ------------------------------------------------------------ 
+    SqlalchemyExpressionLanguageDao.initialize('sqlite://', meta=meta, echo=False)
+    SqlalchemyExpressionLanguageDao.create_tables()
 
-cat_dao = CatDao()
-user_dao = UserDao()
+    SqlalchemyExpressionLanguageDao.connect()
 
-print(user_dao.create({'_id': 1}))
-print(user_dao.exists(1))
-print(user_dao.fetch(_id=1, fields={'_id', 'name', 'dogs'}))
+    jeff = User(name='Jeff').save()
+    chewy = Dog(breed='half', owner_id=jeff._id).save()
+    poopy = Dog(breed='fecal', owner_id=jeff._id).save()
 
-SqlalchemyExpressionLanguageDao.close()
+    user = User.get(_id=jeff._id, fields={'name', 'dogs'})
+    print(json.dumps(user.dump(), indent=2, sort_keys=True))
+
+    SqlalchemyExpressionLanguageDao.close()

@@ -19,12 +19,13 @@ import re
 import venusian
 
 from abc import ABCMeta, abstractmethod
-from typing import List
+from typing import List, Dict
 from types import MethodType
 from importlib import import_module
 
 from appyratus.validation.schema import AbstractSchema, Schema
 from appyratus.validation.fields import Field, Anything
+from appyratus.decorators import memoized_property
 
 from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from .web.patch import JsonPatchMixin
@@ -47,18 +48,25 @@ from .constants import (
 class Relationship(object):
     def __init__(
         self,
-        bizobj_class,
+        target,
         many=False,
         dump_to=None,
         load_from=None,
         query=None
     ):
-        self.bizobj_class = bizobj_class
+        self._target = target
         self.load_from = load_from
         self.dump_to = dump_to
         self.many = many
         self.name = None
         self.query = query
+
+    @memoized_property
+    def target(self):
+        if callable(self._target):
+            return self._target()
+        else:
+            return self._target
 
     def copy(self):
         return copy.deepcopy(self)
@@ -126,8 +134,8 @@ class BizObjectMeta(ABCMeta):
         cls.register_JsonPatch_hooks(bases)
         cls.register_dao()
 
-        def venusian_callback(scanner, name, bizobj_class):
-            scanner.bizobj_classes[name] = bizobj_class
+        def venusian_callback(scanner, name, bizobj_type):
+            scanner.targetes[name] = bizobj_type
 
         venusian.attach(cls, venusian_callback, category='biz')
 
@@ -438,7 +446,7 @@ class BizObject(
     def query(
         cls,
         predicate: Predicate,
-        fields: List = None,
+        fields: Dict = None,
         order_by: List = None,
         limit: int = None,
         offset: int = None,
@@ -456,15 +464,20 @@ class BizObject(
                 load_predicate_values(pred.rhs)
             return pred
 
+        fields = fields or cls.schema.fields.keys()
+
         result = cls.get_dao().query(
             predicate=load_predicate_values(predicate),
-            fields=fields,
+            fields={k for k in fields if k not in cls.relationships},
             order_by=order_by,
             limit=limit,
             offset=offset,
             first=first,
             **kwargs
         )
+
+        # TODO: add support for querying Relationships
+
         if isinstance(result, dict):
             return cls(result).clear_dirty()
         elif isinstance(result, (list, tuple, set)):
@@ -475,10 +488,35 @@ class BizObject(
             return []
 
     @classmethod
-    def get(cls, _id, fields: dict = None):
+    def get(cls, _id, fields: set = None):
+        if isinstance(fields, (list, tuple, set)):
+            fields = dict(zip(fields, [None]*len(fields)))
+
+        rel_field_map = {}
+        obj_fields = set()
+        if fields:
+            for k in fields:
+                if k in cls.relationships:
+                    rel_field_map[k] = fields[k]
+                else:
+                    obj_fields.add(k)
+        else:
+            obj_fields = fields
+
         dao = cls.get_dao()
-        record = dao.fetch(_id=_id, fields=fields)
+        record = dao.fetch(_id=_id, fields=obj_fields)
         bizobj = cls(record).clear_dirty()
+
+        if bizobj is not None:
+            for k in rel_field_map:
+                sub_fields = rel_field_map.get(k)
+                if sub_fields:
+                    sub_fields['_id'] = 1
+                val = bizobj.relationships[k].query(
+                    bizobj, fields=rel_field_map.get(k)
+                )
+                setattr(bizobj, k, val)
+
         return bizobj
 
     @classmethod
@@ -539,7 +577,7 @@ class BizObject(
 
         # Persist and refresh data
         if self._id is None:
-            updated_data = self.dao.create(self._id, data_to_save)
+            updated_data = self.dao.create(data_to_save)
         else:
             updated_data = self.dao.update(self._id, data_to_save)
 
@@ -703,11 +741,11 @@ class BizObject(
             if rel.many:
                 related_bizobj_list = []
                 for obj in related_data:
-                    if isinstance(obj, rel.bizobj_class):
+                    if isinstance(obj, rel.target):
                         related_bizobj_list.append(obj)
                     else:
                         related_bizobj_list.append(
-                            rel.bizobj_class(related_data)
+                            rel.target(related_data)
                         )
 
                 self._related_bizobjs[rel.name] = related_bizobj_list
@@ -723,7 +761,7 @@ class BizObject(
                     # Relationship assumes that the 'related_data' is a
                     # dict and tries to call a bizobj ctor with it.
                     assert isinstance(related_data, dict)
-                    related_bizobj = rel.bizobj_class(related_data)
+                    related_bizobj = rel.target(related_data)
                 else:
                     related_bizobj = related_data
                     self._related_bizobjs[rel.name] = related_bizobj
