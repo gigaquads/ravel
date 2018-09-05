@@ -1,10 +1,14 @@
 from pybiz.dao.zodb_dao import ZodbDao
 
+from .base import Middleware
 
-class ZodbDaoMiddleware(object):
-    def __init__(self, db: str):
+
+class ZodbDaoMiddleware(Middleware):
+    def __init__(self):
         super().__init__()
-        ZodbDao.connect(db)
+
+    def bind(self, service):
+        ZodbDao.connect(service.env['ZODB_DATA_FILE'])
 
     def process_request(self, request, response):
         pass

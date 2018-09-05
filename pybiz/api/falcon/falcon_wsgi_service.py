@@ -9,6 +9,7 @@ from typing import Dict
 from pybiz.api.wsgi_service import WsgiService
 
 from .resource import ResourceManager
+from .middleware import Middleware
 
 
 class FalconWsgiService(WsgiService):
@@ -38,8 +39,12 @@ class FalconWsgiService(WsgiService):
         traceback.print_exc()
 
     def start(self, environ=None, start_response=None, *args, **kwargs):
+        middleware = self.middleware
+        for m in middleware:
+            if isinstance(m, Middleware):
+                m.bind(self)
         falcon_api = falcon.API(
-            middleware=self.middleware,
+            middleware=middleware,
             request_type=self.request_type
         )
         falcon_api.add_error_handler(Exception, self.handle_error)
