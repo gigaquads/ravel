@@ -525,7 +525,7 @@ class BizObject(
 
         # Persist and refresh data
         if self._id is None:
-            updated_data = self.dao.create(self._id, data_to_save)
+            updated_data = self.dao.create(data_to_save)
         else:
             updated_data = self.dao.update(self._id, data_to_save)
 
