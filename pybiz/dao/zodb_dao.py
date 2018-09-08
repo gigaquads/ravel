@@ -346,8 +346,7 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
         }
         return [self.to_dict(r) for r in results]
 
-    def create(self, _id, record: dict):
-        record = dict(record or {}, _id=_id)
+    def create(self, record: dict):
         return self.collection.insert(record)
 
     def update(self, _id, data: dict) -> dict:

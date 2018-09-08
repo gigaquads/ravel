@@ -45,8 +45,8 @@ class DictDao(Dao):
                 for _id in _ids
             ]
 
-    def create(self, _id, record: dict=None) -> dict:
-        _id = _id or self.next_id()
+    def create(self, record: dict=None) -> dict:
+        _id = self.next_id()
         record['_id'] = _id
         with self._id_2_record_lock:
             self._id_2_record[_id] = record

@@ -28,14 +28,14 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def fetch(self, _id, fields: Dict=None) -> Dict:
+    def fetch(self, _id, fields: Dict = None) -> Dict:
         """
         Read a single record by _id, selecting only the designated fields (or
         all by default).
         """
 
     @abstractmethod
-    def fetch_many(self, _ids: List, fields: Dict=None) -> Dict:
+    def fetch_many(self, _ids: List, fields: Dict = None) -> Dict:
         """
         Read multiple records by _id, selecting only the designated fields (or
         all by default).
@@ -52,9 +52,8 @@ class Dao(object, metaclass=DaoMeta):
     @abstractmethod
     def create_many(self, records: List[Dict]) -> None:
         """
-        Create a new record with the _id. If the _id is contained is not
-        contained in the data dict nor provided as the _id argument, it is the
-        responsibility of the Dao class to generate the _id.
+        Create a new record.  It is the responsibility of the Dao class to
+        generate the _id.
         """
 
     @abstractmethod
@@ -64,7 +63,7 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def update_many(self, _ids: List, data: List[Dict]=None) -> None:
+    def update_many(self, _ids: List, data: List[Dict] = None) -> None:
         """
         Update multiple records. If a single data dict is passed in, then try to
         apply the same update to all records; otherwise, if a list of data dicts
@@ -91,7 +90,7 @@ class DaoManager(object):
     associated with which Dao class.
     """
 
-    _instance = None  # the singleton instance
+    _instance = None    # the singleton instance
 
     @classmethod
     def get_instance(cls):
@@ -103,7 +102,7 @@ class DaoManager(object):
         return cls._instance
 
     def __init__(self):
-        self._bizobj_type_2_dao_type = {}  # i.e. BizObject => Dao
+        self._bizobj_type_2_dao_type = {}    # i.e. BizObject => Dao
 
     def register(self, bizobj_class, dao_class):
         self._bizobj_type_2_dao_type[bizobj_class] = dao_class

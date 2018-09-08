@@ -64,19 +64,16 @@ class YamlDao(Dao):
         data = Yaml.from_file(file_path)
         return data
 
-    def create(self, _id, data: dict) -> dict:
+    def create(self, data: dict) -> dict:
         """
         Create the YAML file.
         """
-        if not _id and self._id_key in data:
-            _id = data[self._id_key]
-        assert _id
+        _id = data[self._id_key]
+        assert _id is not None
         file_path = self.file_path(_id)
         if self.exists(_id):
             raise Exception('File exists at {}'.format(file_path))
-        if _id and '_id' not in data:
-            data['_id'] = _id
-        assert '_id' in data
+        data['_id'] = _id
         Yaml.to_file(file_path=file_path, data=data)
         return data
 
