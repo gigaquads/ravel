@@ -17,8 +17,7 @@ class ZodbDaoMiddleware(Middleware):
         pass
 
     def process_response(self, request, response, resource):
-        status_code = int(response.status[:3])
-        if 200 <= status_code < 300:
+        if response.ok:
             try:
                 ZodbDao.commit()
             except Exception:

@@ -447,9 +447,6 @@ class BizObject(
         cls,
         predicate: Predicate,
         fields: Dict = None,
-        order_by: List = None,
-        limit: int = None,
-        offset: int = None,
         first: bool = False,
         **kwargs
     ):
@@ -464,82 +461,65 @@ class BizObject(
                 load_predicate_values(pred.rhs)
             return pred
 
-        fields = fields or cls.schema.fields.keys()
-
-        result = cls.get_dao().query(
+        fields = cls._parse_fields(fields)
+        records = cls.get_dao().query(
             predicate=load_predicate_values(predicate),
-            fields={k for k in fields if k not in cls.relationships},
-            order_by=order_by,
-            limit=limit,
-            offset=offset,
+            fields=fields['self'],
             first=first,
             **kwargs
         )
 
-        # TODO: add support for querying Relationships
-
-        if isinstance(result, dict):
-            return cls(result).clear_dirty()
-        elif isinstance(result, (list, tuple, set)):
-            return [cls(record).clear_dirty() for record in result]
-        elif first:
-            return None
+        if first:
+            retval = None
+            if records:
+                retval = cls(records[0]).clear_dirty()
+                cls._query_relationships(retval, fields['related'])
         else:
-            return []
+            retval = []
+            for record in records:
+                bizobj = cls(record).clear_dirty()
+                cls._query_relationships(bizobj, fields['related'])
+                retval.append(bizobj)
+
+        return retval
 
     @classmethod
-    def get(cls, _id, fields: set = None):
-        if isinstance(fields, (list, tuple, set)):
-            fields = dict(zip(fields, [None]*len(fields)))
-
-        rel_field_map = {}
-        obj_fields = set()
-        if fields:
-            for k in fields:
-                if k in cls.relationships:
-                    rel_field_map[k] = fields[k]
-                else:
-                    obj_fields.add(k)
-        else:
-            obj_fields = fields
-
-        dao = cls.get_dao()
-        record = dao.fetch(_id=_id, fields=obj_fields)
+    def get(cls, _id, fields: List = None):
+        fields = cls._parse_fields(fields)
+        record = cls.get_dao().fetch(_id=_id, fields=fields['self'])
         bizobj = cls(record).clear_dirty()
 
-        if bizobj is not None:
-            for k in rel_field_map:
-                sub_fields = rel_field_map.get(k)
-                if sub_fields:
-                    sub_fields['_id'] = 1
-                val = bizobj.relationships[k].query(
-                    bizobj, fields=rel_field_map.get(k)
-                )
-                setattr(bizobj, k, val)
+        if not (bizobj and bizobj._id):
+            raise NotFound()
+
+        cls._query_relationships(bizobj, fields['related'])
 
         return bizobj
 
     @classmethod
-    def get_many(cls, _ids, fields: dict = None):
-        dao = cls.get_dao()
-        return [
-            cls(record).clear_dirty() for record in dao.fetch_many(
-                _ids=_ids, fields=fields
-            )
-        ]
+    def get_many(cls, _ids, fields: List = None, as_list=False):
+        fields = cls._parse_fields(fields)
+        records = cls.get_dao().fetch_many(_ids=_ids, fields=fields['self'])
+        bizobjs = {}
+
+        for _id, record in records.items():
+            bizobj = cls(record).clear_dirty()
+            cls._query_relationships(bizobj, fields['related'])
+            bizobjs[_id] = bizobj
+
+        return bizobjs if not as_list else list(bizobjs.values())
 
     @classmethod
     def delete_many(cls, bizobjs):
         bizobj_ids = []
         for obj in bizobjs:
-            obj.mark_dirty()
+            obj.mark_dirty(obj.data.keys())
             bizobj_ids.append(obj._id)
         cls.get_dao().delete_many(bizobj_ids)
 
     def delete(self):
-        self.delete_man
         self.dao.delete(_id=self._id)
-        self.mark_dirty()
+        self.mark_dirty(self.data.keys())
 
     def save(self, fetch=False):
         nested_bizobjs = []
@@ -589,6 +569,37 @@ class BizObject(
 
         self.clear_dirty()
         return self
+
+    @classmethod
+    def _parse_fields(cls, fields: List):
+        results = {
+            'self': set(),
+            'related': {}
+        }
+        for k in (fields or cls.schema.fields.keys()):
+            if isinstance(k, dict):
+                rel_name, rel_fields = list(k.items())[0]
+                if rel_name in cls.relationships:
+                    results['related'][rel_name] = rel_fields
+            elif k in cls.relationships:
+                schema = cls.relationships[k].target.schema
+                results['related'][k] = set(schema.fields.keys())
+            else:
+                results['self'].add(k)
+
+        if not results['self']:
+            results['self'] = set(cls.schema.fields.keys())
+        else:
+            results['self'].add('_id')
+
+        return results
+
+    @staticmethod
+    def _query_relationships(bizobj, fields: Dict):
+        for k, fields in fields.items():
+            v = bizobj.relationships[k].query(bizobj, fields=fields)
+            setattr(bizobj, k, v)
+
 
     # -- DirtyInterface --------------------------------------------
 

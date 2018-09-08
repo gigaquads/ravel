@@ -50,7 +50,7 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def create_many(self, records: List[Dict]) -> Dict:
+    def create_many(self, records: List[Dict]) -> None:
         """
         Create a new record with the _id. If the _id is contained is not
         contained in the data dict nor provided as the _id argument, it is the
@@ -64,7 +64,7 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def update_many(self, _ids: List, data: List[Dict]=None) -> List:
+    def update_many(self, _ids: List, data: List[Dict]=None) -> None:
         """
         Update multiple records. If a single data dict is passed in, then try to
         apply the same update to all records; otherwise, if a list of data dicts
@@ -73,16 +73,15 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def delete(self, _id) -> Dict:
+    def delete(self, _id) -> None:
         """
-        Delete a single record, returning the record if possible.
+        Delete a single record.
         """
 
     @abstractmethod
-    def delete_many(self, _ids: list) -> Dict:
+    def delete_many(self, _ids: list) -> None:
         """
-        Delete multiple records, returning a map from _id to an implementation
-        defined return value.
+        Delete multiple records.
         """
 
 
