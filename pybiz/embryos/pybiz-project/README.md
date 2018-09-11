@@ -5,14 +5,27 @@
 ### Base
 Base elements necessary for other layers
 
-`embryo create pybiz-project/base --project.name my-project`
+```sh
+embryo create pybiz-project/base --project.name my-project
+```
 
 ### Biz
-Build business object and related structure.
+Business object and related structure
 
-`embryo create pybiz-project/biz --biz.name my-biz`
+```sh
+embryo create pybiz-project/biz --biz.name my-biz
+```
 
 ### Dao
-Dao object and related structures
+Dao object and related structure
 
-`embryo create pybiz-project/dao --dao.name my-dao --dao.type yaml`
+```sh
+embryo create pybiz-project/dao --dao.name my-dao --dao.type yaml
+```
+
+### Svc
+Service object and related structure
+
+```sh
+embryo create pytbiz-project/svc --svc.name my-api
+```

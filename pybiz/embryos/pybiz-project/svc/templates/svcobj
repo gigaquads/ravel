@@ -1,0 +1,10 @@
+from .api import cli
+
+
+@cli()
+def create_{{ svc.name|snake }}():
+    """
+    # {{ svc.name|camel }}
+    The {{ svc.name|title }} API
+    """
+    pass
