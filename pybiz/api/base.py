@@ -18,9 +18,10 @@ from pybiz.exc import ApiError
 class FunctionRegistry(object):
     def __init__(self, manifest=None):
         self.thread_local = local()
+        self.decorators = []
+        self.proxies = []
         self._manifest = manifest
         self._bootstrapped = False
-        self._decorators = []
 
     def __call__(self, *args, **kwargs):
         """
@@ -40,7 +41,7 @@ class FunctionRegistry(object):
         ```
         """
         decorator = self.function_decorator_type(self, *args, **kwargs)
-        self._decorators.append(decorator)
+        self.decorators.append(decorator)
         return decorator
 
     @property
@@ -112,6 +113,7 @@ class FunctionDecorator(object):
 
     def __call__(self, func):
         proxy = self.registry.function_proxy_type(func, self)
+        self.registry.proxies.append(proxy)
         self.registry.on_decorate(proxy)
         return proxy
 
