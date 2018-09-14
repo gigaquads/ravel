@@ -122,8 +122,10 @@ class FunctionProxy(object):
     def __init__(self, func, decorator):
         self.func = func
         self.signature = inspect.signature(self.func)
-        self.decorator = decorator
         self.target = self.resolve(func)
+        self.decorator = decorator
+        self.on_request = decorator.registry.on_request
+        self.on_response = decorator.registry.on_response
 
     def __repr__(self):
         return '<{}({})>'.format(
@@ -131,26 +133,25 @@ class FunctionProxy(object):
             ', '.join(['method={}'.format(self.func.__name__)])
         )
 
-    def __call__(self, *args, **kwargs):
-        on_request = self.decorator.registry.on_request
-        on_request_retval = on_request(self, self.signature, *args, **kwargs)
-        if on_request_retval:
-            prepared_args, prepared_kwargs = on_request_retval
-        else:
-            prepared_args, prepared_kwargs = args, kwargs
-        result = self.target(*prepared_args, **prepared_kwargs)
-        self.decorator.registry.on_response(self, result, *args, **kwargs)
-        return result
+    def __call__(self, *raw_args, **raw_kwargs):
+        return self.call_target(raw_args, raw_kwargs, pybiz_debug=False)
 
     def __getattr__(self, attr):
         return getattr(self.func, attr)
 
     @property
-    def target_name(self):
+    def name(self):
         return self.target.__name__
 
     def resolve(self, func):
-        if isinstance(func, FunctionProxy):
-            return func.target
-        else:
-            return func
+        return func.target if isinstance(func, FunctionProxy) else func
+
+    def call_target(self, raw_args, raw_kwargs, pybiz_debug=False):
+        sig = self.signature
+        arguments = self.on_request(self, sig, *raw_args, **raw_kwargs)
+        args, kwargs = arguments if arguments else (raw_args, raw_kwargs)
+        if pybiz_debug:
+            breakpoint()
+        retval = self.target(*args, **kwargs)
+        self.on_response(self, retval, *raw_args, **raw_kwargs)
+        return retval

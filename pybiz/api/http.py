@@ -105,7 +105,7 @@ class HttpClient(object):
         self._scheme = scheme
         for http_method2route in self._registry.routes.values():
             for http_method, route in http_method2route.items():
-                self._handlers[route.target_name] = self._build_handler(
+                self._handlers[route.name] = self._build_handler(
                     http_method, route
                 )
 

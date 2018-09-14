@@ -23,7 +23,7 @@ class Repl(FunctionRegistry):
     def on_decorate(self, proxy):
         pass
 
-    def on_request(self, signature, *args, **kwargs):
+    def on_request(self, proxy, signature, *args, **kwargs):
         return (args, kwargs)
 
     def start(self, *args, **kwargs):
@@ -31,11 +31,12 @@ class Repl(FunctionRegistry):
         Start a new REPL with all registered functions available in the REPL
         namespace.
         """
+        self.functions
         self.shell.mainloop(local_ns=self._build_shell_namespace())
 
     def _build_shell_namespace(self):
         ns = {'repl': self}
-        ns.update({p.target_name: p for p in self.proxies})
+        ns.update({p.name: p for p in self.proxies})
         return ns
 
     @property
@@ -43,13 +44,17 @@ class Repl(FunctionRegistry):
         """
         Get list of names of all registered functions in the REPL.
         """
-        for func_name in sorted(p.target.__name__ for p in self.proxies):
-            print(func_name)
+        func_names = sorted(p.target.__name__ for p in self.proxies)
+        for func_name in func_names:
+            print('- {}'.format(func_name))
 
 
 class ReplFunctionProxy(FunctionProxy):
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
+
+    def debug(self, *args, **kwargs):
+        return self.call_target(args, kwargs, pybiz_debug=True)
 
     @property
     def source(self):
