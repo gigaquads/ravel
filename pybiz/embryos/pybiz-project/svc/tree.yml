@@ -1,11 +1,13 @@
 ---
 - {{ project.context.project.name|snake }}/:
+  - __init__.py
   - svc/:
-    - api.py
-    - cli.py
-    - {{ svc.name|snake }}_api.py: svcobj()
-- tests/:
-  - svc/:
-    - test_{{ svc.name|snake }}_api.py: svctest()
-- manifest.yml
+    - __init__.py
+    - service.py: svc-obj
+  - rpc/:
+    - __init__.py
+  - cli/:
+    - __init__.py
+  - repl/:
+    - __init__.py
 ...

@@ -1,0 +1,10 @@
+from {{ project.context.project.name|snake }}.svc.cli import {{ project.context.project.name|camel }}CliService
+from {{ project.context.project.name|snake }}.svc.repl import {{ project.context.project.name|camel }}ReplService
+from {{ project.context.project.name|snake }}.svc.rpc import {{ project.context.project.name|camel }}RpcService
+from {{ project.context.project.name|snake }}.svc.web import {{ project.context.project.name|camel }}WebService
+
+
+cli = {{ project.context.project.name|camel }}CliService()
+repl = {{ project.context.project.name|camel }}ReplService()
+rpc = {{ project.context.project.name|camel }}RpcService()
+web = {{ project.context.project.name|camel }}WebService()
