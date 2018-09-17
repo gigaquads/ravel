@@ -5,9 +5,12 @@ import importlib
 import yaml
 import venusian
 
+from typing import Text
+
 from appyratus.validation import fields, Schema
 
 from pybiz.dao.base import DaoManager
+from pybiz.exc import ManifestError
 
 
 class ManifestSchema(Schema):
@@ -38,7 +41,7 @@ class Manifest(object):
 
     def __init__(self, api, filepath=None):
         self.api = api
-        self.filepath = self._get_manifest_filepath(api, filepath)
+        self.filepath = self._resolve_filepath(api, filepath)
         self.data = self._load_manifest_file()
         self.scanner = venusian.Scanner(
             bizobj_classes={},
@@ -54,32 +57,23 @@ class Manifest(object):
         self._scan()
         self._bind()
 
+    @property
+    def package(self):
+        return self.data['package']
+
     @staticmethod
-    def _get_manifest_filepath(api, filepath):
+    def _resolve_filepath(api: 'FunctionRegistry', filepath: Text):
         """
         Return the filepath to the manifest.yaml file for self.api. Search the
-        following places for the filepath if the filepath argument is None:
-
-            1. Check for env var with the structure: {SERVICE_NAME}_MANIFEST
-            2. Search the project dir for a manifest.yaml file.
+        Check for env var with the structure: {SERVICE_NAME}_MANIFEST if the
+        filepath argument is None.
         """
         # get manifest file path from environ var. The name of the var is
         # dynamic. if the service package is called my_service, then the
         # expected var name will be MY_SERVICE_MANIFEST
         if filepath is None:
-            root_pkg_name = api.__class__.__module__.split('.')[0]
-            env_var_name = '{}_MANIFEST'.format(root_pkg_name.upper())
+            env_var_name = 'PYBIZ_MANIFEST'
             filepath = os.environ.get(env_var_name)
-
-        # get project directory (the parent dir to src dir)
-        if filepath is None:
-            root_pkg = importlib.import_module(root_pkg_name)
-            if hasattr(root_pkg, '__file__'):
-                abs_root_dir = os.path.realpath(root_pkg.__file__)
-                proj_dir = '/'.join(abs_root_dir.split('/')[:-2])
-                filepath = os.path.join(proj_dir, 'manifest.yaml')
-                if not os.path.exists(filepath):
-                    filepath = os.path.join(proj_dir, 'manifest.yml')
 
         if filepath is None:
             raise ManifestError('could not find pybiz manifest file')
