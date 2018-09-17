@@ -129,16 +129,20 @@ class FunctionProxy(object):
             ', '.join(['method={}'.format(self.func.__name__)])
         )
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *raw_args, **raw_kwargs):
         on_request = self.decorator.registry.on_request
-        on_request_retval = on_request(self, self.signature, *args, **kwargs)
+        on_request_retval = on_request(
+            self, self.signature, *raw_args, **raw_kwargs
+        )
         if on_request_retval:
             prepared_args, prepared_kwargs = on_request_retval
         else:
-            prepared_args, prepared_kwargs = args, kwargs
+            prepared_args, prepared_kwargs = raw_args, raw_kwargs
         result = self.target(*prepared_args, **prepared_kwargs)
-        self.decorator.registry.on_response(self, result, *args, **kwargs)
-        return result
+        processed_result = self.decorator.registry.on_response(
+            self, result, *raw_args, **raw_kwargs
+        )
+        return processed_result or result
 
     def __getattr__(self, attr):
         return getattr(self.func, attr)
