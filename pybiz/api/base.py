@@ -18,6 +18,7 @@ from pybiz.exc import ApiError
 class FunctionRegistry(object):
     def __init__(self, manifest=None):
         self.thread_local = local()
+        self.proxies = []
         self._manifest = manifest
         self._bootstrapped = False
         self._decorators = []
@@ -112,6 +113,7 @@ class FunctionDecorator(object):
 
     def __call__(self, func):
         proxy = self.registry.function_proxy_type(func, self)
+        self.registry.proxies.append(proxy)
         self.registry.on_decorate(proxy)
         return proxy
 
@@ -148,7 +150,7 @@ class FunctionProxy(object):
         return getattr(self.func, attr)
 
     @property
-    def target_name(self):
+    def name(self):
         return self.target.__name__
 
     def resolve(self, func):

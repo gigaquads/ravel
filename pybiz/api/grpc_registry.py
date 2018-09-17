@@ -10,10 +10,11 @@ import grpc
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Text, List
+from importlib import import_module
 
 from appyratus.validation.schema import Schema
 from appyratus.decorators import memoized_property
-from appyratus.util import TextTransform
+from appyratus.util import TextTransform, FuncUtils
 
 from .base import FunctionRegistry, FunctionDecorator, FunctionProxy
 
@@ -25,7 +26,8 @@ class GrpcRegistry(FunctionRegistry):
 
     def __init__(self):
         super().__init__()
-        self._proxies = []
+        self._grpc_server = None
+        self._grpc_servicer = None
 
     def bootstrap(self, manifest_filepath: Text, build_grpc=False):
         super().bootstrap(manifest_filepath)
@@ -36,30 +38,20 @@ class GrpcRegistry(FunctionRegistry):
         self._pb2_mod_path = '{}.registry_pb2'.format(self._pkg_path)
         self._pb2_grpc_mod_path = '{}.registry_pb2_grpc'.format(self._pkg_path)
 
-        self._pb2 = importlib.import_module(
-            self._pb2_mod_path,
-            self._pkg_path
-        )
-        self._pb2_grpc = importlib.import_module(
-            self._pb2_grpc_mod_path,
-            self._pkg_path
-        )
-
         sys.path.append(self._pkg_dir)
 
-        self._grpc_options = self.manifest.data.get('grpc', {})
-        self._grpc_server_host = self._grpc_options.get('server-host', '::')
-        self._grpc_client_host = self._grpc_options.get('client-host', 'localhost')
-        self._grpc_port = self._grpc_options.get('port', '50051')
-        self._grpc_server_addr = '[{}]:{}'.format(
-            self._grpc_server_host, self._grpc_port
-        )
-        self._grpc_client_addr = '{}:{}'.format(
-            self._grpc_client_host, self._grpc_port
-        )
+        self.pb2 = import_module(self._pb2_mod_path, self._pkg_path)
+        self.pb2_grpc = import_module(self._pb2_grpc_mod_path, self._pkg_path)
 
-        self._grpc_server = None
-        self._grpc_servicer = None
+        self.grpc_options = self.manifest.data.get('grpc', {})
+
+        server_host = self.grpc_options.get('server-host', '::')
+        client_host = self.grpc_options.get('client-host', 'localhost')
+        port = self.grpc_options.get('port', '50051')
+
+        self.grpc_server_addr = '[{}]:{}'.format(server_host, port)
+        self.grpc_client_addr = '{}:{}'.format(client_host, port)
+
         if build_grpc:
             self.grpc_build()
 
@@ -69,31 +61,29 @@ class GrpcRegistry(FunctionRegistry):
 
     @memoized_property
     def client(self):
-        return self._grpc_client_factory()
+        return GrpcClient(self)
 
     def on_decorate(self, proxy):
-        """
-        Collect each FunctionProxy.
-        """
-        self._proxies.append(proxy)
+        pass
 
     def on_request(self, proxy, signature, grpc_request):
         """
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
-        """
-        args = tuple()
-        kwargs = {
+        """ 
+        data = {
             k: getattr(grpc_request, k, None)
             for k in proxy.request_schema.fields
         }
+        args, kwargs = FuncUtils.extract_arguments(signature, data)
         return (args, kwargs)
 
     def on_response(self, proxy, result, *raw_args, **raw_kwargs):
-        resp_type = getattr(self._pb2, '{}Response'.format(
-            TextTransform.camel(proxy.target_name)
+        # bind the returned dict values to the response protobuf message
+        response_type = getattr(self.pb2, '{}Response'.format(
+            TextTransform.camel(proxy.name)
         ))
-        resp = resp_type()
+        resp = response_type()
         if result:
             for k, v in result.items():
                 setattr(resp, k, v)
@@ -108,7 +98,7 @@ class GrpcRegistry(FunctionRegistry):
         self._grpc_servicer.add_to_grpc_server(
             self._grpc_servicer, self._grpc_server
         )
-        self._grpc_server.add_insecure_port(self._grpc_server_addr)
+        self._grpc_server.add_insecure_port(self.grpc_server_addr)
         self._grpc_server.start()
         print('>>> gRPC server is running...')
         while True:
@@ -119,44 +109,11 @@ class GrpcRegistry(FunctionRegistry):
                     self._grpc_server.stop(grace=5)
                 break
 
-    def _grpc_client_factory(self):
-        """
-        # create a valid request message
-        number = calculator_pb2.Number(value=16)
-
-        # make the call
-        response = stub.SquareRoot(number)
-        """
-        channel = grpc.insecure_channel(self._grpc_client_addr)
-        self._grpc_stub = self._pb2_grpc.GrpcRegistryStub(channel)
-
-        def build_client_method(proxy):
-            name = TextTransform.camel(proxy.target_name)
-            req_type = getattr(self._pb2, '{}Request'.format(name))
-            resp_type = getattr(self._pb2, '{}Response'.format(name))
-            do_request = getattr(self._grpc_stub, proxy.target_name)
-            def method(self, **kwargs):
-                req = req_type(**kwargs)
-                resp = do_request(req)
-                return {
-                    k: getattr(resp, k, None)
-                    for k in proxy.response_schema.fields
-                }
-            return method
-
-        methods = {
-            p.target_name: build_client_method(p)
-            for p in self._proxies
-        }
-        client_type = type('GrpcRegistryClient', (object, ), methods)
-        client = client_type()
-        return client
-
     def _grpc_servicer_factory(self):
         servicer_type_name = 'GrpcRegistryServicer'
         abstract_type = None
 
-        for k, v in inspect.getmembers(self._pb2_grpc):
+        for k, v in inspect.getmembers(self.pb2_grpc):
             if k == servicer_type_name:
                 abstract_type = v
                 break
@@ -164,11 +121,11 @@ class GrpcRegistry(FunctionRegistry):
         if abstract_type is None:
             raise Exception('could not find grpc Servicer class')
 
-        methods = {p.target_name: p for p in self._proxies}
+        methods = {p.name: p for p in self.proxies}
         servicer_type = type(servicer_type_name, (abstract_type, ), methods)
         servicer = servicer_type()
         servicer.add_to_grpc_server = (
-            self._pb2_grpc.add_GrpcRegistryServicer_to_server
+            self.pb2_grpc.add_GrpcRegistryServicer_to_server
         )
         return servicer
 
@@ -184,7 +141,7 @@ class GrpcRegistry(FunctionRegistry):
         dest = self._pkg_dir
         chunks = ['syntax = "proto3";']
         func_decls = []
-        for proxy in self._proxies:
+        for proxy in self.proxies:
             chunks.extend(proxy.generate_protobuf_message_types())
             func_decls.append(proxy.generate_protobuf_function_declaration())
 
@@ -248,7 +205,7 @@ class GrpcFunctionProxy(FunctionProxy):
 
         self._msg_name_prefix = decorator.params.get('message_name_prefix')
         if self._msg_name_prefix is None:
-            self._msg_name_prefix = TextTransform.camel(self.target_name)
+            self._msg_name_prefix = TextTransform.camel(self.name)
 
         self.request_schema = build_schema(
             decorator.params.get('request'), 'Request'
@@ -271,8 +228,35 @@ class GrpcFunctionProxy(FunctionProxy):
             'rpc {func_name}({req_msg_type}) '
             'returns ({resp_msg_type})'
             ' {{}}'.format(
-                func_name=self.target_name,
+                func_name=self.name,
                 req_msg_type=self._msg_name_prefix + 'Request',
                 resp_msg_type=self._msg_name_prefix + 'Response',
             )
         )
+
+
+class GrpcClient(object):
+    def __init__(self, registry: GrpcRegistry):
+        assert registry.is_bootstrapped
+        self._registry = registry
+        self._channel = grpc.insecure_channel(registry.grpc_client_addr)
+        self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(channel)
+        self._funcs = {p.name: self._build_func(p) for p in registry.proxies}
+
+    def __getattr__(self, func_name: Text):
+        return self._funcs[func_name]
+
+    def _build_func(self, proxy):
+        key = TextTransform.camel(proxy.name)
+        request_type = getattr(self.pb2, '{}Request'.format(key))
+        send = getattr(self._grpc_stub, proxy.name)
+
+        def func(self, **kwargs):
+            req = request_type(**kwargs)
+            resp = send(req)
+            return {
+                k: getattr(resp, k, None)
+                for k in proxy.response_schema.fields
+            }
+
+        return func
