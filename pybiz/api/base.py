@@ -59,7 +59,7 @@ class FunctionRegistry(object):
     def bootstrapped(self):
         return self._bootstrapped
 
-    def bootstrap(self, filepath: str=None):
+    def bootstrap(self, manifest_filepath: str=None):
         """
         Bootstrap the data, business, and service layers, wiring them up,
         according to the settings contained in a service manifest file.
@@ -69,7 +69,7 @@ class FunctionRegistry(object):
         """
         if not self.bootstrapped:
             if self._manifest is None or filepath is not None:
-                self._manifest = Manifest(self, filepath=filepath)
+                self._manifest = Manifest(self, filepath=manifest_filepath)
             if self.manifest is not None:
                 self._manifest.process()
             self._bootstrapped = True
