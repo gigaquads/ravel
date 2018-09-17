@@ -61,14 +61,18 @@ class FalconWsgiService(WsgiService):
         for m in middleware:
             if isinstance(m, Middleware):
                 m.bind(self)
+
         falcon_api = falcon.API(
             middleware=middleware,
             request_type=self.request_type,
             response_type=self.response_type,
         )
+
         falcon_api.add_error_handler(Exception, self.handle_error)
+
         for url_path, resource in self._url_path2resource.items():
             falcon_api.add_route(url_path, resource)
+
         return falcon_api(environ, start_response)
 
     def on_decorate(self, route):
@@ -77,9 +81,8 @@ class FalconWsgiService(WsgiService):
             self._url_path2resource[route.url_path] = resource
 
     def on_request(self, route, signature, req, resp, *args, **kwargs):
-        api_kwargs = req.json.copy()
+        api_kwargs = dict(req.json, session=req.session)
         api_kwargs.update(req.params)
-        api_kwargs['session'] = req.session
 
         if route.authorize is not None:
             route.authorize(req, resp)
