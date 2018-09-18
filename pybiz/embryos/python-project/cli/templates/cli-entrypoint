@@ -8,7 +8,7 @@ from {{ name|snake }}.svc.api import cli
 
 def main():
     """
-    Main exectuion for {{ name|title }}
+    Main execution for {{ name|title }}
     """
     cli.bootstrap()
     cli.start()
