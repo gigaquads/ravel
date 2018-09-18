@@ -6,7 +6,7 @@ from appyratus.cli import CliProgram, Subparser as Parser, Arg
 from .base import FunctionRegistry, FunctionDecorator, FunctionProxy
 
 
-class Repl(FunctionRegistry):
+class ReplFunctionRegistry(FunctionRegistry):
     """
     Repl is a FunctionRegistry that collects all registered functions and
     injects them into an interactive Python shell, or REPL. This is useful for

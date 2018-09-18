@@ -1,5 +1,0 @@
-package: demo
-
-bindings:
-    - biz: User
-      dao: UserDictDao
