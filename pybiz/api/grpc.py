@@ -4,6 +4,7 @@ import traceback
 import importlib
 import inspect
 import subprocess
+import time
 import re
 
 import grpc
@@ -14,12 +15,12 @@ from importlib import import_module
 
 from appyratus.validation.schema import Schema
 from appyratus.decorators import memoized_property
-from appyratus.util import TextTransform, FuncUtils
+from appyratus.util import TextTransform#, FuncUtils
 
 from .base import FunctionRegistry, FunctionDecorator, FunctionProxy
 
 
-class GrpcRegistry(FunctionRegistry):
+class GrpcFunctionRegistry(FunctionRegistry):
     """
     Grpc server and client interface.
     """
@@ -30,7 +31,7 @@ class GrpcRegistry(FunctionRegistry):
         self._grpc_servicer = None
 
     def bootstrap(self, manifest_filepath: Text, build_grpc=False):
-        super().bootstrap(manifest_filepath)
+        super().bootstrap(manifest_filepath, defer_processing=True)
         self._pkg_path = self.manifest.package
         self._pkg = importlib.import_module(self._pkg_path)
         self._pkg_dir = os.path.dirname(self._pkg.__file__)
@@ -39,9 +40,7 @@ class GrpcRegistry(FunctionRegistry):
         self._pb2_grpc_mod_path = '{}.registry_pb2_grpc'.format(self._pkg_path)
 
         sys.path.append(self._pkg_dir)
-
-        self.pb2 = import_module(self._pb2_mod_path, self._pkg_path)
-        self.pb2_grpc = import_module(self._pb2_grpc_mod_path, self._pkg_path)
+        self.manifest.process()
 
         self.grpc_options = self.manifest.data.get('grpc', {})
 
@@ -54,6 +53,9 @@ class GrpcRegistry(FunctionRegistry):
 
         if build_grpc:
             self.grpc_build()
+
+        self.pb2 = import_module(self._pb2_mod_path, self._pkg_path)
+        self.pb2_grpc = import_module(self._pb2_grpc_mod_path, self._pkg_path)
 
     @property
     def function_proxy_type(self):
@@ -70,7 +72,8 @@ class GrpcRegistry(FunctionRegistry):
         """
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
-        """ 
+        """
+        return (('test',), {})
         data = {
             k: getattr(grpc_request, k, None)
             for k in proxy.request_schema.fields
@@ -93,21 +96,30 @@ class GrpcRegistry(FunctionRegistry):
         """
         Start the RPC client or server.
         """
+        # build the grpc server
         self._grpc_server = grpc.server(ThreadPoolExecutor(max_workers=10))
+        self._grpc_server.add_insecure_port(self.grpc_server_addr)
+
+        # build the grpc servicer and connect with server
         self._grpc_servicer = self._grpc_servicer_factory()
         self._grpc_servicer.add_to_grpc_server(
             self._grpc_servicer, self._grpc_server
         )
-        self._grpc_server.add_insecure_port(self.grpc_server_addr)
+
+        # start the server. note that it is non-blocking.
         self._grpc_server.start()
-        print('>>> gRPC server is running...')
-        while True:
-            cmd = input('<<< ').strip().lower()
-            if cmd == 'q':
-                print('>>> stopping...')
-                if self._grpc_server is not None:
-                    self._grpc_server.stop(grace=5)
-                break
+
+        # enter spin lock
+        print('\n>>> gRPC server is running. Press ctrl+c to stop.')
+        try:
+            while True:
+                time.sleep(32)
+        except KeyboardInterrupt:
+            print()
+            if self._grpc_server is not None:
+                print('>>> stopping grpc server...')
+                self._grpc_server.stop(grace=5)
+            print('>>> groodbye!')
 
     def _grpc_servicer_factory(self):
         servicer_type_name = 'GrpcRegistryServicer'
@@ -236,11 +248,11 @@ class GrpcFunctionProxy(FunctionProxy):
 
 
 class GrpcClient(object):
-    def __init__(self, registry: GrpcRegistry):
+    def __init__(self, registry: GrpcFunctionRegistry):
         assert registry.is_bootstrapped
         self._registry = registry
         self._channel = grpc.insecure_channel(registry.grpc_client_addr)
-        self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(channel)
+        self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(self._channel)
         self._funcs = {p.name: self._build_func(p) for p in registry.proxies}
 
     def __getattr__(self, func_name: Text):
@@ -248,10 +260,10 @@ class GrpcClient(object):
 
     def _build_func(self, proxy):
         key = TextTransform.camel(proxy.name)
-        request_type = getattr(self.pb2, '{}Request'.format(key))
+        request_type = getattr(self._registry.pb2, '{}Request'.format(key))
         send = getattr(self._grpc_stub, proxy.name)
 
-        def func(self, **kwargs):
+        def func(*args, **kwargs):
             req = request_type(**kwargs)
             resp = send(req)
             return {

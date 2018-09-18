@@ -18,10 +18,10 @@ from pybiz.exc import ApiError
 class FunctionRegistry(object):
     def __init__(self, manifest=None):
         self.thread_local = local()
-        self.decorators = []
         self.proxies = []
         self._manifest = manifest
-        self._bootstrapped = False
+        self._is_bootstrapped = False
+        self._decorators = []
 
     def __call__(self, *args, **kwargs):
         """
@@ -57,10 +57,10 @@ class FunctionRegistry(object):
         return self._manifest
 
     @property
-    def bootstrapped(self):
-        return self._bootstrapped
+    def is_bootstrapped(self):
+        return self._is_bootstrapped
 
-    def bootstrap(self, manifest_filepath: str=None):
+    def bootstrap(self, manifest_filepath: str=None, defer_processing=True):
         """
         Bootstrap the data, business, and service layers, wiring them up,
         according to the settings contained in a service manifest file.
@@ -68,12 +68,12 @@ class FunctionRegistry(object):
         Args:
             - filepath: Path to manifest.yml file
         """
-        if not self.bootstrapped:
-            if self._manifest is None or filepath is not None:
+        if not self.is_bootstrapped:
+            if (self._manifest is None) or (filepath is not None):
                 self._manifest = Manifest(self, filepath=manifest_filepath)
-            if self.manifest is not None:
+            if (self.manifest is not None) and (not defer_processing):
                 self._manifest.process()
-            self._bootstrapped = True
+            self._is_bootstrapped = True
 
     def start(self, *args, **kwargs):
         """
