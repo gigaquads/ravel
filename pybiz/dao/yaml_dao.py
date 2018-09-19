@@ -95,6 +95,9 @@ class YamlDao(Dao):
         """
         os.unlink(_id)
 
+    def create_many(self, records: list) -> list:
+        raise NotImplementedError('not implemented')
+
     def fetch_many(self, _ids: list, fields: dict = None) -> dict:
         raise NotImplementedError('does not make sense to implement')
 

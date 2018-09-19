@@ -135,7 +135,7 @@ class BizObjectMeta(ABCMeta):
         cls.register_dao()
 
         def venusian_callback(scanner, name, bizobj_type):
-            scanner.targetes[name] = bizobj_type
+            scanner.bizobj_classes[name] = bizobj_type
 
         venusian.attach(cls, venusian_callback, category='biz')
 

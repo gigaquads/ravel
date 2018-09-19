@@ -12,7 +12,7 @@ from appyratus.cli import (
 from .base import FunctionRegistry, FunctionDecorator, FunctionProxy
 
 
-class CliApplication(FunctionRegistry):
+class CliFunctionRegistry(FunctionRegistry):
     """
     This FunctionRegistry subclass will create a CliProgram (command-line
     interace) out of the registered functions.

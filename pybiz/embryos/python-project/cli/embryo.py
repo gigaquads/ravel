@@ -10,6 +10,5 @@ class PythonProjectCliEmbryo(Embryo):
     class context_schema(Embryo.Schema):
         """
         The respective Cli schema
-        - `action`, action being performed on the project
         """
-        action = fields.Str()
+        name = fields.Str()

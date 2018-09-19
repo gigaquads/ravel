@@ -14,6 +14,7 @@ class ResourceEmbryo(Embryo):
 
     biz = Relationship(name='pybiz-project/biz', index=0, is_nested=True)
     dao = Relationship(name='pybiz-project/dao', index=0, is_nested=True)
+    svc = Relationship(name='pybiz-project/svc', index=0, is_nested=True)
 
     class context_schema(Embryo.Schema):
         """
@@ -22,10 +23,12 @@ class ResourceEmbryo(Embryo):
         """
         biz = fields.Dict()
         dao = fields.Dict()
+        svc = fields.Dict()
 
     def pre_create(self, context, *args, **kwargs):
         context['biz'] = {'name': context['resource']['name']}
         context['dao'] = {'name': context['resource']['name']}
+        context['svc'] = {'name': context['resource']['name']}
 
     def on_create(self, context, *args, **kwargs):
         manifest = self.fs['/manifest.yml'][0]

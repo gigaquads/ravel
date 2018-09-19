@@ -1,0 +1,20 @@
+---
+- {{ project.context.project.name|snake }}/:
+  - api/:
+    - __init__.py: api-init()
+    - get_service_status.py: get-service-status()
+  - svc/:
+    - __init__.py
+    - cli/:
+      - __init__.py: cli-init()
+      - service.py: cli-obj()
+    - repl/:
+      - __init__.py: repl-init()
+      - service.py: repl-obj()
+    - rpc/:
+      - __init__.py: rpc-init()
+      - service.py: rpc-obj()
+    - web/:
+      - __init__.py: web-init()
+      - service.py: web-obj()
+...

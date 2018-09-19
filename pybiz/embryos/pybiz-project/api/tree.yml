@@ -1,0 +1,8 @@
+---
+- {{ project.context.project.name|snake }}/:
+  - api/:
+    - {{ api.name|snake }}_api.py: apiobj()
+- tests/:
+  - api/:
+    - test_{{ api.name|snake }}_api.py: apitest()
+...

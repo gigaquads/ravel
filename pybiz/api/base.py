@@ -18,10 +18,10 @@ from pybiz.exc import ApiError
 class FunctionRegistry(object):
     def __init__(self, manifest=None):
         self.thread_local = local()
-        self.decorators = []
         self.proxies = []
         self._manifest = manifest
-        self._bootstrapped = False
+        self._is_bootstrapped = False
+        self.decorators = []
 
     def __call__(self, *args, **kwargs):
         """
@@ -57,10 +57,10 @@ class FunctionRegistry(object):
         return self._manifest
 
     @property
-    def bootstrapped(self):
-        return self._bootstrapped
+    def is_bootstrapped(self):
+        return self._is_bootstrapped
 
-    def bootstrap(self, filepath: str=None):
+    def bootstrap(self, manifest_filepath: str=None, defer_processing=False):
         """
         Bootstrap the data, business, and service layers, wiring them up,
         according to the settings contained in a service manifest file.
@@ -68,12 +68,12 @@ class FunctionRegistry(object):
         Args:
             - filepath: Path to manifest.yml file
         """
-        if not self.bootstrapped:
-            if self._manifest is None or filepath is not None:
-                self._manifest = Manifest(self, filepath=filepath)
-            if self.manifest is not None:
+        if not self.is_bootstrapped:
+            if (self._manifest is None) or (filepath is not None):
+                self._manifest = Manifest(self, filepath=manifest_filepath)
+            if (self.manifest is not None) and (not defer_processing):
                 self._manifest.process()
-            self._bootstrapped = True
+            self._is_bootstrapped = True
 
     def start(self, *args, **kwargs):
         """
@@ -134,7 +134,19 @@ class FunctionProxy(object):
         )
 
     def __call__(self, *raw_args, **raw_kwargs):
-        return self.call_target(raw_args, raw_kwargs, pybiz_debug=False)
+        on_request = self.decorator.registry.on_request
+        on_request_retval = on_request(
+            self, self.signature, *raw_args, **raw_kwargs
+        )
+        if on_request_retval:
+            prepared_args, prepared_kwargs = on_request_retval
+        else:
+            prepared_args, prepared_kwargs = raw_args, raw_kwargs
+        result = self.target(*prepared_args, **prepared_kwargs)
+        processed_result = self.decorator.registry.on_response(
+            self, result, *raw_args, **raw_kwargs
+        )
+        return processed_result or result
 
     def __getattr__(self, attr):
         return getattr(self.func, attr)

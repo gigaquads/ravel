@@ -12,7 +12,11 @@ from appyratus.json import JsonEncoder
 from pybiz.api.http import HttpFunctionRegistry, HttpRoute
 
 
-class JsonServer(HttpFunctionRegistry):
+class HttpServerFunctionRegistry(HttpFunctionRegistry):
+    """
+    An HTTP server, using the HTTPServer from the standard library. It sends and
+    receives JSON data.
+    """
 
     class Handler(BaseHTTPRequestHandler):
         def process(self):

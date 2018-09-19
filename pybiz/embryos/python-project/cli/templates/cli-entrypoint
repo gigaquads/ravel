@@ -1,54 +1,20 @@
 #!/usr/bin/env python3
-# encoding=utf8
+# encoding=utf-8
 # vim: set filetype=python
+import os
 
-import argparse
-from appyratus.util.argz import Prog, Subparser, Arg
+from appyratus.cli import safe_main
 
-from {{ name|snake }}.base import {{ name|camel }}
-
-PROG = dict(
-    prog="{{ name|snake }}",
-    name="{{ name|title }}",
-    version="{{ version }}",
-    tagline="{{ tagline }}",
-)
-
-class {{ name|camel }}Prog(Prog):
-"""
-{{ name|title }} Program
-"""
-{% if action %}
-  class {{ name|camel }}{{ action|camel }}Subparser(Subparser):
-      name = '{{ action }}'
-      help = '{{ action_help }}'
-      defaults = dict(action='{{ action }}')
-
-      name_arg = Arg(
-          flags=('-{{ action[0] }}', '--{{ action|snake }}'),
-          type=str,
-          default='',
-          help="The action is {{ action }}.. you should change me"
-      )
-
-    def {{ action|name }}(self):
-        # return {{ name|camel }}.{{ action|snake }}(self.args)
-        print('TODO')
-
-{% endif %}
+from {{ name|snake }}.api import cli
 
 
 def main():
     """
-    Main exectuion for {{ name|title }} binary
+    Main execution for {{ name|title }}
     """
-    prog = {{ name|camel }}Prog(data=PROG)
-    prog.run()
+    cli.bootstrap(manifest_filepath=os.path.join(os.path.dirname(__file__), '../manifest.yml'))
+    cli.start()
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as error:
-        print("ERROR {}".format(error))
-        raise error
+    safe_main(main, debug_level=1)
