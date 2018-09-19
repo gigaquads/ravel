@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# encoding=utf8
+# encoding=utf-8
 # vim: set filetype=python
 from appyratus.cli import safe_main
 

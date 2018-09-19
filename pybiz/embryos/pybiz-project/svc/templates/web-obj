@@ -1,8 +1,8 @@
-from pybiz.api.falcon import FalconWsgiService
-from pybiz.api.falcon.middleware.json import JsonBodyMiddleware
+from pybiz.api.web.falcon import FalconServiceFunctionRegistry
+from pybiz.api.we.falcon.middleware.json import JsonBodyMiddleware
 
 
-class {{ project.context.project.name|camel }}WebService(FalconWsgiService):
+class {{ project.context.project.name|camel }}WebService(FalconServiceFunctionRegistry):
 
     @property
     def middleware(self):

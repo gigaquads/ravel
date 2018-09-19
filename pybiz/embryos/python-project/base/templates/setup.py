@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # encoding=utf-8
-
+# vim: set filetype=python
 import os
 
 from appyratus.util import RealSetup
