@@ -21,7 +21,7 @@ class FunctionRegistry(object):
         self.proxies = []
         self._manifest = manifest
         self._is_bootstrapped = False
-        self._decorators = []
+        self.decorators = []
 
     def __call__(self, *args, **kwargs):
         """
@@ -60,7 +60,7 @@ class FunctionRegistry(object):
     def is_bootstrapped(self):
         return self._is_bootstrapped
 
-    def bootstrap(self, manifest_filepath: str=None, defer_processing=True):
+    def bootstrap(self, manifest_filepath: str=None, defer_processing=False):
         """
         Bootstrap the data, business, and service layers, wiring them up,
         according to the settings contained in a service manifest file.

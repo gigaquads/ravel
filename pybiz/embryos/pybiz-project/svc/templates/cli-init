@@ -1,1 +1,1 @@
-from .service import {{ project.context.project.name|camel }}RpcService
+from .service import {{ project.context.project.name|camel }}CliService
