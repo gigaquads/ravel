@@ -15,9 +15,10 @@ from importlib import import_module
 
 from appyratus.validation.schema import Schema
 from appyratus.decorators import memoized_property
-from appyratus.util import TextTransform#, FuncUtils
+from appyratus.util import TextTransform, FuncUtils
 
-from .base import FunctionRegistry, FunctionDecorator, FunctionProxy
+from ..base import FunctionRegistry, FunctionDecorator, FunctionProxy
+from .grpc_client import GrpcClient
 
 
 class GrpcFunctionRegistry(FunctionRegistry):
@@ -32,38 +33,50 @@ class GrpcFunctionRegistry(FunctionRegistry):
 
     def bootstrap(self, manifest_filepath: Text, build_grpc=False):
         super().bootstrap(manifest_filepath, defer_processing=True)
-        self._pkg_path = self.manifest.package
-        self._pkg = importlib.import_module(self._pkg_path)
-        self._pkg_dir = os.path.dirname(self._pkg.__file__)
-        self._proto_file = os.path.join(self._pkg_dir, 'registry.proto')
-        self._pb2_mod_path = '{}.registry_pb2'.format(self._pkg_path)
-        self._pb2_grpc_mod_path = '{}.registry_pb2_grpc'.format(self._pkg_path)
+        pkg_path = self.manifest.package
+        pkg = importlib.import_module(pkg_path)
+        pkg_dir = os.path.dirname(pkg.__file__)
+        pb2_mod_path = '{}._grpc.registry_pb2'.format(pkg_path)
+        pb2_grpc_mod_path = '{}._grpc.registry_pb2_grpc'.format(pkg_path)
+        grpc_build_dir = os.path.join(pkg_dir, '_grpc')
+        grpc_options = self.manifest.data.get('grpc', {})
+        server_host = grpc_options.get('server-host', '::')
+        client_host = grpc_options.get('client-host', 'localhost')
+        port = grpc_options.get('port', '50051')
 
-        sys.path.append(self._pkg_dir)
+        self._grpc_server_addr = '[{}]:{}'.format(server_host, port)
+        self._grpc_client_addr = '{}:{}'.format(client_host, port)
+        self._protobuf_filepath = os.path.join(pkg_dir, 'registry.proto')
+
+        if os.path.isdir(grpc_build_dir):
+            sys.path.append(grpc_build_dir)
+
         self.manifest.process()
 
-        self.grpc_options = self.manifest.data.get('grpc', {})
-
-        server_host = self.grpc_options.get('server-host', '::')
-        client_host = self.grpc_options.get('client-host', 'localhost')
-        port = self.grpc_options.get('port', '50051')
-
-        self.grpc_server_addr = '[{}]:{}'.format(server_host, port)
-        self.grpc_client_addr = '{}:{}'.format(client_host, port)
 
         if build_grpc:
-            self.grpc_build()
+            with open(os.path.join(grpc_build_dir, '__init__.py'), 'a'):
+                pass
+            self.grpc_build(dest=grpc_build_dir)
 
-        self.pb2 = import_module(self._pb2_mod_path, self._pkg_path)
-        self.pb2_grpc = import_module(self._pb2_grpc_mod_path, self._pkg_path)
+        self.pb2 = import_module(pb2_mod_path, pkg_path)
+        self.pb2_grpc = import_module(pb2_grpc_mod_path, pkg_path)
 
     @property
     def function_proxy_type(self):
         return GrpcFunctionProxy
 
     @memoized_property
-    def client(self):
+    def client(self) -> GrpcClient:
         return GrpcClient(self)
+
+    @property
+    def server_addr(self):
+        return self._grpc_server_addr
+
+    @property
+    def client_addr(self):
+        return self._grpc_client_addr
 
     def on_decorate(self, proxy):
         pass
@@ -73,12 +86,11 @@ class GrpcFunctionRegistry(FunctionRegistry):
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
         """
-        return (('test',), {})
-        data = {
+        arguments = {
             k: getattr(grpc_request, k, None)
             for k in proxy.request_schema.fields
         }
-        args, kwargs = FuncUtils.extract_arguments(signature, data)
+        args, kwargs = FuncUtils.partition_arguments(signature, arguments)
         return (args, kwargs)
 
     def on_response(self, proxy, result, *raw_args, **raw_kwargs):
@@ -98,7 +110,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
         """
         # build the grpc server
         self._grpc_server = grpc.server(ThreadPoolExecutor(max_workers=10))
-        self._grpc_server.add_insecure_port(self.grpc_server_addr)
+        self._grpc_server.add_insecure_port(self.server_addr)
 
         # build the grpc servicer and connect with server
         self._grpc_servicer = self._grpc_servicer_factory()
@@ -141,16 +153,15 @@ class GrpcFunctionRegistry(FunctionRegistry):
         )
         return servicer
 
-    def grpc_build(self):
-        self._grpc_generate_proto_file()
-        self._grpc_compile_proto_file()
+    def grpc_build(self, dest):
+        self._grpc_generate_proto_file(dest)
+        self._grpc_compile_proto_file(dest)
 
-    def _grpc_generate_proto_file(self):
+    def _grpc_generate_proto_file(self, dest):
         """
         TODO: Iterate over function proxies, using request and response schemas
         to generate protobuf message and service types.
         """
-        dest = self._pkg_dir
         chunks = ['syntax = "proto3";']
         func_decls = []
         for proxy in self.proxies:
@@ -164,22 +175,21 @@ class GrpcFunctionRegistry(FunctionRegistry):
 
         source = '\n'.join(chunks)
 
-        if self._proto_file:
+        if self._protobuf_filepath:
             try:
-                with open(self._proto_file, 'w') as fout:
+                with open(self._protobuf_filepath, 'w') as fout:
                     fout.write(source)
             except:
                 traceback.print_exc()
 
         return source
 
-    def _grpc_compile_proto_file(self):
+    def _grpc_compile_proto_file(self, dest):
         """
         Compile the protobuf file resulting from .
         """
-        dest = self._pkg_dir
-        include_dir = os.path.realpath(os.path.dirname(self._proto_file))
-        proto_file = os.path.basename(self._proto_file)
+        include_dir = os.path.realpath(os.path.dirname(self._protobuf_filepath))
+        proto_file = os.path.basename(self._protobuf_filepath)
 
         cmd = re.sub(r'\s+', ' ', '''
             python3 -m grpc_tools.protoc
@@ -245,30 +255,3 @@ class GrpcFunctionProxy(FunctionProxy):
                 resp_msg_type=self._msg_name_prefix + 'Response',
             )
         )
-
-
-class GrpcClient(object):
-    def __init__(self, registry: GrpcFunctionRegistry):
-        assert registry.is_bootstrapped
-        self._registry = registry
-        self._channel = grpc.insecure_channel(registry.grpc_client_addr)
-        self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(self._channel)
-        self._funcs = {p.name: self._build_func(p) for p in registry.proxies}
-
-    def __getattr__(self, func_name: Text):
-        return self._funcs[func_name]
-
-    def _build_func(self, proxy):
-        key = TextTransform.camel(proxy.name)
-        request_type = getattr(self._registry.pb2, '{}Request'.format(key))
-        send = getattr(self._grpc_stub, proxy.name)
-
-        def func(*args, **kwargs):
-            req = request_type(**kwargs)
-            resp = send(req)
-            return {
-                k: getattr(resp, k, None)
-                for k in proxy.response_schema.fields
-            }
-
-        return func
