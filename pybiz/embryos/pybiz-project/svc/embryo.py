@@ -15,9 +15,5 @@ class SvcEmbryo(Embryo):
         """
         # Context Schema
         The respective Svc schema
-
-        ## Fields
-        * `svc`:
-            * `name`: TODO
         """
-        svc = fields.Object(dict(name=fields.Str()))
+        pass
