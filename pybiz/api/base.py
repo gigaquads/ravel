@@ -18,10 +18,10 @@ from pybiz.exc import ApiError
 class FunctionRegistry(object):
     def __init__(self, manifest=None):
         self.thread_local = local()
+        self.decorators = []
         self.proxies = []
         self._manifest = manifest
         self._is_bootstrapped = False
-        self.decorators = []
 
     def __call__(self, *args, **kwargs):
         """
