@@ -1,10 +1,8 @@
 from appyratus.test import mark, BaseTests
 
-from {{ project.context.project.name }}.svc.{{ svc.name|snake }} import {{ svc.name|camel }}
 
-
-class Test{{ svc.name|camel }}Api(BaseTests):
+class Test{{ api.name|camel }}Api(BaseTests):
     """
-    Tests associated with the {{ svc.name|title }} svc object.
+    Tests associated with the {{ api.name|title }} API
     """
     pass
