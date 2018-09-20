@@ -1,6 +1,6 @@
 from appyratus.test import mark, BaseTests
 
-from {{ project.context.project.name }}.dao.{{ dao.name|snake }} import {{ dao.name|camel }}
+from {{ project.context.project.name|snake }}.dao.{{ dao.name|snake }}_dao import {{ dao.name|camel }}Dao
 
 
 class Test{{ dao.name|camel }}Dao(BaseTests):
