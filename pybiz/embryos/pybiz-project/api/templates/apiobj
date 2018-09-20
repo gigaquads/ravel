@@ -1,10 +1,9 @@
-from .api import cli
+from . import cli
 
 
 @cli()
-def create_{{ svc.name|snake }}():
+def create_{{ api.name|snake }}():
     """
-    # {{ svc.name|camel }}
-    The {{ svc.name|title }} API
+    # Create {{ api.name|camel }}
     """
     pass
