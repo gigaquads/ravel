@@ -1,0 +1,6 @@
+---
+- uwsgi/:
+  - entrypoint.py
+  - dev.ini
+  - prod.ini
+...
