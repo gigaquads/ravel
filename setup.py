@@ -12,7 +12,7 @@ setup = RealSetup(
     description='Pybiz',
     author='Gigaquads',
     author_email='notdsk@gmail.com',
-    url='https://github.com/gigaquads/pybiz',
+    url='https://github.com/gigaquads/pybiz.git',
     classifiers=['python3']
 )
 setup.run()
