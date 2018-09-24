@@ -2,7 +2,7 @@
 - {{ project.context.project.name|snake }}/:
   - api/:
     - __init__.py: api-init()
-    - get_service_status.py: get-service-status()
+    - get_service_status_api.py: get-service-status()
   - svc/:
     - __init__.py
     - cli/:

@@ -4,6 +4,8 @@
     - __init__.py
   - dao/:
     - __init__.py
+  - api/:
+    - __init__.py
 - manifest.yml
 
 ...
