@@ -17,5 +17,5 @@ class PythonProjectBaseEmbryo(Embryo):
         """
         name = fields.Str()
         description = fields.Str(allow_none=True, default='')
-        version = fields.Anything(allow_none=True)
+        version = fields.Anything(allow_none=True, default='0b')
         tagline = fields.Str(allow_none=True)

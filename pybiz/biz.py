@@ -40,6 +40,7 @@ from .constants import (
     PATCH_PATH_ANNOTATION,
     PATCH_ANNOTATION,
 )
+from .exc import NotFound
 
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
@@ -490,7 +491,7 @@ class BizObject(
         bizobj = cls(record).clear_dirty()
 
         if not (bizobj and bizobj._id):
-            raise NotFound()
+            raise NotFound(_id)
 
         cls._query_relationships(bizobj, fields['related'])
 
