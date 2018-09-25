@@ -1,7 +1,7 @@
 import os
 
 from appyratus.types import Yaml, File
-from appyratus.util import TextTransform
+from appyratus.util import TextTransform, DictUtils
 
 from pybiz.dao import Dao
 
@@ -86,7 +86,11 @@ class YamlDao(Dao):
             raise Exception('File does not exist, {}'.format(file_path))
         if '_id' not in data:
             data['_id'] = _id
-        Yaml.to_file(file_path=file_path, data=data)
+        # get a copy of the current yaml data and then merge it with what is
+        # being update.  this is important 
+        cur_data = self.fetch(_id)
+        new_data = DictUtils.merge(cur_data, data)
+        Yaml.to_file(file_path=file_path, data=new_data)
         return data
 
     def delete(self, _id) -> None:
