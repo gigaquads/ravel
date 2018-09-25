@@ -91,7 +91,7 @@ class YamlDao(Dao):
         cur_data = self.fetch(_id)
         new_data = DictUtils.merge(cur_data, data)
         Yaml.to_file(file_path=file_path, data=new_data)
-        return data
+        return new_data
 
     def delete(self, _id) -> None:
         """
