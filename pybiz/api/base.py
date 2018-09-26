@@ -7,8 +7,12 @@ import venusian
 import yaml
 
 from collections import defaultdict
+from typing import Dict, Text
 from threading import local
+
 from appyratus.validation import Schema, fields
+from appyratus.decorators import memoized_property
+from appyratus.types import DictAccessor
 
 from pybiz.dao.base import Dao
 from pybiz.manifest import Manifest
@@ -57,6 +61,18 @@ class FunctionRegistry(object):
         return self._manifest
 
     @property
+    def biz_types(self) -> DictAccessor:
+        return self._manifest.biz_types
+
+    @property
+    def dao_types(self) -> DictAccessor:
+        return self._manifest.dao_types
+
+    @property
+    def schemas(self) -> DictAccessor:
+        return self._manifest.schemas
+
+    @property
     def is_bootstrapped(self):
         return self._is_bootstrapped
 
@@ -70,7 +86,7 @@ class FunctionRegistry(object):
         """
         if not self.is_bootstrapped:
             if (self._manifest is None) or (filepath is not None):
-                self._manifest = Manifest(self, filepath=manifest_filepath)
+                self._manifest = Manifest(manifest_filepath)
             if (self.manifest is not None) and (not defer_processing):
                 self._manifest.process()
             self._is_bootstrapped = True

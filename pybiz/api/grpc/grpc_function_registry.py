@@ -51,12 +51,20 @@ class GrpcFunctionRegistry(FunctionRegistry):
         if os.path.isdir(grpc_build_dir):
             sys.path.append(grpc_build_dir)
 
+        def onerror(name):
+            if issubclass(sys.exc_info()[0], ImportError):
+                breakpoint()
+
+        self.manifest.scanner.onerror = onerror
         self.manifest.process()
 
+        def touch(filepath):
+            with open(os.path.join(filepath), 'a'):
+                pass
 
         if build_grpc:
-            with open(os.path.join(grpc_build_dir, '__init__.py'), 'a'):
-                pass
+            os.makedirs(os.path.join(grpc_build_dir), exist_ok=True)
+            touch(os.path.join(grpc_build_dir, '__init__.py'))
             self.grpc_build(dest=grpc_build_dir)
 
         self.pb2 = import_module(pb2_mod_path, pkg_path)

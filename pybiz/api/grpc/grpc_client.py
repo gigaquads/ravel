@@ -21,7 +21,7 @@ class GrpcClient(object):
         request_type = getattr(self._registry.pb2, '{}Request'.format(key))
         send_request = getattr(self._grpc_stub, proxy.name)
 
-        def func(*args, **kwargs):
+        def func(**kwargs):
             # prepare and send the request
             req = request_type(**kwargs)
             resp = send_request(req)

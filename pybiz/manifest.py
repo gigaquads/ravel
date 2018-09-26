@@ -8,6 +8,8 @@ import venusian
 from typing import Text
 
 from appyratus.validation import fields, Schema
+from appyratus.decorators import memoized_property
+from appyratus.types import DictAccessor
 
 from pybiz.dao.base import DaoManager
 from pybiz.exc import ManifestError
@@ -39,9 +41,8 @@ class Manifest(object):
            ApiRegistry via ApiRegistryDecorators.
     """
 
-    def __init__(self, api, filepath=None):
-        self.api = api
-        self.filepath = self._resolve_filepath(api, filepath)
+    def __init__(self, filepath=None):
+        self.filepath = self._resolve_filepath(filepath)
         self.data = self._load_manifest_file()
         self.scanner = venusian.Scanner(
             bizobj_classes={},
@@ -56,21 +57,31 @@ class Manifest(object):
         """
         self._scan()
         self._bind()
+        return self
 
     @property
     def package(self):
         return self.data['package']
 
+    @memoized_property
+    def biz_types(self) -> DictAccessor:
+        return DictAccessor(self.scanner.bizobj_classes)
+
+    @memoized_property
+    def dao_types(self) -> DictAccessor:
+        return DictAccessor(self.scanner.dao_classes)
+
+    @memoized_property
+    def schemas(self) -> DictAccessor:
+        return DictAccessor(self.scanner.schema_classes)
+
     @staticmethod
-    def _resolve_filepath(api: 'FunctionRegistry', filepath: Text):
+    def _resolve_filepath(filepath: Text):
         """
-        Return the filepath to the manifest.yaml file for self.api. Search the
-        Check for env var with the structure: {SERVICE_NAME}_MANIFEST if the
-        filepath argument is None.
+        Return the filepath to the manifest.yaml file. Search the Check for env
+        var with the structure: PYBIZ_MANIFEST if the filepath argument
+        is None.
         """
-        # get manifest file path from environ var. The name of the var is
-        # dynamic. if the service package is called my_service, then the
-        # expected var name will be MY_SERVICE_MANIFEST
         if filepath is None:
             env_var_name = 'PYBIZ_MANIFEST'
             filepath = os.environ.get(env_var_name)
@@ -91,8 +102,14 @@ class Manifest(object):
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Api instance.
         """
+        def onerror(name):
+            import sys, re
+            if issubclass(sys.exc_info()[0], ImportError):
+                if re.match(r'^\w+\._grpc', name):
+                    return
+
         pkg = importlib.import_module(self.data['package'])
-        self.scanner.scan(pkg)
+        self.scanner.scan(pkg, onerror=onerror)
 
     def _bind(self):
         """
