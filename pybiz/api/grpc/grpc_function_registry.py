@@ -49,8 +49,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
         self._grpc_client_addr = '{}:{}'.format(client_host, port)
         self._protobuf_filepath = os.path.join(pkg_dir, 'registry.proto')
 
-        if os.path.isdir(grpc_build_dir):
-            sys.path.append(grpc_build_dir)
+        sys.path.append(grpc_build_dir)
 
         def onerror(name):
             if issubclass(sys.exc_info()[0], ImportError):
@@ -69,6 +68,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
                 pass
 
         if build_grpc:
+            sys.path.append(grpc_build_dir)
             os.makedirs(os.path.join(grpc_build_dir), exist_ok=True)
             touch(os.path.join(grpc_build_dir, '__init__.py'))
             self.grpc_build(dest=grpc_build_dir)

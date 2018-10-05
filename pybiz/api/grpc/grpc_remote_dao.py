@@ -6,7 +6,7 @@ from appyratus.validation.fields import Str
 from appyratus.json import JsonEncoder
 
 
-def remote_dao_endpoint_factory(rpc: 'GrpcFunctionRegistry')
+def remote_dao_endpoint_factory(rpc: 'GrpcFunctionRegistry'):
     """
     Build and return the endpoint function used by gRPC clients to execute
     method on Dao objects remotely. This factory adds the dynamically defined

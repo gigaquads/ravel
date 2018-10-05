@@ -93,15 +93,16 @@ class HttpServerFunctionRegistry(HttpFunctionRegistry):
         super().__init__(*args, **kwargs)
         self.handler = type('Handler', (self.Handler, ), {'service': self})
         self.json_encode = json_encode or JsonEncoder().encode
-        self.server = HTTPServer((host, port), self.handler)
         self.host = host
         self.port = port
+        self.server = None
 
     def start(self, *args, **kwargs):
         print('Listening on http://{}:{}'.format(self.host, self.port))
+        self.server = HTTPServer((self.host, self.port), self.handler)
         self.server.serve_forever()
 
-    def on_request(self, signature, arguments: Dict) -> dict:
+    def on_request(self, proxy, signature, arguments: Dict) -> dict:
         args, kwargs = [], {}
 
         for k, param in signature.parameters.items():
