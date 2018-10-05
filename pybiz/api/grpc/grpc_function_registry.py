@@ -19,6 +19,7 @@ from appyratus.util import TextTransform, FuncUtils
 
 from ..base import FunctionRegistry, FunctionDecorator, FunctionProxy
 from .grpc_client import GrpcClient
+from .grpc_remote_dao import remote_dao_endpoint_factory
 
 
 class GrpcFunctionRegistry(FunctionRegistry):
@@ -54,6 +55,11 @@ class GrpcFunctionRegistry(FunctionRegistry):
         def onerror(name):
             if issubclass(sys.exc_info()[0], ImportError):
                 breakpoint()
+
+        # dynamically create an RPC endpoint (GrpcFunctionProxy) that defines
+        # the remote Dao interface used by gRPC clients. Must be done before
+        # the manifest.process method is called.
+        self._remote_dao_endpoint = remote_dao_endpoint_factory(self)
 
         self.manifest.scanner.onerror = onerror
         self.manifest.process()
