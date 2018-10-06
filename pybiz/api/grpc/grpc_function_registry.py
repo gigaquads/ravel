@@ -2,6 +2,7 @@ import os
 import sys
 import traceback
 import importlib
+import socket
 import inspect
 import subprocess
 import time
@@ -16,6 +17,7 @@ from importlib import import_module
 from appyratus.validation.schema import Schema
 from appyratus.decorators import memoized_property
 from appyratus.util import TextTransform, FuncUtils
+from appyratus.json import JsonEncoder
 
 from ..base import FunctionRegistry, FunctionDecorator, FunctionProxy
 from .grpc_client import GrpcClient
@@ -29,31 +31,34 @@ class GrpcFunctionRegistry(FunctionRegistry):
 
     def __init__(self):
         super().__init__()
+        self._json_encoder = JsonEncoder()
         self._grpc_server = None
         self._grpc_servicer = None
 
     def bootstrap(self, manifest_filepath: Text, build_grpc=False):
         super().bootstrap(manifest_filepath, defer_processing=True)
+
         pkg_path = self.manifest.package
         pkg = importlib.import_module(pkg_path)
         pkg_dir = os.path.dirname(pkg.__file__)
-        pb2_mod_path = '{}._grpc.registry_pb2'.format(pkg_path)
-        pb2_grpc_mod_path = '{}._grpc.registry_pb2_grpc'.format(pkg_path)
-        grpc_build_dir = os.path.join(pkg_dir, '_grpc')
+        pb2_mod_path = '{}.grpc.registry_pb2'.format(pkg_path)
+        pb2_grpc_mod_path = '{}.grpc.registry_pb2_grpc'.format(pkg_path)
+        grpc_build_dir = os.path.join(pkg_dir, 'grpc')
         grpc_options = self.manifest.data.get('grpc', {})
-        server_host = grpc_options.get('server-host', '::')
-        client_host = grpc_options.get('client-host', 'localhost')
-        port = grpc_options.get('port', '50051')
+        client_host = grpc_options.get('host', 'localhost')
+        server_host = grpc_options.get('server_host', client_host)
+        port = str(grpc_options.get('port', '50051'))
 
-        self._grpc_server_addr = '[{}]:{}'.format(server_host, port)
+        self._grpc_server_addr = '{}:{}'.format(server_host, port)
         self._grpc_client_addr = '{}:{}'.format(client_host, port)
-        self._protobuf_filepath = os.path.join(pkg_dir, 'registry.proto')
+        self._protobuf_filepath = os.path.join(grpc_build_dir, 'registry.proto')
 
+        os.makedirs(os.path.join(grpc_build_dir), exist_ok=True)
         sys.path.append(grpc_build_dir)
 
         def onerror(name):
             if issubclass(sys.exc_info()[0], ImportError):
-                breakpoint()
+                pass
 
         # dynamically create an RPC endpoint (GrpcFunctionProxy) that defines
         # the remote Dao interface used by gRPC clients. Must be done before
@@ -69,7 +74,6 @@ class GrpcFunctionRegistry(FunctionRegistry):
 
         if build_grpc:
             sys.path.append(grpc_build_dir)
-            os.makedirs(os.path.join(grpc_build_dir), exist_ok=True)
             touch(os.path.join(grpc_build_dir, '__init__.py'))
             self.grpc_build(dest=grpc_build_dir)
 
@@ -100,6 +104,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
         """
+        print('>>> Calling "{}" RPC function...'.format(proxy.name))
         arguments = {
             k: getattr(grpc_request, k, None)
             for k in proxy.request_schema.fields
@@ -114,7 +119,8 @@ class GrpcFunctionRegistry(FunctionRegistry):
         ))
         resp = response_type()
         if result:
-            for k, v in result.items():
+            dumped_result = proxy.response_schema.dump(result, strict=True).data
+            for k, v in dumped_result.items():
                 setattr(resp, k, v)
         return resp
 
@@ -122,6 +128,12 @@ class GrpcFunctionRegistry(FunctionRegistry):
         """
         Start the RPC client or server.
         """
+        if self._is_port_in_use():
+            print('>>> {} already in use. '
+                  'Exiting...'.format(self._grpc_server_addr)
+            )
+            exit(-1)
+
         # build the grpc server
         self._grpc_server = grpc.server(ThreadPoolExecutor(max_workers=10))
         self._grpc_server.add_insecure_port(self.server_addr)
@@ -136,16 +148,31 @@ class GrpcFunctionRegistry(FunctionRegistry):
         self._grpc_server.start()
 
         # enter spin lock
-        print('\n>>> gRPC server is running. Press ctrl+c to stop.')
+        print('>>> gRPC server is running. Press ctrl+c to stop.')
+        print('>>> Listening on {}...'.format(self._grpc_server_addr))
         try:
             while True:
                 time.sleep(32)
         except KeyboardInterrupt:
             print()
             if self._grpc_server is not None:
-                print('>>> stopping grpc server...')
+                print('>>> Stopping grpc server...')
                 self._grpc_server.stop(grace=5)
-            print('>>> groodbye!')
+            print('>>> Groodbye!')
+
+    def _is_port_in_use(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            host, port_str = self._grpc_client_addr.split(':')
+            sock.bind((host, int(port_str)))
+            return False
+        except OSError as err:
+            if err.errno == 48:
+                return True
+            else:
+                raise err
+        finally:
+            sock.close()
 
     def _grpc_servicer_factory(self):
         servicer_type_name = 'GrpcRegistryServicer'

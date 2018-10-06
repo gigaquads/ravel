@@ -1,5 +1,7 @@
 import inspect
 
+from pprint import pprint
+
 from IPython.terminal.embed import InteractiveShellEmbed
 from appyratus.cli import (
     CliProgram,
@@ -24,11 +26,13 @@ class CliFunctionRegistry(FunctionRegistry):
         version=None,
         tagline=None,
         defaults=None,
+        echo=False,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
         self._commands = []
+        self._echo = echo
         self._cli_program = None
         self._cli_program_kwargs = {
             'name': name,
@@ -66,6 +70,11 @@ class CliFunctionRegistry(FunctionRegistry):
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
                 kwargs[k] = value
         return (args, kwargs)
+
+    def on_response(self, proxy, result, *args, **kwargs):
+        if self._echo:
+            pprint(result)
+        return super().on_response(proxy, result, *args, **kwargs)
 
     def start(self, *args, **kwargs):
         """

@@ -93,9 +93,9 @@ class Manifest(object):
 
     def _load_manifest_file(self):
         with open(self.filepath) as manifest_file:
-            schema = ManifestSchema()
-            manifest = yaml.load(manifest_file)
-            return schema.load(manifest, strict=True).data
+            schema = ManifestSchema(allow_additional=True)
+            manifest_dict = yaml.load(manifest_file)
+            return schema.load(manifest_dict, strict=True).data
 
     def _scan(self):
         """
