@@ -11,10 +11,12 @@ import re
 import grpc
 
 from concurrent.futures import ThreadPoolExecutor
-from typing import Text, List
+from typing import Text, List, Dict, Type
 from importlib import import_module
 
 from appyratus.validation.schema import Schema
+from appyratus.validation.fields import Field
+from appyratus.validation import fields
 from appyratus.decorators import memoized_property
 from appyratus.util import TextTransform, FuncUtils
 from appyratus.json import JsonEncoder
@@ -29,8 +31,8 @@ class GrpcFunctionRegistry(FunctionRegistry):
     Grpc server and client interface.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, middleware=None):
+        super().__init__(middleware=middleware)
         self._json_encoder = JsonEncoder()
         self._grpc_server = None
         self._grpc_servicer = None
@@ -104,6 +106,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
         """
+        # TODO: Implement verbosity levels
         print('>>> Calling "{}" RPC function...'.format(proxy.name))
         arguments = {
             k: getattr(grpc_request, k, None)
@@ -124,7 +127,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
                 setattr(resp, k, v)
         return resp
 
-    def start(self):
+    def start(self, initializer=None):
         """
         Start the RPC client or server.
         """
@@ -134,8 +137,13 @@ class GrpcFunctionRegistry(FunctionRegistry):
             )
             exit(-1)
 
+        executor = ThreadPoolExecutor(
+            max_workers=None,  # TODO: put this value in manifest
+            initializer=initializer,
+        )
+
         # build the grpc server
-        self._grpc_server = grpc.server(ThreadPoolExecutor(max_workers=10))
+        self._grpc_server = grpc.server(executor)
         self._grpc_server.add_insecure_port(self.server_addr)
 
         # build the grpc servicer and connect with server
@@ -200,8 +208,8 @@ class GrpcFunctionRegistry(FunctionRegistry):
 
     def _grpc_generate_proto_file(self, dest):
         """
-        TODO: Iterate over function proxies, using request and response schemas
-        to generate protobuf message and service types.
+        Iterate over function proxies, using request and response schemas to
+        generate protobuf message and service types.
         """
         chunks = ['syntax = "proto3";']
         func_decls = []
@@ -217,11 +225,8 @@ class GrpcFunctionRegistry(FunctionRegistry):
         source = '\n'.join(chunks)
 
         if self._protobuf_filepath:
-            try:
-                with open(self._protobuf_filepath, 'w') as fout:
-                    fout.write(source)
-            except:
-                traceback.print_exc()
+            with open(self._protobuf_filepath, 'w') as fout:
+                fout.write(source)
 
         return source
 
@@ -266,6 +271,7 @@ class GrpcFunctionProxy(FunctionProxy):
 
         super().__init__(func, decorator)
 
+        self.protogen = ProtoCodeGenerator()
         self._msg_name_prefix = decorator.params.get('message_name_prefix')
         if self._msg_name_prefix is None:
             self._msg_name_prefix = TextTransform.camel(self.name)
@@ -282,8 +288,8 @@ class GrpcFunctionProxy(FunctionProxy):
 
     def generate_protobuf_message_types(self) -> List[Text]:
         return [
-            self.request_schema.to_protobuf_message_declaration(),
-            self.response_schema.to_protobuf_message_declaration(),
+            self.protogen.emit_message_type(self.request_schema),
+            self.protogen.emit_message_type(self.response_schema),
         ]
 
     def generate_protobuf_function_declaration(self) -> Text:
@@ -295,4 +301,101 @@ class GrpcFunctionProxy(FunctionProxy):
                 req_msg_type=self._msg_name_prefix + 'Request',
                 resp_msg_type=self._msg_name_prefix + 'Response',
             )
+        )
+
+
+class FieldAdapter(object):
+    def __init__(self):
+        self.protogen = None
+
+    def emit_field_declaration(self, field, field_no):
+        raise NotImplementedError()
+
+    def bind(self, protogen:'ProtoCodeGenerator'):
+        self.protogen = protogen
+
+    def emit(self, field, field_no, name=None, is_required=None, is_repeated=False):
+        type_name = self.protogen.adapters[field.__class__].type_name
+        if is_required is None:
+            is_required = field.required or field.load_required
+        if name is None:
+            name = (field.dump_to or field.name)
+
+        assert is_required is not None
+        assert name is not None
+
+        return '{required}{repeated} {field_type} {field_name} = {field_no}'.format(
+            required=' required' if is_required else '',
+            repeated=' repeated' if is_repeated else '',
+            field_type=type_name,
+            field_name=name,
+            field_no=field_no,
+        )
+
+
+class ScalarFieldAdapter(FieldAdapter):
+    def __init__(self, type_name):
+        self.type_name = type_name
+
+    def emit_field_declaration(self, field, field_no):
+        return self.emit(field, field_no)
+
+
+class ArrayFieldAdapter(FieldAdapter):
+    def __init__(self):
+        pass
+
+    def emit_field_declaration(self, field, field_no):
+        return self.emit(
+            field.nested,
+            field_no,
+            name=field.name,
+            is_required=field.required,
+            is_repeated=True,
+        )
+
+
+class ProtoCodeGenerator(object):
+    def __init__(self, adapters : Dict[Type[Field], FieldAdapter] = None):
+        # default field adapters:
+        self.adapters = {
+            fields.Str: ScalarFieldAdapter('string'),
+            fields.CompositeStr: ScalarFieldAdapter('string'),
+            fields.Email: ScalarFieldAdapter('string'),
+            fields.Uuid: ScalarFieldAdapter('string'),
+            fields.Bool: ScalarFieldAdapter('bool'),
+            fields.Int: ScalarFieldAdapter('sint64'),
+            fields.Float: ScalarFieldAdapter('double'),
+            fields.DateTime: ScalarFieldAdapter('uint64'),
+            fields.List: ArrayFieldAdapter(),
+            fields.Array: ArrayFieldAdapter(),
+        }
+        # upsert into default adapters dict from the `adapters` kwarg
+        for field_type, adapter in (adapters or {}).items():
+            self.adapters[field_type] = adapter
+        # associate the generator with each adapter.
+        for adapter in self.adapters.values():
+            adapter.bind(self)
+
+    def emit_message_type(self, schema_type, type_name : Text = None) -> Text:
+        type_name = type_name or schema_type.__class__.__name__
+        field_decls = []
+
+        for i, f in enumerate(schema_type.fields.values()):
+            # compute the proto "field number"
+            if f.rank is not None:
+                field_no = max(f.rank, 1)
+            else:
+                field_no = i + 1
+
+            adapter = self.adapters.get(f.__class__)
+            if not adapter:
+                raise Exception('no adapter for type {}'.format(f.__class__))
+
+            field_decl = adapter.emit_field_declaration(f, field_no)
+            field_decls.append('  ' + field_decl + ';')
+
+        return 'message {type_name} {{\n{field_lines}\n}}'.format(
+            type_name=type_name,
+            field_lines='\n'.join(field_decls),
         )

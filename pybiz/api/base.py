@@ -20,12 +20,13 @@ from pybiz.exc import ApiError
 
 
 class FunctionRegistry(object):
-    def __init__(self, manifest=None):
+    def __init__(self, manifest=None, middleware=None):
         self.thread_local = local()
         self.decorators = []
         self.proxies = []
         self._manifest = manifest
         self._is_bootstrapped = False
+        self._middleware = middleware or []
 
     def __call__(self, *args, **kwargs):
         """
@@ -59,6 +60,10 @@ class FunctionRegistry(object):
     @property
     def manifest(self):
         return self._manifest
+
+    @property
+    def middleware(self):
+        return self._middleware
 
     @property
     def biz_types(self) -> DictAccessor:
@@ -134,6 +139,17 @@ class FunctionDecorator(object):
         return proxy
 
 
+class Middleware(object):
+    def pre_request(self, args, kwargs):
+        pass
+
+    def on_request(self, args, kwargs, prepared_args, prepared_kwargs):
+        pass
+
+    def post_request(self, args, kwargs, prepared_args, prepared_kwargs, result):
+        pass
+
+
 class FunctionProxy(object):
     def __init__(self, func, decorator):
         self.func = func
@@ -150,22 +166,40 @@ class FunctionProxy(object):
         )
 
     def __call__(self, *raw_args, **raw_kwargs):
-        on_request = self.decorator.registry.on_request
-        on_request_retval = on_request(
+        # apply middleware's pre_request methods
+        for m in self.registry.middleware:
+            m.pre_request(raw_args, raw_kwargs)
+        # apply the registry's global on_request method to transform the raw
+        # args and kwargs into the format expected by the proxy target callable.
+        on_request_retval = self.decorator.registry.on_request(
             self, self.signature, *raw_args, **raw_kwargs
         )
+        # apply pre-request middleware
         if on_request_retval:
             prepared_args, prepared_kwargs = on_request_retval
         else:
             prepared_args, prepared_kwargs = raw_args, raw_kwargs
+        # apply middleware's on_request methods
+        for m in self.registry.middleware:
+            m.on_request(raw_args, raw_kwargs, prepared_args, prepared_kwargs)
         result = self.target(*prepared_args, **prepared_kwargs)
         processed_result = self.decorator.registry.on_response(
             self, result, *raw_args, **raw_kwargs
         )
+        # apply middleware's post_request methods
+        for m in self.registry.middleware:
+            m.post_request(
+                raw_args, raw_kwargs, prepared_args, prepared_kwargs, result
+            )
+        # apply post-response middleware
         return processed_result or result
 
     def __getattr__(self, attr):
         return getattr(self.func, attr)
+
+    @property
+    def registry(self):
+        return self.decorator.registry
 
     @property
     def name(self):

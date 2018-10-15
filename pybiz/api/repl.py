@@ -35,7 +35,9 @@ class ReplFunctionRegistry(FunctionRegistry):
         self.shell.mainloop(local_ns=self._build_shell_namespace())
 
     def _build_shell_namespace(self):
-        ns = {'repl': self}
+        ns = {}
+        ns['repl'] = self
+        ns.update(self.biz_types.to_dict())
         ns.update({p.name: p for p in self.proxies})
         return ns
 

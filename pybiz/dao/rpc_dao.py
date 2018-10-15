@@ -4,6 +4,8 @@ from typing import Dict, List, Text
 
 from appyratus.json import JsonEncoder
 
+from pybiz.predicate import Predicate
+
 from .base import Dao
 
 
@@ -82,4 +84,5 @@ class RpcDao(Dao):
         return self._send_rpc_request('delete_many', args)
 
     def query(self, predicate, **kwargs):
-        raise NotImplementedError('TODO')
+        args = {'predicate': Predicate.serialize(predicate)}
+        return self._send_rpc_request('query', args)

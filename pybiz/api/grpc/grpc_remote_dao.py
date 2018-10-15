@@ -40,9 +40,11 @@ def remote_dao_endpoint_factory(rpc: 'GrpcFunctionRegistry'):
                 encoder = JsonEncoder()
                 return {'data': encoder.encode(data)}
             else:
-                raise Exception('unrecognized DAO method name')
+                raise Exception(
+                    'unrecognized DAO method name "{}"'.format(method_name)
+                )
         else:
-            raise Exception('unrecognized DAO type')
+            raise Exception('unrecognized DAO type "{}"'.format(dao_type))
 
     return apply_dao_method
 
