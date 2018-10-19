@@ -7,11 +7,14 @@ import inspect
 import subprocess
 import time
 import re
+import pickle
+import codecs
 
 import grpc
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Text, List, Dict, Type
+from collections import deque
 from importlib import import_module
 
 from appyratus.validation.schema import Schema
@@ -124,7 +127,12 @@ class GrpcFunctionRegistry(FunctionRegistry):
         if result:
             dumped_result = proxy.response_schema.dump(result, strict=True).data
             for k, v in dumped_result.items():
-                setattr(resp, k, v)
+                field = proxy.response_schema.fields[k]
+                if isinstance(field, fields.Dict):
+                    v_bytes = codecs.encode(pickle.dumps(v), 'base64')
+                    setattr(resp, k, v_bytes)
+                else:
+                    setattr(resp, k, v)
         return resp
 
     def start(self, initializer=None):
@@ -314,22 +322,12 @@ class FieldAdapter(object):
     def bind(self, protogen:'ProtoCodeGenerator'):
         self.protogen = protogen
 
-    def emit(self, field, field_no, name=None, is_required=None, is_repeated=False):
-        type_name = self.protogen.adapters[field.__class__].type_name
-        if is_required is None:
-            is_required = field.required or field.load_required
-        if name is None:
-            name = (field.dump_to or field.name)
-
-        assert is_required is not None
-        assert name is not None
-
-        return '{required}{repeated} {field_type} {field_name} = {field_no}'.format(
-            required=' required' if is_required else '',
+    def emit(self, field_type, field_no, field_name, is_repeated=False):
+        return '{repeated} {field_type} {field_name}{field_no}'.format(
             repeated=' repeated' if is_repeated else '',
-            field_type=type_name,
-            field_name=name,
-            field_no=field_no,
+            field_type=field_type,
+            field_name=field_name,
+            field_no=' = {}'.format(field_no) if field_no < 16 else '',
         )
 
 
@@ -338,37 +336,67 @@ class ScalarFieldAdapter(FieldAdapter):
         self.type_name = type_name
 
     def emit_field_declaration(self, field, field_no):
-        return self.emit(field, field_no)
+        field_type = self.protogen.get_adapter(field).type_name
+        return self.emit(
+            field_type=field_type,
+            field_no=field_no,
+            field_name=field.dump_to or field.name
+        )
 
 
 class ArrayFieldAdapter(FieldAdapter):
-    def __init__(self):
-        pass
+    def emit_field_declaration(self, field, field_no):
+        if isinstance(field.nested, Field):
+            adapter = self.protogen.get_adapter(field.nested)
+            nested_field_type = adapter.type_name
+        else:
+            assert isinstance(field.nested, Schema)
+            nested_field_type = field.nested.__class__.__name__
+        return self.emit(
+            field_type=nested_field_type,
+            field_no=field_no,
+            field_name=field.dump_to or field.name,
+            is_repeated=True,
+        )
 
+
+class NestedFieldAdapter(FieldAdapter):
     def emit_field_declaration(self, field, field_no):
         return self.emit(
-            field.nested,
-            field_no,
-            name=field.name,
-            is_required=field.required,
-            is_repeated=True,
+            field_type=field.nested.__class__.__name__,
+            field_no=field_no,
+            field_name=field.dump_to or field.name,
+        )
+
+
+class EnumFieldAdapter(FieldAdapter):
+    def emit_field_declaration(self, field, field_no):
+        nested_field_type = self.protogen.get_adapter(field.nested).type_name
+        return self.emit(
+            field_type=nested_field_type,
+            field_no=field_no,
+            field_name=field.dump_to or field.name,
         )
 
 
 class ProtoCodeGenerator(object):
     def __init__(self, adapters : Dict[Type[Field], FieldAdapter] = None):
-        # default field adapters:
+        # default field adapters indexed by appyratus schema Field types
         self.adapters = {
             fields.Str: ScalarFieldAdapter('string'),
             fields.CompositeStr: ScalarFieldAdapter('string'),
             fields.Email: ScalarFieldAdapter('string'),
             fields.Uuid: ScalarFieldAdapter('string'),
+            fields.Regexp: ScalarFieldAdapter('string'),
             fields.Bool: ScalarFieldAdapter('bool'),
-            fields.Int: ScalarFieldAdapter('sint64'),
             fields.Float: ScalarFieldAdapter('double'),
+            fields.Int: ScalarFieldAdapter('sint64'),
             fields.DateTime: ScalarFieldAdapter('uint64'),
+            fields.Dict: ScalarFieldAdapter('bytes'),
             fields.List: ArrayFieldAdapter(),
             fields.Array: ArrayFieldAdapter(),
+            fields.Object: NestedFieldAdapter(),
+            fields.Enum: EnumFieldAdapter(),
         }
         # upsert into default adapters dict from the `adapters` kwarg
         for field_type, adapter in (adapters or {}).items():
@@ -377,25 +405,51 @@ class ProtoCodeGenerator(object):
         for adapter in self.adapters.values():
             adapter.bind(self)
 
-    def emit_message_type(self, schema_type, type_name : Text = None) -> Text:
-        type_name = type_name or schema_type.__class__.__name__
+    def get_adapter(self, field) -> FieldAdapter:
+        return self.adapters[field.__class__]
+
+    def emit_message_type(self, schema, type_name : Text = None, depth=1) -> Text:
+        type_name = type_name or schema.__class__.__name__
+        field_no2field = {}
+        prepared_data = []
         field_decls = []
 
-        for i, f in enumerate(schema_type.fields.values()):
-            # compute the proto "field number"
-            if f.rank is not None:
-                field_no = max(f.rank, 1)
-            else:
-                field_no = i + 1
+        for f in schema.fields.values():
+            # compute the "field number"
+            field_no = f.meta.get('field_no', sys.maxsize)
 
+            # get the field adapter
             adapter = self.adapters.get(f.__class__)
             if not adapter:
                 raise Exception('no adapter for type {}'.format(f.__class__))
 
-            field_decl = adapter.emit_field_declaration(f, field_no)
-            field_decls.append('  ' + field_decl + ';')
+            # store in intermediate data structure for purpose of sorting by
+            # field numbers
+            prepared_data.append((field_no, f, adapter))
 
-        return 'message {type_name} {{\n{field_lines}\n}}'.format(
-            type_name=type_name,
-            field_lines='\n'.join(field_decls),
+        # emit field declarations in order of field number ASC
+        sorted_data = sorted(prepared_data, key=lambda x: x[0])
+        for (field_no, field, adapter) in sorted_data:
+            field_decl = adapter.emit_field_declaration(field, field_no)
+            field_decls.append(('  ' * depth) + field_decl + ';')
+
+        nested_message_types = [
+            self.emit_message_type(nested_schema, depth=depth+1)
+            for nested_schema in schema.get_nested_schemas()
+        ]
+
+        MESSAGE_TYPE_FSTR = (
+            (('   ' * (depth - 1)) + '''message {type_name} ''') + \
+            ('''{{\n{nested_message_types}{field_lines}\n''') + \
+            (('   ' * (depth - 1)) + '''}}''')
         )
+
+        # emit the message declaration "message Foo { ... }"
+        return MESSAGE_TYPE_FSTR.format(
+            type_name=type_name,
+            nested_message_types=(
+                '\n'.join(nested_message_types) + '\n' if nested_message_types
+                else ''
+            ),
+            field_lines='\n'.join(field_decls),
+        ).rstrip()

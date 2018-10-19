@@ -20,12 +20,12 @@ class SqlalchemyDao(Dao):
         raise NotImplementedError()
 
     @classmethod
-    def factory(cls, name, url: Text, meta: MetaData = None, echo=False):
+    def factory(cls, name, url: Text, meta: sa.MetaData = None, echo=False):
         derived_type = type(name, (SqlalchemyDao, ), {})
         derived_type.local = threading.local()
         derived_type.local.url = url
         derived_type.local.echo = echo
-        derived_type.local.metadata = meta or MetaData()
+        derived_type.local.metadata = meta or sa.MetaData()
         derived_type.local.engine = None
         derived_type.local.connection = None
 

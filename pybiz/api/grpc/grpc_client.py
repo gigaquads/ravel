@@ -1,8 +1,12 @@
+import codecs
+import pickle
+
 import grpc
 
 from typing import Text
 
 from appyratus.util import TextTransform
+from appyratus.validation import fields
 
 
 class GrpcClient(object):
@@ -25,10 +29,18 @@ class GrpcClient(object):
             # prepare and send the request
             req = request_type(**kwargs)
             resp = send_request(req)
-            # translate the response protobuf into a python dict
-            return {
-                k: getattr(resp, k, None)
-                for k in proxy.response_schema.fields
-            }
+            # translate the native proto response message to a plain dict
+            result = {}
+            for field_name, field in proxy.response_schema.fields.items():
+                value = getattr(resp, k, None)
+                if value is None:
+                    result[field_name] = None
+                elif isinstance(field, fields.Dict):
+                    decoded_value = codecs.decode(value, 'base64')
+                    result[field_name] = pickle.loads(decoded_value)
+                else:
+                    result[field_name] = value
+            # return the response dict
+            return result
 
         return func
