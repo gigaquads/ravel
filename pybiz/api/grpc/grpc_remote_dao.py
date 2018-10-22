@@ -14,12 +14,12 @@ def remote_dao_endpoint_factory(rpc: 'GrpcFunctionRegistry'):
     """
     @rpc(
         request={
-            'dao_type': Str(),
-            'method_name': Str(),
-            'args_json': Str(),
+            'dao_type': Str(meta={'field_no': 1}),
+            'method_name': Str(meta={'field_no': 2}),
+            'args_json': Str(meta={'field_no': 3}),
         },
         response={
-            'data': Str(),
+            'data': Str(meta={'field_no': 1}),
         }
     )
     def apply_dao_method(dao_type: Text, method_name: Text, args_json: Text):

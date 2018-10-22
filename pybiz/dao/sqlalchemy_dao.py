@@ -22,10 +22,10 @@ class SqlalchemyDao(Dao):
     @classmethod
     def factory(cls, name, url: Text, meta: sa.MetaData = None, echo=False):
         derived_type = type(name, (SqlalchemyDao, ), {})
+        derived_type.url = url
+        derived_type.echo = echo
+        derived_type.metadata = meta or sa.MetaData()
         derived_type.local = threading.local()
-        derived_type.local.url = url
-        derived_type.local.echo = echo
-        derived_type.local.metadata = meta or sa.MetaData()
         derived_type.local.engine = None
         derived_type.local.connection = None
 
@@ -37,11 +37,11 @@ class SqlalchemyDao(Dao):
 
     @classmethod
     def create_engine(cls):
-        cls.local.engine = sa.create_engine(cls.local.url, echo=cls.local.echo)
+        cls.local.engine = sa.create_engine(cls.url, echo=cls.echo)
 
     @classmethod
     def create_tables(cls):
-        cls.local.metadata.create_all(cls.local.engine)
+        cls.get_metadata().create_all(cls.local.engine)
 
     @classmethod
     def connect(cls):
@@ -66,7 +66,7 @@ class SqlalchemyDao(Dao):
 
     @classmethod
     def get_metadata(cls):
-        return cls.local.metadata
+        return cls.metadata
 
     @classmethod
     def get_table(cls):

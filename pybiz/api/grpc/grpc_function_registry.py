@@ -17,6 +17,8 @@ from typing import Text, List, Dict, Type
 from collections import deque
 from importlib import import_module
 
+from google.protobuf.message import Message
+
 from appyratus.validation.schema import Schema
 from appyratus.validation.fields import Field
 from appyratus.validation import fields
@@ -119,6 +121,13 @@ class GrpcFunctionRegistry(FunctionRegistry):
         return (args, kwargs)
 
     def on_response(self, proxy, result, *raw_args, **raw_kwargs):
+        def recurseively_bind(target, data):
+            for k, v in data.items():
+                if isinstance(v, Message):
+                    recurseively_bind(getattr(target, k), v)
+                else:
+                    setattr(target, k, v)
+
         # bind the returned dict values to the response protobuf message
         response_type = getattr(self.pb2, '{}Response'.format(
             TextTransform.camel(proxy.name)
@@ -131,11 +140,13 @@ class GrpcFunctionRegistry(FunctionRegistry):
                 if isinstance(field, fields.Dict):
                     v_bytes = codecs.encode(pickle.dumps(v), 'base64')
                     setattr(resp, k, v_bytes)
+                elif isinstance(getattr(resp, k), Message):
+                    recurseively_bind(getattr(resp, k), v)
                 else:
                     setattr(resp, k, v)
         return resp
 
-    def start(self, initializer=None):
+    def start(self, initializer=None, grace=2):
         """
         Start the RPC client or server.
         """
@@ -173,7 +184,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
             print()
             if self._grpc_server is not None:
                 print('>>> Stopping grpc server...')
-                self._grpc_server.stop(grace=5)
+                self._grpc_server.stop(grace=grace)
             print('>>> Groodbye!')
 
     def _is_port_in_use(self):

@@ -15,7 +15,9 @@ class GrpcClient(object):
         self._registry = registry
         self._channel = grpc.insecure_channel(registry.client_addr)
         self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(self._channel)
-        self._funcs = {p.name: self._build_func(p) for p in registry.proxies}
+        self._funcs = {
+            p.name: self._build_func(p)
+            for p in registry.proxies}
 
     def __getattr__(self, func_name: Text):
         return self._funcs[func_name]
@@ -32,7 +34,7 @@ class GrpcClient(object):
             # translate the native proto response message to a plain dict
             result = {}
             for field_name, field in proxy.response_schema.fields.items():
-                value = getattr(resp, k, None)
+                value = getattr(resp, field_name, None)
                 if value is None:
                     result[field_name] = None
                 elif isinstance(field, fields.Dict):
