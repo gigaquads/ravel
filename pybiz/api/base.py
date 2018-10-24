@@ -96,6 +96,19 @@ class FunctionRegistry(object):
                 self._manifest.process()
             self._is_bootstrapped = True
 
+    def dump(self):
+        """
+        Return a Python dict that can be serialized to JSON, represents the
+        contents of the Registry. The purpose of this method is to export
+        metadata about this registry to be consumed by some other service or
+        external process without said service or process needing to import this
+        Registry directly.
+        """
+        return {
+            'targets': {p.dump() for p in self.proxies}
+        }
+
+
     def start(self, *args, **kwargs):
         """
         Enter the main loop in whatever program context your FunctionRegistry is
@@ -137,6 +150,12 @@ class FunctionDecorator(object):
         self.registry.proxies.append(proxy)
         self.registry.on_decorate(proxy)
         return proxy
+
+    def dump(self):
+        """
+        TODO
+        """
+        raise NotImplementedError('override in subclass')
 
 
 class Middleware(object):
@@ -217,3 +236,9 @@ class FunctionProxy(object):
         retval = self.target(*args, **kwargs)
         self.on_response(self, retval, *raw_args, **raw_kwargs)
         return retval
+
+    def dump(self):
+        """
+        TODO
+        """
+        raise NotImplementedError('override in subclass')
