@@ -8,10 +8,10 @@ import yaml
 
 from collections import defaultdict
 from typing import Dict, Text
-from threading import local
 
 from appyratus.validation import Schema, fields
 from appyratus.decorators import memoized_property
+from appyratus.json import JsonEncoder
 from appyratus.types import DictAccessor
 
 from pybiz.dao.base import Dao
@@ -21,12 +21,12 @@ from pybiz.exc import ApiError
 
 class FunctionRegistry(object):
     def __init__(self, manifest=None, middleware=None):
-        self.thread_local = local()
         self.decorators = []
         self.proxies = []
         self._manifest = manifest
         self._is_bootstrapped = False
         self._middleware = middleware or []
+        self._json_encoder = JsonEncoder()
 
     def __call__(self, *args, **kwargs):
         """
@@ -96,7 +96,7 @@ class FunctionRegistry(object):
                 self._manifest.process()
             self._is_bootstrapped = True
 
-    def dump(self):
+    def dump(self, as_json=False):
         """
         Return a Python dict that can be serialized to JSON, represents the
         contents of the Registry. The purpose of this method is to export
@@ -104,9 +104,10 @@ class FunctionRegistry(object):
         external process without said service or process needing to import this
         Registry directly.
         """
-        return {
-            'targets': {p.dump() for p in self.proxies}
+        data = {
+            'registry': {p.dump() for p in self.proxies}
         }
+        return self._json_encoder.encode(data) if as_json else data
 
 
     def start(self, *args, **kwargs):
@@ -150,12 +151,6 @@ class FunctionDecorator(object):
         self.registry.proxies.append(proxy)
         self.registry.on_decorate(proxy)
         return proxy
-
-    def dump(self):
-        """
-        TODO
-        """
-        raise NotImplementedError('override in subclass')
 
 
 class Middleware(object):
@@ -227,18 +222,53 @@ class FunctionProxy(object):
     def resolve(self, func):
         return func.target if isinstance(func, FunctionProxy) else func
 
-    def call_target(self, raw_args, raw_kwargs, pybiz_debug=False):
-        sig = self.signature
-        arguments = self.on_request(self, sig, *raw_args, **raw_kwargs)
-        args, kwargs = arguments if arguments else (raw_args, raw_kwargs)
-        if pybiz_debug:
-            breakpoint()
-        retval = self.target(*args, **kwargs)
-        self.on_response(self, retval, *raw_args, **raw_kwargs)
-        return retval
-
     def dump(self):
-        """
-        TODO
-        """
-        raise NotImplementedError('override in subclass')
+        return {
+            'decorator': self.decorator.params,
+            'function': self.dump_signature(),
+        }
+
+    def dump_signature(self):
+        args, kwargs = [], []
+        recognized_param_kinds = {
+            Parameter.POSITIONAL_OR_KEYWORD,
+            Parameter.POSITIONAL_ONLY,
+            Parameter.KEYWORD_ONLY
+        }
+        for param_name, param in self.signature.parameters.items():
+            if param.kind in recognized_param_kinds:
+                type_name = None
+                if param.annotation != Parameter.empty:
+                    if isinstance(param.annotation. str):
+                        type_name = param.annotation
+                    elif isinstance(param.annotation, type):
+                        type_name = param.annotation.__name__
+                if k.default == Parameter.empty:
+                    args.append({
+                        'name': param_name,
+                        'type': type_name,
+                    })
+                else:
+                    kwargs.append({
+                        'name': param_name,
+                        'type': type_name,
+                        'default': str(param.default)
+                    })
+
+        # get return type name
+        returns = ''  # empty string is interpreted to mean "empty"
+        if self.signature.return_annotation != Parameter.empty:
+            if self.signature.return_annotation is None:
+                returns = None
+            if isinstance(self.signature.return_annotation, str):
+                returns = self.signature.return_annotation
+            elif isinstance(self.signature.return_annotation, type):
+                returns = self.signature.return_annotation.__name__
+
+        return {
+            'name': self.name,
+            'args': args,
+            'kwargs': kwargs,
+            'returns': returns,
+        }
+
