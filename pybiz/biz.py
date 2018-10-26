@@ -319,8 +319,9 @@ class BizObjectMeta(ABCMeta):
                 versa..
                 """
                 rel = self.relationships[k]
+                if isinstance(value, dict):
+                    value = list(value.values())
                 is_sequence = isinstance(value, (list, tuple, set))
-
                 if not is_sequence:
                     if rel.many:
                         raise ValueError('{} must be non-scalar'.format(k))

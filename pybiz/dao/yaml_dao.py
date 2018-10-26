@@ -103,13 +103,20 @@ class YamlDao(Dao):
         raise NotImplementedError('not implemented')
 
     def fetch_many(self, _ids: list, fields: dict = None) -> dict:
-        raise NotImplementedError('does not make sense to implement')
+        if not _ids:
+            return {}
+        records = {}
+        for _id in _ids:
+            record = self.fetch(_id, fields=fields)
+            if record:
+                records[_id] = record
+        return records
 
     def update_many(self, _ids: list, updates: list = None) -> dict:
-        raise NotImplementedError('does not make sense to implement')
+        raise NotImplementedError('does not make sense to implement2')
 
     def delete_many(self, _ids: list) -> dict:
-        raise NotImplementedError('does not make sense to implement')
+        raise NotImplementedError('does not make sense to implement3')
 
     def query(self, predicate, **kwargs):
         raise NotImplementedError('')
