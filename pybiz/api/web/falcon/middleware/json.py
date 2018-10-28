@@ -9,6 +9,17 @@ class JsonBodyMiddleware(Middleware):
     def __init__(self, encode=None):
         self.encode = encode or ujson.dumps
 
+    def pre_request(self, args, kwargs):
+        pass
+
+    def on_request(self, args, kwargs, prepared_args, prepared_kwargs):
+        pass
+
+    def post_request(
+        self, args, kwargs, prepared_args, prepared_kwargs, result
+    ):
+        pass
+
     def process_request(self, request, response):
         if request.content_length:
             request.json = ujson.loads(request.stream.read().decode())
