@@ -102,9 +102,11 @@ class Manifest(object):
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Api instance.
         """
+
         def onerror(name):
             import sys, re
             if issubclass(sys.exc_info()[0], ImportError):
+                # XXX add logging otherwise things like import errors do not surface
                 if re.match(r'^\w+\._grpc', name):
                     return
 
