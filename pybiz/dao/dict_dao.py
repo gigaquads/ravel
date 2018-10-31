@@ -52,6 +52,9 @@ class DictDao(Dao):
             self._id_2_record[_id] = record
         return record
 
+    def create_many(self, records: list=None) -> dict:
+        return [self.create(record) for record in records]
+
     def update(self, _id=None, data: dict=None) -> dict:
         record = None
         with self._id_2_record_lock:

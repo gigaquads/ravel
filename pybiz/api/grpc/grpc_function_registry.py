@@ -2,23 +2,33 @@ import os
 import sys
 import traceback
 import importlib
+import socket
 import inspect
 import subprocess
 import time
 import re
+import pickle
+import codecs
 
 import grpc
 
 from concurrent.futures import ThreadPoolExecutor
-from typing import Text, List
+from typing import Text, List, Dict, Type
+from collections import deque
 from importlib import import_module
 
+from google.protobuf.message import Message
+
 from appyratus.validation.schema import Schema
+from appyratus.validation.fields import Field
+from appyratus.validation import fields
 from appyratus.decorators import memoized_property
 from appyratus.util import TextTransform, FuncUtils
+from appyratus.json import JsonEncoder
 
 from ..base import FunctionRegistry, FunctionDecorator, FunctionProxy
 from .grpc_client import GrpcClient
+from .grpc_remote_dao import remote_dao_endpoint_factory
 
 
 class GrpcFunctionRegistry(FunctionRegistry):
@@ -26,37 +36,52 @@ class GrpcFunctionRegistry(FunctionRegistry):
     Grpc server and client interface.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, middleware=None):
+        super().__init__(middleware=middleware)
+        self._json_encoder = JsonEncoder()
         self._grpc_server = None
         self._grpc_servicer = None
 
     def bootstrap(self, manifest_filepath: Text, build_grpc=False):
         super().bootstrap(manifest_filepath, defer_processing=True)
+
         pkg_path = self.manifest.package
         pkg = importlib.import_module(pkg_path)
         pkg_dir = os.path.dirname(pkg.__file__)
-        pb2_mod_path = '{}._grpc.registry_pb2'.format(pkg_path)
-        pb2_grpc_mod_path = '{}._grpc.registry_pb2_grpc'.format(pkg_path)
-        grpc_build_dir = os.path.join(pkg_dir, '_grpc')
+        pb2_mod_path = '{}.grpc.registry_pb2'.format(pkg_path)
+        pb2_grpc_mod_path = '{}.grpc.registry_pb2_grpc'.format(pkg_path)
+        grpc_build_dir = os.path.join(pkg_dir, 'grpc')
         grpc_options = self.manifest.data.get('grpc', {})
-        server_host = grpc_options.get('server-host', '::')
-        client_host = grpc_options.get('client-host', 'localhost')
-        port = grpc_options.get('port', '50051')
+        client_host = grpc_options.get('host', 'localhost')
+        server_host = grpc_options.get('server_host', client_host)
+        port = str(grpc_options.get('port', '50051'))
 
-        self._grpc_server_addr = '[{}]:{}'.format(server_host, port)
+        self._grpc_server_addr = '{}:{}'.format(server_host, port)
         self._grpc_client_addr = '{}:{}'.format(client_host, port)
-        self._protobuf_filepath = os.path.join(pkg_dir, 'registry.proto')
+        self._protobuf_filepath = os.path.join(grpc_build_dir, 'registry.proto')
 
-        if os.path.isdir(grpc_build_dir):
-            sys.path.append(grpc_build_dir)
+        os.makedirs(os.path.join(grpc_build_dir), exist_ok=True)
+        sys.path.append(grpc_build_dir)
 
+        def onerror(name):
+            if issubclass(sys.exc_info()[0], ImportError):
+                pass
+
+        # dynamically create an RPC endpoint (GrpcFunctionProxy) that defines
+        # the remote Dao interface used by gRPC clients. Must be done before
+        # the manifest.process method is called.
+        self._remote_dao_endpoint = remote_dao_endpoint_factory(self)
+
+        self.manifest.scanner.onerror = onerror
         self.manifest.process()
 
+        def touch(filepath):
+            with open(os.path.join(filepath), 'a'):
+                pass
 
         if build_grpc:
-            with open(os.path.join(grpc_build_dir, '__init__.py'), 'a'):
-                pass
+            sys.path.append(grpc_build_dir)
+            touch(os.path.join(grpc_build_dir, '__init__.py'))
             self.grpc_build(dest=grpc_build_dir)
 
         self.pb2 = import_module(pb2_mod_path, pkg_path)
@@ -86,6 +111,8 @@ class GrpcFunctionRegistry(FunctionRegistry):
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
         """
+        # TODO: Implement verbosity levels
+        print('>>> Calling "{}" RPC function...'.format(proxy.name))
         arguments = {
             k: getattr(grpc_request, k, None)
             for k in proxy.request_schema.fields
@@ -94,22 +121,48 @@ class GrpcFunctionRegistry(FunctionRegistry):
         return (args, kwargs)
 
     def on_response(self, proxy, result, *raw_args, **raw_kwargs):
+        def recurseively_bind(target, data):
+            for k, v in data.items():
+                if isinstance(v, Message):
+                    recurseively_bind(getattr(target, k), v)
+                else:
+                    setattr(target, k, v)
+
         # bind the returned dict values to the response protobuf message
         response_type = getattr(self.pb2, '{}Response'.format(
             TextTransform.camel(proxy.name)
         ))
         resp = response_type()
         if result:
-            for k, v in result.items():
-                setattr(resp, k, v)
+            dumped_result = proxy.response_schema.dump(result, strict=True).data
+            for k, v in dumped_result.items():
+                field = proxy.response_schema.fields[k]
+                if isinstance(field, fields.Dict):
+                    v_bytes = codecs.encode(pickle.dumps(v), 'base64')
+                    setattr(resp, k, v_bytes)
+                elif isinstance(getattr(resp, k), Message):
+                    recurseively_bind(getattr(resp, k), v)
+                else:
+                    setattr(resp, k, v)
         return resp
 
-    def start(self):
+    def start(self, initializer=None, grace=2):
         """
         Start the RPC client or server.
         """
+        if self._is_port_in_use():
+            print('>>> {} already in use. '
+                  'Exiting...'.format(self._grpc_server_addr)
+            )
+            exit(-1)
+
+        executor = ThreadPoolExecutor(
+            max_workers=None,  # TODO: put this value in manifest
+            initializer=initializer,
+        )
+
         # build the grpc server
-        self._grpc_server = grpc.server(ThreadPoolExecutor(max_workers=10))
+        self._grpc_server = grpc.server(executor)
         self._grpc_server.add_insecure_port(self.server_addr)
 
         # build the grpc servicer and connect with server
@@ -122,16 +175,31 @@ class GrpcFunctionRegistry(FunctionRegistry):
         self._grpc_server.start()
 
         # enter spin lock
-        print('\n>>> gRPC server is running. Press ctrl+c to stop.')
+        print('>>> gRPC server is running. Press ctrl+c to stop.')
+        print('>>> Listening on {}...'.format(self._grpc_server_addr))
         try:
             while True:
                 time.sleep(32)
         except KeyboardInterrupt:
             print()
             if self._grpc_server is not None:
-                print('>>> stopping grpc server...')
-                self._grpc_server.stop(grace=5)
-            print('>>> groodbye!')
+                print('>>> Stopping grpc server...')
+                self._grpc_server.stop(grace=grace)
+            print('>>> Groodbye!')
+
+    def _is_port_in_use(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            host, port_str = self._grpc_client_addr.split(':')
+            sock.bind((host, int(port_str)))
+            return False
+        except OSError as err:
+            if err.errno == 48:
+                return True
+            else:
+                raise err
+        finally:
+            sock.close()
 
     def _grpc_servicer_factory(self):
         servicer_type_name = 'GrpcRegistryServicer'
@@ -159,8 +227,8 @@ class GrpcFunctionRegistry(FunctionRegistry):
 
     def _grpc_generate_proto_file(self, dest):
         """
-        TODO: Iterate over function proxies, using request and response schemas
-        to generate protobuf message and service types.
+        Iterate over function proxies, using request and response schemas to
+        generate protobuf message and service types.
         """
         chunks = ['syntax = "proto3";']
         func_decls = []
@@ -176,11 +244,8 @@ class GrpcFunctionRegistry(FunctionRegistry):
         source = '\n'.join(chunks)
 
         if self._protobuf_filepath:
-            try:
-                with open(self._protobuf_filepath, 'w') as fout:
-                    fout.write(source)
-            except:
-                traceback.print_exc()
+            with open(self._protobuf_filepath, 'w') as fout:
+                fout.write(source)
 
         return source
 
@@ -225,6 +290,7 @@ class GrpcFunctionProxy(FunctionProxy):
 
         super().__init__(func, decorator)
 
+        self.protogen = ProtoCodeGenerator()
         self._msg_name_prefix = decorator.params.get('message_name_prefix')
         if self._msg_name_prefix is None:
             self._msg_name_prefix = TextTransform.camel(self.name)
@@ -241,8 +307,8 @@ class GrpcFunctionProxy(FunctionProxy):
 
     def generate_protobuf_message_types(self) -> List[Text]:
         return [
-            self.request_schema.to_protobuf_message_declaration(),
-            self.response_schema.to_protobuf_message_declaration(),
+            self.protogen.emit_message_type(self.request_schema),
+            self.protogen.emit_message_type(self.response_schema),
         ]
 
     def generate_protobuf_function_declaration(self) -> Text:
@@ -255,3 +321,146 @@ class GrpcFunctionProxy(FunctionProxy):
                 resp_msg_type=self._msg_name_prefix + 'Response',
             )
         )
+
+
+class FieldAdapter(object):
+    def __init__(self):
+        self.protogen = None
+
+    def emit_field_declaration(self, field, field_no):
+        raise NotImplementedError()
+
+    def bind(self, protogen:'ProtoCodeGenerator'):
+        self.protogen = protogen
+
+    def emit(self, field_type, field_no, field_name, is_repeated=False):
+        return '{repeated} {field_type} {field_name}{field_no}'.format(
+            repeated=' repeated' if is_repeated else '',
+            field_type=field_type,
+            field_name=field_name,
+            field_no=' = {}'.format(field_no) if field_no < 16 else '',
+        )
+
+
+class ScalarFieldAdapter(FieldAdapter):
+    def __init__(self, type_name):
+        self.type_name = type_name
+
+    def emit_field_declaration(self, field, field_no):
+        field_type = self.protogen.get_adapter(field).type_name
+        return self.emit(
+            field_type=field_type,
+            field_no=field_no,
+            field_name=field.dump_to or field.name
+        )
+
+
+class ArrayFieldAdapter(FieldAdapter):
+    def emit_field_declaration(self, field, field_no):
+        if isinstance(field.nested, Field):
+            adapter = self.protogen.get_adapter(field.nested)
+            nested_field_type = adapter.type_name
+        else:
+            assert isinstance(field.nested, Schema)
+            nested_field_type = field.nested.__class__.__name__
+        return self.emit(
+            field_type=nested_field_type,
+            field_no=field_no,
+            field_name=field.dump_to or field.name,
+            is_repeated=True,
+        )
+
+
+class NestedFieldAdapter(FieldAdapter):
+    def emit_field_declaration(self, field, field_no):
+        return self.emit(
+            field_type=field.nested.__class__.__name__,
+            field_no=field_no,
+            field_name=field.dump_to or field.name,
+        )
+
+
+class EnumFieldAdapter(FieldAdapter):
+    def emit_field_declaration(self, field, field_no):
+        nested_field_type = self.protogen.get_adapter(field.nested).type_name
+        return self.emit(
+            field_type=nested_field_type,
+            field_no=field_no,
+            field_name=field.dump_to or field.name,
+        )
+
+
+class ProtoCodeGenerator(object):
+    def __init__(self, adapters : Dict[Type[Field], FieldAdapter] = None):
+        # default field adapters indexed by appyratus schema Field types
+        self.adapters = {
+            fields.Str: ScalarFieldAdapter('string'),
+            fields.CompositeStr: ScalarFieldAdapter('string'),
+            fields.Email: ScalarFieldAdapter('string'),
+            fields.Uuid: ScalarFieldAdapter('string'),
+            fields.Regexp: ScalarFieldAdapter('string'),
+            fields.Bool: ScalarFieldAdapter('bool'),
+            fields.Float: ScalarFieldAdapter('double'),
+            fields.Int: ScalarFieldAdapter('sint64'),
+            fields.DateTime: ScalarFieldAdapter('uint64'),
+            fields.Dict: ScalarFieldAdapter('bytes'),
+            fields.List: ArrayFieldAdapter(),
+            fields.Array: ArrayFieldAdapter(),
+            fields.Object: NestedFieldAdapter(),
+            fields.Enum: EnumFieldAdapter(),
+        }
+        # upsert into default adapters dict from the `adapters` kwarg
+        for field_type, adapter in (adapters or {}).items():
+            self.adapters[field_type] = adapter
+        # associate the generator with each adapter.
+        for adapter in self.adapters.values():
+            adapter.bind(self)
+
+    def get_adapter(self, field) -> FieldAdapter:
+        return self.adapters[field.__class__]
+
+    def emit_message_type(self, schema, type_name : Text = None, depth=1) -> Text:
+        type_name = type_name or schema.__class__.__name__
+        field_no2field = {}
+        prepared_data = []
+        field_decls = []
+
+        for f in schema.fields.values():
+            # compute the "field number"
+            field_no = f.meta.get('field_no', sys.maxsize)
+
+            # get the field adapter
+            adapter = self.adapters.get(f.__class__)
+            if not adapter:
+                raise Exception('no adapter for type {}'.format(f.__class__))
+
+            # store in intermediate data structure for purpose of sorting by
+            # field numbers
+            prepared_data.append((field_no, f, adapter))
+
+        # emit field declarations in order of field number ASC
+        sorted_data = sorted(prepared_data, key=lambda x: x[0])
+        for (field_no, field, adapter) in sorted_data:
+            field_decl = adapter.emit_field_declaration(field, field_no)
+            field_decls.append(('  ' * depth) + field_decl + ';')
+
+        nested_message_types = [
+            self.emit_message_type(nested_schema, depth=depth+1)
+            for nested_schema in schema.get_nested_schemas()
+        ]
+
+        MESSAGE_TYPE_FSTR = (
+            (('   ' * (depth - 1)) + '''message {type_name} ''') + \
+            ('''{{\n{nested_message_types}{field_lines}\n''') + \
+            (('   ' * (depth - 1)) + '''}}''')
+        )
+
+        # emit the message declaration "message Foo { ... }"
+        return MESSAGE_TYPE_FSTR.format(
+            type_name=type_name,
+            nested_message_types=(
+                '\n'.join(nested_message_types) + '\n' if nested_message_types
+                else ''
+            ),
+            field_lines='\n'.join(field_decls),
+        ).rstrip()

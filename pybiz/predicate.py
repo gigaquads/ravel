@@ -1,5 +1,22 @@
+import pickle
+import codecs
+
+from typing import Text
+
+
 class Predicate(object):
-    pass
+    def serialize(self) -> Text:
+        pickled = codecs.encode(pickle.dumps(self), "base64").decode()
+        return '#' + pickled + '#'
+
+    @staticmethod
+    def deserialize(obj) -> 'Predicate':
+        if isinstance(obj, str) and obj[0] == '#' and obj[-1] == '#':
+            return pickle.loads(codecs.decode(obj[1:-1].encode(), "base64"))
+        elif isinstance(obj, Predicate):
+            return obj
+        else:
+            raise ValueError(str(obj))
 
 
 class ConditionalPredicate(Predicate):

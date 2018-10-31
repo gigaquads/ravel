@@ -1,38 +1,47 @@
 import re
+import threading
 
 import sqlalchemy as sa
 
 from copy import deepcopy
 from typing import List, Dict, Text
-from threading import local
 
 from appyratus.decorators import memoized_property
 
-from pybiz.predicate import ConditionalPredicate, BooleanPredicate
+from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 
 from .base import Dao
 
 
-class SqlalchemyDao(object):
+class SqlalchemyDao(Dao):
 
-    local = local()
-    local.engine = None
-    local.connection = None
-
-    @staticmethod
-    def __table__():
+    @classmethod
+    def __table__(cls):
         raise NotImplementedError()
 
     @classmethod
-    def initialize(cls, url: Text, metadata=None, echo=False):
-        if cls.local.engine is not None:
-            cls.local.engine.dispose()
-        cls.local.metadata = metadata or sa.MetaData()
-        cls.local.engine = sa.create_engine(url, echo=echo)
+    def factory(cls, name, url: Text, meta: sa.MetaData = None, echo=False):
+        derived_type = type(name, (SqlalchemyDao, ), {})
+        derived_type.url = url
+        derived_type.echo = echo
+        derived_type.metadata = meta or sa.MetaData()
+        derived_type.local = threading.local()
+        derived_type.local.engine = None
+        derived_type.local.connection = None
+
+        # _table class attr is set by subclasses and accessed
+        # via calls to cls.get_table() or the self.table property
+        derived_type._table = None
+
+        return derived_type
+
+    @classmethod
+    def create_engine(cls):
+        cls.local.engine = sa.create_engine(cls.url, echo=cls.echo)
 
     @classmethod
     def create_tables(cls):
-        cls.local.metadata.create_all(cls.local.engine)
+        cls.get_metadata().create_all(cls.local.engine)
 
     @classmethod
     def connect(cls):
@@ -55,9 +64,19 @@ class SqlalchemyDao(object):
     def rollback(cls):
         cls.local.connection.rollback()
 
-    @memoized_property
+    @classmethod
+    def get_metadata(cls):
+        return cls.metadata
+
+    @classmethod
+    def get_table(cls):
+        if cls._table is None:
+            cls._table = cls.__table__()
+        return cls._table
+
+    @property
     def table(self):
-        return self.__table__()
+        return self.get_table()
 
     @property
     def conn(self):
@@ -68,7 +87,8 @@ class SqlalchemyDao(object):
         return self.local.engine.dialect.implicit_returning
 
     def __init__(self):
-        self.table.metadata.bind = self.local.engine
+        if self.table.metadata.bind is None:
+            self.table.metadata.bind = self.local.engine
 
     def query(
         self,
@@ -77,6 +97,7 @@ class SqlalchemyDao(object):
         order_by=None,
         **kwargs,
     ):
+        predicate = Predicate.deserialize(predicate)
         fields = fields or self.table.c.keys()
         filters = self._prepare_predicate(predicate)
         columns = [getattr(self.table.c, k) for k in fields]
@@ -157,8 +178,6 @@ class SqlalchemyDao(object):
 
     def create(self, record: dict) -> dict:
         insert_stmt = self.table.insert().values(**record)
-        import ipdb; ipdb.set_trace()
-
         if self.supports_returning:
             insert_stmt = insert_stmt.return_defaults()
             result = self.conn.execute(insert_stmt)
@@ -171,6 +190,7 @@ class SqlalchemyDao(object):
         self.conn.execute(self.table.insert(), records)
 
     def update(self, _id, data: Dict) -> Dict:
+        assert data
         update_stmt = (
             self.table
                 .update()
@@ -182,9 +202,11 @@ class SqlalchemyDao(object):
             result = self.conn.execute(update_stmt)
             return dict(data, **(result.returned_defaults or {}))
         else:
+            self.conn.execute(update_stmt)
             return None
 
     def update_many(self, _ids: List, data: Dict = None) -> None:
+        assert data
         update_stmt = (
             self.table
                 .update()
