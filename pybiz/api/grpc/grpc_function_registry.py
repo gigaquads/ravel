@@ -158,7 +158,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
 
         executor = ThreadPoolExecutor(
             max_workers=None,  # TODO: put this value in manifest
-            initializer=initializer,
+            #initializer=initializer, # XXX TypeError: __init__() got an unexpected keyword argument 'initializer'
         )
 
         # build the grpc server
