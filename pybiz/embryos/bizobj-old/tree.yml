@@ -1,6 +1,0 @@
-- {{ biz_dir }}:
-    - {{ name|snake }}.py: biz()
-- {{ dao_dir }}:
-    - {{ name|snake }}_dao.py: dao()
-- {{ api_dir }}:
-    - {{ name|snake }}_api.py: api()

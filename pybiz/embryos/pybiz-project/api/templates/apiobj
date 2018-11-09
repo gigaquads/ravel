@@ -1,9 +1,0 @@
-from . import cli
-
-
-@cli()
-def create_{{ api.name|snake }}():
-    """
-    # Create {{ api.name|camel }}
-    """
-    pass

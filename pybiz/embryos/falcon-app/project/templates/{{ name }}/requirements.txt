@@ -1,6 +1,0 @@
-cython
-ujson
-falcon
-sqlalchemy
-uwsgi
--e git+https://github.com/dgabriele/pybiz.git#egg=pybiz

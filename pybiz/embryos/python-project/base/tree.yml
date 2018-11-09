@@ -1,8 +1,0 @@
----
-- README.md
-- requirements.txt
-- setup.py
-- {{ name|snake }}/:
-  - __init__.py
-- tests/:
-...

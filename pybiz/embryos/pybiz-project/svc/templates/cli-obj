@@ -1,5 +1,0 @@
-from pybiz.api.cli import CliFunctionRegistry
-
-
-class {{ project.context.project.name|camel }}CliService(CliFunctionRegistry):
-    pass

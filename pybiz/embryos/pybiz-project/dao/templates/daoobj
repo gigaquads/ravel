@@ -1,9 +1,0 @@
-from pybiz.dao import {{ dao.type|camel}}Dao
-
-
-class {{ dao.name|camel }}Dao({{ dao.type|camel}}Dao):
-    """
-    # {{ dao.name|camel }}
-    The {{ dao.name|title }} Dao
-    """
-    pass
