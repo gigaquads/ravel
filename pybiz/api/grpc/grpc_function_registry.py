@@ -19,7 +19,7 @@ from importlib import import_module
 
 from google.protobuf.message import Message
 
-from appyratus.validation.schema import Schema
+from appyratus.schema import Schema
 from appyratus.validation.fields import Field
 from appyratus.validation import fields
 from appyratus.decorators import memoized_property
@@ -284,7 +284,7 @@ class GrpcFunctionProxy(FunctionProxy):
         def build_schema(kwarg, name_suffix):
             type_name = self._msg_name_prefix + name_suffix
             if isinstance(kwarg, dict):
-                return type(type_name, (Schema, ), kwarg)()
+                return Schema.factory(type_name, kwarg)()
             else:
                 return kwarg
 

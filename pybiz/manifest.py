@@ -7,7 +7,7 @@ import venusian
 
 from typing import Text
 
-from appyratus.validation import fields, Schema
+from appyratus.schema import fields, Schema
 from appyratus.decorators import memoized_property
 from appyratus.types import DictAccessor
 
@@ -21,11 +21,11 @@ class ManifestSchema(Schema):
     """
 
     class BindingSchema(Schema):
-        biz = fields.Str(required=True)
-        dao = fields.Str(required=True)
+        biz = fields.String(required=True)
+        dao = fields.String(required=True)
 
-    package = fields.Str(required=True)
-    bindings = fields.List(BindingSchema(), required=False)
+    package = fields.String(required=True)
+    bindings = fields.List(BindingSchema(), default=lambda: [])
 
 
 class Manifest(object):
@@ -42,13 +42,15 @@ class Manifest(object):
     """
 
     def __init__(self, filepath=None):
-        self.filepath = self._resolve_filepath(filepath)
-        self.data = self._load_manifest_file()
         self.scanner = venusian.Scanner(
             bizobj_classes={},
             schema_classes={},
             dao_classes={},
         )
+        self.filepath = self._resolve_filepath(filepath)
+        self.data, errors = self._load_manifest_file()
+        if errors:
+            raise ManifestError(str(errors))
 
     def process(self):
         """
@@ -93,9 +95,9 @@ class Manifest(object):
 
     def _load_manifest_file(self):
         with open(self.filepath) as manifest_file:
-            schema = ManifestSchema(allow_additional=True)
+            schema = ManifestSchema()
             manifest_dict = yaml.load(manifest_file)
-            return schema.load(manifest_dict, strict=True).data
+            return schema.process(manifest_dict)
 
     def _scan(self):
         """
@@ -107,7 +109,7 @@ class Manifest(object):
             import sys, re
             if issubclass(sys.exc_info()[0], ImportError):
                 # XXX add logging otherwise things like import errors do not surface
-                if re.match(r'^\w+\._grpc', name):
+                if re.match(r'^\w+\.grpc', name):
                     return
 
         pkg = importlib.import_module(self.data['package'])

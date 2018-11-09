@@ -10,29 +10,26 @@ Relationship Load/Dump Mechanics:
 
 """
 
-import os
 import sys
 import copy
 import inspect
-import re
 
 import venusian
 
 from abc import ABCMeta, abstractmethod
 from typing import List, Dict
-from types import MethodType
 from importlib import import_module
 
-from appyratus.validation.schema import AbstractSchema, Schema
-from appyratus.validation.fields import Field, Anything
 from appyratus.decorators import memoized_property
+from appyratus.schema import Schema, fields
 
-from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from .web.patch import JsonPatchMixin
 from .web.graphql import GraphQLObject, GraphQLEngine
 from .dao.base import Dao, DaoManager
 from .dirty import DirtyDict, DirtyInterface
+from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from .util.bizobj_util import is_bizobj
+from .exc import NotFound
 from .constants import (
     IS_BIZOBJ_ANNOTATION,
     PRE_PATCH_ANNOTATION,
@@ -40,7 +37,6 @@ from .constants import (
     PATCH_PATH_ANNOTATION,
     PATCH_ANNOTATION,
 )
-from .exc import NotFound
 
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
@@ -175,20 +171,14 @@ class BizObjectMeta(ABCMeta):
             for k, v in inherited_schema_class.fields.items():
                 fields.setdefault(k, copy.deepcopy(v))
 
-        # Collect and field declared on this BizObject class
-        for k, v in inspect.getmembers(
-            cls, predicate=lambda x: isinstance(x, Field)
-        ):
-            fields[k] = v
-
         # bless each bizobj with a mandatory _id field.
         if '_id' not in fields:
-            fields['_id'] = Anything(dump_to='id', allow_none=True)
+            fields['_id'] = fields.Field(nullable=True)
 
         # Build string name of the new Schema class
         # and construct the Schema class object:
-        cls.Schema = type('{}Schema'.format(name), (Schema, ), fields)
-        cls.schema = cls.Schema(strict=True, allow_additional=False)
+        cls.Schema = Schema.factory('{}Schema'.format(name), fields)
+        cls.schema = cls.Schema()
 
         return cls.Schema
 
@@ -348,7 +338,6 @@ class BizObjectMeta(ABCMeta):
 
 class BizObject(
     DirtyInterface,
-    AbstractSchema,
     JsonPatchMixin,
     GraphQLObject,
     metaclass=BizObjectMeta
@@ -380,7 +369,6 @@ class BizObject(
     def __init__(self, data=None, **kwargs_data):
         JsonPatchMixin.__init__(self)
         DirtyInterface.__init__(self)
-        AbstractSchema.__init__(self)
         GraphQLObject.__init__(self)
         self._related_bizobjs = {}
         self._cached_dump_data = None
@@ -500,15 +488,22 @@ class BizObject(
 
     @classmethod
     def get_many(cls, _ids, fields: List = None, as_list=False):
+        # separate field names into those corresponding to this BizObjects
+        # class and those of the related BizObject classes.
         fields = cls._parse_fields(fields)
-        records = cls.get_dao().fetch_many(_ids=_ids, fields=fields['self'])
-        bizobjs = {}
 
+        # fetch data from the dao
+        records = cls.get_dao().fetch_many(_ids=_ids, fields=fields['self'])
+
+        # now fetch and merge related business objects. This could be
+        # optimized.
+        bizobjs = {}
         for _id, record in records.items():
             bizobj = cls(record).clear_dirty()
             cls._query_relationships(bizobj, fields['related'])
             bizobjs[_id] = bizobj
 
+        # return results either as a list or a mapping from id to object
         return bizobjs if not as_list else list(bizobjs.values())
 
     @classmethod
@@ -570,6 +565,7 @@ class BizObject(
             self.merge(self.dao.fetch(_id=self._id))
 
         self.clear_dirty()
+
         return self
 
     @classmethod
@@ -665,7 +661,7 @@ class BizObject(
     def load(self, fields=None):
         """
         Assuming _id is not None, this will load the rest of the BizObject's
-        data. Note that this shadows AbstractSchema's load method.
+        data.
         """
         self.merge(self.get(_id=self._id, fields=fields))
         return self
@@ -695,9 +691,11 @@ class BizObject(
 
     def _dump_fields(self):
         """
-        Dump all scalar fields of the instance to a dict. If a
+        Dump all scalar fields of the instance to a dict.
         """
-        return self.schema.dump(self._data).data
+        data_copy = copy.deepcopy(self.data)
+        data_copy['id'] = data_copy.pop('_id')
+        return data_copy
 
     def _dump_relationships(self):
         """
@@ -715,13 +713,12 @@ class BizObject(
 
             # if the related object is null, dump null; therwise, if it
             # is an object, dump it. if a list, dump the list.
-            if rel_val is None:
-                data[dump_to] = None
-            elif is_bizobj(rel_val):
+            if is_bizobj(rel_val):
                 data[dump_to] = rel_val.dump()
-            else:
-                assert isinstance(rel_val, (list, set, tuple))
+            elif rel.many:
                 data[dump_to] = [bizobj.dump() for bizobj in rel_val]
+            else:
+                data[dump_to] = None
 
         return data
 
