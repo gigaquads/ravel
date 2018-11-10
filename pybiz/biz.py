@@ -21,7 +21,7 @@ from typing import List, Dict
 from importlib import import_module
 
 from appyratus.decorators import memoized_property
-from appyratus.schema import Schema, fields
+from appyratus.schema import Schema, fields as schema_fields
 
 from .web.patch import JsonPatchMixin
 from .web.graphql import GraphQLObject, GraphQLEngine
@@ -49,7 +49,7 @@ class Relationship(object):
         many=False,
         dump_to=None,
         load_from=None,
-        query=None
+        query=None,
     ):
         self._target = target
         self.load_from = load_from
@@ -173,7 +173,7 @@ class BizObjectMeta(ABCMeta):
 
         # bless each bizobj with a mandatory _id field.
         if '_id' not in fields:
-            fields['_id'] = fields.Field(nullable=True)
+            fields['_id'] = schema_fields.Field(nullable=True)
 
         # Build string name of the new Schema class
         # and construct the Schema class object:
@@ -268,6 +268,7 @@ class BizObjectMeta(ABCMeta):
         Create properties out of the fields declared on the schema associated
         with the class.
         """
+
         def build_property(k):
             def fget(self):
                 return self[k]
@@ -295,7 +296,7 @@ class BizObjectMeta(ABCMeta):
                 if retval is DNE:
                     if rel.query is not None:
                         retval = rel.query(self)
-                        setattr(self, k, retval)  # go through fset
+                        setattr(self, k, retval)    # go through fset
                     elif rel.many:
                         retval = []
                     else:
@@ -436,14 +437,15 @@ class BizObject(
     def query(
         cls,
         predicate: Predicate,
-        fields: Dict = None,
-        first: bool = False,
+        fields: Dict=None,
+        first: bool=False,
         **kwargs
     ):
         def load_predicate_values(pred):
             if isinstance(pred, ConditionalPredicate):
                 field = cls.Schema.fields.get(pred.attr_name)
                 if field is None:
+                    # XXX Anything does not exist so this would break
                     field = Anything()
                 pred.value = field.load(pred.value).value
             elif isinstance(pred, BooleanPredicate):
@@ -474,7 +476,7 @@ class BizObject(
         return retval
 
     @classmethod
-    def get(cls, _id, fields: List = None):
+    def get(cls, _id, fields: List=None):
         fields = cls._parse_fields(fields)
         record = cls.get_dao().fetch(_id=_id, fields=fields['self'])
         bizobj = cls(record).clear_dirty()
@@ -487,7 +489,7 @@ class BizObject(
         return bizobj
 
     @classmethod
-    def get_many(cls, _ids, fields: List = None, as_list=False):
+    def get_many(cls, _ids, fields: List=None, as_list=False):
         # separate field names into those corresponding to this BizObjects
         # class and those of the related BizObject classes.
         fields = cls._parse_fields(fields)
@@ -570,10 +572,7 @@ class BizObject(
 
     @classmethod
     def _parse_fields(cls, fields: List):
-        results = {
-            'self': set(),
-            'related': {}
-        }
+        results = {'self': set(), 'related': {}}
         for k in (fields or cls.schema.fields.keys()):
             if isinstance(k, dict):
                 rel_name, rel_fields = list(k.items())[0]
@@ -597,7 +596,6 @@ class BizObject(
         for k, fields in fields.items():
             v = bizobj.relationships[k].query(bizobj, fields=fields)
             setattr(bizobj, k, v)
-
 
     # -- DirtyInterface --------------------------------------------
 
@@ -776,11 +774,11 @@ class BizObject(
                     related_bizobj = related_data
                     self._related_bizobjs[rel.name] = related_bizobj
 
-        result = self.schema.load(data)
-        if result.errors:
+        result, error = self.schema.process(data)
+        if error:
             # TODO: raise custom exception
-            raise Exception(str(result.errors))
+            raise Exception(str(error))
 
         # at this point, the data dict has been cleared of any fields that are
         # shadowed by Relationships declared on the bizobj class.
-        return DirtyDict(result.data)
+        return DirtyDict(result)

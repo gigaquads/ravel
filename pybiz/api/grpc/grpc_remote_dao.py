@@ -2,7 +2,7 @@ import ujson
 
 from typing import Text
 
-from appyratus.validation.fields import Str
+from appyratus.schema.fields import String
 from appyratus.json import JsonEncoder
 
 
@@ -12,14 +12,15 @@ def remote_dao_endpoint_factory(rpc: 'GrpcFunctionRegistry'):
     method on Dao objects remotely. This factory adds the dynamically defined
     function to the rpc function registry argument.
     """
+
     @rpc(
         request={
-            'dao_type': Str(meta={'field_no': 1}),
-            'method_name': Str(meta={'field_no': 2}),
-            'args_json': Str(meta={'field_no': 3}),
+            'dao_type': String(meta={'field_no': 1}),
+            'method_name': String(meta={'field_no': 2}),
+            'args_json': String(meta={'field_no': 3}),
         },
         response={
-            'data': Str(meta={'field_no': 1}),
+            'data': String(meta={'field_no': 1}),
         }
     )
     def apply_dao_method(dao_type: Text, method_name: Text, args_json: Text):
@@ -47,4 +48,3 @@ def remote_dao_endpoint_factory(rpc: 'GrpcFunctionRegistry'):
             raise Exception('unrecognized DAO type "{}"'.format(dao_type))
 
     return apply_dao_method
-

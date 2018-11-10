@@ -20,8 +20,8 @@ from importlib import import_module
 from google.protobuf.message import Message
 
 from appyratus.schema import Schema
-from appyratus.validation.fields import Field
-from appyratus.validation import fields
+from appyratus.schema.fields import Field
+from appyratus.schema import fields
 from appyratus.decorators import memoized_property
 from appyratus.util import TextTransform, FuncUtils
 from appyratus.json import JsonEncoder
@@ -58,7 +58,9 @@ class GrpcFunctionRegistry(FunctionRegistry):
 
         self._grpc_server_addr = '{}:{}'.format(server_host, port)
         self._grpc_client_addr = '{}:{}'.format(client_host, port)
-        self._protobuf_filepath = os.path.join(grpc_build_dir, 'registry.proto')
+        self._protobuf_filepath = os.path.join(
+            grpc_build_dir, 'registry.proto'
+        )
 
         os.makedirs(os.path.join(grpc_build_dir), exist_ok=True)
         sys.path.append(grpc_build_dir)
@@ -129,12 +131,14 @@ class GrpcFunctionRegistry(FunctionRegistry):
                     setattr(target, k, v)
 
         # bind the returned dict values to the response protobuf message
-        response_type = getattr(self.pb2, '{}Response'.format(
-            TextTransform.camel(proxy.name)
-        ))
+        response_type = getattr(
+            self.pb2, '{}Response'.format(TextTransform.camel(proxy.name))
+        )
         resp = response_type()
         if result:
-            dumped_result = proxy.response_schema.dump(result, strict=True).data
+            dumped_result = proxy.response_schema.dump(
+                result, strict=True
+            ).data
             for k, v in dumped_result.items():
                 field = proxy.response_schema.fields[k]
                 if isinstance(field, fields.Dict):
@@ -151,8 +155,9 @@ class GrpcFunctionRegistry(FunctionRegistry):
         Start the RPC client or server.
         """
         if self._is_port_in_use():
-            print('>>> {} already in use. '
-                  'Exiting...'.format(self._grpc_server_addr)
+            print(
+                '>>> {} already in use. '
+                'Exiting...'.format(self._grpc_server_addr)
             )
             exit(-1)
 
@@ -253,20 +258,24 @@ class GrpcFunctionRegistry(FunctionRegistry):
         """
         Compile the protobuf file resulting from .
         """
-        include_dir = os.path.realpath(os.path.dirname(self._protobuf_filepath))
+        include_dir = os.path.realpath(
+            os.path.dirname(self._protobuf_filepath)
+        )
         proto_file = os.path.basename(self._protobuf_filepath)
 
-        cmd = re.sub(r'\s+', ' ', '''
+        cmd = re.sub(
+            r'\s+', ' ', '''
             python3 -m grpc_tools.protoc
                 -I {include_dir}
                 --python_out={build_dir}
                 --grpc_python_out={build_dir}
                 {proto_file}
         '''.format(
-            include_dir=include_dir or '.',
-            build_dir=dest,
-            proto_file=proto_file
-        ).strip())
+                include_dir=include_dir or '.',
+                build_dir=dest,
+                proto_file=proto_file
+            ).strip()
+        )
 
         print(cmd)
 
@@ -330,7 +339,7 @@ class FieldAdapter(object):
     def emit_field_declaration(self, field, field_no):
         raise NotImplementedError()
 
-    def bind(self, protogen:'ProtoCodeGenerator'):
+    def bind(self, protogen: 'ProtoCodeGenerator'):
         self.protogen = protogen
 
     def emit(self, field_type, field_no, field_name, is_repeated=False):
@@ -391,23 +400,26 @@ class EnumFieldAdapter(FieldAdapter):
 
 
 class ProtoCodeGenerator(object):
-    def __init__(self, adapters : Dict[Type[Field], FieldAdapter] = None):
+    def __init__(self, adapters: Dict[Type[Field], FieldAdapter]=None):
         # default field adapters indexed by appyratus schema Field types
         self.adapters = {
-            fields.Str: ScalarFieldAdapter('string'),
-            fields.CompositeStr: ScalarFieldAdapter('string'),
+            fields.String: ScalarFieldAdapter('string'),
+            fields.FormatString: ScalarFieldAdapter('string'),
             fields.Email: ScalarFieldAdapter('string'),
             fields.Uuid: ScalarFieldAdapter('string'),
-            fields.Regexp: ScalarFieldAdapter('string'),
+            # XXX do we add?  does not exist in schema.fields
+            #fields.Regexp: ScalarFieldAdapter('string'),
             fields.Bool: ScalarFieldAdapter('bool'),
             fields.Float: ScalarFieldAdapter('double'),
             fields.Int: ScalarFieldAdapter('sint64'),
             fields.DateTime: ScalarFieldAdapter('uint64'),
             fields.Dict: ScalarFieldAdapter('bytes'),
             fields.List: ArrayFieldAdapter(),
-            fields.Array: ArrayFieldAdapter(),
-            fields.Object: NestedFieldAdapter(),
-            fields.Enum: EnumFieldAdapter(),
+            # XXX redundant to List?  does not exist in schema.fields
+            #fields.Array: ArrayFieldAdapter(),
+            fields.Nested: NestedFieldAdapter(),
+            # XXX do we add?  does not exist in schema.fields
+            #fields.Enum: EnumFieldAdapter(),
         }
         # upsert into default adapters dict from the `adapters` kwarg
         for field_type, adapter in (adapters or {}).items():
@@ -419,7 +431,7 @@ class ProtoCodeGenerator(object):
     def get_adapter(self, field) -> FieldAdapter:
         return self.adapters[field.__class__]
 
-    def emit_message_type(self, schema, type_name : Text = None, depth=1) -> Text:
+    def emit_message_type(self, schema, type_name: Text=None, depth=1) -> Text:
         type_name = type_name or schema.__class__.__name__
         field_no2field = {}
         prepared_data = []
@@ -445,7 +457,7 @@ class ProtoCodeGenerator(object):
             field_decls.append(('  ' * depth) + field_decl + ';')
 
         nested_message_types = [
-            self.emit_message_type(nested_schema, depth=depth+1)
+            self.emit_message_type(nested_schema, depth=depth + 1)
             for nested_schema in schema.get_nested_schemas()
         ]
 
@@ -459,8 +471,8 @@ class ProtoCodeGenerator(object):
         return MESSAGE_TYPE_FSTR.format(
             type_name=type_name,
             nested_message_types=(
-                '\n'.join(nested_message_types) + '\n' if nested_message_types
-                else ''
+                '\n'.join(nested_message_types) + '\n'
+                if nested_message_types else ''
             ),
             field_lines='\n'.join(field_decls),
         ).rstrip()
