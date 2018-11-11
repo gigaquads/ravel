@@ -360,7 +360,7 @@ class ScalarFieldAdapter(FieldAdapter):
         return self.emit(
             field_type=field_type,
             field_no=field_no,
-            field_name=field.dump_to or field.name
+            field_name=field.name
         )
 
 

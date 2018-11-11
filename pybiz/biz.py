@@ -171,6 +171,15 @@ class BizObjectMeta(ABCMeta):
             for k, v in inherited_schema_class.fields.items():
                 fields.setdefault(k, copy.deepcopy(v))
 
+        # collect and field declared on this BizObject class
+        for k, v in inspect.getmembers(
+            cls, predicate=lambda x: isinstance(x, schema_fields.Field)
+        ):
+            if k is 'schema':
+                # XXX `schema` gets recognized by getmembers as a Field
+                continue
+            fields[k] = v
+
         # bless each bizobj with a mandatory _id field.
         if '_id' not in fields:
             fields['_id'] = schema_fields.Field(nullable=True)
