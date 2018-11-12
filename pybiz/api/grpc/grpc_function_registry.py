@@ -299,7 +299,7 @@ class GrpcFunctionProxy(FunctionProxy):
 
         super().__init__(func, decorator)
 
-        self.protogen = ProtoCodeGenerator()
+        self.msg_gen = MessageGenerator()
         self._msg_name_prefix = decorator.params.get('message_name_prefix')
         if self._msg_name_prefix is None:
             self._msg_name_prefix = TextTransform.camel(self.name)
@@ -316,8 +316,8 @@ class GrpcFunctionProxy(FunctionProxy):
 
     def generate_protobuf_message_types(self) -> List[Text]:
         return [
-            self.protogen.emit_message_type(self.request_schema),
-            self.protogen.emit_message_type(self.response_schema),
+            self.msg_gen.emit(self.request_schema),
+            self.msg_gen.emit(self.response_schema),
         ]
 
     def generate_protobuf_function_declaration(self) -> Text:
@@ -334,13 +334,13 @@ class GrpcFunctionProxy(FunctionProxy):
 
 class FieldAdapter(object):
     def __init__(self):
-        self.protogen = None
+        self.msg_gen = None
 
-    def emit_field_declaration(self, field, field_no):
+    def emit(self, field, field_no):
         raise NotImplementedError()
 
-    def bind(self, protogen: 'ProtoCodeGenerator'):
-        self.protogen = protogen
+    def bind(self, msg_gen: 'MessageGenerator'):
+        self.msg_gen = msg_gen
 
     def emit(self, field_type, field_no, field_name, is_repeated=False):
         return '{repeated} {field_type} {field_name}{field_no}'.format(
@@ -355,9 +355,9 @@ class ScalarFieldAdapter(FieldAdapter):
     def __init__(self, type_name):
         self.type_name = type_name
 
-    def emit_field_declaration(self, field, field_no):
-        field_type = self.protogen.get_adapter(field).type_name
-        return self.emit(
+    def emit(self, field, field_no):
+        field_type = self.msg_gen.get_adapter(field).type_name
+        return super().emit(
             field_type=field_type,
             field_no=field_no,
             field_name=field.name
@@ -365,50 +365,58 @@ class ScalarFieldAdapter(FieldAdapter):
 
 
 class ArrayFieldAdapter(FieldAdapter):
-    def emit_field_declaration(self, field, field_no):
-        if isinstance(field.nested, Field):
-            adapter = self.protogen.get_adapter(field.nested)
-            nested_field_type = adapter.type_name
-        else:
-            assert isinstance(field.nested, Schema)
+    def emit(self, field, field_no):
+        if isinstance(field.nested, Schema):
             nested_field_type = field.nested.__class__.__name__
-        return self.emit(
+        else:
+            adapter = self.msg_gen.get_adapter(field.nested)
+            nested_field_type = adapter.type_name
+        return super().emit(
             field_type=nested_field_type,
             field_no=field_no,
-            field_name=field.dump_to or field.name,
+            field_name=field.name,
             is_repeated=True,
         )
 
 
 class NestedFieldAdapter(FieldAdapter):
-    def emit_field_declaration(self, field, field_no):
-        return self.emit(
-            field_type=field.nested.__class__.__name__,
+    def emit(self, field, field_no):
+        return super().emit(
+            field_type=field.schema_type.__name__,
             field_no=field_no,
-            field_name=field.dump_to or field.name,
+            field_name=field.name,
+        )
+
+
+class SchemaFieldAdapter(FieldAdapter):
+    def emit(self, field, field_no):
+        return super().emit(
+            field_type=field.__class__.__name__,
+            field_no=field_no,
+            field_name=field.name,
         )
 
 
 class EnumFieldAdapter(FieldAdapter):
-    def emit_field_declaration(self, field, field_no):
-        nested_field_type = self.protogen.get_adapter(field.nested).type_name
-        return self.emit(
+    def emit(self, field, field_no):
+        nested_field_type = self.msg_gen.get_adapter(field.nested).type_name
+        return super().emit(
             field_type=nested_field_type,
             field_no=field_no,
-            field_name=field.dump_to or field.name,
+            field_name=field.name,
         )
 
 
-class ProtoCodeGenerator(object):
+class MessageGenerator(object):
     def __init__(self, adapters: Dict[Type[Field], FieldAdapter]=None):
         # default field adapters indexed by appyratus schema Field types
         self.adapters = {
+            Schema: SchemaFieldAdapter(),
+            fields.Nested: NestedFieldAdapter(),
             fields.String: ScalarFieldAdapter('string'),
             fields.FormatString: ScalarFieldAdapter('string'),
             fields.Email: ScalarFieldAdapter('string'),
             fields.Uuid: ScalarFieldAdapter('string'),
-            # XXX do we add?  does not exist in schema.fields
-            #fields.Regexp: ScalarFieldAdapter('string'),
             fields.Bool: ScalarFieldAdapter('bool'),
             fields.Float: ScalarFieldAdapter('double'),
             fields.Int: ScalarFieldAdapter('sint64'),
@@ -417,9 +425,10 @@ class ProtoCodeGenerator(object):
             fields.List: ArrayFieldAdapter(),
             # XXX redundant to List?  does not exist in schema.fields
             #fields.Array: ArrayFieldAdapter(),
-            fields.Nested: NestedFieldAdapter(),
             # XXX do we add?  does not exist in schema.fields
             #fields.Enum: EnumFieldAdapter(),
+            # XXX do we add?  does not exist in schema.fields
+            #fields.Regexp: ScalarFieldAdapter('string'),
         }
         # upsert into default adapters dict from the `adapters` kwarg
         for field_type, adapter in (adapters or {}).items():
@@ -429,20 +438,32 @@ class ProtoCodeGenerator(object):
             adapter.bind(self)
 
     def get_adapter(self, field) -> FieldAdapter:
-        return self.adapters[field.__class__]
+        if isinstance(field, Schema):
+            return self.adapters[Schema]
+        else:
+            return self.adapters[field.__class__]
 
-    def emit_message_type(self, schema, type_name: Text=None, depth=1) -> Text:
-        type_name = type_name or schema.__class__.__name__
+    def emit(
+        self,
+        schema_type: Type['Schema'],
+        type_name: Text = None,
+        depth=1
+    ) -> Text:
+        """
+        Recursively generate a protocol buffer message type declaration string
+        from a given Schema class.
+        """
+        type_name = type_name or schema_type.__name__
         field_no2field = {}
         prepared_data = []
         field_decls = []
 
-        for f in schema.fields.values():
+        for f in schema_type.fields.values():
             # compute the "field number"
             field_no = f.meta.get('field_no', sys.maxsize)
 
             # get the field adapter
-            adapter = self.adapters.get(f.__class__)
+            adapter = self.get_adapter(f)
             if not adapter:
                 raise Exception('no adapter for type {}'.format(f.__class__))
 
@@ -453,12 +474,14 @@ class ProtoCodeGenerator(object):
         # emit field declarations in order of field number ASC
         sorted_data = sorted(prepared_data, key=lambda x: x[0])
         for (field_no, field, adapter) in sorted_data:
-            field_decl = adapter.emit_field_declaration(field, field_no)
+            field_decl = adapter.emit(field, field_no)
             field_decls.append(('  ' * depth) + field_decl + ';')
 
         nested_message_types = [
-            self.emit_message_type(nested_schema, depth=depth + 1)
-            for nested_schema in schema.get_nested_schemas()
+            self.emit(nested_schema, depth=depth + 1)
+            for nested_schema in {
+                s.__class__ for s in schema_type.children
+            }
         ]
 
         MESSAGE_TYPE_FSTR = (
