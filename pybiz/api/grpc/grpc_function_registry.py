@@ -453,7 +453,15 @@ class MessageGenerator(object):
         Recursively generate a protocol buffer message type declaration string
         from a given Schema class.
         """
-        type_name = type_name or schema_type.__name__
+        if isinstance(schema_type, type):
+            type_name = type_name or schema_type.__name__
+        elif isinstance(schema_type, Schema):
+            type_name = type_name or schema_type.__class__.__name__
+        else:
+            raise ValueError(
+                'unrecognized schema type: "{}"'.format(schema_type)
+            )
+
         field_no2field = {}
         prepared_data = []
         field_decls = []
