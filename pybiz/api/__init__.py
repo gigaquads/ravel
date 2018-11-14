@@ -1,1 +1,1 @@
-from .base import FunctionRegistry, FunctionDecorator, FunctionProxy, Middleware
+from .base import Registry, RegistryDecorator, RegistryProxy, Middleware

@@ -11,12 +11,12 @@ from appyratus.cli import (
     safe_main,
 )
 
-from .base import FunctionRegistry, FunctionDecorator, FunctionProxy
+from .base import Registry, RegistryDecorator, RegistryProxy
 
 
-class CliFunctionRegistry(FunctionRegistry):
+class CliRegistry(Registry):
     """
-    This FunctionRegistry subclass will create a CliProgram (command-line
+    This Registry subclass will create a CliProgram (command-line
     interace) out of the registered functions.
     """
 
@@ -47,7 +47,7 @@ class CliFunctionRegistry(FunctionRegistry):
 
     def on_decorate(self, command):
         """
-        Collect each FunctionProxy, which contains a reference to a function
+        Collect each RegistryProxy, which contains a reference to a function
         we're going to inject into the namespace of the REPL.
         """
         self._commands.append(command)
@@ -87,7 +87,7 @@ class CliFunctionRegistry(FunctionRegistry):
         safe_main(self._cli_program.run, debug_level=2)
 
 
-class Command(FunctionProxy):
+class Command(RegistryProxy):
     """
     Command represents a top-level CliProgram Subparser.
     """

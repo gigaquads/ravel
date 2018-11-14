@@ -26,12 +26,12 @@ from appyratus.decorators import memoized_property
 from appyratus.util import TextTransform, FuncUtils
 from appyratus.json import JsonEncoder
 
-from ..base import FunctionRegistry, FunctionDecorator, FunctionProxy
+from ..base import Registry, RegistryDecorator, RegistryProxy
 from .grpc_client import GrpcClient
 from .grpc_remote_dao import remote_dao_endpoint_factory
 
 
-class GrpcFunctionRegistry(FunctionRegistry):
+class GrpcRegistry(Registry):
     """
     Grpc server and client interface.
     """
@@ -69,7 +69,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
             if issubclass(sys.exc_info()[0], ImportError):
                 pass
 
-        # dynamically create an RPC endpoint (GrpcFunctionProxy) that defines
+        # dynamically create an RPC endpoint (GrpcRegistryProxy) that defines
         # the remote Dao interface used by gRPC clients. Must be done before
         # the manifest.process method is called.
         self._remote_dao_endpoint = remote_dao_endpoint_factory(self)
@@ -91,7 +91,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
 
     @property
     def function_proxy_type(self):
-        return GrpcFunctionProxy
+        return GrpcRegistryProxy
 
     @memoized_property
     def client(self) -> GrpcClient:
@@ -284,7 +284,7 @@ class GrpcFunctionRegistry(FunctionRegistry):
             print(output)
 
 
-class GrpcFunctionProxy(FunctionProxy):
+class GrpcRegistryProxy(RegistryProxy):
     """
     Command represents a top-level CliProgram Subparser.
     """

@@ -6,7 +6,7 @@ from appyratus.types import DictAccessor
 from pybiz.manifest import Manifest
 
 
-class FunctionRegistry(object):
+class Registry(object):
     def __init__(self, manifest=None, middleware=None):
         self.decorators = []
         self.proxies = []
@@ -17,7 +17,7 @@ class FunctionRegistry(object):
 
     def __call__(self, *args, **kwargs):
         """
-        Use this to decorate functions, adding them to this FunctionRegistry.
+        Use this to decorate functions, adding them to this Registry.
         Each time a function is decorated, it arives at the "on_decorate"
         method, where you can registry the function with a web framework or
         whatever system you have in mind.
@@ -25,7 +25,7 @@ class FunctionRegistry(object):
         Usage:
 
         ```python3
-            api = FunctionRegistry()
+            api = Registry()
 
             @api()
             def do_something():
@@ -38,11 +38,11 @@ class FunctionRegistry(object):
 
     @property
     def function_decorator_type(self):
-        return FunctionDecorator
+        return RegistryDecorator
 
     @property
     def function_proxy_type(self):
-        return FunctionProxy
+        return RegistryProxy
 
     @property
     def manifest(self):
@@ -99,12 +99,12 @@ class FunctionRegistry(object):
 
     def start(self, *args, **kwargs):
         """
-        Enter the main loop in whatever program context your FunctionRegistry is
+        Enter the main loop in whatever program context your Registry is
         being used, like in a web framework or a REPL.
         """
         raise NotImplementedError('override in subclass')
 
-    def on_decorate(self, proxy: 'FunctionProxy'):
+    def on_decorate(self, proxy: 'RegistryProxy'):
         """
         We come here whenever a function is decorated by this registry. Here we
         can add the decorated function to, say, a web framework as a route.
@@ -128,7 +128,7 @@ class FunctionRegistry(object):
         return result
 
 
-class FunctionDecorator(object):
+class RegistryDecorator(object):
     def __init__(self, registry, *args, **params):
         self.registry = registry
         self.params = params
@@ -151,7 +151,7 @@ class Middleware(object):
         pass
 
 
-class FunctionProxy(object):
+class RegistryProxy(object):
     def __init__(self, func, decorator):
         self.func = func
         self.signature = inspect.signature(self.func)
@@ -207,7 +207,7 @@ class FunctionProxy(object):
         return self.target.__name__
 
     def resolve(self, func):
-        return func.target if isinstance(func, FunctionProxy) else func
+        return func.target if isinstance(func, RegistryProxy) else func
 
     def dump(self):
         return {
@@ -258,4 +258,3 @@ class FunctionProxy(object):
             'kwargs': kwargs,
             'returns': returns,
         }
-

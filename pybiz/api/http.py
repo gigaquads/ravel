@@ -5,17 +5,17 @@ from collections import defaultdict
 
 from pybiz.exc import ApiError
 
-from .base import FunctionRegistry, FunctionProxy, FunctionDecorator
+from .base import Registry, RegistryProxy, RegistryDecorator
 
 
-class HttpFunctionRegistry(FunctionRegistry):
+class HttpRegistry(Registry):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.routes = defaultdict(dict)
 
     @property
     def function_decorator_type(self):
-        return HttpFunctionDecorator
+        return HttpRegistryDecorator
 
     @property
     def function_proxy_type(self):
@@ -37,7 +37,7 @@ class HttpFunctionRegistry(FunctionRegistry):
         return HttpClient(self, scheme, host, port)
 
 
-class HttpFunctionDecorator(FunctionDecorator):
+class HttpRegistryDecorator(RegistryDecorator):
     def __init__(self,
         registry,
         http_method: str,
@@ -64,7 +64,7 @@ class HttpFunctionDecorator(FunctionDecorator):
 
     def __call__(self, func):
         """
-        We wrap each registered func in a FunctionProxy and store it in a table
+        We wrap each registered func in a RegistryProxy and store it in a table
         that lets us look it up by url_path and http_method for use in routing
         requests.
         """
@@ -73,7 +73,7 @@ class HttpFunctionDecorator(FunctionDecorator):
         return route
 
 
-class HttpRoute(FunctionProxy):
+class HttpRoute(RegistryProxy):
     """
     Stores metadata related to the "target" callable, which in the Http context
     is the endpoint of some URL route.
@@ -97,7 +97,7 @@ class HttpRoute(FunctionProxy):
 
 
 class HttpClient(object):
-    def __init__(self, registry: HttpFunctionRegistry, scheme, host, port):
+    def __init__(self, registry: HttpRegistry, scheme, host, port):
         self._registry = registry
         self._handlers = {}
         self._host = host

@@ -1,1 +1,1 @@
-from .grpc_function_registry import GrpcFunctionRegistry, GrpcClient
+from .grpc_function_registry import GrpcRegistry, GrpcClient

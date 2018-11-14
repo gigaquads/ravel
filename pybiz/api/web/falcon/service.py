@@ -9,13 +9,13 @@ from typing import Dict
 from appyratus.decorators import memoized_property
 from appyratus.io import Environment
 
-from pybiz.api.wsgi import WsgiServiceFunctionRegistry
+from pybiz.api.wsgi import WsgiServiceRegistry
 
 from .resource import ResourceManager
 from .middleware import Middleware
 
 
-class FalconServiceFunctionRegistry(WsgiServiceFunctionRegistry):
+class FalconServiceRegistry(WsgiServiceRegistry):
 
     env = Environment()
 

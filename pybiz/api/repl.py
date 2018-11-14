@@ -2,12 +2,12 @@ import inspect
 
 from IPython.terminal.embed import InteractiveShellEmbed
 
-from .base import FunctionRegistry, FunctionDecorator, FunctionProxy
+from .base import Registry, RegistryDecorator, RegistryProxy
 
 
-class ReplFunctionRegistry(FunctionRegistry):
+class ReplRegistry(Registry):
     """
-    Repl is a FunctionRegistry that collects all registered functions and
+    Repl is a Registry that collects all registered functions and
     injects them into an interactive Python shell, or REPL. This is useful for
     experimenting with an API from a command-line interface.
     """
@@ -18,7 +18,7 @@ class ReplFunctionRegistry(FunctionRegistry):
 
     @property
     def function_proxy_type(self):
-        return ReplFunctionProxy
+        return ReplRegistryProxy
 
     def on_decorate(self, proxy):
         pass
@@ -51,7 +51,7 @@ class ReplFunctionRegistry(FunctionRegistry):
             print('- {}'.format(func_name))
 
 
-class ReplFunctionProxy(FunctionProxy):
+class ReplRegistryProxy(RegistryProxy):
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
 

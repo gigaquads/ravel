@@ -10,7 +10,7 @@ from appyratus.validation import fields
 
 
 class GrpcClient(object):
-    def __init__(self, registry: 'GrpcFunctionRegistry'):
+    def __init__(self, registry: 'GrpcRegistry'):
         assert registry.is_bootstrapped
         self._registry = registry
         self._channel = grpc.insecure_channel(registry.client_addr)

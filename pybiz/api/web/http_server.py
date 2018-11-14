@@ -9,10 +9,10 @@ from urllib.parse import urlparse, parse_qs
 
 from appyratus.json import JsonEncoder
 
-from pybiz.api.http import HttpFunctionRegistry, HttpRoute
+from pybiz.api.http import HttpRegistry, HttpRoute
 
 
-class HttpServerFunctionRegistry(HttpFunctionRegistry):
+class HttpServerRegistry(HttpRegistry):
     """
     An HTTP server, using the HTTPServer from the standard library. It sends and
     receives JSON data.

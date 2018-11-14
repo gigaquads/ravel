@@ -1,1 +1,1 @@
-from .http_server import HttpServerFunctionRegistry
+from .http_server import HttpServerRegistry
