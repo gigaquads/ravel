@@ -17,7 +17,7 @@ class ReplRegistry(Registry):
         self.shell = InteractiveShellEmbed()
 
     @property
-    def function_proxy_type(self):
+    def proxy_type(self):
         return ReplRegistryProxy
 
     def on_decorate(self, proxy):

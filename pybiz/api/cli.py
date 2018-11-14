@@ -42,7 +42,7 @@ class CliRegistry(Registry):
         }
 
     @property
-    def function_proxy_type(self):
+    def proxy_type(self):
         return Command
 
     def on_decorate(self, command):
@@ -98,7 +98,7 @@ class Command(RegistryProxy):
         self.subparser = Subparser(**self.subparser_kwargs)
 
     def _build_subparser_kwargs(self, func, decorator):
-        parser_kwargs = decorator.params.get('parser') or {}
+        parser_kwargs = decorator.kwargs.get('parser') or {}
         args = self._build_cli_args(func)
         return dict(
             parser_kwargs,

@@ -90,7 +90,7 @@ class GrpcRegistry(Registry):
         self.pb2_grpc = import_module(pb2_grpc_mod_path, pkg_path)
 
     @property
-    def function_proxy_type(self):
+    def proxy_type(self):
         return GrpcRegistryProxy
 
     @memoized_property
@@ -300,15 +300,15 @@ class GrpcRegistryProxy(RegistryProxy):
         super().__init__(func, decorator)
 
         self.msg_gen = MessageGenerator()
-        self._msg_name_prefix = decorator.params.get('message_name_prefix')
+        self._msg_name_prefix = decorator.kwargs.get('message_name_prefix')
         if self._msg_name_prefix is None:
             self._msg_name_prefix = TextTransform.camel(self.name)
 
         self.request_schema = build_schema(
-            decorator.params.get('request'), 'Request'
+            decorator.kwargs.get('request'), 'Request'
         )
         self.response_schema = build_schema(
-            decorator.params.get('response'), 'Response'
+            decorator.kwargs.get('response'), 'Response'
         )
 
     def __call__(self, *raw_args, **raw_kwargs):

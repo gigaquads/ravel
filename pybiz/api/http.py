@@ -14,11 +14,11 @@ class HttpRegistry(Registry):
         self.routes = defaultdict(dict)
 
     @property
-    def function_decorator_type(self):
+    def decorator_type(self):
         return HttpRegistryDecorator
 
     @property
-    def function_proxy_type(self):
+    def proxy_type(self):
         return HttpRoute
 
     def on_decorate(self, route: 'HttpRoute'):
