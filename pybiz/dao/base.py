@@ -78,7 +78,7 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def delete_many(self, _ids: list) -> None:
+    def delete_many(self, _ids: List) -> None:
         """
         Delete multiple records.
         """
