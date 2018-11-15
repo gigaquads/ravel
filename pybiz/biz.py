@@ -454,9 +454,9 @@ class BizObject(
             if isinstance(pred, ConditionalPredicate):
                 field = cls.Schema.fields.get(pred.attr_name)
                 if field is None:
-                    # XXX Anything does not exist so this would break
-                    field = Anything()
-                pred.value = field.load(pred.value).value
+                    field = field.Field()
+                load_res, load_err = field.process(pred.value)
+                pred.value = load_res
             elif isinstance(pred, BooleanPredicate):
                 load_predicate_values(pred.lhs)
                 load_predicate_values(pred.rhs)
