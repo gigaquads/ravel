@@ -2,7 +2,7 @@ import inspect
 
 from IPython.terminal.embed import InteractiveShellEmbed
 
-from .base import Registry, RegistryDecorator, RegistryProxy
+from .registry import Registry, RegistryDecorator, RegistryProxy
 
 
 class ReplRegistry(Registry):

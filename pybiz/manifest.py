@@ -121,7 +121,7 @@ class Manifest(object):
         Schema classes to their respective BizObject classes.
         """
         manager = DaoManager.get_instance()
-        for binding in self.data.get('bindings', []):
+        for binding in (self.data.get('bindings') or []):
             biz_class = self.scanner.bizobj_classes[binding['biz']]
             dao_class = self.scanner.dao_classes[binding['dao']]
             manager.register(biz_class, dao_class)

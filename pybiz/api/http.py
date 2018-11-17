@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from pybiz.exc import ApiError
 
-from .base import Registry, RegistryProxy, RegistryDecorator
+from .registry import Registry, RegistryProxy, RegistryDecorator
 
 
 class HttpRegistry(Registry):

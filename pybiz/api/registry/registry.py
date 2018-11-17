@@ -1,6 +1,6 @@
 import inspect
 
-from typing import List, Typing
+from typing import List, Type, Dict
 
 from appyratus.json import JsonEncoder
 from appyratus.types import DictAccessor
@@ -8,6 +8,7 @@ from appyratus.types import DictAccessor
 from pybiz.manifest import Manifest
 
 from .registry_decorator import RegistryDecorator
+from .registry_middleware import RegistryMiddleware
 from .registry_proxy import RegistryProxy
 
 

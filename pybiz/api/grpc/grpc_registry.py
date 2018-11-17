@@ -1,7 +1,5 @@
 import os
 import sys
-import traceback
-import importlib
 import socket
 import inspect
 import subprocess
@@ -14,21 +12,18 @@ import grpc
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Text, List, Dict, Type
-from collections import deque
 from importlib import import_module
 
 from google.protobuf.message import Message
 
-from appyratus.schema import Schema
-from appyratus.schema.fields import Field
 from appyratus.schema import fields
 from appyratus.decorators import memoized_property
 from appyratus.util import TextTransform, FuncUtils
 from appyratus.json import JsonEncoder
 
-from ..base import Registry, RegistryDecorator, RegistryProxy
+from ..registry import Registry, RegistryProxy
+from .grpc_registry_proxy import GrpcRegistryProxy
 from .grpc_client import GrpcClient
-from .grpc_remote_dao import remote_dao_endpoint_factory
 
 
 class GrpcRegistry(Registry):
@@ -46,7 +41,7 @@ class GrpcRegistry(Registry):
         super().bootstrap(manifest_filepath, defer_processing=True)
 
         pkg_path = self.manifest.package
-        pkg = importlib.import_module(pkg_path)
+        pkg = import_module(pkg_path)
         pkg_dir = os.path.dirname(pkg.__file__)
         pb2_mod_path = '{}.grpc.registry_pb2'.format(pkg_path)
         pb2_grpc_mod_path = '{}.grpc.registry_pb2_grpc'.format(pkg_path)
@@ -68,11 +63,6 @@ class GrpcRegistry(Registry):
         def onerror(name):
             if issubclass(sys.exc_info()[0], ImportError):
                 pass
-
-        # dynamically create an RPC endpoint (GrpcRegistryProxy) that defines
-        # the remote Dao interface used by gRPC clients. Must be done before
-        # the manifest.process method is called.
-        self._remote_dao_endpoint = remote_dao_endpoint_factory(self)
 
         self.manifest.scanner.onerror = onerror
         self.manifest.process()
@@ -163,7 +153,8 @@ class GrpcRegistry(Registry):
 
         executor = ThreadPoolExecutor(
             max_workers=None,  # TODO: put this value in manifest
-            #initializer=initializer, # XXX TypeError: __init__() got an unexpected keyword argument 'initializer'
+            # XXX TypeError: __init__() got an unexpected keyword argument 'initializer'
+            #initializer=initializer,
         )
 
         # build the grpc server
@@ -282,228 +273,3 @@ class GrpcRegistry(Registry):
         output = subprocess.getoutput(cmd)
         if output:
             print(output)
-
-
-class GrpcRegistryProxy(RegistryProxy):
-    """
-    Command represents a top-level CliProgram Subparser.
-    """
-
-    def __init__(self, func, decorator):
-        def build_schema(kwarg, name_suffix):
-            type_name = self._msg_name_prefix + name_suffix
-            if isinstance(kwarg, dict):
-                return Schema.factory(type_name, kwarg)()
-            else:
-                return kwarg
-
-        super().__init__(func, decorator)
-
-        self.msg_gen = MessageGenerator()
-        self._msg_name_prefix = decorator.kwargs.get('message_name_prefix')
-        if self._msg_name_prefix is None:
-            self._msg_name_prefix = TextTransform.camel(self.name)
-
-        self.request_schema = build_schema(
-            decorator.kwargs.get('request'), 'Request'
-        )
-        self.response_schema = build_schema(
-            decorator.kwargs.get('response'), 'Response'
-        )
-
-    def __call__(self, *raw_args, **raw_kwargs):
-        return super().__call__(*(raw_args[:1]), **raw_kwargs)
-
-    def generate_protobuf_message_types(self) -> List[Text]:
-        return [
-            self.msg_gen.emit(self.request_schema),
-            self.msg_gen.emit(self.response_schema),
-        ]
-
-    def generate_protobuf_function_declaration(self) -> Text:
-        return (
-            'rpc {func_name}({req_msg_type}) '
-            'returns ({resp_msg_type})'
-            ' {{}}'.format(
-                func_name=self.name,
-                req_msg_type=self._msg_name_prefix + 'Request',
-                resp_msg_type=self._msg_name_prefix + 'Response',
-            )
-        )
-
-
-class FieldAdapter(object):
-    def __init__(self):
-        self.msg_gen = None
-
-    def emit(self, field, field_no):
-        raise NotImplementedError()
-
-    def bind(self, msg_gen: 'MessageGenerator'):
-        self.msg_gen = msg_gen
-
-    def emit(self, field_type, field_no, field_name, is_repeated=False):
-        return '{repeated} {field_type} {field_name}{field_no}'.format(
-            repeated=' repeated' if is_repeated else '',
-            field_type=field_type,
-            field_name=field_name,
-            field_no=' = {}'.format(field_no) if field_no < 16 else '',
-        )
-
-
-class ScalarFieldAdapter(FieldAdapter):
-    def __init__(self, type_name):
-        self.type_name = type_name
-
-    def emit(self, field, field_no):
-        field_type = self.msg_gen.get_adapter(field).type_name
-        return super().emit(
-            field_type=field_type,
-            field_no=field_no,
-            field_name=field.name
-        )
-
-
-class ArrayFieldAdapter(FieldAdapter):
-    def emit(self, field, field_no):
-        if isinstance(field.nested, Schema):
-            nested_field_type = field.nested.__class__.__name__
-        else:
-            adapter = self.msg_gen.get_adapter(field.nested)
-            nested_field_type = adapter.type_name
-        return super().emit(
-            field_type=nested_field_type,
-            field_no=field_no,
-            field_name=field.name,
-            is_repeated=True,
-        )
-
-
-class NestedFieldAdapter(FieldAdapter):
-    def emit(self, field, field_no):
-        return super().emit(
-            field_type=field.schema_type.__name__,
-            field_no=field_no,
-            field_name=field.name,
-        )
-
-
-class SchemaFieldAdapter(FieldAdapter):
-    def emit(self, field, field_no):
-        return super().emit(
-            field_type=field.__class__.__name__,
-            field_no=field_no,
-            field_name=field.name,
-        )
-
-
-class EnumFieldAdapter(FieldAdapter):
-    def emit(self, field, field_no):
-        nested_field_type = self.msg_gen.get_adapter(field.nested).type_name
-        return super().emit(
-            field_type=nested_field_type,
-            field_no=field_no,
-            field_name=field.name,
-        )
-
-
-class MessageGenerator(object):
-    def __init__(self, adapters: Dict[Type[Field], FieldAdapter]=None):
-        # default field adapters indexed by appyratus schema Field types
-        self.adapters = {
-            Schema: SchemaFieldAdapter(),
-            fields.Nested: NestedFieldAdapter(),
-            fields.String: ScalarFieldAdapter('string'),
-            fields.FormatString: ScalarFieldAdapter('string'),
-            fields.Email: ScalarFieldAdapter('string'),
-            fields.Uuid: ScalarFieldAdapter('string'),
-            fields.Bool: ScalarFieldAdapter('bool'),
-            fields.Float: ScalarFieldAdapter('double'),
-            fields.Int: ScalarFieldAdapter('sint64'),
-            fields.DateTime: ScalarFieldAdapter('uint64'),
-            fields.Dict: ScalarFieldAdapter('bytes'),
-            fields.List: ArrayFieldAdapter(),
-            # XXX redundant to List?  does not exist in schema.fields
-            #fields.Array: ArrayFieldAdapter(),
-            # XXX do we add?  does not exist in schema.fields
-            #fields.Enum: EnumFieldAdapter(),
-            # XXX do we add?  does not exist in schema.fields
-            #fields.Regexp: ScalarFieldAdapter('string'),
-        }
-        # upsert into default adapters dict from the `adapters` kwarg
-        for field_type, adapter in (adapters or {}).items():
-            self.adapters[field_type] = adapter
-        # associate the generator with each adapter.
-        for adapter in self.adapters.values():
-            adapter.bind(self)
-
-    def get_adapter(self, field) -> FieldAdapter:
-        if isinstance(field, Schema):
-            return self.adapters[Schema]
-        else:
-            return self.adapters[field.__class__]
-
-    def emit(
-        self,
-        schema_type: Type['Schema'],
-        type_name: Text = None,
-        depth=1
-    ) -> Text:
-        """
-        Recursively generate a protocol buffer message type declaration string
-        from a given Schema class.
-        """
-        if isinstance(schema_type, type):
-            type_name = type_name or schema_type.__name__
-        elif isinstance(schema_type, Schema):
-            type_name = type_name or schema_type.__class__.__name__
-        else:
-            raise ValueError(
-                'unrecognized schema type: "{}"'.format(schema_type)
-            )
-
-        field_no2field = {}
-        prepared_data = []
-        field_decls = []
-
-        for f in schema_type.fields.values():
-            # compute the "field number"
-            field_no = f.meta.get('field_no', sys.maxsize)
-
-            # get the field adapter
-            adapter = self.get_adapter(f)
-            if not adapter:
-                raise Exception('no adapter for type {}'.format(f.__class__))
-
-            # store in intermediate data structure for purpose of sorting by
-            # field numbers
-            prepared_data.append((field_no, f, adapter))
-
-        # emit field declarations in order of field number ASC
-        sorted_data = sorted(prepared_data, key=lambda x: x[0])
-        for (field_no, field, adapter) in sorted_data:
-            field_decl = adapter.emit(field, field_no)
-            field_decls.append(('  ' * depth) + field_decl + ';')
-
-        nested_message_types = [
-            self.emit(nested_schema, depth=depth + 1)
-            for nested_schema in {
-                s.__class__ for s in schema_type.children
-            }
-        ]
-
-        MESSAGE_TYPE_FSTR = (
-            (('   ' * (depth - 1)) + '''message {type_name} ''') + \
-            ('''{{\n{nested_message_types}{field_lines}\n''') + \
-            (('   ' * (depth - 1)) + '''}}''')
-        )
-
-        # emit the message declaration "message Foo { ... }"
-        return MESSAGE_TYPE_FSTR.format(
-            type_name=type_name,
-            nested_message_types=(
-                '\n'.join(nested_message_types) + '\n'
-                if nested_message_types else ''
-            ),
-            field_lines='\n'.join(field_decls),
-        ).rstrip()

@@ -11,7 +11,7 @@ from appyratus.cli import (
     safe_main,
 )
 
-from .base import Registry, RegistryDecorator, RegistryProxy
+from .registry import Registry, RegistryDecorator, RegistryProxy
 
 
 class CliRegistry(Registry):
