@@ -6,7 +6,7 @@ import grpc
 from typing import Text
 
 from appyratus.util import TextTransform
-from appyratus.validation import fields
+from appyratus.schema import fields
 
 
 class GrpcClient(object):

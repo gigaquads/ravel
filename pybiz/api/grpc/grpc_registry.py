@@ -21,6 +21,8 @@ from appyratus.decorators import memoized_property
 from appyratus.util import TextTransform, FuncUtils
 from appyratus.json import JsonEncoder
 
+from pybiz.util import is_bizobj
+
 from ..registry import Registry, RegistryProxy
 from .grpc_registry_proxy import GrpcRegistryProxy
 from .grpc_client import GrpcClient
@@ -119,21 +121,35 @@ class GrpcRegistry(Registry):
                     recurseively_bind(getattr(target, k), v)
                 else:
                     setattr(target, k, v)
+            return target
+
 
         # bind the returned dict values to the response protobuf message
         response_type = getattr(
             self.pb2, '{}Response'.format(TextTransform.camel(proxy.name))
         )
         resp = response_type()
+
+        def to_dict(field, value):
+            if is_bizobj(value):
+                return value.dump()
+            elif isinstance(field, fields.List):
+                return [r.dump() if is_bizobj(r) else r for r in value]
+            else:
+                return value
+
         if result:
-            dumped_result = proxy.response_schema.dump(
-                result, strict=True
-            ).data
+            dumped_result, dumped_error = proxy.response_schema.process(
+                result, strict=True, pre_process=to_dict
+            )
             for k, v in dumped_result.items():
                 field = proxy.response_schema.fields[k]
                 if isinstance(field, fields.Dict):
                     v_bytes = codecs.encode(pickle.dumps(v), 'base64')
                     setattr(resp, k, v_bytes)
+                elif isinstance(field, fields.List):
+                    nested_resp_type = getattr(resp, field.nested.__class__.__name__)
+                    getattr(resp, k).extend([recurseively_bind(nested_resp_type(), _v) for _v in v])
                 elif isinstance(getattr(resp, k), Message):
                     recurseively_bind(getattr(resp, k), v)
                 else:
