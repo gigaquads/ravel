@@ -116,13 +116,14 @@ class GrpcRegistry(Registry):
 
     def on_response(self, proxy, result, *raw_args, **raw_kwargs):
         def recurseively_bind(target, data):
+            if data is None:
+                return None
             for k, v in data.items():
                 if isinstance(v, Message):
                     recurseively_bind(getattr(target, k), v)
                 else:
                     setattr(target, k, v)
             return target
-
 
         # bind the returned dict values to the response protobuf message
         response_type = getattr(

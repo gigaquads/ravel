@@ -6,7 +6,7 @@ import grpc
 from typing import Text
 
 from appyratus.util import TextTransform
-from appyratus.schema import fields
+from appyratus.schema import fields, Schema
 
 
 class GrpcClient(object):
@@ -40,6 +40,10 @@ class GrpcClient(object):
                 elif isinstance(field, fields.Dict):
                     decoded_value = codecs.decode(value, 'base64')
                     result[field_name] = pickle.loads(decoded_value)
+                # the following should be enabled and expanded when this function becomes recursive
+                #elif isinstance(field, Schema):
+                #elif isinstance(field, fields.Nested)
+                #    field.nested.schema
                 else:
                     result[field_name] = value
             # return the response dict
