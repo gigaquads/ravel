@@ -3,7 +3,7 @@ import inspect
 from typing import Dict, Text
 
 from appyratus.json import JsonEncoder
-from appyratus.types import DictAccessor
+from appyratus.utils import DictAccessor
 
 from pybiz.manifest import Manifest
 

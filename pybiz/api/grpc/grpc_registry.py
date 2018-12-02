@@ -17,8 +17,8 @@ from importlib import import_module
 from google.protobuf.message import Message
 
 from appyratus.schema import fields
-from appyratus.decorators import memoized_property
-from appyratus.util import TextTransform, FuncUtils
+from appyratus.memoize import memoized_property
+from appyratus.utils import StringUtils, FuncUtils
 from appyratus.json import JsonEncoder
 
 from ..registry import Registry, RegistryProxy
@@ -122,7 +122,7 @@ class GrpcRegistry(Registry):
 
         # bind the returned dict values to the response protobuf message
         response_type = getattr(
-            self.pb2, '{}Response'.format(TextTransform.camel(proxy.name))
+            self.pb2, '{}Response'.format(StringUtils.camel(proxy.name))
         )
         resp = response_type()
         if result:

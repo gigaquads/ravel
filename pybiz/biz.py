@@ -20,7 +20,7 @@ from abc import ABCMeta, abstractmethod
 from typing import List, Dict
 from importlib import import_module
 
-from appyratus.decorators import memoized_property
+from appyratus.memoize import memoized_property
 from appyratus.schema import Schema, fields as schema_fields
 
 from .web.patch import JsonPatchMixin

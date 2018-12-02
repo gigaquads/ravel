@@ -8,8 +8,8 @@ import venusian
 from typing import Text
 
 from appyratus.schema import fields, Schema
-from appyratus.decorators import memoized_property
-from appyratus.types import DictAccessor
+from appyratus.memoize import memoized_property
+from appyratus.utils import DictAccessor
 
 from pybiz.dao.base import DaoManager
 from pybiz.exc import ManifestError

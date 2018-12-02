@@ -5,8 +5,8 @@ import grpc
 
 from typing import Text
 
-from appyratus.util import TextTransform
-from appyratus.validation import fields
+from appyratus.utils import StringUtils
+from appyratus.schema import fields
 
 
 class GrpcClient(object):
@@ -23,7 +23,7 @@ class GrpcClient(object):
         return self._funcs[func_name]
 
     def _build_func(self, proxy):
-        key = TextTransform.camel(proxy.name)
+        key = StringUtils.camel(proxy.name)
         request_type = getattr(self._registry.pb2, '{}Request'.format(key))
         send_request = getattr(self._grpc_stub, proxy.name)
 

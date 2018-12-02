@@ -3,12 +3,12 @@ import inspect
 from pprint import pprint
 
 from IPython.terminal.embed import InteractiveShellEmbed
+from appyratus.utils import SysUtils
 from appyratus.cli import (
     CliProgram,
     Subparser,
     OptionalArg,
     PositionalArg,
-    safe_main,
 )
 
 from .registry import Registry, RegistryDecorator, RegistryProxy
@@ -84,7 +84,7 @@ class CliRegistry(Registry):
             subparsers=[c.subparser for c in self._commands if c.subparser],
             **self._cli_program_kwargs
         )
-        safe_main(self._cli_program.run, debug_level=2)
+        SysUtils.safe_main(self._cli_program.run, debug_level=2)
 
 
 class Command(RegistryProxy):

@@ -6,8 +6,8 @@ import falcon
 
 from typing import Dict
 
-from appyratus.decorators import memoized_property
-from appyratus.io import Environment
+from appyratus.memoize import memoized_property
+from appyratus.env import Environment
 
 from pybiz.api.wsgi import WsgiServiceRegistry
 

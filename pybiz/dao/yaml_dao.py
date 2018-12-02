@@ -1,7 +1,7 @@
 import os
 
-from appyratus.types import Yaml, File
-from appyratus.util import TextTransform, DictUtils
+from appyratus.files import Yaml, File
+from appyratus.utils import StringUtils, DictUtils
 
 from pybiz.dao import Dao
 
@@ -22,7 +22,7 @@ class YamlDao(Dao):
         Absolute path to the yaml data files associated with this DAO.
         """
         base_dir = os.environ.get('YAML_DAO_DATA_DIR', './data')
-        dao_name = TextTransform.snake(cls.__name__.replace('Dao', ''))
+        dao_name = StringUtils.snake(cls.__name__.replace('Dao', ''))
         dao_path = '{}/{}'.format(base_dir.rstrip('/'), dao_name)
         return os.path.abspath(dao_path)
 
