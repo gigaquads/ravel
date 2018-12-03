@@ -1,7 +1,7 @@
 from typing import Text, List
 
 from appyratus.schema import Schema
-from appyratus.util import TextTransform
+from appyratus.util import StringUtils
 
 from ..registry import Registry, RegistryProxy
 from .proto import MessageGenerator
@@ -21,7 +21,7 @@ class GrpcRegistryProxy(RegistryProxy):
         self.msg_gen = MessageGenerator()
         self._msg_name_prefix = decorator.kwargs.get('message_name_prefix')
         if self._msg_name_prefix is None:
-            self._msg_name_prefix = TextTransform.camel(self.name)
+            self._msg_name_prefix = StringUtils.camel(self.name)
 
         self.request_schema = build_schema(
             decorator.kwargs.get('request'), 'Request'

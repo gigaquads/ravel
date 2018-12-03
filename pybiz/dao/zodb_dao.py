@@ -12,7 +12,7 @@ from typing import Dict, List, Text, Set
 from functools import reduce
 
 from persistent.mapping import PersistentMapping
-from appyratus.validation import Schema, fields
+from appyratus.schema import Schema, fields
 
 from pybiz.predicate import ConditionalPredicate, BooleanPredicate
 from pybiz.util import is_bizobj
@@ -25,7 +25,7 @@ class ZodbObject(persistent.Persistent):
         super().__init__()
         setattr(self, '_id', record['_id'])
         for field in schema.fields.values():
-            key = field.load_key
+            key = field.name
             if key in record:
                 setattr(self, key, record[key])
 
@@ -78,16 +78,16 @@ class ZodbCollection(object):
             self.data['indexes']['_id'] = BTrees.OOBTree.BTree()
             for field in self.schema.fields.values():
                 if not isinstance(field, unindexable_field_types):
-                    idx_name = field.load_key
+                    idx_name = field.name
                     idx = BTrees.OOBTree.BTree()
                     self.data['indexes'][idx_name] = idx
 
         # now create and new indexes due to
         # possible addition of new schema fields
         for field in self.schema.fields.values():
-            if field.load_key not in self.data['indexes']:
+            if field.name not in self.data['indexes']:
                 idx = BTrees.OOBTree.BTree()
-                self.data['indexes'][field.load_key] = idx
+                self.data['indexes'][field.name] = idx
 
     def insert(self, record: dict):
         # get default values for non-specified keys in the record, ensuring
@@ -222,7 +222,7 @@ class ZodbDao(Dao, metaclass=ZodbDaoMeta):
     def to_dict(cls, obj, whitelist: Set[Text] = None):
         record = {'_id': getattr(obj, '_id')}
         for field in cls.collection.schema.fields.values():
-            key = field.load_key
+            key = field.name
             if (whitelist is None) or (key in whitelist):
                 record[key] = getattr(obj, key, None)
         return record
