@@ -1,7 +1,7 @@
 from typing import Text, List
 
 from appyratus.schema import Schema
-from appyratus.util import StringUtils
+from appyratus.utils import StringUtils
 
 from ..registry import Registry, RegistryProxy
 from .proto import MessageGenerator

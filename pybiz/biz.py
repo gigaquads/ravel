@@ -28,7 +28,7 @@ from .web.graphql import GraphQLObject, GraphQLEngine
 from .dao.base import Dao, DaoManager
 from .dirty import DirtyDict, DirtyInterface
 from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
-from .util.bizobj_util import is_bizobj
+from .util import is_bizobj
 from .exc import NotFound
 from .constants import (
     IS_BIZOBJ_ANNOTATION,
