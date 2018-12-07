@@ -1,5 +1,7 @@
 import inspect
 
+from typing import Dict, List, Text
+
 from IPython.terminal.embed import InteractiveShellEmbed
 
 from .registry import Registry, RegistryDecorator, RegistryProxy
@@ -18,46 +20,41 @@ class ReplRegistry(Registry):
 
     @property
     def proxy_type(self):
-        return ReplRegistryProxy
+        return Function
 
-    def on_decorate(self, proxy):
+    def on_decorate(self, proxy: 'Function'):
         pass
 
-    def on_request(self, proxy, signature, *args, **kwargs):
+    def on_request(self, proxy: 'Function', signature, *args, **kwargs):
         return (args, kwargs)
 
-    def start(self, namespace=None, *args, **kwargs):
+    def start(self, namespace: Dict = None, *args, **kwargs):
         """
         Start a new REPL with all registered functions available in the REPL
         namespace.
         """
-        self.shell.mainloop(
-            local_ns=self._build_shell_namespace(namespace or {})
-        )
+        # build the shell namespace
+        local_ns = {}
+        local_ns['repl'] = self
+        local_ns.update(self.types.biz)
+        local_ns.update({p.name: p for p in self.proxies})
+        local_ns.update(namespace or {})
 
-    def _build_shell_namespace(self, custom_namespace):
-        ns = {}
-        ns['repl'] = self
-        ns.update(self.biz_types.to_dict())
-        ns.update({p.name: p for p in self.proxies})
-        ns.update(custom_namespace)
-        return ns
+        # enter an ipython shell
+        self.shell.mainloop(local_ns=local_ns)
 
     @property
-    def functions(self):
+    def functions(self) -> List[Text]:
         """
         Get list of names of all registered functions in the REPL.
         """
         return sorted(p.target.__name__ for p in self.proxies)
 
 
-class ReplRegistryProxy(RegistryProxy):
+class Function(RegistryProxy):
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
 
-    def debug(self, *args, **kwargs):
-        return self.call_target(args, kwargs, pybiz_debug=True)
-
     @property
-    def source(self):
+    def source(self) -> Text:
         print(inspect.getsource(self.target))

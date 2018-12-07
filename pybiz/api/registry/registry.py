@@ -20,7 +20,7 @@ class Registry(object):
     ):
         self._decorators = []
         self._proxies = []
-        self._manifest = manifest
+        self._manifest = manifest or Manifest()
         self._is_bootstrapped = False
         self._middleware = middleware or []
         self._json_encoder = JsonEncoder()
@@ -72,38 +72,26 @@ class Registry(object):
         return self._decorators
 
     @property
-    def biz_types(self) -> DictAccessor:
-        return self._manifest.biz_types
-
-    @property
-    def dao_types(self) -> DictAccessor:
-        return self._manifest.dao_types
-
-    @property
-    def schemas(self) -> DictAccessor:
-        return self._manifest.schemas
+    def types(self) -> DictAccessor:
+        return self._manifest.types
 
     @property
     def is_bootstrapped(self):
         return self._is_bootstrapped
 
-    def bootstrap(self, manifest_filepath: str=None, defer_processing=False):
+    def bootstrap(self):
         """
-        Bootstrap the data, business, and service layers, wiring them up,
-        according to the settings contained in a service manifest file.
+        Bootstrap the data, business, and service layers, wiring them up.
+        Override in subclass.
+        """
+        self._is_bootstrapped = True
 
-        Args:
-            - filepath: Path to manifest.yml file
-            - defer_processing: If set, the manifest file will only be loaded
-              but process will not be called. This is useful if we need to
-              perform additional logic beforehand.
+    def start(self, *args, **kwargs):
         """
-        if not self.is_bootstrapped:
-            if (self._manifest is None) or (filepath is not None):
-                self._manifest = Manifest(manifest_filepath)
-            if (self.manifest is not None) and (not defer_processing):
-                self._manifest.process()
-            self._is_bootstrapped = True
+        Enter the main loop in whatever program context your Registry is
+        being used, like in a web framework or a REPL.
+        """
+        raise NotImplementedError('override in subclass')
 
     def dump(self) -> Dict:
         """
@@ -116,13 +104,6 @@ class Registry(object):
         return {
             'registry': {p.dump() for p in self.proxies}
         }
-
-    def start(self, *args, **kwargs):
-        """
-        Enter the main loop in whatever program context your Registry is
-        being used, like in a web framework or a REPL.
-        """
-        raise NotImplementedError('override in subclass')
 
     def on_decorate(self, proxy: 'RegistryProxy'):
         """

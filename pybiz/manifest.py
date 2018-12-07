@@ -10,7 +10,7 @@ from typing import Text, Dict
 from appyratus.schema import fields, Schema
 from appyratus.memoize import memoized_property
 from appyratus.utils import DictUtils, DictAccessor
-from appyratus.files import Yaml
+from appyratus.files import Yaml, Json
 
 from pybiz.dao.base import DaoManager
 from pybiz.exc import ManifestError
@@ -43,52 +43,64 @@ class Manifest(object):
 
 
     def __init__(self, path: Text = None, data: Dict = None):
-        self.data = data or {}
+        self.data = {}
         self.schema = self.Schema()
+        self.load(data=data, path=path)
         self.scanner = venusian.Scanner(
             bizobj_classes={},
-            schema_classes={},
             dao_classes={},
         )
-        # load and merge contents of YAML file with data dict arg
-        # if a file path to a manfiest file exists.
+
+    def load(self, data: Dict = None, path: Text = None):
+        if not (data or path):
+            return
+
+        data = data or {}
+
+        # load base data from file
         if path is None:
             path = os.environ.get('PYBIZ_MANIFEST')
         if path is not None:
-            yaml_data = Yaml.load_file(path)
-            self.data = DictUtils.merge(yaml_data, self.data)
+            ext = os.path.splitext(path).lower()
+            if ext in ('yml', 'yaml'):
+                file_data = Yaml.load_file(path)
+            elif ext == 'json':
+                file_data = Json.load_file(path)
+            # merge contents of file with data dict arg
+            data = DictUtils.merge(file_data, data)
 
         # marshal in the computed data dict
+        self.data = DictUtils.merge(self.data, data)
         self.data, errors = self.schema.process(self.data)
         if errors:
             raise ManifestError(str(errors))
 
-    def process(self, on_error=None):
+    def process(self, namespace: Dict = None, data: Dict = None, on_error=None):
         """
         Interpret the manifest file data, bootstrapping the layers of the
         framework.
         """
-        self._scan(on_error=on_error)
+        if data:
+            self.load(data=data)
+
+        self._scan(namespace=namespace, on_error=on_error)
         self._bind()
+
         return self
 
     @property
     def package(self):
-        return self.data['package']
+        return self.data.get('package', None)
+
+    @property
+    def bindings(self):
+        return self.data.get('bindings', [])
 
     @memoized_property
-    def biz_types(self) -> DictAccessor:
-        return DictAccessor(self.scanner.bizobj_classes)
+    def types(self) -> DictAccessor:
+        return self._types
 
-    @memoized_property
-    def dao_types(self) -> DictAccessor:
-        return DictAccessor(self.scanner.dao_classes)
-
-    @memoized_property
-    def schemas(self) -> DictAccessor:
-        return DictAccessor(self.scanner.schema_classes)
-
-    def _scan(self, on_error=None):
+    def _scan(self, namespace : Dict = None, on_error=None):
         """
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Api instance.
@@ -106,6 +118,22 @@ class Manifest(object):
         if pkg_path:
             pkg = importlib.import_module(pkg_path)
             self.scanner.scan(pkg, onerror=on_error)
+        else:
+            # try to load whatever's in global namespace
+            from pybiz.dao import Dao
+            from pybiz.biz import BizObject
+
+            for k, v in (namespace or {}).items():
+                if isinstance(v, type):
+                    if issubclass(v, BizObject):
+                        self.scanner.bizobj_classes[k] = v
+                    elif issubclass(v, Dao):
+                        self.scanner.dao_classes[k] = v
+
+        self._types = DictAccessor({
+            'biz': self.scanner.bizobj_classes,
+            'dao': self.scanner.dao_classes,
+        })
 
     def _bind(self):
         """
