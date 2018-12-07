@@ -26,19 +26,21 @@ class ReplRegistry(Registry):
     def on_request(self, proxy, signature, *args, **kwargs):
         return (args, kwargs)
 
-    def start(self, *args, **kwargs):
+    def start(self, namespace=None, *args, **kwargs):
         """
         Start a new REPL with all registered functions available in the REPL
         namespace.
         """
-        self.functions
-        self.shell.mainloop(local_ns=self._build_shell_namespace())
+        self.shell.mainloop(
+            local_ns=self._build_shell_namespace(namespace or {})
+        )
 
-    def _build_shell_namespace(self):
+    def _build_shell_namespace(self, custom_namespace):
         ns = {}
         ns['repl'] = self
         ns.update(self.biz_types.to_dict())
         ns.update({p.name: p for p in self.proxies})
+        ns.update(custom_namespace)
         return ns
 
     @property
@@ -46,9 +48,7 @@ class ReplRegistry(Registry):
         """
         Get list of names of all registered functions in the REPL.
         """
-        func_names = sorted(p.target.__name__ for p in self.proxies)
-        for func_name in func_names:
-            print('- {}'.format(func_name))
+        return sorted(p.target.__name__ for p in self.proxies)
 
 
 class ReplRegistryProxy(RegistryProxy):

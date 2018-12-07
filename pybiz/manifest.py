@@ -5,27 +5,15 @@ import importlib
 import yaml
 import venusian
 
-from typing import Text
+from typing import Text, Dict
 
 from appyratus.schema import fields, Schema
 from appyratus.memoize import memoized_property
-from appyratus.utils import DictAccessor
+from appyratus.utils import DictUtils, DictAccessor
+from appyratus.files import Yaml
 
 from pybiz.dao.base import DaoManager
 from pybiz.exc import ManifestError
-
-
-class ManifestSchema(Schema):
-    """
-    Describes the structure expected in manifest.yaml files.
-    """
-
-    class BindingSchema(Schema):
-        biz = fields.String(required=True)
-        dao = fields.String(required=True)
-
-    package = fields.String(required=True)
-    bindings = fields.List(BindingSchema(), default=lambda: [])
 
 
 class Manifest(object):
@@ -41,23 +29,46 @@ class Manifest(object):
            ApiRegistry via ApiRegistryDecorators.
     """
 
-    def __init__(self, filepath=None):
+    class Schema(Schema):
+        """
+        Describes the structure expected in manifest.yaml files.
+        """
+
+        class BindingSchema(Schema):
+            biz = fields.String(required=True)
+            dao = fields.String(required=True)
+
+        package = fields.String()
+        bindings = fields.List(BindingSchema(), default=lambda: [])
+
+
+    def __init__(self, path: Text = None, data: Dict = None):
+        self.data = data or {}
+        self.schema = self.Schema()
         self.scanner = venusian.Scanner(
             bizobj_classes={},
             schema_classes={},
             dao_classes={},
         )
-        self.filepath = self._resolve_filepath(filepath)
-        self.data, errors = self._load_manifest_file()
+        # load and merge contents of YAML file with data dict arg
+        # if a file path to a manfiest file exists.
+        if path is None:
+            path = os.environ.get('PYBIZ_MANIFEST')
+        if path is not None:
+            yaml_data = Yaml.load_file(path)
+            self.data = DictUtils.merge(yaml_data, self.data)
+
+        # marshal in the computed data dict
+        self.data, errors = self.schema.process(self.data)
         if errors:
             raise ManifestError(str(errors))
 
-    def process(self):
+    def process(self, on_error=None):
         """
         Interpret the manifest file data, bootstrapping the layers of the
         framework.
         """
-        self._scan()
+        self._scan(on_error=on_error)
         self._bind()
         return self
 
@@ -77,51 +88,38 @@ class Manifest(object):
     def schemas(self) -> DictAccessor:
         return DictAccessor(self.scanner.schema_classes)
 
-    @staticmethod
-    def _resolve_filepath(filepath: Text):
-        """
-        Return the filepath to the manifest.yaml file. Search the Check for env
-        var with the structure: PYBIZ_MANIFEST if the filepath argument
-        is None.
-        """
-        if filepath is None:
-            env_var_name = 'PYBIZ_MANIFEST'
-            filepath = os.environ.get(env_var_name)
-
-        if filepath is None:
-            raise ManifestError('could not find pybiz manifest file')
-
-        return filepath
-
-    def _load_manifest_file(self):
-        with open(self.filepath) as manifest_file:
-            schema = ManifestSchema()
-            manifest_dict = yaml.load(manifest_file)
-            return schema.process(manifest_dict)
-
-    def _scan(self):
+    def _scan(self, on_error=None):
         """
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Api instance.
         """
+        if on_error is None:
+            def on_error(name):
+                import sys, re
+                if issubclass(sys.exc_info()[0], ImportError):
+                    # XXX add logging otherwise things
+                    # like import errors do not surface
+                    if re.match(r'^\w+\.grpc', name):
+                        return
 
-        def onerror(name):
-            import sys, re
-            if issubclass(sys.exc_info()[0], ImportError):
-                # XXX add logging otherwise things like import errors do not surface
-                if re.match(r'^\w+\.grpc', name):
-                    return
-
-        pkg = importlib.import_module(self.data['package'])
-        self.scanner.scan(pkg, onerror=onerror)
+        pkg_path = self.data.get('package')
+        if pkg_path:
+            pkg = importlib.import_module(pkg_path)
+            self.scanner.scan(pkg, onerror=on_error)
 
     def _bind(self):
         """
         Associate each BizObject class with a corresponding Dao class. Also bind
         Schema classes to their respective BizObject classes.
         """
-        manager = DaoManager.get_instance()
         for binding in (self.data.get('bindings') or []):
-            biz_class = self.scanner.bizobj_classes[binding['biz']]
-            dao_class = self.scanner.dao_classes[binding['dao']]
+            biz_class = self.scanner.bizobj_classes.get(binding['biz'])
+            if biz_class is None:
+                raise ManifestError('{} not found'.format(binding['biz']))
+
+            dao_class = self.scanner.dao_classes.get(binding['dao'])
+            if dao_class is None:
+                raise ManifestError('{} not found'.format(binding['dao']))
+
+            manager = DaoManager.get_instance()
             manager.register(biz_class, dao_class)

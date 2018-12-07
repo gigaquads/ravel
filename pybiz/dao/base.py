@@ -117,3 +117,6 @@ class DaoManager(object):
             )
         dao_class = self._bizobj_type_2_dao_type[bizobj_class]
         return dao_class()
+
+    def is_registered(self, bizobj_class):
+        return bizobj_class in self._bizobj_type_2_dao_type

@@ -26,6 +26,7 @@ from appyratus.schema import Schema, fields as schema_fields
 from .web.patch import JsonPatchMixin
 from .web.graphql import GraphQLObject, GraphQLEngine
 from .dao.base import Dao, DaoManager
+from .dao.dict_dao import DictDao
 from .dirty import DirtyDict, DirtyInterface
 from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from .util import is_bizobj
@@ -95,6 +96,12 @@ class ComparableProperty(property):
     def __ge__(self, other):
         return ConditionalPredicate(self._key, '>=', other)
 
+    def is_in(self, others):
+        return ConditionalPredicate(self._key, 'in', others)
+
+    def is_not_in(self, others):
+        return ConditionalPredicate(self._key, 'nin', others)
+
     @property
     def key(self):
         return self._key
@@ -137,9 +144,10 @@ class BizObjectMeta(ABCMeta):
         venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
-        dao_class = cls.__dao__()
-        if dao_class:
-            cls.dao_manager.register(cls, dao_class)
+        if not cls.dao_manager.is_registered(cls):
+            dao_class = cls.__dao__()
+            if dao_class:
+                cls.dao_manager.register(cls, dao_class)
 
     def build_schema_class(cls, name):
         """
@@ -371,6 +379,7 @@ class BizObject(
         Returns a dotted path or Python reference to a Dao class to back this
         BizObject. Normally, this information should be declared in a manifest.
         """
+        return DictDao
 
     @classmethod
     def get_dao(cls):
@@ -455,7 +464,18 @@ class BizObject(
                 field = cls.Schema.fields.get(pred.attr_name)
                 if field is None:
                     field = field.Field()
-                load_res, load_err = field.process(pred.value)
+                if not isinstance(pred.value, (list, tuple, set)):
+                    load_res, load_err = field.process(pred.value)
+                    if load_err:
+                        raise Exception('invalid value')
+                else:
+                    load_res = []
+                    for v in pred.value:
+                        res, load_err = field.process(v)
+                        if load_err:
+                            raise Exception('invalid value')
+                        else:
+                            load_res.append(res)
                 pred.value = load_res
             elif isinstance(pred, BooleanPredicate):
                 load_predicate_values(pred.lhs)
