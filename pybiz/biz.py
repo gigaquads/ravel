@@ -454,13 +454,15 @@ class BizObject(
     @classmethod
     def query(
         cls,
-        predicate: Predicate,
+        predicate: Predicate = None,
         fields: Dict=None,
         first: bool=False,
         **kwargs
     ):
         def load_predicate_values(pred):
-            if isinstance(pred, ConditionalPredicate):
+            if pred is None:
+                return None
+            elif isinstance(pred, ConditionalPredicate):
                 field = cls.Schema.fields.get(pred.attr_name)
                 if field is None:
                     field = field.Field()
