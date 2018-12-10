@@ -61,7 +61,8 @@ class Manifest(object):
         if path is None:
             path = os.environ.get('PYBIZ_MANIFEST')
         if path is not None:
-            ext = os.path.splitext(path).lower()
+            _, ext = os.path.splitext(path)
+            ext = ext.lstrip('.').lower()
             if ext in ('yml', 'yaml'):
                 file_data = Yaml.load_file(path)
             elif ext == 'json':

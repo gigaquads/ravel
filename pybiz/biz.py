@@ -790,7 +790,7 @@ class BizObject(
                         related_bizobj_list.append(obj)
                     else:
                         related_bizobj_list.append(
-                            rel.target(related_data)
+                            rel.target(obj)
                         )
 
                 self._related_bizobjs[rel.name] = related_bizobj_list
