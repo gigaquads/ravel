@@ -701,7 +701,7 @@ class BizObject(
         self.merge(self.get(_id=self._id, fields=fields))
         return self
 
-    def dump(self, fields=True, relationships=True):
+    def dump(self, fields=True, relationships=True, include_id=False):
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
@@ -713,7 +713,7 @@ class BizObject(
 
         if fields:
             if not self._cached_dump_data:
-                data = self._dump_fields()
+                data = self._dump_fields(include_id=include_id)
                 self._cached_dump_data = data
             data = self._cached_dump_data
 
@@ -724,12 +724,13 @@ class BizObject(
 
         return data
 
-    def _dump_fields(self):
+    def _dump_fields(self, include_id=False):
         """
         Dump all scalar fields of the instance to a dict.
         """
         data_copy = copy.deepcopy(self.data)
-        data_copy['id'] = data_copy.pop('_id')
+        if include_id:
+            data_copy['id'] = data_copy.pop('_id')
         return data_copy
 
     def _dump_relationships(self):
