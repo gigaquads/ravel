@@ -3,6 +3,7 @@ import sys
 import socket
 import inspect
 import subprocess
+import traceback
 import time
 import re
 import pickle
@@ -40,7 +41,7 @@ class GrpcRegistry(Registry):
         self._grpc_servicer = None
 
     def bootstrap(self, manifest_filepath: Text, build_grpc=False):
-        super().bootstrap(manifest_filepath, defer_processing=True)
+        self.manifest.load(path=manifest_filepath)
 
         pkg_path = self.manifest.package
         pkg = import_module(pkg_path)
@@ -62,12 +63,11 @@ class GrpcRegistry(Registry):
         os.makedirs(os.path.join(grpc_build_dir), exist_ok=True)
         sys.path.append(grpc_build_dir)
 
-        def onerror(name):
+        def on_error(name):
             if issubclass(sys.exc_info()[0], ImportError):
-                pass
+                traceback.print_exc()
 
-        self.manifest.scanner.onerror = onerror
-        self.manifest.process()
+        self.manifest.process(on_error=on_error)
 
         def touch(filepath):
             with open(os.path.join(filepath), 'a'):
