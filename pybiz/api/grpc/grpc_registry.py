@@ -122,7 +122,11 @@ class GrpcRegistry(Registry):
                 if isinstance(v, Message):
                     recurseively_bind(getattr(target, k), v)
                 else:
-                    setattr(target, k, v)
+                    try:
+                        setattr(target, k, v)
+                    except Exception as exc:
+                        print('Unable to bind "{}", type mismatch'.format(k))
+                        raise exc
             return target
 
         # bind the returned dict values to the response protobuf message
