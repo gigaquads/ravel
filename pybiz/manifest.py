@@ -75,14 +75,13 @@ class Manifest(object):
         if errors:
             raise ManifestError(str(errors))
 
-    def process(self, namespace: Dict = None, data: Dict = None, on_error=None):
+        return self
+
+    def process(self, namespace: Dict = None, on_error=None):
         """
         Interpret the manifest file data, bootstrapping the layers of the
         framework.
         """
-        if data:
-            self.load(data=data)
-
         self._scan(namespace=namespace, on_error=on_error)
         self._bind()
 
