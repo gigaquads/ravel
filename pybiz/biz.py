@@ -39,6 +39,7 @@ from .constants import (
     PATCH_ANNOTATION,
 )
 
+# TODO: Split classes into modules
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
 
@@ -61,7 +62,12 @@ class Relationship(object):
 
     @memoized_property
     def target(self):
-        if callable(self._target):
+        """
+        Target is expected to be a class object. If the `target` arg passed into
+        the ctor is a callable, then we lazy load the class object here from the
+        return value.
+        """
+        if (not isinstance(self._target, type) and callable(self._target):
             return self._target()
         else:
             return self._target
