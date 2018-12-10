@@ -67,7 +67,7 @@ class Relationship(object):
         the ctor is a callable, then we lazy load the class object here from the
         return value.
         """
-        if (not isinstance(self._target, type) and callable(self._target):
+        if (not isinstance(self._target, type) and callable(self._target)):
             return self._target()
         else:
             return self._target
