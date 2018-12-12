@@ -23,15 +23,15 @@ from importlib import import_module
 from appyratus.memoize import memoized_property
 from appyratus.schema import Schema, fields as schema_fields
 
-from .web.patch import JsonPatchMixin
-from .web.graphql import GraphQLObject, GraphQLEngine
-from .dao.base import Dao, DaoManager
-from .dao.dict_dao import DictDao
-from .dirty import DirtyDict, DirtyInterface
-from .predicate import Predicate, ConditionalPredicate, BooleanPredicate
-from .util import is_bizobj
-from .exc import NotFound
-from .constants import (
+from pybiz.web.patch import JsonPatchMixin
+from pybiz.web.graphql import GraphQLObject, GraphQLEngine
+from pybiz.dao.base import Dao, DaoManager
+from pybiz.dao.dict_dao import DictDao
+from pybiz.dirty import DirtyDict, DirtyInterface
+from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
+from pybiz.util import is_bizobj
+from pybiz.exc import NotFound
+from pybiz.constants import (
     IS_BIZOBJ_ANNOTATION,
     PRE_PATCH_ANNOTATION,
     POST_PATCH_ANNOTATION,
@@ -39,91 +39,11 @@ from .constants import (
     PATCH_ANNOTATION,
 )
 
-# TODO: Split classes into modules
+from .relationship import Relationship, RelationshipProperty
+from .comparable_property import ComparableProperty
+
 # TODO: keep track which bizobj are dirty in relationships to avoid O(N) scan
 # during the dump operation.
-
-
-class Relationship(object):
-    def __init__(
-        self,
-        target,
-        many=False,
-        dump_to=None,
-        load_from=None,
-        query=None,
-    ):
-        self._target = target
-        self.load_from = load_from
-        self.dump_to = dump_to
-        self.many = many
-        self.name = None
-        self.query = query
-
-    @memoized_property
-    def target(self):
-        """
-        Target is expected to be a class object. If the `target` arg passed into
-        the ctor is a callable, then we lazy load the class object here from the
-        return value.
-        """
-        if (not isinstance(self._target, type) and callable(self._target)):
-            return self._target()
-        else:
-            return self._target
-
-    def copy(self):
-        return copy.deepcopy(self)
-
-
-class ComparableProperty(property):
-    def __init__(self, key, **kwargs):
-        super().__init__(**kwargs)
-        self._key = key
-
-    def __eq__(self, other):
-        return ConditionalPredicate(self._key, '=', other)
-
-    def __ne__(self, other):
-        return ConditionalPredicate(self._key, '!=', other)
-
-    def __lt__(self, other):
-        return ConditionalPredicate(self._key, '<', other)
-
-    def __le__(self, other):
-        return ConditionalPredicate(self._key, '<=', other)
-
-    def __gt__(self, other):
-        return ConditionalPredicate(self._key, '>', other)
-
-    def __ge__(self, other):
-        return ConditionalPredicate(self._key, '>=', other)
-
-    def __ge__(self, other):
-        return ConditionalPredicate(self._key, '>=', other)
-
-    def is_in(self, others):
-        return ConditionalPredicate(self._key, 'in', others)
-
-    def is_not_in(self, others):
-        return ConditionalPredicate(self._key, 'nin', others)
-
-    @property
-    def key(self):
-        return self._key
-
-    @property
-    def asc(self):
-        return (self._key, +1)
-
-    @property
-    def desc(self):
-        return (self._key, -1)
-
-
-class RelationshipProperty(property):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
 
 
 class BizObjectMeta(ABCMeta):
