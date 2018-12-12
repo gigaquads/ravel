@@ -40,6 +40,7 @@ class GrpcRegistry(Registry):
         self._grpc_server = None
         self._grpc_servicer = None
 
+
     def bootstrap(self, manifest_filepath: Text, build_grpc=False):
         self.manifest.load(path=manifest_filepath)
 
@@ -80,6 +81,7 @@ class GrpcRegistry(Registry):
 
         self.pb2 = import_module(pb2_mod_path, pkg_path)
         self.pb2_grpc = import_module(pb2_grpc_mod_path, pkg_path)
+        self._is_bootstrapped = True
 
     @property
     def proxy_type(self):
