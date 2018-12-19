@@ -39,6 +39,7 @@ class RegistryProxy(RegistryObject):
             prepared_args, prepared_kwargs = on_request_retval
         else:
             prepared_args, prepared_kwargs = raw_args, raw_kwargs
+
         # apply middleware's on_request methods
         for m in self.registry.middleware:
             m.on_request(raw_args, raw_kwargs, prepared_args, prepared_kwargs)

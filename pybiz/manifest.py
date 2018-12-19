@@ -43,6 +43,7 @@ class Manifest(object):
 
 
     def __init__(self, path: Text = None, data: Dict = None):
+        self._types = DictAccessor({})
         self.data = {}
         self.schema = self.Schema()
         self.load(data=data, path=path)

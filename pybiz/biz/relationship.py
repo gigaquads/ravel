@@ -1,21 +1,31 @@
 import copy
 
-from typing import Text
+from typing import Text, List, Tuple
 
 from appyratus.memoize import memoized_property
+from appyratus.schema import fields
+from appyratus.schema.fields import Field
+
+from pybiz.predicate import (
+    Predicate,
+    ConditionalPredicate,
+    BooleanPredicate,
+)
+
+from .comparable_property import ComparableProperty
 
 
 class Relationship(object):
     """
-    - If any relationship name matches a schema field name
-      of type <List> or <Object>, try to load the raw data
-      into relationship data.
+    - If any relationship name matches a schema field name of type <List> or
+      <Object>, try to load the raw data into relationship data.
 
     """
     def __init__(
         self,
         target,
         many=False,
+        link: Text = None,
         dump_to: Text = None,    # TODO: deprecate this kwarg
         load_from: Text = None,  # TODO: deprecate this kwarg
         query=None,
@@ -23,6 +33,7 @@ class Relationship(object):
         self._target = target
         self.load_from = load_from
         self.dump_to = dump_to
+        self.link = link
         self.many = many
         self.query = query
         self.name = None
@@ -39,10 +50,12 @@ class Relationship(object):
         else:
             return self._target
 
-    def copy(self):
-        return copy.deepcopy(self)
-
 
 class RelationshipProperty(property):
-    def __init__(self, **kwargs):
+    def __init__(self, relationship, **kwargs):
         super().__init__(**kwargs)
+        self.relationship = relationship
+
+    def __getattr__(self, key):
+        key = '{}_{}'.format(self.relationship.name, key)
+        return ComparableProperty(key)

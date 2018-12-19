@@ -27,77 +27,95 @@ class DictDao(Dao):
     An in-memory Dao that stores data in Python dicts with BTrees indexes.
     """
 
-    _lock = RLock()
-    _indexes = defaultdict(BTree)
-    _records = {}
+    _locks = defaultdict(RLock)
+    _indexes = defaultdict(lambda: defaultdict(BTree))
+    _records = defaultdict(dict)
+    _next_id = defaultdict(lambda: 1)
 
-    @classmethod
-    def next_id(cls):
-        return uuid.uuid4().hex
+    def next_id(self):
+        with self._locks[self.type_name]:
+            _id = self._next_id[self.type_name]
+            self._next_id[self.type_name] += 1
+            return _id
+
+    def __init__(self, type_name: Text):
+        super().__init__()
+        self.type_name = type_name
+        self.lock = self._locks[type_name]
+        self.indexes = self._indexes[type_name]
+        self.records = self._records[type_name]
 
     def exists(self, _id) -> bool:
-        with self._lock:
-            return _id in self._indexes['_id']
+        with self.lock:
+            return _id in self.indexes['_id']
 
     def fetch(self, _id, fields=None) -> Dict:
-        with self._lock:
-            return deepcopy(self._records.get(_id))
+        with self.lock:
+            record = deepcopy(self.records.get(_id))
+            if fields:
+                for k in set(record.keys()) - set(fields):
+                    del record[k]
+            return record
 
     def fetch_many(self, _ids: List, fields=None) -> Dict:
-        with self._lock:
-            return {
-                _id: deepcopy(self._records.get(_id))
-                for _id in _ids
-            }
+        with self.lock:
+            records = {}
+            for _id in _ids:
+                record = deepcopy(self.records.get(_id))
+                records[_id] = record
+                if fields:
+                    for k in set(record.keys()) - set(fields):
+                        del record[k]
+            return records
 
     def create(self, record: Dict = None) -> Dict:
-        with self._lock:
+        with self.lock:
             _id = record.get('_id') or self.next_id()
             record['_id'] = _id
-            self._records[_id] = record
+            self.records[_id] = record
             for k, v in record.items():
                 if not isinstance(v, dict):
-                    if v not in self._indexes[k]:
-                        self._indexes[k][v] = set()
-                    self._indexes[k][v].add(_id)
+                    if v not in self.indexes[k]:
+                        self.indexes[k][v] = set()
+                    self.indexes[k][v].add(_id)
         return record
 
     def create_many(self, records: List = None) -> Dict:
         results = {}
-        with self._lock:
+        with self.lock:
             for record in records:
                 result = self.create(record)
                 results[result['_id']] = result
             return results
 
     def update(self, _id=None, data: Dict = None) -> Dict:
-        with self._lock:
-            old_record = self._records.get(_id, {})
+        with self.lock:
+            old_record = self.records.get(_id, {})
             if old_record:
                 self.delete(old_record['_id'])
             record = self.create(DictUtils.merge(old_record, data))
             return record
 
     def update_many(self, _ids: List, data: List = None) -> Dict:
-        with self._lock:
+        with self.lock:
             return {
                 _id: self.update(_id=_id, data=data_dict)
                 for _id, data_dict in zip(_ids, data)
             }
 
     def delete(self, _id) -> Dict:
-        with self._lock:
-            record = self._records.get(_id)
-            self._records.pop(_id, {})
+        with self.lock:
+            record = self.records.get(_id)
+            self.records.pop(_id, {})
             for k, v in record.items():
-                self._indexes[k][v].remove(_id)
+                self.indexes[k][v].remove(_id)
             return record
 
     def delete_many(self, _ids: List) -> List:
-        with self._lock:
+        with self.lock:
             return {_id: self.delete(_id) for _id in _ids}
 
-    def query(self, predicate: Predicate, **kwargs) -> List:
+    def query(self, predicate: Predicate, fields=None, **kwargs) -> List:
         def union(sequences):
             if sequences:
                 if len(sequences) == 1:
@@ -109,7 +127,7 @@ class DictDao(Dao):
 
         def process(predicate):
             if predicate is None:
-                return self._records.keys()
+                return self.records.keys()
 
             op = predicate.op
             empty = set()
@@ -118,10 +136,10 @@ class DictDao(Dao):
             if isinstance(predicate, ConditionalPredicate):
                 k = predicate.attr_name
                 v = predicate.value
-                index = self._indexes[k]
+                index = self.indexes[k]
 
                 if op == '=':
-                    _ids = self._indexes[k].get(v, empty)
+                    _ids = self.indexes[k].get(v, empty)
                 elif op == '!=':
                     _ids = union([
                         _id_set for v_idx, _id_set in index.items()
@@ -175,7 +193,7 @@ class DictDao(Dao):
 
             return _ids
 
-        with self._lock:
+        with self.lock:
             _ids = process(predicate)
-            results = [self._records[_id] for _id in _ids]
+            results = list(self.fetch_many(_ids, fields=fields).values())
             return results

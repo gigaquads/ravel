@@ -115,8 +115,14 @@ class DaoManager(object):
                     bizobj_class.__name__
                 )
             )
-        dao_class = self._bizobj_type_2_dao_type[bizobj_class]
-        return dao_class()
+        # lazily instantiate the Dao class or use the instance
+        # object provided by __dao__.
+        dao_obj = self._bizobj_type_2_dao_type[bizobj_class]
+        if isinstance(dao_obj, type):
+            dao_class = dao_obj
+            return dao_class()
+        else:
+            return dao_obj
 
     def is_registered(self, bizobj_class):
         return bizobj_class in self._bizobj_type_2_dao_type
