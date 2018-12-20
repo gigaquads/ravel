@@ -40,6 +40,8 @@ from .dump import NestingDumpMethod, SideLoadingDumpMethod
 from .comparable_property import ComparableProperty
 from .meta import BizObjectMeta
 
+from threading import local
+
 
 class BizObject(
     DirtyInterface,
@@ -47,7 +49,7 @@ class BizObject(
     GraphQLObject,
     metaclass=BizObjectMeta
 ):
-    dao_manager = DaoManager.get_instance()
+    _dao_manager = DaoManager.get_instance()
 
     schema = None         # set by metaclass
     relationships = {}    # set by metaclass
@@ -70,7 +72,7 @@ class BizObject(
 
     @classmethod
     def get_dao(cls):
-        return cls.dao_manager.get_dao(cls)
+        return cls._dao_manager.get_dao(cls)
 
     def __init__(self, data=None, **kwargs_data):
         JsonPatchMixin.__init__(self)
@@ -207,8 +209,9 @@ class BizObject(
         return retval
 
     @classmethod
-    def get(cls, _id, fields: List=None):
+    def get(cls, _id, fields: Dict = None):
         fields = cls._parse_fields(fields)
+
         record = cls.get_dao().fetch(_id=_id, fields=fields['self'])
         bizobj = cls(record).clear_dirty()
 
@@ -226,7 +229,8 @@ class BizObject(
         fields = cls._parse_fields(fields)
 
         # fetch data from the dao
-        records = cls.get_dao().fetch_many(_ids=_ids, fields=fields['self'])
+        records = cls.get_dao().fetch_many(
+            _ids=remaining_ids, fields=fields['self'])
 
         # now fetch and merge related business objects. This could be
         # optimized.
@@ -296,8 +300,13 @@ class BizObject(
         return self
 
     @classmethod
-    def _parse_fields(cls, fields: List):
+    def _parse_fields(cls, fields):
+        if isinstance(fields, (list, tuple, set)):
+            fields = {k: True for k in fields}
+
+        fields = DictUtils.unflatten_keys(fields or {})
         results = {'self': set(), 'related': {}}
+
         for k in (fields or cls.schema.fields.keys()):
             if isinstance(k, dict):
                 rel_name, rel_fields = list(k.items())[0]
@@ -391,7 +400,7 @@ class BizObject(
         self.merge(self.get(_id=self._id, fields=fields))
         return self
 
-    def dump(self, depth=0, fields=None, style='nested'):
+    def dump(self, depth=0, specification=None, style='nested'):
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
@@ -403,7 +412,7 @@ class BizObject(
         else:
             return None
 
-        return dumper.dump(self, depth, fields)
+        return dumper.dump(self, depth=depth, spec=specification)
 
     def _load(self, data, kwargs_data):
         """
@@ -424,8 +433,8 @@ class BizObject(
         # eagerly load all related bizobjs from the loaded data dict,
         # removing the fields from said dict.
         for rel in self.relationships.values():
-            load_from = rel.load_from or rel.name
-            related_data = data.pop(load_from, None)
+            source = rel.source or rel.name
+            related_data = data.pop(source, None)
 
             if related_data is None:
                 continue
