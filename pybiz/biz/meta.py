@@ -49,10 +49,10 @@ class BizObjectMeta(ABCMeta):
         venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
-        if not cls.dao_manager.is_registered(cls):
+        if not cls._dao_manager.is_registered(cls):
             dao_class = cls.__dao__()
             if dao_class:
-                cls.dao_manager.register(cls, dao_class)
+                cls._dao_manager.register(cls, dao_class)
 
     def build_schema_class(cls, name):
         """

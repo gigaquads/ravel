@@ -40,6 +40,8 @@ from .dump import NestingDumpMethod, SideLoadingDumpMethod
 from .comparable_property import ComparableProperty
 from .meta import BizObjectMeta
 
+from threading import local
+
 
 class BizObject(
     DirtyInterface,
@@ -47,7 +49,7 @@ class BizObject(
     GraphQLObject,
     metaclass=BizObjectMeta
 ):
-    dao_manager = DaoManager.get_instance()
+    _dao_manager = DaoManager.get_instance()
 
     schema = None         # set by metaclass
     relationships = {}    # set by metaclass
@@ -70,7 +72,7 @@ class BizObject(
 
     @classmethod
     def get_dao(cls):
-        return cls.dao_manager.get_dao(cls)
+        return cls._dao_manager.get_dao(cls)
 
     def __init__(self, data=None, **kwargs_data):
         JsonPatchMixin.__init__(self)
@@ -207,8 +209,9 @@ class BizObject(
         return retval
 
     @classmethod
-    def get(cls, _id, fields: List=None):
+    def get(cls, _id, fields: Dict = None):
         fields = cls._parse_fields(fields)
+
         record = cls.get_dao().fetch(_id=_id, fields=fields['self'])
         bizobj = cls(record).clear_dirty()
 
@@ -226,7 +229,8 @@ class BizObject(
         fields = cls._parse_fields(fields)
 
         # fetch data from the dao
-        records = cls.get_dao().fetch_many(_ids=_ids, fields=fields['self'])
+        records = cls.get_dao().fetch_many(
+            _ids=remaining_ids, fields=fields['self'])
 
         # now fetch and merge related business objects. This could be
         # optimized.
@@ -296,8 +300,13 @@ class BizObject(
         return self
 
     @classmethod
-    def _parse_fields(cls, fields: List):
+    def _parse_fields(cls, fields):
+        if isinstance(fields, (list, tuple, set)):
+            fields = {k: True for k in fields}
+
+        fields = DictUtils.unflatten_keys(fields or {})
         results = {'self': set(), 'related': {}}
+
         for k in (fields or cls.schema.fields.keys()):
             if isinstance(k, dict):
                 rel_name, rel_fields = list(k.items())[0]

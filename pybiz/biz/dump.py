@@ -58,7 +58,8 @@ class NestingDumpMethod(DumpMethod):
         bizobj,
         depth: int,
         fields: Dict = None,
-        parent: Dict = None
+        parent: Dict = None,
+        request_depth: int = None,
     ):
         if parent is None:
             include = DictUtils.unflatten_keys(fields) if fields else None
@@ -67,36 +68,46 @@ class NestingDumpMethod(DumpMethod):
         else:
             include = fields
 
+        request_depth = depth if request_depth is None else request_depth
+
         record = self.dump_fields(bizobj, include)
 
-        if depth == 0:
+        if not depth:
             self.insert_relationship_fields(bizobj, record, include)
-        elif depth > 0:
-            # recursively dump nested bizobjs
-            for k, rel in bizobj.relationships.items():
-                if (include is not None) and (k not in include):
-                    continue
 
-                child_fields = include.get(k) if include else None
+        # recursively dump nested bizobjs
+        for k, rel in bizobj.relationships.items():
+            if (include is not None) and (k not in include):
+                continue
 
-                # at depth > 0, recursively expand children biz objects
-                v = bizobj.related.get(k)
-                if (v is None) and (rel.query is not None):
-                    v = rel.query(bizobj, fields=child_fields)
+            child_fields = include.get(k) if include else None
+            if isinstance(child_fields, dict):
+                next_depth = request_depth
+            elif depth > 0:
+                next_depth = depth - 1
+            else:
+                continue
 
-                # dump the bizobj or list of bizobjs
-                if is_bizobj(v):
-                    record[k] = self.dump(
-                        v, depth-1, fields=child_fields, parent=record
-                    )
-                elif rel.many:
-                    record[k] = [
-                        self.dump(
-                            x, depth-1, fields=child_fields, parent=record
-                        ) for x in v
-                    ]
-                else:
-                    record[k] = None
+            # recursively expand children biz objects
+            v = bizobj.related.get(k)
+            if (v is None) and (rel.query is not None):
+                v = rel.query(bizobj, fields=child_fields)
+
+            # dump the bizobj or list of bizobjs
+            if is_bizobj(v):
+                record[k] = self.dump(
+                    v, next_depth, fields=child_fields, parent=record,
+                    request_depth=request_depth
+                )
+            elif rel.many:
+                record[k] = [
+                    self.dump(
+                        x, next_depth, fields=child_fields, parent=record,
+                        request_depth=request_depth,
+                    ) for x in v
+                ]
+            else:
+                record[k] = None
 
         return record
 
