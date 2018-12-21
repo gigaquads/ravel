@@ -10,7 +10,7 @@ Relationship Load/Dump Mechanics:
 
 """
 
-from typing import List, Dict
+from typing import List, Dict, Set, Text
 from importlib import import_module
 from collections import defaultdict
 
@@ -41,6 +41,44 @@ from .comparable_property import ComparableProperty
 from .meta import BizObjectMeta
 
 from threading import local
+
+
+class Specification(dict):
+    def __init__(
+        self,
+        fields: Set[Text] = None,
+        relationships: Dict[Text, 'Specification'] = None,
+        limit: int = None,
+        offset: int = None,
+    ):
+        self['fields'] = set(fields or [])
+        self['relationships'] = relationships or {}
+        self['limit'] = max(1, limit) if limit is not None else None
+        self['offset'] = max(0, offset) if offset is not None else None
+
+    @property
+    def fields(self):
+        return self['fields']
+
+    @fields.setter
+    def fields(self, fields):
+        self['fields'] = fields
+
+    @property
+    def relationships(self):
+        return self['relationships']
+
+    @relationships.setter
+    def relationships(self, relationships):
+        self['relationships'] = relationships
+
+    @property
+    def limit(self):
+        return self['limit']
+
+    @property
+    def offset(self):
+        return self['offset']
 
 
 class BizObject(
@@ -207,6 +245,73 @@ class BizObject(
                 retval.append(bizobj)
 
         return retval
+
+    @classmethod
+    def query(
+        cls,
+        predicate: Predicate = None,
+        specification: Specification = None,
+        fields: Set[Text] = None,
+        first=False,
+        **kwargs
+    ):
+        if specification is None:
+            specification = Specification()
+        elif isinstance(specification, dict):
+            specification = Specification(**specification)
+
+        if not specification.fields:
+            specification.fields |= cls.schema.fields.keys()
+
+        specification.fields.add('_id')
+
+        if fields is not None:
+            fields = fields if isinstance(fields, set) else set(fields)
+            specification.fields |= fields
+
+        records = cls.get_dao().query(
+            predicate=predicate,
+            fields=specification.fields,
+            limit=specification.limit,
+            offset=specification.offset,
+            first=first,
+        )
+
+        def recurse(bizobj, spec):
+            for k, rel in bizobj.relationships.items():
+                related_spec = spec.relationships.get(k)
+                if related_spec is None:
+                    continue
+                if related_spec is True:
+                    related_spec = Specification()
+                elif isinstance(specification, dict):
+                    related_spec = Specification(**related_spec)
+
+                if not related_spec.fields:
+                    related_spec.fields |= rel.target.schema.fields.keys()
+
+                related_spec.fields.add('_id')
+
+                if related_spec is not None:
+                    related = rel.query(bizobj, related_spec)
+                    setattr(bizobj, k, related)
+                    if is_bizobj(related):
+                        related = [related]
+                    for related_bizobj in related:
+                        recurse(related_bizobj, related_spec)
+
+        bizobjs = []
+
+        for record in records:
+            bizobj = cls(record).clear_dirty()
+            recurse(bizobj, specification)
+            bizobjs.append(bizobj)
+
+        if first:
+            return bizobjs[0] if bizobjs else None
+        else:
+            return bizobjs
+
 
     @classmethod
     def get(cls, _id, fields: Dict = None):
@@ -400,7 +505,7 @@ class BizObject(
         self.merge(self.get(_id=self._id, fields=fields))
         return self
 
-    def dump(self, depth=0, specification=None, style='nested'):
+    def dump(self, depth=0, fields=None, style='nested'):
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
@@ -412,7 +517,7 @@ class BizObject(
         else:
             return None
 
-        return dumper.dump(self, depth=depth, spec=specification)
+        return dumper.dump(self, depth=depth, fields=fields)
 
     def _load(self, data, kwargs_data):
         """
