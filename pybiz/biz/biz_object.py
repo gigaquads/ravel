@@ -400,7 +400,7 @@ class BizObject(
         self.merge(self.get(_id=self._id, fields=fields))
         return self
 
-    def dump(self, depth=0, fields=None, style='nested'):
+    def dump(self, depth=0, specification=None, style='nested'):
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
@@ -412,7 +412,7 @@ class BizObject(
         else:
             return None
 
-        return dumper.dump(self, depth, fields)
+        return dumper.dump(self, depth=depth, spec=specification)
 
     def _load(self, data, kwargs_data):
         """
@@ -433,8 +433,8 @@ class BizObject(
         # eagerly load all related bizobjs from the loaded data dict,
         # removing the fields from said dict.
         for rel in self.relationships.values():
-            load_from = rel.load_from or rel.name
-            related_data = data.pop(load_from, None)
+            source = rel.source or rel.name
+            related_data = data.pop(source, None)
 
             if related_data is None:
                 continue

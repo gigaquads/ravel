@@ -1,13 +1,49 @@
 import copy
 
-from typing import Dict
+from typing import Dict, Text, List, Tuple, Set
 from collections import defaultdict
 
 from appyratus.utils import StringUtils, DictUtils
 
 from pybiz.util import is_bizobj
 
-# TODO: in dump, ensure each object is not dirty before dumping
+
+class DumpSpecification(dict):
+    def __init__(
+        self,
+        fields: Set[Text] = None,
+        relationships: Dict[Text, 'DumpSpecification'] = None,
+        limit: int = None,
+        offset: int = None,
+    ):
+        self['fields'] = fields or []
+        self['relationships'] = relationships or {}
+        self['limit'] = max(1, limit) if limit is not None else None
+        self['offset'] = max(0, offset) if offset is not None else None
+
+    @property
+    def fields(self):
+        return self['fields']
+
+    @fields.setter
+    def fields(self, fields):
+        self['fields'] = fields
+
+    @property
+    def relationships(self):
+        return self['relationships']
+
+    @relationships.setter
+    def relationships(self, relationships):
+        self['relationships'] = relationships
+
+    @property
+    def limit(self):
+        return self['limit']
+
+    @property
+    def offset(self):
+        return self['offset']
 
 
 class DumpMethod(object):
@@ -20,7 +56,16 @@ class DumpMethod(object):
     ):
         pass
 
-    def dump_fields(self, bizobj, include: Dict):
+    @staticmethod
+    def normalize_fields(fields):
+        if not fields:
+            return None
+        elif isinstance(fields, (list, tuple, set)):
+            return DictUtils.unflatten_keys({k: True for k in fields})
+        else:
+            return DictUtils.unflatten_keys(fields)
+
+    def dump_fields_backup(self, bizobj, include: Dict):
         # copy field data into the record
         record = {}
         for k, field in bizobj.schema.fields.items():
@@ -41,15 +86,52 @@ class DumpMethod(object):
 
         return record
 
-    def insert_relationship_fields(self, bizobj, record: Dict, include: Dict):
+    def dump_fields(self, bizobj, spec: DumpSpecification):
+        # copy field data into the record
+        record = {}
+        if not spec.fields:
+            spec.fields = bizobj.schema.fields.keys()
+        for k, field in bizobj.schema.fields.items():
+            if k == '_id':
+                record['id'] = bizobj._id
+                if k not in spec.fields:
+                    continue
+            elif not field.meta.get('private', False):
+                v = bizobj.data.get(k)
+                # convert data to primitive types recognized as valid JSON
+                # and other serialization formats more generally
+                if isinstance(v, (dict, list)):
+                    record[k] = copy.deepcopy(v)
+                elif isinstance(v, (set, tuple)):
+                    record[k] = list(v)
+                else:
+                    record[k] = v
+
+        return record
+
+    def insert_relationship_fields_backup(self, bizobj, record: Dict, include: Dict):
         for k, rel in bizobj.relationships.items():
             if (include is not None) and (k not in include):
                 continue
-            if rel.link:
-                if callable(rel.link):
-                    record[k] = rel.link(bizobj)
+            if rel.links:
+                if callable(rel.links):
+                    record[k] = rel.links(bizobj)
                 else:
-                    record[k] = getattr(bizobj, rel.link)
+                    record[k] = getattr(bizobj, rel.links)
+
+    def insert_relationship_fields(self, bizobj, record: Dict, spec: DumpSpecification):
+        if not spec.relationships:
+            spec.relationships = {
+                k: True for k in bizobj.schema.fields.keys()
+            }
+        for k, rel in bizobj.relationships.items():
+            if k not in spec.relationships:
+                continue
+            if rel.links:
+                if callable(rel.links):
+                    record[k] = rel.links(bizobj)
+                else:
+                    record[k] = getattr(bizobj, rel.links)
 
 
 class NestingDumpMethod(DumpMethod):
@@ -57,53 +139,61 @@ class NestingDumpMethod(DumpMethod):
         self,
         bizobj,
         depth: int,
-        fields: Dict = None,
+        spec: Dict = None,
         parent: Dict = None,
-        request_depth: int = None,
     ):
-        if parent is None:
-            include = DictUtils.unflatten_keys(fields) if fields else None
-        elif fields is True:
-            include = None
-        else:
-            include = fields
+        if spec is None:
+            spec = DumpSpecification()
+        elif isinstance(spec, dict):
+            spec = DumpSpecification(**spec)
 
-        request_depth = depth if request_depth is None else request_depth
-
-        record = self.dump_fields(bizobj, include)
+        record = self.dump_fields(bizobj, spec)
 
         if not depth:
-            self.insert_relationship_fields(bizobj, record, include)
+            self.insert_relationship_fields(bizobj, record, spec)
 
         # recursively dump nested bizobjs
         for k, rel in bizobj.relationships.items():
-            if (include is not None) and (k not in include):
+            if k not in spec.relationships:
                 continue
 
-            child_fields = include.get(k) if include else None
-            if isinstance(child_fields, dict):
-                next_depth = request_depth
+            child_spec = spec.relationships[k]
+            if isinstance(child_spec, dict):
+                child_spec = DumpSpecification(**child_spec)
+            elif child_spec in (None, True):
+                child_spec = DumpSpecification()
+
+            if child_spec.fields:
+                next_depth = min(1, depth - 1)
             elif depth > 0:
                 next_depth = depth - 1
             else:
                 continue
 
-            # recursively expand children biz objects
+            # recursively expand relationships biz objects
             v = bizobj.related.get(k)
             if (v is None) and (rel.query is not None):
-                v = rel.query(bizobj, fields=child_fields)
+                v = rel.query(
+                    bizobj,
+                    fields=child_spec.fields,
+                    limit=child_spec.limit,
+                    offset=child_spec.offset,
+                )
+
+                if rel.many and not isinstance(v, (list, tuple, set)):
+                    raise Exception('expected list')
+                elif (not rel.many) and (not is_bizobj(v)):
+                    raise Exception('expected BizObject instance')
 
             # dump the bizobj or list of bizobjs
             if is_bizobj(v):
                 record[k] = self.dump(
-                    v, next_depth, fields=child_fields, parent=record,
-                    request_depth=request_depth
+                    v, next_depth, spec=child_spec, parent=record,
                 )
             elif rel.many:
                 record[k] = [
                     self.dump(
-                        x, next_depth, fields=child_fields, parent=record,
-                        request_depth=request_depth,
+                        x, next_depth, spec=child_spec, parent=record,
                     ) for x in v
                 ]
             else:
@@ -127,7 +217,7 @@ class SideLoadingDumpMethod(DumpMethod):
 
         if result is None:
             # if here, this is the initial call, not a recursive one
-            include = DictUtils.unflatten_keys(fields) if fields else None
+            include = self.normalize_fields(fields)
             record = self.dump_fields(bizobj, include)
             self.insert_relationship_fields(bizobj, record, include)
             result = {
@@ -148,8 +238,11 @@ class SideLoadingDumpMethod(DumpMethod):
             obj = bizobj.related.get(k)
 
             # get the fields to query for the related bizobj(s)
-            related_fields = include.get(k)
-            if related_fields is True:
+            if include is not None:
+                related_fields = include.get(k)
+                if related_fields is True:
+                    related_fields = None
+            else:
                 related_fields = None
 
             # lazy load the related bizobj(s)

@@ -12,8 +12,6 @@ from pybiz.predicate import (
     BooleanPredicate,
 )
 
-from .comparable_property import ComparableProperty
-
 
 class Relationship(object):
     """
@@ -25,15 +23,13 @@ class Relationship(object):
         self,
         target,
         many=False,
-        link: Text = None,
-        dump_to: Text = None,    # TODO: deprecate this kwarg
-        load_from: Text = None,  # TODO: deprecate this kwarg
+        links: Text = None,
+        source: Text = None,  # TODO: deprecate this kwarg
         query=None,
     ):
         self._target = target
-        self.load_from = load_from
-        self.dump_to = dump_to
-        self.link = link
+        self.source = source
+        self.links = links
         self.many = many
         self.query = query
         self.name = None
@@ -55,7 +51,3 @@ class RelationshipProperty(property):
     def __init__(self, relationship, **kwargs):
         super().__init__(**kwargs)
         self.relationship = relationship
-
-    def __getattr__(self, key):
-        key = '{}_{}'.format(self.relationship.name, key)
-        return ComparableProperty(key)
