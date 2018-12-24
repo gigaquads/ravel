@@ -52,9 +52,12 @@ class DictDao(Dao):
     def fetch(self, _id, fields=None) -> Dict:
         with self.lock:
             record = deepcopy(self.records.get(_id))
-            if fields:
-                for k in set(record.keys()) - set(fields):
-                    del record[k]
+            if fields is not None:
+                if fields:
+                    for k in set(record.keys()) - set(fields):
+                        del record[k]
+                else:
+                    record = {'_id': _id}
             return record
 
     def fetch_many(self, _ids: List, fields=None) -> Dict:

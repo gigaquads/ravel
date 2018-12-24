@@ -7,184 +7,122 @@ from appyratus.utils import StringUtils, DictUtils
 
 from pybiz.util import is_bizobj
 
-# TODO: Rewrite dump procedures to only dump relationship links if specified in
-# fields
 
-class DumpMethod(object):
-    def dump(
+class Dump(object):
+    def __call__(self, target: 'BizObject', fields: Dict = None) -> Dict:
+        # normaize the incoming `fields` data structure to a nested dict
+        if isinstance(fields, dict):
+            fields = DictUtils.unflatten_keys(fields)
+        elif (not fields) or isinstance(fields, (set, list, tuple)):
+            fields = DictUtils.unflatten_keys({
+                k: None for k in (
+                    fields or (target.data.keys() | target.related.keys())
+                )
+            })
+        else:
+            raise ValueError(
+                'uncoregnized fields argument type'
+            )
+
+        return self.on_dump(target, fields=fields, parent=None)
+
+    def on_dump(
         self,
-        bizobj,
-        depth: int,
+        target: 'BizObject',
+        parent: 'BizObject' = None,
         fields: Dict = None,
-        parent: Dict = None,
-    ):
-        pass
+    ) -> Dict:
+        raise NotImplementedError('override in subclass')
 
-    def dump_fields(self, bizobj, include: Dict):
-        # copy field data into the record
-        record = {
-            'id': bizobj._id
-        }
-        for k, field in bizobj.schema.fields.items():
+
+class DumpNested(Dump):
+    def on_dump(
+        self,
+        target: 'BizObject',
+        parent: 'BizObject' = None,
+        fields: Dict = None,
+    ):
+        """
+        Dump the target BizObject as a nested dictionary. For example, imagine
+        you have a user biz object with an associated account object, declared
+        as a `Relationship`. You can do,
+
+        ```python3
+            dump(user, {'email', 'account.name'}) -> {
+                'id': 1,
+                'email': 'foo@bar.com',
+                'account': {'id': 2, 'name': 'Foo Co.'}
+            }
+        ```
+
+        The fields can be specified either as a set (as seen above) or as
+        a nested `dict` with `None` as a terminator, like:
+
+        ```python3
+            dump(user, {'email', 'account': {'name': None}}) -> {
+                'id': 1,
+                'email': 'foo@bar.com',
+                'account': {'id': 2, 'name': 'Foo Co.'}
+            }
+        ```
+        """
+        record = {}  # `record` is the return values
+
+        # normalize fields objec to aict. if empty, default
+        # to all loaded data and relationships
+        if isinstance(fields, dict):
+            fields = DictUtils.unflatten_keys(fields)
+        elif (not fields) or isinstance(fields, (set, list, tuple)):
+            if target is None:
+                import ipdb; ipdb.set_trace()
+            fields = DictUtils.unflatten_keys({
+                k: None for k in (
+                    fields or (target.data.keys() | target.related.keys())
+                )
+            })
+        else:
+            raise ValueError(
+                'uncoregnized fields argument type'
+            )
+
+        # ensure _id is always added as "id"
+        record['id'] = target._id
+
+        # add each specified field data to the return record
+        # and recurse on nested targets available through Relationships
+        for k in fields:
             if k == '_id':
                 continue
-            if (include is not None) and (k not in include):
-                continue
-            elif not field.meta.get('private', False):
-                if k not in bizobj.data:
-                    continue
-                v = bizobj.data[k]
-                # convert data to primitive types recognized as valid JSON
-                # and other serialization formats more generally
-                if isinstance(v, (dict, list)):
-                    record[k] = copy.deepcopy(v)
-                elif isinstance(v, (set, tuple)):
-                    record[k] = list(v)
-                else:
+            field = target.schema.fields.get(k)
+            if field is not None:
+                # k corresponds to a field data element
+                if not field.meta.get('private', False):
+                    # only dump "public" fields
+                    v = target.data[k]
+                    if isinstance(v, (dict, list, set, tuple)):
+                        v = copy.deeepcopy(v)
                     record[k] = v
-
-        return record
-
-    def insert_relationship_fields(self, bizobj, record: Dict, include: Dict):
-        for k, rel in bizobj.relationships.items():
-            if (include is not None) and (k not in include):
-                continue
-            if rel.links:
-                if callable(rel.links):
-                    record[k] = rel.links(bizobj)
+            elif k in target.relationships:
+                # k corresponds to a declared Relationship, which could
+                # refer either to an instance object or a list thereof.
+                related = target.related[k]
+                if is_bizobj(related):
+                    record[k] = self.on_dump(
+                        related, fields=fields[k], parent=target
+                    )
                 else:
-                    record[k] = getattr(bizobj, rel.links)
-
-
-class NestingDumpMethod(DumpMethod):
-    def dump(
-        self,
-        bizobj,
-        depth: int,
-        fields: Dict = None,
-        parent: Dict = None,
-    ):
-        if parent is None:
-            include = DictUtils.unflatten_keys(fields) if fields else None
-        elif fields is True:
-            include = None
-        else:
-            include = fields
-
-        record = self.dump_fields(bizobj, include)
-
-        if not depth:
-            self.insert_relationship_fields(bizobj, record, include)
-
-        # recursively dump nested bizobjs
-        for k, rel in bizobj.relationships.items():
-            if (include is not None) and (k not in include):
-                continue
-
-            child_fields = include.get(k) if include else None
-            if isinstance(child_fields, dict):
-                next_depth = 1
-            elif depth > 0:
-                next_depth = depth - 1
-            else:
-                continue
-
-            if k not in bizobj.related:
-                if child_fields and k in child_fields:
-                    raise Exception('expected {} to be loaded'.format(k))
-                continue
-
-            v = bizobj.related[k]
-
-            # dump the bizobj or list of bizobjs
-            if is_bizobj(v):
-                record[k] = self.dump(
-                    v, next_depth, fields=child_fields, parent=record,
-                )
-            elif rel.many:
-                record[k] = [
-                    self.dump(
-                        x, next_depth, fields=child_fields, parent=record,
-                    ) for x in v
-                ]
-            else:
-                record[k] = None
+                    record[k] = [
+                        self.on_dump(obj, parent=target) for obj in related
+                    ]
 
         return record
 
 
-class SideLoadingDumpMethod(DumpMethod):
-    def dump(
+class DumpSideLoaded(Dump):
+    def on_dump(
         self,
-        bizobj,
-        depth: int,
+        target: 'BizObject',
         fields: Dict = None,
-        result: Dict = None
+        parent: 'BizObject' = None,
     ):
-        if depth < 1:
-            # base case
-            result['links'] = dict(result['links'])
-            return result
-
-        if result is None:
-            # if here, this is the initial call, not a recursive one
-            include = DictUtils.unflatten_keys(fields) if fields else None
-            record = self.dump_fields(bizobj, include)
-            self.insert_relationship_fields(bizobj, record, include)
-            result = {
-                'target': record,
-                'links': defaultdict(dict),
-            }
-        elif fields is True:
-            include = None
-        else:
-            include = fields
-
-        # recursively process child relationships
-        for k, rel in bizobj.relationships.items():
-            if (include is not None) and (k not in include):
-                continue
-
-            # get the related bizobj or list thereof
-            obj = bizobj.related.get(k)
-
-            # get the fields to query for the related bizobj(s)
-            related_fields = include.get(k)
-            if related_fields is True:
-                related_fields = None
-
-            # lazy load the related bizobj(s)
-            if (obj is None) and (rel.query is not None):
-                obj = rel.query(bizobj, fields=related_fields)
-
-            # put pairs of (bizobj, fields) into array for recursion
-            if rel.many:
-                related_items = zip(obj, [related_fields] * len(obj))
-            else:
-                related_items = [(obj, related_fields)]
-
-            # recurse on child bizobjs
-            for related_bizobj, related_fields in related_items:
-                # "kind" is the name of the public resource type that appears in
-                # the "links" result dict
-                kind = StringUtils.snake(related_bizobj.__class__.__name__)
-                related_id = related_bizobj._id
-
-                # only bother adding to the links dict if not already done so by
-                # another bizobj higher in the tree.
-                if related_id not in result['links'][kind]:
-                    related_record = self.dump_fields(related_bizobj, related_fields)
-                    self.insert_relationship_fields(
-                        related_bizobj, related_record, related_fields
-                    )
-                    result['links'][kind][related_id] = related_record
-                    self.dump(
-                        related_bizobj,
-                        depth-1,
-                        fields=related_fields,
-                        result=result
-                    )
-
-        return result
-
-
+        raise NotImplementedError()

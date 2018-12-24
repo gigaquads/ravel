@@ -24,14 +24,14 @@ class Relationship(object):
         target,
         many=False,
         predicate: Predicate = None,
-        links: Text = None,
-        source: Text = None,  # TODO: deprecate this kwarg
+        link: Text = None,
+        source: Text = None,
         query=None,
     ):
         self._target = target
         self.source = source
         self.predicate = predicate
-        self.links = links
+        self.link = link or '_id'
         self.many = many
         self.query = query
         self.name = None

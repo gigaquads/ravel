@@ -1,84 +1,21 @@
-"""
-Relationship Load/Dump Mechanics:
-    Load:
-        - If any relationship name matches a schema field name
-          of type <List> or <Object>, try to load the raw data
-          into relationship data.
-    Dump:
-        - Simply dump the related objects into the data dict
-          returned from the schema dump.
+from typing import List, Dict, Text
 
-"""
-
-from typing import List, Dict, Set, Text
-from importlib import import_module
-from collections import defaultdict
-
-from appyratus.memoize import memoized_property
-from appyratus.schema import Schema, fields as schema_fields
+from appyratus.schema import Schema
 from appyratus.schema.fields import Field
-from appyratus.utils import StringUtils, DictUtils
 
 from pybiz.web.patch import JsonPatchMixin
 from pybiz.web.graphql import GraphQLObject, GraphQLEngine
-from pybiz.dao.base import Dao, DaoManager
+from pybiz.dao.base import DaoManager
 from pybiz.dao.dict_dao import DictDao
 from pybiz.dirty import DirtyDict, DirtyInterface
 from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from pybiz.util import is_bizobj
-from pybiz.exc import NotFound
-from pybiz.constants import (
-    IS_BIZOBJ_ANNOTATION,
-    PRE_PATCH_ANNOTATION,
-    POST_PATCH_ANNOTATION,
-    PATCH_PATH_ANNOTATION,
-    PATCH_ANNOTATION,
-)
 
-from .relationship import Relationship, RelationshipProperty
-from .dump import NestingDumpMethod, SideLoadingDumpMethod
-from .comparable_property import ComparableProperty
 from .meta import BizObjectMeta
-
-from threading import local
-
-
-class Specification(dict):
-    def __init__(
-        self,
-        fields: Set[Text] = None,
-        relationships: Dict[Text, 'Specification'] = None,
-        limit: int = None,
-        offset: int = None,
-    ):
-        self['fields'] = set(fields or [])
-        self['relationships'] = relationships or {}
-        self['limit'] = max(1, limit) if limit is not None else None
-        self['offset'] = max(0, offset) if offset is not None else None
-
-    @property
-    def fields(self):
-        return self['fields']
-
-    @fields.setter
-    def fields(self, fields):
-        self['fields'] = fields
-
-    @property
-    def relationships(self):
-        return self['relationships']
-
-    @relationships.setter
-    def relationships(self, relationships):
-        self['relationships'] = relationships
-
-    @property
-    def limit(self):
-        return self['limit']
-
-    @property
-    def offset(self):
-        return self['offset']
+from .relationship import Relationship, RelationshipProperty
+from .dump import DumpNested, DumpSideLoaded
+from .comparable_property import ComparableProperty
+from .query import QuerySpecification, Query, QueryUtils
 
 
 class BizObject(
@@ -87,8 +24,6 @@ class BizObject(
     GraphQLObject,
     metaclass=BizObjectMeta
 ):
-    _dao_manager = DaoManager.get_instance()
-
     schema = None         # set by metaclass
     relationships = {}    # set by metaclass
 
@@ -110,7 +45,7 @@ class BizObject(
 
     @classmethod
     def get_dao(cls):
-        return cls._dao_manager.get_dao(cls)
+        return DaoManager.get_instance().get_dao(cls)
 
     def __init__(self, data=None, **kwargs_data):
         JsonPatchMixin.__init__(self)
@@ -195,135 +130,35 @@ class BizObject(
     def query(
         cls,
         predicate: Predicate = None,
-        fields: Dict=None,
-        first: bool=False,
-        **kwargs
-    ):
-        def load_predicate_values(pred):
-            if pred is None:
-                return None
-            elif isinstance(pred, ConditionalPredicate):
-                field = cls.Schema.fields.get(pred.attr_name)
-                if field is None:
-                    field = Field()
-                if not isinstance(pred.value, (list, tuple, set)):
-                    load_res, load_err = field.process(pred.value)
-                    if load_err:
-                        raise Exception('invalid value')
-                else:
-                    load_res = []
-                    for v in pred.value:
-                        res, load_err = field.process(v)
-                        if load_err:
-                            raise Exception('invalid value')
-                        else:
-                            load_res.append(res)
-                pred.value = load_res
-            elif isinstance(pred, BooleanPredicate):
-                load_predicate_values(pred.lhs)
-                load_predicate_values(pred.rhs)
-            return pred
-
-        fields = cls._parse_fields(fields)
-        records = cls.get_dao().query(
-            predicate=load_predicate_values(predicate),
-            fields=fields['self'],
-            first=first,
-            **kwargs
-        )
-
-        if first:
-            retval = None
-            if records:
-                retval = cls(records[0]).clear_dirty()
-                cls._query_relationships(retval, fields['related'])
-        else:
-            retval = []
-            for record in records:
-                bizobj = cls(record).clear_dirty()
-                cls._query_relationships(bizobj, fields['related'])
-                retval.append(bizobj)
-
-        return retval
-
-    @classmethod
-    def query(
-        cls,
-        predicate: Predicate = None,
-        specification: Specification = None,
-        fields: Set[Text] = None,
+        specification: QuerySpecification = None,
         first=False,
-        **kwargs
-    ):
-        if specification is None:
-            specification = Specification()
-        elif isinstance(specification, dict):
-            specification = Specification(**specification)
+    ) -> List['BizObject']:
+        """
+        Request a data structure containing the specified fields of this
+        `BizObject` and all related `BizObject` instances declared with
+        `Relationship`.
 
-        if not specification.fields:
-            specification.fields |= cls.schema.fields.keys()
+        The `specification` argument can be either,
 
-        specification.fields.add('_id')
-
-        if fields is not None:
-            fields = fields if isinstance(fields, set) else set(fields)
-            specification.fields |= fields
-
-        records = cls.get_dao().query(
-            predicate=predicate,
-            fields=specification.fields,
-            limit=specification.limit,
-            offset=specification.offset,
-            first=first,
-        )
-
-        def recurse(bizobj, spec):
-            for k, rel in bizobj.relationships.items():
-                related_spec = spec.relationships.get(k)
-                if related_spec is None:
-                    continue
-                if related_spec is True:
-                    related_spec = Specification()
-                elif isinstance(specification, dict):
-                    related_spec = Specification(**related_spec)
-
-                if not related_spec.fields:
-                    related_spec.fields |= rel.target.schema.fields.keys()
-
-                related_spec.fields.add('_id')
-
-                if related_spec is not None:
-                    related = rel.query(bizobj, related_spec)
-                    setattr(bizobj, k, related)
-                    if is_bizobj(related):
-                        related = [related]
-                    for related_bizobj in related:
-                        recurse(related_bizobj, related_spec)
-
-        bizobjs = []
-
-        for record in records:
-            bizobj = cls(record).clear_dirty()
-            recurse(bizobj, specification)
-            bizobjs.append(bizobj)
-
+        1. A well-formed `QuerySpecification` object,
+        2. Nested dict, like `{'foo': {'bar': {'baz': None}}}`
+        3. Set of dotted paths, like `{'foo', 'bar.baz'}`
+        """
+        query = Query(cls, predicate, specification)
+        bizobjs = query.execute()
         if first:
             return bizobjs[0] if bizobjs else None
         else:
             return bizobjs
 
-
     @classmethod
     def get(cls, _id, fields: Dict = None):
-        fields = cls._parse_fields(fields)
-
-        record = cls.get_dao().fetch(_id=_id, fields=fields['self'])
+        fields, children = QueryUtils.prepare_fields_argument(cls, fields)
+        record = cls.get_dao().fetch(_id=_id, fields=fields)
         bizobj = cls(record).clear_dirty()
 
-        if not (bizobj and bizobj._id):
-            raise NotFound(_id)
-
-        cls._query_relationships(bizobj, fields['related'])
+        # recursively load nested relationships
+        QueryUtils.query_relationships(bizobj, children)
 
         return bizobj
 
@@ -331,19 +166,17 @@ class BizObject(
     def get_many(cls, _ids, fields: List=None, as_list=False):
         # separate field names into those corresponding to this BizObjects
         # class and those of the related BizObject classes.
-        fields = cls._parse_fields(fields)
+        fields, children = QueryUtils.prepare_fields_argument(cls, fields)
 
         # fetch data from the dao
-        records = cls.get_dao().fetch_many(
-            _ids=remaining_ids, fields=fields['self'])
+        records = cls.get_dao().fetch_many(_ids=_ids, fields=fields)
 
         # now fetch and merge related business objects. This could be
         # optimized.
         bizobjs = {}
         for _id, record in records.items():
-            bizobj = cls(record).clear_dirty()
-            cls._query_relationships(bizobj, fields['related'])
-            bizobjs[_id] = bizobj
+            bizobjs[_id] = bizobj = cls(record).clear_dirty()
+            QueryUtils.query_relationships(bizobj, children)
 
         # return results either as a list or a mapping from id to object
         return bizobjs if not as_list else list(bizobjs.values())
@@ -403,32 +236,6 @@ class BizObject(
         self.post_save(path)
 
         return self
-
-    @classmethod
-    def _parse_fields(cls, fields):
-        if isinstance(fields, (list, tuple, set)):
-            fields = {k: True for k in fields}
-
-        fields = DictUtils.unflatten_keys(fields or {})
-        results = {'self': set(), 'related': {}}
-
-        for k in (fields or cls.schema.fields.keys()):
-            if isinstance(k, dict):
-                rel_name, rel_fields = list(k.items())[0]
-                if rel_name in cls.relationships:
-                    results['related'][rel_name] = rel_fields
-            elif k in cls.relationships:
-                schema = cls.relationships[k].target.schema
-                results['related'][k] = set(schema.fields.keys())
-            else:
-                results['self'].add(k)
-
-        if not results['self']:
-            results['self'] = set(cls.schema.fields.keys())
-        else:
-            results['self'].add('_id')
-
-        return results
 
     @staticmethod
     def _query_relationships(bizobj, fields: Dict):
@@ -505,19 +312,20 @@ class BizObject(
         self.merge(self.get(_id=self._id, fields=fields))
         return self
 
-    def dump(self, depth=0, fields=None, style='nested'):
+    def dump(self, fields=None, style='nested'):
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
         """
         if style == 'nested':
-            dumper = NestingDumpMethod()
+            dump = DumpNested()
         elif style == 'side':
-            dumper = SideLoadingDumpMethod()
+            dump = DumpSideLoaded()
         else:
             return None
 
-        return dumper.dump(self, depth=depth, fields=fields)
+        result = dump(target=self, fields=fields)
+        return result
 
     def _load(self, data, kwargs_data):
         """

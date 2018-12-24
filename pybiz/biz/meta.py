@@ -10,6 +10,7 @@ from importlib import import_module
 from appyratus.schema.fields import Field
 from appyratus.schema import Schema
 
+from pybiz.dao.base import DaoManager
 from pybiz.web.patch import JsonPatchMixin
 from pybiz.web.graphql import GraphQLEngine
 from pybiz.constants import (
@@ -21,7 +22,6 @@ from pybiz.constants import (
 )
 
 from .relationship import Relationship, RelationshipProperty
-from .dump import NestingDumpMethod, SideLoadingDumpMethod
 from .comparable_property import ComparableProperty
 
 
@@ -34,10 +34,10 @@ class BizObjectMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
+        cls.graphql = GraphQLEngine(cls)
+
         relationships = cls.build_relationships()
         schema_class = cls.build_schema_class(name)
-
-        cls.graphql = GraphQLEngine(cls)
 
         cls.build_all_properties(schema_class, relationships)
         cls.register_JsonPatch_hooks(bases)
@@ -49,10 +49,11 @@ class BizObjectMeta(ABCMeta):
         venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
-        if not cls._dao_manager.is_registered(cls):
+        man = DaoManager.get_instance()
+        if not man.is_registered(cls):
             dao_class = cls.__dao__()
             if dao_class:
-                cls._dao_manager.register(cls, dao_class)
+                man.register(cls, dao_class)
 
     def build_schema_class(cls, name):
         """
@@ -218,7 +219,7 @@ class BizObjectMeta(ABCMeta):
                 retval = self._related.get(k, empty)
                 if retval is empty:
                     if rel.query is not None:
-                        retval = rel.query(self, fields=None)
+                        retval = rel.query(self, spec=None)
                         setattr(self, k, retval)    # go through fset
                     elif rel.many:
                         retval = []
