@@ -24,12 +24,11 @@ class Dump(object):
                 'uncoregnized fields argument type'
             )
 
-        return self.on_dump(target, fields=fields, parent=None)
+        return self.on_dump(target, fields=fields)
 
     def on_dump(
         self,
         target: 'BizObject',
-        parent: 'BizObject' = None,
         fields: Dict = None,
     ) -> Dict:
         raise NotImplementedError('override in subclass')
@@ -39,7 +38,6 @@ class DumpNested(Dump):
     def on_dump(
         self,
         target: 'BizObject',
-        parent: 'BizObject' = None,
         fields: Dict = None,
     ):
         """
@@ -66,27 +64,8 @@ class DumpNested(Dump):
             }
         ```
         """
-        record = {}  # `record` is the return values
-
-        # normalize fields objec to aict. if empty, default
-        # to all loaded data and relationships
-        if isinstance(fields, dict):
-            fields = DictUtils.unflatten_keys(fields)
-        elif (not fields) or isinstance(fields, (set, list, tuple)):
-            if target is None:
-                import ipdb; ipdb.set_trace()
-            fields = DictUtils.unflatten_keys({
-                k: None for k in (
-                    fields or (target.data.keys() | target.related.keys())
-                )
-            })
-        else:
-            raise ValueError(
-                'uncoregnized fields argument type'
-            )
-
-        # ensure _id is always added as "id"
-        record['id'] = target._id
+        # `record` is the return values
+        record = {'_id': target._id}
 
         # add each specified field data to the return record
         # and recurse on nested targets available through Relationships
@@ -100,19 +79,18 @@ class DumpNested(Dump):
                     # only dump "public" fields
                     v = target.data[k]
                     if isinstance(v, (dict, list, set, tuple)):
-                        v = copy.deeepcopy(v)
+                        v = copy.deepcopy(v)
                     record[k] = v
             elif k in target.relationships:
                 # k corresponds to a declared Relationship, which could
                 # refer either to an instance object or a list thereof.
                 related = target.related[k]
                 if is_bizobj(related):
-                    record[k] = self.on_dump(
-                        related, fields=fields[k], parent=target
-                    )
+                    record[k] = self(related, fields=fields[k])
                 else:
                     record[k] = [
-                        self.on_dump(obj, parent=target) for obj in related
+                        self(obj, fields=fields[k])
+                        for obj in related
                     ]
 
         return record
@@ -123,6 +101,5 @@ class DumpSideLoaded(Dump):
         self,
         target: 'BizObject',
         fields: Dict = None,
-        parent: 'BizObject' = None,
     ):
         raise NotImplementedError()

@@ -1,59 +1,59 @@
-from typing import List, Dict, Text
-
-from appyratus.schema import Schema
-from appyratus.schema.fields import Field
+from typing import List, Dict, Text, Type
 
 from pybiz.web.patch import JsonPatchMixin
-from pybiz.web.graphql import GraphQLObject, GraphQLEngine
+from pybiz.web.graphql import GraphQLObject
 from pybiz.dao.base import DaoManager
 from pybiz.dao.dict_dao import DictDao
 from pybiz.dirty import DirtyDict, DirtyInterface
-from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from pybiz.util import is_bizobj
 
 from .meta import BizObjectMeta
-from .relationship import Relationship, RelationshipProperty
 from .dump import DumpNested, DumpSideLoaded
-from .comparable_property import ComparableProperty
-from .query import QuerySpecification, Query, QueryUtils
+from .query import Query, QueryUtils
 
 
 class BizObject(
-    DirtyInterface,
-    JsonPatchMixin,
-    GraphQLObject,
+    DirtyInterface, JsonPatchMixin, GraphQLObject,
     metaclass=BizObjectMeta
 ):
+    """
+    `BizObject` has built-in support for implementing GraphQL and REST API's.
+    """
     schema = None         # set by metaclass
     relationships = {}    # set by metaclass
 
     @classmethod
-    def __schema__(cls):
+    def __schema__(cls) -> Type['Schema']:
         """
-        Return a dotted path to the Schema class, like 'path.to.MySchema'. This
-        is only used if a Schema subclass is returned. If None is returned,
-        this is ignored.
+        Declare the schema type/instance used by this BizObject class.
         """
 
     @classmethod
-    def __dao__(cls):
+    def __dao__(cls) -> Type['Dao']:
         """
-        Returns a dotted path or Python reference to a Dao class to back this
-        BizObject. Normally, this information should be declared in a manifest.
+        Declare the DAO type/instance used by this BizObject class.
         """
         return DictDao(type_name=cls.__name__)
 
     @classmethod
-    def get_dao(cls):
+    def get_dao(cls) -> 'Dao':
+        """
+        Get the global Dao reference associated with this class.
+        """
         return DaoManager.get_instance().get_dao(cls)
 
-    def __init__(self, data=None, **kwargs_data):
+    def __init__(self, data=None, **more_data):
         JsonPatchMixin.__init__(self)
         DirtyInterface.__init__(self)
         GraphQLObject.__init__(self)
 
         self._related = {}
-        self._data = DirtyDict(self._load(data, kwargs_data))
+        self._data = DirtyDict()
+
+        # the metaclass has by now blessed this class Field and Relationship
+        # properties. Go ahead and merge in input data by setting said
+        # properties.
+        self.merge(dict(data or {}, **more_data))
 
     def __getitem__(self, key):
         """
@@ -129,8 +129,8 @@ class BizObject(
     @classmethod
     def query(
         cls,
-        predicate: Predicate = None,
-        specification: QuerySpecification = None,
+        predicate: 'Predicate' = None,
+        specification: 'QuerySpecification' = None,
         first=False,
     ) -> List['BizObject']:
         """
@@ -297,12 +297,25 @@ class BizObject(
         """
         # create a deep copy of the data so as other BizObjects that also
         # merge in or possess this data don't mutate the data stored here.
-        source_data = obj.data if is_bizobj(obj) else obj
-        self.data.update(self._load(source_data, {}))
+        if is_bizobj(obj):
+            self._data.update(obj._data)
+            self._related.update(obj._related)
+        else:
+            for k, v in obj.items():
+                setattr(self, k, v)
+
+        processed_data, error = self.schema.process(self._data)
+        if error:
+            # TODO: raise custom exception
+            raise Exception(str(error))
+
+        self._data = DirtyDict(processed_data)
 
         # clear cached dump data because we now have different data :)
         # and mark all new keys as dirty.
-        self.mark_dirty(source_data.keys())
+        self.mark_dirty({k for k in obj.keys() if k in self.schema.fields})
+
+        return self
 
     def load(self, fields=None):
         """
@@ -310,7 +323,7 @@ class BizObject(
         data.
         """
         self.merge(self.get(_id=self._id, fields=fields))
-        return self
+        return self.clear_dirty()
 
     def dump(self, fields=None, style='nested'):
         """

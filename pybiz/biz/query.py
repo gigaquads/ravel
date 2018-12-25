@@ -185,7 +185,7 @@ class QueryUtils(object):
         """
         # standardized the `argument` to a nested dict structure
         if argument is None:
-            # if none, specified, select all fields and relqtionships
+            # if none, specified, select all fields and relationships
             spec = {
                 k: None for k in (
                     bizobj_type.schema.fields.keys() |
@@ -205,6 +205,11 @@ class QueryUtils(object):
             # add required fields
             for k in bizobj_type.schema.required_fields:
                 spec.setdefault(k, None)
+
+        if '*' in spec:
+            del spec['*']
+            spec.update({k: None for k in bizobj_type.schema.fields})
+            spec.update({k: None for k in bizobj_type.relationships})
 
         fields = set()      # <- set of fields to query on this bizobj_type
         relationships = {}  # <- map from relationship name to recursive result

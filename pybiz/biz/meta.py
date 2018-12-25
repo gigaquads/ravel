@@ -22,7 +22,7 @@ from pybiz.constants import (
 )
 
 from .relationship import Relationship, RelationshipProperty
-from .comparable_property import ComparableProperty
+from .field_property import FieldProperty
 
 
 class BizObjectMeta(ABCMeta):
@@ -194,6 +194,12 @@ class BizObjectMeta(ABCMeta):
 
         def build_property(k):
             def fget(self):
+                if (k not in self.data) and '_id' in self._data:
+                    # try to lazy load the field value
+                    field = self.schema.fields.get(k)
+                    if field and field.meta.get('lazy', True):
+                        record = self.dao.fetch(_id=self._data['_id'], fields={k})
+                        self._data[k] = record[k]
                 return self[k]
 
             def fset(self, value):
@@ -202,60 +208,14 @@ class BizObjectMeta(ABCMeta):
             def fdel(self):
                 del self[k]
 
-            return ComparableProperty(k, fget=fget, fset=fset, fdel=fdel)
+            return FieldProperty(k, fget=fget, fset=fset, fdel=fdel)
 
-        for field_name in schema.fields:
+        for field_name, field in schema.fields.items():
             if field_name not in relationships:
-                setattr(cls, field_name, build_property(field_name))
+                field_prop = FieldProperty.build(field)
+                setattr(cls, field_name, field_prop)
 
     def build_relationship_properties(cls, relationships):
-        empty = '%{}%'.format(sys.maxsize)
-
-        def build_relationship_property(k, rel):
-            def fget(self):
-                """
-                Return the related BizObject instance or list.
-                """
-                retval = self._related.get(k, empty)
-                if retval is empty:
-                    if rel.query is not None:
-                        retval = rel.query(self, spec=None)
-                        setattr(self, k, retval)    # go through fset
-                    elif rel.many:
-                        retval = []
-                    else:
-                        retval = None
-                return retval
-
-            def fset(self, value):
-                """
-                Set the related BizObject or list, enuring that a list can't
-                be assigned to a Relationship with many == False and vice
-                versa..
-                """
-                rel = self.relationships[k]
-                if isinstance(value, dict):
-                    value = list(value.values())
-                is_sequence = isinstance(value, (list, tuple, set))
-                if not is_sequence:
-                    if rel.many:
-                        raise ValueError('{} must be non-scalar'.format(k))
-                    bizobj_list = value
-                    self._related[k] = bizobj_list
-                elif is_sequence:
-                    if not rel.many:
-                        raise ValueError('{} must be scalar'.format(k))
-
-                    self._related[k] = value
-
-            def fdel(self):
-                """
-                Remove the related BizObject or list. The field will appeear in
-                dump() results. You must assign None if you want to None to appear.
-                """
-                del self._related[k]
-
-            return RelationshipProperty(rel, fget=fget, fset=fset, fdel=fdel)
-
         for rel in relationships.values():
-            setattr(cls, rel.name, build_relationship_property(rel.name, rel))
+            rel_prop = RelationshipProperty.build(rel)
+            setattr(cls, rel.name, rel_prop)

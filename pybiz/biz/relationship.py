@@ -1,16 +1,6 @@
-import copy
-
-from typing import Text, List, Tuple
+from typing import Text
 
 from appyratus.memoize import memoized_property
-from appyratus.schema import fields
-from appyratus.schema.fields import Field
-
-from pybiz.predicate import (
-    Predicate,
-    ConditionalPredicate,
-    BooleanPredicate,
-)
 
 
 class Relationship(object):
@@ -23,18 +13,18 @@ class Relationship(object):
         self,
         target,
         many=False,
-        predicate: Predicate = None,
         link: Text = None,
         source: Text = None,
         query=None,
+        lazy=True,
     ):
         self._target = target
         self.source = source
-        self.predicate = predicate
         self.link = link or '_id'
         self.many = many
         self.query = query
         self.name = None
+        self.lazy = lazy
 
     @memoized_property
     def target(self):
@@ -53,3 +43,85 @@ class RelationshipProperty(property):
     def __init__(self, relationship, **kwargs):
         super().__init__(**kwargs)
         self.relationship = relationship
+
+    @classmethod
+    def build(
+        cls,
+        relationship: 'Relationship'
+    ) -> 'RelationshipProperty':
+        """
+        Build and return a `RelationshipProperty`, that validates the data on
+        getting/setting and lazy-loads data on get.
+        """
+        rel = relationship
+        key = relationship.name
+
+        def is_scalar_value(obj):
+            # just a helper func
+            return not isinstance(obj, (list, set, tuple))
+
+        def fget(self):
+            """
+            Return the related BizObject instance or list.
+            """
+            if key not in self._related:
+                if rel.lazy and rel.query:
+                    # lazily fetch the related data, eagerly selecting all fields
+                    related_obj = rel.query(self, {'*'})
+                    # make sure we are setting an instance object or collection
+                    # of objects according to the field's "many" flag.
+                    is_scalar = is_scalar_value(related_obj)
+                    expect_scalar = not rel.many
+                    if is_scalar and not expect_scalar:
+                        raise ValueError(
+                            'relationship "{}" query returned an object but '
+                            'expected a sequence because relationship.many '
+                            'is True'.format(key)
+                        )
+                    elif (not is_scalar) and expect_scalar:
+                        raise ValueError(
+                            'relationship "{}" query returned a sequence but '
+                            'expected a BizObject because relationship.many '
+                            'is False'.format(key)
+                        )
+                    self._related[key] = related_obj
+
+            default = [] if rel.many else None
+            return self._related.get(key, default)
+
+        def fset(self, value):
+            """
+            Set the related BizObject or list, enuring that a list can't be
+            assigned to a Relationship with many == False and vice versa.
+            """
+            rel = self.relationships[key]
+            is_scalar = is_scalar_value(value)
+            expect_scalar = not rel.many
+
+            if (not expect_scalar) and isinstance(value, dict):
+                # assume that the value is a map from id to bizobj, so
+                # convert the dict value set into a list to use as the
+                # value set for the Relationship.
+                value = list(value.values())
+
+            if is_scalar and not expect_scalar:
+                    raise ValueError(
+                        'relationship "{}" must be a sequence because '
+                        'relationship.many is True'.format(key)
+                    )
+            elif (not is_scalar) and expect_scalar:
+                raise ValueError(
+                    'relationship "{}" cannot be a BizObject because '
+                    'relationship.many is False'.format(key)
+                )
+            self._related[key] = value
+
+        def fdel(self):
+            """
+            Remove the related BizObject or list. The field will appeear in
+            dump() results. You must assign None if you want to None to appear.
+            """
+            del self._related[k]
+
+        return cls(relationship, fget=fget, fset=fset, fdel=fdel)
+
