@@ -65,7 +65,7 @@ class DumpNested(Dump):
         ```
         """
         # `record` is the return values
-        record = {'_id': target._id}
+        record = {'id': target._id}
 
         # add each specified field data to the return record
         # and recurse on nested targets available through Relationships
@@ -82,10 +82,15 @@ class DumpNested(Dump):
                         v = copy.deepcopy(v)
                     record[k] = v
             elif k in target.relationships:
+                rel = target.relationships[k]
+                if rel.private:
+                    continue
                 # k corresponds to a declared Relationship, which could
                 # refer either to an instance object or a list thereof.
                 related = target.related[k]
-                if is_bizobj(related):
+                if related is None:
+                    record[k] = None
+                elif is_bizobj(related):
                     record[k] = self(related, fields=fields[k])
                 else:
                     record[k] = [

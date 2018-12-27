@@ -1,4 +1,4 @@
-from typing import List, Dict, Text, Type
+from typing import List, Dict, Text, Type, Tuple
 
 from pybiz.web.patch import JsonPatchMixin
 from pybiz.web.graphql import GraphQLObject
@@ -131,6 +131,7 @@ class BizObject(
         cls,
         predicate: 'Predicate' = None,
         specification: 'QuerySpecification' = None,
+        order_by: Tuple[Text] = None,
         first=False,
     ) -> List['BizObject']:
         """
@@ -145,6 +146,9 @@ class BizObject(
         3. Set of dotted paths, like `{'foo', 'bar.baz'}`
         """
         query = Query(cls, predicate, specification)
+        if order_by:
+            query.spec.order_by = order_by
+
         bizobjs = query.execute()
         if first:
             return bizobjs[0] if bizobjs else None
@@ -200,6 +204,8 @@ class BizObject(
         pass
 
     def save(self, path: List['BizObject'] = None):
+        # TODO: allow fields kwarg to specify a subset of fields and
+        # relationships to save instead of all changes.
         self.pre_save(path)
 
         data_to_save = {k: self[k] for k in self._data.dirty}

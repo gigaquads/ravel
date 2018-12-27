@@ -18,6 +18,7 @@ class QuerySpecification(tuple):
         'relationships': 1,
         'limit': 2,
         'offset': 3,
+        'order_by': 4,
     }
 
     def __new__(
@@ -25,7 +26,8 @@ class QuerySpecification(tuple):
         fields: Set[Text] = None,
         relationships: Dict[Text, 'QuerySpecification'] = None,
         limit: int  =None,
-        offset: int = None
+        offset: int = None,
+        order_by: Tuple[Text] = None,
     ):
         # jest setting the epxected default values for
         # the items in the tuple....
@@ -40,11 +42,14 @@ class QuerySpecification(tuple):
         if offset is not None:
             offset = max(0, offset)
 
+        order_by = order_by or []
+
         return tuple.__new__(cls, (
             fields,
             relationships,
             limit,
             offset,
+            order_by,
         ))
 
     def __getattr__(self, name):
@@ -135,8 +140,11 @@ class Query(object):
         fields nested inside related objects declared in with `Relationship`.
         """
         records = self.dao.query(
-            predicate=self.predicate, fields=self.spec.fields,
-            limit=self.spec.limit, offset=self.spec.offset,
+            predicate=self.predicate,
+            fields=self.spec.fields,
+            limit=self.spec.limit,
+            offset=self.spec.offset,
+            order_by=self.spec.order_by,
         )
         bizobjs = [
             self._recursive_execute(
@@ -157,7 +165,6 @@ class Query(object):
         """
         for k, child_spec in spec.relationships.items():
             rel = bizobj.relationships[k]
-            child_spec.fields.add(rel.link)
             v = rel.query(bizobj, child_spec)
             setattr(bizobj, k, v)
             if rel.many:
@@ -246,6 +253,8 @@ class QueryUtils(object):
                 rel = bizobj.relationships[k]
                 related = rel.query(bizobj, related_fields)
                 setattr(bizobj, k, related)
+                if not related:
+                    continue
                 if is_bizobj(related):
                     cls.query_relationships(related, nested_children)
                 else:

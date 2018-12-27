@@ -8,7 +8,7 @@ from copy import deepcopy
 from collections import defaultdict
 from threading import RLock
 from functools import reduce
-from typing import Text, Dict, List
+from typing import Text, Dict, List, Set, Tuple
 
 from BTrees.OOBTree import BTree
 from appyratus.utils import DictUtils
@@ -118,7 +118,13 @@ class DictDao(Dao):
         with self.lock:
             return {_id: self.delete(_id) for _id in _ids}
 
-    def query(self, predicate: Predicate, fields=None, **kwargs) -> List:
+    def query(
+        self,
+        predicate: Predicate,
+        fields: Set[Text] = None,
+        order_by: Tuple[Text] = None,
+        **kwargs
+    ) -> List:
         def union(sequences):
             if sequences:
                 if len(sequences) == 1:
@@ -185,12 +191,11 @@ class DictDao(Dao):
                     lhs_result = process(lhs)
                     if lhs_result:
                         rhs_result = process(rhs)
-                        intersect = BTrees.OOBTree.intersection
-                        _ids = intersect(lhs_result, rhs_result)
+                        _ids = set.intersection(lhs_result, rhs_result)
                 elif op == '|':
                     lhs_result = process(lhs)
                     rhs_result = process(rhs)
-                    _ids = BTrees.OOBTree.union(lhs_result, rhs_result)
+                    _ids = set.union(lhs_result, rhs_result)
                 else:
                     raise Exception('unrecognized boolean predicate')
 
@@ -199,4 +204,9 @@ class DictDao(Dao):
         with self.lock:
             _ids = process(predicate)
             results = list(self.fetch_many(_ids, fields=fields).values())
+            if order_by:
+                results = sorted(results, key=lambda x: tuple(
+                    x[k] if k[0] != '-' else -1 * x[k][1:]
+                    for k in order_by
+                ))
             return results

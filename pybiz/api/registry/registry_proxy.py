@@ -28,7 +28,8 @@ class RegistryProxy(RegistryObject):
     def __call__(self, *raw_args, **raw_kwargs):
         # apply middleware's pre_request methods
         for m in self.registry.middleware:
-            m.pre_request(raw_args, raw_kwargs)
+            if isinstance(self.registry, m.registry_types):
+                m.pre_request(self, raw_args, raw_kwargs)
         # apply the registry's global on_request method to transform the raw
         # args and kwargs into the format expected by the proxy target callable.
         on_request_retval = self.decorator.registry.on_request(
@@ -42,16 +43,19 @@ class RegistryProxy(RegistryObject):
 
         # apply middleware's on_request methods
         for m in self.registry.middleware:
-            m.on_request(raw_args, raw_kwargs, prepared_args, prepared_kwargs)
+            if isinstance(self.registry, m.registry_types):
+                m.on_request(self, prepared_args, prepared_kwargs)
+
         result = self.target(*prepared_args, **prepared_kwargs)
         processed_result = self.decorator.registry.on_response(
             self, result, *raw_args, **raw_kwargs
         )
         # apply middleware's post_request methods
         for m in self.registry.middleware:
-            m.post_request(
-                raw_args, raw_kwargs, prepared_args, prepared_kwargs, result
-            )
+            if isinstance(self.registry, m.registry_types):
+                m.post_request(
+                    self, prepared_args, prepared_kwargs, result
+                )
         # apply post-response middleware
         return processed_result or result
 

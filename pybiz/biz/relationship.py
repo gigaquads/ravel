@@ -13,18 +13,18 @@ class Relationship(object):
         self,
         target,
         many=False,
-        link: Text = None,
         source: Text = None,
         query=None,
         lazy=True,
+        private=False,
     ):
         self._target = target
         self.source = source
-        self.link = link or '_id'
         self.many = many
         self.query = query
         self.name = None
         self.lazy = lazy
+        self.private = private
 
     @memoized_property
     def target(self):

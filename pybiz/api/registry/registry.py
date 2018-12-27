@@ -4,11 +4,11 @@ from typing import List, Type, Dict
 
 from appyratus.json import JsonEncoder
 from appyratus.utils import DictAccessor
+from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
 
 from .registry_decorator import RegistryDecorator
-from .registry_middleware import RegistryMiddleware
 from .registry_proxy import RegistryProxy
 
 
@@ -16,7 +16,7 @@ class Registry(object):
     def __init__(
         self,
         manifest: Manifest = None,
-        middleware: List[RegistryMiddleware] = None
+        middleware: List['RegistryMiddleware'] = None
     ):
         self._decorators = []
         self._proxies = []
@@ -59,9 +59,12 @@ class Registry(object):
     def manifest(self):
         return self._manifest
 
-    @property
+    @memoized_property
     def middleware(self):
-        return self._middleware
+        return [
+            m for m in self._middleware
+            if isinstance(self, m.registry_types)
+        ]
 
     @property
     def proxies(self):

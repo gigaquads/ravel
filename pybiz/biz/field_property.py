@@ -1,5 +1,6 @@
 from typing import Text, Tuple, List
 
+from pybiz.util import is_bizobj
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -35,9 +36,11 @@ class FieldProperty(property):
         return ConditionalPredicate(self._key, '>=', other)
 
     def is_in(self, others: List[Predicate]) -> Predicate:
+        others = {obj._id if is_bizobj(obj) else obj for obj in others}
         return ConditionalPredicate(self._key, 'in', others)
 
     def is_not_in(self, others: List[Predicate]) -> Predicate:
+        others = {obj._id if is_bizobj(obj) else obj for obj in others}
         return ConditionalPredicate(self._key, 'nin', others)
 
     @property
