@@ -43,10 +43,12 @@ class Relationship(object):
         self.lazy = lazy
 
         # ensure `joins` is a tuple of callables that return predicates
-        if isinstance(joins, Predicate):
+        if callable(joins):
             self._joins = (joins, )
-        else:
+        elif isinstance(joins, (list, tuple)):
             self._joins = tuple(joins)
+
+        assert isinstance(self._joins, tuple)
 
         # set in self.bind. Host is the BizObject class that hosts tis
         # relationship, and `name` is the relationship attribute on said class.

@@ -67,6 +67,22 @@ class QuerySpecification(tuple):
         Translate input "spec" data structure into a well-formed
         QuerySpecification object with appropriate starting conditions.
         """
+        def recursive_init(bizobj_type, names):
+            spec = QuerySpecification()
+            if '*' in names:
+                spec.fields = set(bizobj_type.schema.fields.keys())
+                del names['*']
+            for k, v in names.items():
+                if k in bizobj_type.schema.fields:
+                    spec.fields.add(k)
+                elif k in bizobj_type.relationships:
+                    rel = bizobj_type.relationships[k]
+                    if v is None:  # => is terminal
+                        spec.relationships[k] = QuerySpecification()
+                    elif isinstance(v, dict):
+                        spec.relationships[k] = recursive_init(rel.target, v)
+            return spec
+
         if isinstance(spec, QuerySpecification):
             pass    # nothing special to do,
                     # since spec is already type <QuerySpecification>
@@ -77,38 +93,12 @@ class QuerySpecification(tuple):
             # spec is an array of field and relationship names
             # so partition the names between fields and relationships
             # in a new spec object.
-            def recursive_init(bizobj_type, names):
-                spec = QuerySpecification()
-                for k, v in names.items():
-                    if k in bizobj_type.schema.fields:
-                        spec.fields.add(k)
-                    elif k in bizobj_type.relationships:
-                        rel = bizobj_type.relationships[k]
-                        if v is None:  # => is terminal
-                            spec.relationships[k] = QuerySpecification(
-                                fields=rel.target.schema.fields.keys(),
-                                relationships={
-                                    k: QuerySpecification() for k in
-                                    rel.target.relationships.keys()
-                                }
-                            )
-                        elif isinstance(v, dict):
-                            spec.relationships[k] = recursive_init(
-                                rel.target, v
-                            )
-                return spec
             names = DictUtils.unflatten_keys({k: None for k in spec})
             spec = recursive_init(bizobj_type, names)
         elif spec is None:
             # by default, a new spec includes all fields and relationships
             spec = QuerySpecification(
-                fields={
-                    k for k, field in bizobj_type.schema.fields.items()
-                },
-                relationships={
-                    k: QuerySpecification()
-                    for k in bizobj_type.relationships.keys()
-                }
+                fields={k for k, field in bizobj_type.schema.fields.items()},
             )
 
         # ensure that _id and required fields are *always* specified
@@ -165,6 +155,8 @@ class Query(object):
         """
         Recurse through all of the target biz object's relationships.
         """
+        if bizobj is None:
+            return None
         for k, child_spec in spec.relationships.items():
             rel = bizobj.relationships[k]
             v = rel.query(bizobj, child_spec)

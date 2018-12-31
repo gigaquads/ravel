@@ -332,6 +332,12 @@ class BizObject(
         self.merge(self.get(_id=self._id, fields=fields))
         return self.clear_dirty(keys=fields)
 
+    def is_loaded(self, fields):
+        results = {}
+        for k in fields:
+            results[k] = k in self.data or k in self.related
+        return results
+
     def dump(self, fields=None, style='nested'):
         """
         Dump the fields of this business object along with its related objects
