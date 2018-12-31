@@ -171,11 +171,11 @@ class BizObjectMeta(ABCMeta):
                 if is_super_relationship:
                     super_rel = cls.relationships[k]
                     rel = copy.deepcopy(super_rel)
-                    rel.name = k
+                    rel.bind(cls, k)
                     inherited_relationships[k] = rel
             else:
                 direct_relationships[k] = rel
-                rel.name = k
+                rel.bind(cls, k)
 
         # clear the Relationships delcared on this subclass
         # from the class name space, to be replaced dynamically
@@ -212,7 +212,7 @@ class BizObjectMeta(ABCMeta):
 
         for field_name, field in schema.fields.items():
             if field_name not in relationships:
-                field_prop = FieldProperty.build(field)
+                field_prop = FieldProperty.build(cls, field)
                 setattr(cls, field_name, field_prop)
 
     def build_relationship_properties(cls, relationships):

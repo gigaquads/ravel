@@ -113,7 +113,7 @@ class SqlalchemyDao(Dao):
 
     def _prepare_predicate(self, pred, empty=set()):
         if isinstance(pred, ConditionalPredicate):
-            col = getattr(self.table.c, pred.attr_name)
+            col = getattr(self.table.c, pred.field.source)
             if pred.op == '=':
                 if isinstance(pred.value, (list, tuple, set)):
                     return col.in_(pred.value)

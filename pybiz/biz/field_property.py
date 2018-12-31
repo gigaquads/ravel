@@ -1,4 +1,4 @@
-from typing import Text, Tuple, List
+from typing import Text, Tuple, List, Type
 
 from pybiz.util import is_bizobj
 from pybiz.predicate import (
@@ -9,43 +9,67 @@ from pybiz.predicate import (
 
 
 class FieldProperty(property):
-    def __init__(self, field: 'Field', **kwargs):
+    def __init__(self,
+        target: Type['BizObject'],
+        field: 'Field',
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self._field = field
-        self._key = field.source
+        self._target = target
+
+    def _build_predicate(self, op, other):
+        return ConditionalPredicate(op, self, other)
+
+    def __repr__(self):
+        target_name = None
+        if self.target:
+            target_name = self.target.__name__
+        field_name = None
+        if self.field:
+            field_name = self.field.name
+        return '<FieldProperty({}{})>'.format(
+            target_name + '.' if target_name else '',
+            field_name or ''
+        )
 
     def __eq__(self, other: Predicate) -> Predicate:
-        return ConditionalPredicate(self._key, '=', other)
+        return self._build_predicate('=', other)
 
     def __ne__(self, other: Predicate) -> Predicate:
-        return ConditionalPredicate(self._key, '!=', other)
+        return self._build_predicate('!=', other)
 
     def __lt__(self, other: Predicate) -> Predicate:
-        return ConditionalPredicate(self._key, '<', other)
+        return self._build_predicate('<', other)
 
     def __le__(self, other: Predicate) -> Predicate:
-        return ConditionalPredicate(self._key, '<=', other)
+        return self._build_predicate('<=', other)
 
     def __gt__(self, other: Predicate) -> Predicate:
-        return ConditionalPredicate(self._key, '>', other)
+        return self._build_predicate('>', other)
 
     def __ge__(self, other: Predicate) -> Predicate:
-        return ConditionalPredicate(self._key, '>=', other)
-
-    def __ge__(self, other: Predicate) -> Predicate:
-        return ConditionalPredicate(self._key, '>=', other)
+        return self._build_predicate('>=', other)
 
     def is_in(self, others: List[Predicate]) -> Predicate:
         others = {obj._id if is_bizobj(obj) else obj for obj in others}
-        return ConditionalPredicate(self._key, 'in', others)
+        return self._build_predicate('in', others)
 
     def is_not_in(self, others: List[Predicate]) -> Predicate:
         others = {obj._id if is_bizobj(obj) else obj for obj in others}
-        return ConditionalPredicate(self._key, 'nin', others)
+        return self._build_predicate('nin', others)
+
+    @property
+    def target(self):
+        return self._target
+
+    @property
+    def field(self):
+        return self._field
 
     @property
     def key(self) -> Text:
-        return self._key
+        return self._field.source
 
     @property
     def asc(self) -> Tuple:
@@ -58,6 +82,7 @@ class FieldProperty(property):
     @classmethod
     def build(
         cls,
+        target,
         field: 'Field',
     ) -> 'FieldProperty':
         """
@@ -83,4 +108,4 @@ class FieldProperty(property):
         def fdel(self):
             del self[key]
 
-        return cls(field, fget=fget, fset=fset, fdel=fdel)
+        return cls(target, field, fget=fget, fset=fset, fdel=fdel)

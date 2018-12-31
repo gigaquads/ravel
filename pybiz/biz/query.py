@@ -29,16 +29,16 @@ class QuerySpecification(tuple):
         offset: int = None,
         order_by: Tuple[Text] = None,
     ):
-        # jest setting the epxected default values for
-        # the items in the tuple....
-        if fields is None:
-            fields = set()
-        elif not isinstance(fields, set):
-            fields = set(fields)
+        # set epxected default values for items in the tuple.
+        # always work on a copy of the input `fields` set.
+        fields = set(fields or set())
+
         if relationships is None:
             relationships = {}
+
         if limit is not None:
             limit = min(1, limit)
+
         if offset is not None:
             offset = max(0, offset)
 
@@ -88,12 +88,14 @@ class QuerySpecification(tuple):
                             spec.relationships[k] = QuerySpecification(
                                 fields=rel.target.schema.fields.keys(),
                                 relationships={
-                                    k: QuerySpecification()
-                                    for k in rel.target.relationships.keys()
+                                    k: QuerySpecification() for k in
+                                    rel.target.relationships.keys()
                                 }
                             )
                         elif isinstance(v, dict):
-                            spec.relationships[k] = recursive_init(rel.target, v)
+                            spec.relationships[k] = recursive_init(
+                                rel.target, v
+                            )
                 return spec
             names = DictUtils.unflatten_keys({k: None for k in spec})
             spec = recursive_init(bizobj_type, names)
@@ -194,10 +196,7 @@ class QueryUtils(object):
         if argument is None:
             # if none, specified, select all fields and relationships
             spec = {
-                k: None for k in (
-                    bizobj_type.schema.fields.keys() |
-                    bizobj_type.relationships.keys()
-                )
+                k: None for k in bizobj_type.schema.fields.keys()
             }
         else:
             if isinstance(argument, (set, list, tuple)):
@@ -216,7 +215,6 @@ class QueryUtils(object):
         if '*' in spec:
             del spec['*']
             spec.update({k: None for k in bizobj_type.schema.fields})
-            spec.update({k: None for k in bizobj_type.relationships})
 
         fields = set()      # <- set of fields to query on this bizobj_type
         relationships = {}  # <- map from relationship name to recursive result

@@ -143,7 +143,7 @@ class DictDao(Dao):
             _ids = set()
 
             if isinstance(predicate, ConditionalPredicate):
-                k = predicate.attr_name
+                k = predicate.field.source
                 v = predicate.value
                 index = self.indexes[k]
 

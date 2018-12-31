@@ -44,6 +44,29 @@ class ReplRegistry(Registry):
         self.shell.mainloop(local_ns=local_ns)
 
     @property
+    def namespace(self) -> Dict:
+        """
+        iPython's embedded shell session namespace dict. Update this dict from
+        methods when you want to, say, rerun and reload fixture data inside a
+        REPL, like:
+
+        ```python3
+            @repl()
+            def reset_fixtures():
+                fixtures = {
+                    'foo': Foo.create().save(),
+                    'bar': Bar.create().save()
+                }
+                repl.namespace.update(fixtures)
+                return fixtures
+            ```
+
+        Now, inside the REPL session, you can do `reset_fixtures()` to reset the
+        global variables available to you in the shell.
+        """
+        return self.shell.user_ns
+
+    @property
     def functions(self) -> List[Text]:
         """
         Get list of names of all registered functions in the REPL.

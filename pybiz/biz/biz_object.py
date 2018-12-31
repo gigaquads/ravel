@@ -151,23 +151,23 @@ class BizObject(
 
         bizobjs = query.execute()
         if first:
-            return bizobjs[0] if bizobjs else None
+            return bizobjs[0].clear_dirty() if bizobjs else None
         else:
-            return bizobjs
+            return [obj.clear_dirty() for obj in bizobjs]
 
     @classmethod
     def get(cls, _id, fields: Dict = None):
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
         record = cls.get_dao().fetch(_id=_id, fields=fields)
-        bizobj = cls(record).clear_dirty()
+        bizobj = cls(record)
 
         # recursively load nested relationships
         QueryUtils.query_relationships(bizobj, children)
 
-        return bizobj
+        return bizobj.clear_dirty()
 
     @classmethod
-    def get_many(cls, _ids, fields: List=None, as_list=False):
+    def get_many(cls, _ids, fields: List=None, as_list=True):
         # separate field names into those corresponding to this BizObjects
         # class and those of the related BizObject classes.
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
@@ -179,8 +179,9 @@ class BizObject(
         # optimized.
         bizobjs = {}
         for _id, record in records.items():
-            bizobjs[_id] = bizobj = cls(record).clear_dirty()
+            bizobjs[_id] = bizobj = cls(record)
             QueryUtils.query_relationships(bizobj, children)
+            bizobjs[_id].clear_dirty()
 
         # return results either as a list or a mapping from id to object
         return bizobjs if not as_list else list(bizobjs.values())
@@ -329,7 +330,7 @@ class BizObject(
         data.
         """
         self.merge(self.get(_id=self._id, fields=fields))
-        return self.clear_dirty()
+        return self.clear_dirty(keys=fields)
 
     def dump(self, fields=None, style='nested'):
         """
@@ -365,8 +366,7 @@ class BizObject(
         # eagerly load all related bizobjs from the loaded data dict,
         # removing the fields from said dict.
         for rel in self.relationships.values():
-            source = rel.source or rel.name
-            related_data = data.pop(source, None)
+            related_data = data.pop(rel.name, None)
 
             if related_data is None:
                 continue
