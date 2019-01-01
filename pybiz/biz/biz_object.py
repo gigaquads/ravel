@@ -1,10 +1,10 @@
-from typing import List, Dict, Text, Type, Tuple
+from typing import List, Dict, Text, Type, Tuple, Set
 
 from pybiz.web.patch import JsonPatchMixin
 from pybiz.web.graphql import GraphQLObject
 from pybiz.dao.base import DaoManager
 from pybiz.dao.dict_dao import DictDao
-from pybiz.dirty import DirtyDict, DirtyInterface
+from pybiz.dirty import DirtyDict
 from pybiz.util import is_bizobj
 
 from .meta import BizObjectMeta
@@ -13,7 +13,7 @@ from .query import Query, QueryUtils
 
 
 class BizObject(
-    DirtyInterface, JsonPatchMixin, GraphQLObject,
+    JsonPatchMixin, GraphQLObject,
     metaclass=BizObjectMeta
 ):
     """
@@ -44,7 +44,6 @@ class BizObject(
 
     def __init__(self, data=None, **more_data):
         JsonPatchMixin.__init__(self)
-        DirtyInterface.__init__(self)
         GraphQLObject.__init__(self)
 
         self._related = {}
@@ -110,6 +109,9 @@ class BizObject(
                 format(key, self.schema.__class__.__name__)
             )
 
+    def __iter__(self):
+        return iter(self._data)
+
     def __contains__(self, key):
         return key in self._data
 
@@ -123,7 +125,10 @@ class BizObject(
     # -- CRUD Interface --------------------------------------------
 
     @classmethod
-    def exists(cls, _id=None):
+    def exists(cls, _id=None) -> bool:
+        """
+        Does a simple check if a BizObject exists by id.
+        """
         return cls.get_dao().exists(_id=_id)
 
     @classmethod
@@ -151,12 +156,12 @@ class BizObject(
 
         bizobjs = query.execute()
         if first:
-            return bizobjs[0].clear_dirty() if bizobjs else None
+            return bizobjs[0].clean() if bizobjs else None
         else:
-            return [obj.clear_dirty() for obj in bizobjs]
+            return [obj.clean() for obj in bizobjs]
 
     @classmethod
-    def get(cls, _id, fields: Dict = None):
+    def get(cls, _id, fields: Dict = None) -> 'BizObject':
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
         record = cls.get_dao().fetch(_id=_id, fields=fields)
         bizobj = cls(record)
@@ -164,7 +169,7 @@ class BizObject(
         # recursively load nested relationships
         QueryUtils.query_relationships(bizobj, children)
 
-        return bizobj.clear_dirty()
+        return bizobj.clean()
 
     @classmethod
     def get_many(cls, _ids, fields: List=None, as_list=True):
@@ -181,30 +186,30 @@ class BizObject(
         for _id, record in records.items():
             bizobjs[_id] = bizobj = cls(record)
             QueryUtils.query_relationships(bizobj, children)
-            bizobjs[_id].clear_dirty()
+            bizobjs[_id].clean()
 
         # return results either as a list or a mapping from id to object
         return bizobjs if not as_list else list(bizobjs.values())
 
     @classmethod
-    def delete_many(cls, bizobjs):
+    def delete_many(cls, bizobjs) -> None:
         bizobj_ids = []
         for obj in bizobjs:
-            obj.mark_dirty(obj.data.keys())
+            obj.mark(obj.data.keys())
             bizobj_ids.append(obj._id)
         cls.get_dao().delete_many(bizobj_ids)
 
-    def delete(self):
+    def delete(self) -> 'BizObject':
+        """
+        Call delete on this object's dao and therefore mark all fields as dirty
+        and delete its _id so that save now triggers Dao.create.
+        """
         self.dao.delete(_id=self._id)
-        self.mark_dirty(self.data.keys())
+        self.mark(self.data.keys())
+        self._id = None
+        return self
 
-    def pre_save(self, path: List['BizObject']):
-        pass
-
-    def post_save(self, path: List['BizObject']):
-        pass
-
-    def save(self, path: List['BizObject'] = None):
+    def save(self, path: List['BizObject'] = None) -> 'BizObject':
         # TODO: allow fields kwarg to specify a subset of fields and
         # relationships to save instead of all changes.
         self.pre_save(path)
@@ -239,43 +244,22 @@ class BizObject(
                 # this is a scalar relationship
                 v.save(path=path + [self])
 
-        self.clear_dirty()
+        self.clean()
         self.post_save(path)
 
         return self
 
-    @staticmethod
-    def _query_relationships(bizobj, fields: Dict):
-        for k, fields in fields.items():
-            v = bizobj.relationships[k].query(bizobj, fields=fields)
-            setattr(bizobj, k, v)
+    def pre_save(self, path: List['BizObject']):
+        pass
 
-    # -- DirtyInterface --------------------------------------------
+    def post_save(self, path: List['BizObject']):
+        pass
 
     @property
-    def dirty(self):
-        return self._data.dirty
-
-    def set_parent(self, key_in_parent, parent):
-        self._data.set_parent(key_in_parent, parent)
-
-    def has_parent(self, obj):
-        return self._data.has_parent(obj)
-
-    def get_parent(self):
-        return self._data.get_parent()
-
-    def mark_dirty(self, key_or_keys):
-        self._data.mark_dirty(key_or_keys)
-
-    def clear_dirty(self, keys=None):
-        self._data.clear_dirty(keys=keys)
-        return self
-
-    # --------------------------------------------------------------
-
+    def dao(self) -> 'Dao':
+        return self.get_dao()
     @property
-    def data(self):
+    def data(self) -> 'DirtyDict':
         return self._data
 
     @property
@@ -283,19 +267,18 @@ class BizObject(
         return self._related
 
     @property
-    def dao(self):
-        return self.get_dao()
+    def dirty(self) -> Set[Text]:
+        return self._data.dirty
 
-    def keys(self):
-        return self._data.keys()
+    def clean(self, keys=None) -> 'BizObject':
+        self._data.clear_dirty(keys)
+        return self
 
-    def values(self):
-        return self._data.values()
+    def mark(self, keys) -> 'BizObject':
+        self._data.mark_dirty(keys)
+        return self
 
-    def items(self):
-        return self._data.items()
-
-    def merge(self, obj):
+    def merge(self, obj, process=True, mark=True) -> 'BizObject':
         """
         Merge another dict or BizObject's data dict into the data dict of this
         BizObject. Not called "update" because that would be confused as the
@@ -311,34 +294,44 @@ class BizObject(
             for k, v in obj.items():
                 setattr(self, k, v)
 
-        processed_data, error = self.schema.process(self._data)
-        if error:
-            # TODO: raise custom exception
-            raise Exception(str(error))
+        if process:
+            # run the new data dict through the schema
+            processed_data, error = self.schema.process(self._data)
+            if error:
+                # TODO: raise custom exception
+                raise Exception(str(error))
 
-        self._data = DirtyDict(processed_data)
+            self._data = DirtyDict(processed_data)
 
         # clear cached dump data because we now have different data :)
         # and mark all new keys as dirty.
-        self.mark_dirty({k for k in obj.keys() if k in self.schema.fields})
+        dirty_func = self.mark if mark else self.clean
+        if is_bizobj(obj):
+            dirty_func(obj.data.keys())
+        else:
+            dirty_func({k for k in obj if k in self.schema.fields})
 
         return self
 
-    def load(self, fields=None):
+    def load(self, fields=None) -> 'BizObject':
         """
         Assuming _id is not None, this will load the rest of the BizObject's
         data.
         """
-        self.merge(self.get(_id=self._id, fields=fields))
-        return self.clear_dirty(keys=fields)
+        fresh = self.get(_id=self._id, fields=fields)
+        self.merge(fresh, mark=False)
+        return self
 
-    def is_loaded(self, fields):
-        results = {}
-        for k in fields:
-            results[k] = k in self.data or k in self.related
-        return results
+    def has(self, key) -> bool:
+        """
+        This tells you if any data has been loaded into the given field or
+        relationship. Better to use this than to do "if user.friends" unless you
+        intend for the "friends" Relationship to execute its query as a
+        side-effect.
+        """
+        return (key in self.data or key in self.related)
 
-    def dump(self, fields=None, style='nested'):
+    def dump(self, fields=None, style='nested') -> Dict:
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
@@ -351,66 +344,4 @@ class BizObject(
             return None
 
         result = dump(target=self, fields=fields)
-        return result
-
-    def _load(self, data, kwargs_data):
-        """
-        Load data passed into the bizobj ctor into an internal DirtyDict. If
-        any of the data fields correspond with delcared Relationships, load the
-        bizobjs declared by said Relationships from said data.
-        """
-        data = data or {}
-        data.update(kwargs_data)
-
-        self._related = {}
-
-        # NOTE: When bizobjs are passed into the ctor instead of raw dicts, the
-        # bizobjs are not copied, which means that if some other bizobj also
-        # references these bizobj and makes changes to them, the changes will
-        # also have an effect here.
-
-        # eagerly load all related bizobjs from the loaded data dict,
-        # removing the fields from said dict.
-        for rel in self.relationships.values():
-            related_data = data.pop(rel.name, None)
-
-            if related_data is None:
-                continue
-
-            # we're loading a list of BizObjects
-            if rel.many:
-                related_bizobj_list = []
-                for obj in related_data:
-                    if isinstance(obj, rel.target):
-                        related_bizobj_list.append(obj)
-                    else:
-                        related_bizobj_list.append(
-                            rel.target(obj)
-                        )
-
-                self._related[rel.name] = related_bizobj_list
-
-            # We are loading a single BizObject. If obj is a plain dict,
-            # we instantiate the related BizObject automatically.
-            else:
-                if not is_bizobj(related_data):
-                    # if the assertion below fails, then most likely
-                    # you're intended to use the many=True kwarg in a
-                    # relationship. The data coming in from load is a
-                    # list, but without the 'many' kwarg set, the
-                    # Relationship assumes that the 'related_data' is a
-                    # dict and tries to call a bizobj ctor with it.
-                    assert isinstance(related_data, dict)
-                    related_bizobj = rel.target(related_data)
-                else:
-                    related_bizobj = related_data
-                self._related[rel.name] = related_bizobj
-
-        result, error = self.schema.process(data)
-        if error:
-            # TODO: raise custom exception
-            raise Exception(str(error))
-
-        # at this point, the data dict has been cleared of any fields that are
-        # shadowed by Relationships declared on the bizobj class.
         return result

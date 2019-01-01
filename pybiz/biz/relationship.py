@@ -61,10 +61,15 @@ class Relationship(object):
         self._query_fields = []
 
     def __repr__(self):
-        return '<{}({}{})>'.format(
+        return '<{}({})>'.format(
             self.__class__.__name__,
-            self._host.__name__ + '.' if self._host else '',
-            self._name or '',
+            ', '.join([
+                (self._host.__name__ + '.' if self._host else '')
+                    + self._name or '',
+                'many={}'.format(self.many),
+                'private={}'.format(self.private),
+                'lazy={}'.format(self.lazy),
+            ])
         )
 
     def query(self, source, specification):
@@ -141,6 +146,15 @@ class RelationshipProperty(property):
     def __init__(self, relationship, **kwargs):
         super().__init__(**kwargs)
         self.relationship = relationship
+
+    def __repr__(self):
+        if self.relationship is not None:
+            return repr(self.relationship).replace(
+                'Relationship', 'RelationshipProperty'
+            )
+        else:
+            return '<RelationshipProperty>'
+
 
     @classmethod
     def build(

@@ -140,7 +140,7 @@ class Query(object):
         )
         bizobjs = [
             self._recursive_execute(
-                bizobj=self.bizobj_type(record).clear_dirty(),
+                bizobj=self.bizobj_type(record).clean(),
                 spec=self.spec
             )
             for record in records
