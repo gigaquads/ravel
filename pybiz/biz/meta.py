@@ -26,6 +26,9 @@ from .field_property import FieldProperty
 
 
 class BizObjectMeta(ABCMeta):
+
+    dao_manager = DaoManager()
+
     def __new__(cls, name, bases, dict_):
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
         cls.add_is_bizobj_annotation(new_class)
@@ -35,6 +38,7 @@ class BizObjectMeta(ABCMeta):
         ABCMeta.__init__(cls, name, bases, dict_)
 
         cls.graphql = GraphQLEngine(cls)
+        cls.dao_manager = BizObjectMeta.dao_manager
 
         relationships = cls.build_relationships()
         schema_class = cls.build_schema_class(name)
@@ -49,11 +53,11 @@ class BizObjectMeta(ABCMeta):
         venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
-        man = DaoManager.get_instance()
-        if not man.is_registered(cls):
-            dao_class = cls.__dao__()
-            if dao_class:
-                man.register(cls, dao_class)
+        manager = BizObjectMeta.dao_manager
+        if not manager.is_registered(cls):
+            dao_type = cls.__dao__()
+            if dao_type:
+                manager.register(cls, dao_type)
 
     def build_schema_class(cls, name):
         """

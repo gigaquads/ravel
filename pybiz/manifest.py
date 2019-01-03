@@ -150,5 +150,4 @@ class Manifest(object):
             if dao_class is None:
                 raise ManifestError('{} not found'.format(binding['dao']))
 
-            manager = DaoManager.get_instance()
-            manager.register(biz_class, dao_class)
+            biz_class.dao_manager.registry(dao_class)

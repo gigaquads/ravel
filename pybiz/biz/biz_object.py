@@ -19,8 +19,11 @@ class BizObject(
     """
     `BizObject` has built-in support for implementing GraphQL and REST API's.
     """
-    schema = None         # set by metaclass
-    relationships = {}    # set by metaclass
+
+    # set by metaclass:
+    schema = None
+    relationships = {}
+    dao_manager = None
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -40,7 +43,7 @@ class BizObject(
         """
         Get the global Dao reference associated with this class.
         """
-        return DaoManager.get_instance().get_dao(cls)
+        return cls.dao_manager.get_dao(cls)
 
     def __init__(self, data=None, **more_data):
         JsonPatchMixin.__init__(self)
@@ -121,8 +124,6 @@ class BizObject(
             name=self.__class__.__name__,
             dirty='*' if self._data.dirty else '',
         )
-
-    # -- CRUD Interface --------------------------------------------
 
     @classmethod
     def exists(cls, _id=None) -> bool:

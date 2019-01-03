@@ -4,6 +4,22 @@ import codecs
 from collections import defaultdict
 from typing import Text
 
+from appyratus.enum import Enum
+
+
+OP_CODE = Enum(
+    EQ='=',
+    NEQ='!=',
+    GT='>',
+    LT='<',
+    GEQ='>=',
+    LEQ='<=',
+    INCLUDES='in',
+    EXCLUDES='ex',
+    AND='&',
+    OR='|',
+)
+
 
 class Predicate(object):
     def serialize(self) -> Text:

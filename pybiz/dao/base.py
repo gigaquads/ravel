@@ -2,7 +2,7 @@ import os
 
 import venusian
 
-from typing import Dict, List
+from typing import Dict, List, Type
 from abc import ABCMeta, abstractmethod
 
 
@@ -17,6 +17,13 @@ class DaoMeta(ABCMeta):
 
 
 class Dao(object, metaclass=DaoMeta):
+
+    # set by self.bind
+    bizobj_type = None
+
+    def bind(self, bizobj_type: Type['BizObject']):
+        self.bizobj_type = bizobj_type
+
     @abstractmethod
     def query(self, predicate, **kwargs):
         pass
@@ -90,39 +97,31 @@ class DaoManager(object):
     associated with which Dao class.
     """
 
-    _instance = None    # the singleton instance
-
-    @classmethod
-    def get_instance(cls):
-        """
-        Get global DaoManager singleton instance.
-        """
-        if cls._instance is None:
-            cls._instance = DaoManager()
-        return cls._instance
-
     def __init__(self):
-        self._bizobj_type_2_dao_type = {}    # i.e. BizObject => Dao
+        self._bizobj_type_2_dao_type = {}
 
-    def register(self, bizobj_class, dao_class):
-        self._bizobj_type_2_dao_type[bizobj_class] = dao_class
+    def register(self, bizobj_type, dao_type):
+        self._bizobj_type_2_dao_type[bizobj_type] = dao_type
 
-    def get_dao(self, bizobj_class) -> Dao:
-        if bizobj_class not in self._bizobj_type_2_dao_type:
+    def get_dao(self, bizobj_type) -> Dao:
+        if bizobj_type not in self._bizobj_type_2_dao_type:
             raise KeyError(
                 'Unable to find "{}" in dao classes. '
                 'Hint: did you create a manifest file?'.format(
-                    bizobj_class.__name__
+                    bizobj_type.__name__
                 )
             )
         # lazily instantiate the Dao class or use the instance
         # object provided by __dao__.
-        dao_obj = self._bizobj_type_2_dao_type[bizobj_class]
+        dao_obj = self._bizobj_type_2_dao_type[bizobj_type]
         if isinstance(dao_obj, type):
-            dao_class = dao_obj
-            return dao_class()
+            dao_type = dao_obj
+            dao = dao_type()
         else:
-            return dao_obj
+            dao = dao_obj
 
-    def is_registered(self, bizobj_class):
-        return bizobj_class in self._bizobj_type_2_dao_type
+        dao.bind(bizobj_type)
+        return dao
+
+    def is_registered(self, bizobj_type):
+        return bizobj_type in self._bizobj_type_2_dao_type

@@ -51,13 +51,13 @@ class FieldProperty(property):
     def __ge__(self, other: Predicate) -> Predicate:
         return self._build_predicate('>=', other)
 
-    def is_in(self, others: List[Predicate]) -> Predicate:
+    def includes(self, others: List[Predicate]) -> Predicate:
         others = {obj._id if is_bizobj(obj) else obj for obj in others}
         return self._build_predicate('in', others)
 
-    def is_not_in(self, others: List[Predicate]) -> Predicate:
+    def excludes(self, others: List[Predicate]) -> Predicate:
         others = {obj._id if is_bizobj(obj) else obj for obj in others}
-        return self._build_predicate('nin', others)
+        return self._build_predicate('ex', others)
 
     @property
     def target(self):
