@@ -51,7 +51,7 @@ class GrpcRegistry(Registry):
         pb2_grpc_mod_path = '{}.grpc.registry_pb2_grpc'.format(pkg_path)
         grpc_build_dir = os.path.join(pkg_dir, 'grpc')
         grpc_options = self.manifest.data.get('grpc', {})
-        client_host = grpc_options.get('host', 'localhost')
+        client_host = grpc_options.get('host', '127.0.0.1')
         server_host = grpc_options.get('server_host', client_host)
         port = str(grpc_options.get('port', '50051'))
 
