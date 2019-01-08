@@ -41,7 +41,7 @@ class GrpcRegistry(Registry):
         self._grpc_servicer = None
 
 
-    def bootstrap(self, manifest_filepath: Text, build_grpc=False):
+    def bootstrap(self, manifest_filepath: Text, build_grpc=False, grpc_options: dict = None):
         self.manifest.load(path=manifest_filepath)
 
         pkg_path = self.manifest.package
@@ -50,9 +50,9 @@ class GrpcRegistry(Registry):
         pb2_mod_path = '{}.grpc.registry_pb2'.format(pkg_path)
         pb2_grpc_mod_path = '{}.grpc.registry_pb2_grpc'.format(pkg_path)
         grpc_build_dir = os.path.join(pkg_dir, 'grpc')
-        grpc_options = self.manifest.data.get('grpc', {})
-        client_host = grpc_options.get('host', '127.0.0.1')
-        server_host = grpc_options.get('server_host', client_host)
+        grpc_options = grpc_options or {}
+        client_host = grpc_options.get('client_host', '127.0.0.1')
+        server_host = grpc_options.get('server_host', '127.0.0.1')
         port = str(grpc_options.get('port', '50051'))
 
         self._grpc_server_addr = '{}:{}'.format(server_host, port)
