@@ -13,11 +13,13 @@ class GrpcClient(object):
     def __init__(self, registry: 'GrpcRegistry'):
         assert registry.is_bootstrapped
         self._registry = registry
-        self._channel = grpc.insecure_channel(registry.client_addr)
+        print('Connecting to {}'.format(registry.client_addr))
+        #self._channel = grpc.insecure_channel(registry.client_addr)
+        self._channel = grpc.secure_channel(
+            registry.client_addr, grpc.ssl_channel_credentials()
+        )
         self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(self._channel)
-        self._funcs = {
-            p.name: self._build_func(p)
-            for p in registry.proxies}
+        self._funcs = {p.name: self._build_func(p) for p in registry.proxies}
 
     def __getattr__(self, func_name: Text):
         return self._funcs[func_name]
