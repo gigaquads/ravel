@@ -19,7 +19,7 @@ from google.protobuf.message import Message
 
 from appyratus.schema import fields
 from appyratus.memoize import memoized_property
-from appyratus.utils import StringUtils, FuncUtils
+from appyratus.utils import StringUtils, FuncUtils, DictUtils
 from appyratus.json import JsonEncoder
 
 from pybiz.util import is_bizobj
@@ -50,13 +50,22 @@ class GrpcRegistry(Registry):
         pb2_mod_path = '{}.grpc.registry_pb2'.format(pkg_path)
         pb2_grpc_mod_path = '{}.grpc.registry_pb2_grpc'.format(pkg_path)
         grpc_build_dir = os.path.join(pkg_dir, 'grpc')
+        
+        # a manifest could provide grpc options, but they could also come from
+        # kwargs.  in this case the manifest will load first, and any data
+        # specified in the `grpc_options` kwarg will take preference
+        manifest_grpc_options = self.manifest.data.get('grpc_options', {})
         grpc_options = grpc_options or {}
+        grpc_options = DictUtils.merge(manifest_grpc_options, grpc_options)
+
         client_host = grpc_options.get('client_host', '127.0.0.1')
         server_host = grpc_options.get('server_host', '127.0.0.1')
         port = str(grpc_options.get('port', '50051'))
+        secure_channel = grpc_options.get('secure_channel', False)
 
         self._grpc_server_addr = '{}:{}'.format(server_host, port)
         self._grpc_client_addr = '{}:{}'.format(client_host, port)
+        self._grpc_secure_channel = secure_channel
         self._protobuf_filepath = os.path.join(
             grpc_build_dir, 'registry.proto'
         )
@@ -98,6 +107,10 @@ class GrpcRegistry(Registry):
     @property
     def client_addr(self):
         return self._grpc_client_addr
+
+    @property
+    def secure_channel(self):
+        return self._grpc_secure_channel
 
     def on_decorate(self, proxy):
         pass

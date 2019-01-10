@@ -14,10 +14,12 @@ class GrpcClient(object):
         assert registry.is_bootstrapped
         self._registry = registry
         print('Connecting to {}'.format(registry.client_addr))
-        #self._channel = grpc.insecure_channel(registry.client_addr)
-        self._channel = grpc.secure_channel(
-            registry.client_addr, grpc.ssl_channel_credentials()
-        )
+        if registry.secure_channel:
+            self._channel = grpc.secure_channel(
+                registry.client_addr, grpc.ssl_channel_credentials()
+            )
+        else:
+            self._channel = grpc.insecure_channel(registry.client_addr)
         self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(self._channel)
         self._funcs = {p.name: self._build_func(p) for p in registry.proxies}
 
