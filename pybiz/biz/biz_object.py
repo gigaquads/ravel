@@ -165,12 +165,14 @@ class BizObject(
     def get(cls, _id, fields: Dict = None) -> 'BizObject':
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
         record = cls.get_dao().fetch(_id=_id, fields=fields)
-        bizobj = cls(record)
+        if record is not None:
+            bizobj = cls(record)
 
-        # recursively load nested relationships
-        QueryUtils.query_relationships(bizobj, children)
-
-        return bizobj.clean()
+            # recursively load nested relationships
+            QueryUtils.query_relationships(bizobj, children)
+            return bizobj.clean()
+       
+        return None
 
     @classmethod
     def get_many(cls, _ids, fields: List=None, as_list=True):
@@ -181,13 +183,15 @@ class BizObject(
         # fetch data from the dao
         records = cls.get_dao().fetch_many(_ids=_ids, fields=fields)
 
-        # now fetch and merge related business objects. This could be
-        # optimized.
+        # now fetch and merge related business objects.
+        # This could be optimized.
         bizobjs = {}
         for _id, record in records.items():
-            bizobjs[_id] = bizobj = cls(record)
-            QueryUtils.query_relationships(bizobj, children)
-            bizobjs[_id].clean()
+            if record is not None:
+                bizobjs[_id] = bizobj = cls(record).clean()
+                QueryUtils.query_relationships(bizobj, children)
+            else:
+                bizobjs[_id] = None
 
         # return results either as a list or a mapping from id to object
         return bizobjs if not as_list else list(bizobjs.values())

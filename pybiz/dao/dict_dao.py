@@ -34,7 +34,7 @@ class DictDao(Dao, CacheInterface):
         self.lock = RLock()
         self.indexes = defaultdict(BTree)
         self.id_counter = 1
-        self.rev = Counter()
+        self.rev_counter = Counter()
         self.records = {}
 
     def next_id(self):
@@ -43,22 +43,6 @@ class DictDao(Dao, CacheInterface):
             self.id_counter += 1
             return _id
 
-    def cache_fetch(self, _ids, fetch=False, fields=None):
-        cache_records = {}
-        if fetch:
-            records = self.fetch_many(_ids, fields=fields)
-            for _id, record in records.items():
-                cache_records[_id] = CacheRecord(
-                    rev=self.rev.get(_id),
-                    record=record,
-                )
-        else:
-            for _id in _ids:
-                cache_records[_id] = CacheRecord(
-                    rev=self.rev.get(_id)
-                )
-        return cache_records
-
     def exists(self, _id) -> bool:
         with self.lock:
             return _id in self.indexes['_id']
@@ -66,12 +50,13 @@ class DictDao(Dao, CacheInterface):
     def fetch(self, _id, fields=None) -> Dict:
         with self.lock:
             record = deepcopy(self.records.get(_id))
-            if fields is not None:
-                if fields:
-                    for k in set(record.keys()) - set(fields):
-                        del record[k]
-                else:
-                    record = {'_id': _id}
+            if record is not None:
+                if fields is not None:
+                    if fields:
+                        for k in set(record.keys()) - set(fields):
+                            del record[k]
+                    else:
+                        record = {'_id': _id}
             return record
 
     def fetch_many(self, _ids: List, fields=None) -> Dict:
@@ -79,10 +64,11 @@ class DictDao(Dao, CacheInterface):
             records = {}
             for _id in _ids:
                 record = deepcopy(self.records.get(_id))
-                records[_id] = record
-                if fields:
-                    for k in set(record.keys()) - set(fields):
-                        del record[k]
+                if record is not None:
+                    records[_id] = record
+                    if fields:
+                        for k in set(record.keys()) - set(fields):
+                            del record[k]
             return records
 
     def create(self, record: Dict = None) -> Dict:
@@ -90,7 +76,7 @@ class DictDao(Dao, CacheInterface):
             _id = record.get('_id') or self.next_id()
             record['_id'] = _id
             self.records[_id] = record
-            self.rev[_id] += 1
+            self.rev_counter[_id] += 1
             for k, v in record.items():
                 if not isinstance(v, dict):
                     if v not in self.indexes[k]:
@@ -110,11 +96,11 @@ class DictDao(Dao, CacheInterface):
     def update(self, _id=None, data: Dict = None) -> Dict:
         with self.lock:
             old_record = self.records.get(_id, {})
-            old_rev = self.rev.get(_id, 0)
+            old_rev = self.rev_counter.get(_id, 0)
             if old_record:
                 self.delete(old_record['_id'])
             record = self.create(DictUtils.merge(old_record, data))
-            self.rev[_id] += old_rev
+            self.rev_counter[_id] += old_rev
             return record
 
     def update_many(self, _ids: List, data: List = None) -> Dict:
@@ -128,7 +114,7 @@ class DictDao(Dao, CacheInterface):
         with self.lock:
             record = self.records.get(_id)
             self.records.pop(_id, None)
-            self.rev.pop(_id, None)
+            self.rev_counter.pop(_id, None)
             for k, v in record.items():
                 self.indexes[k][v].remove(_id)
             return record
@@ -229,3 +215,30 @@ class DictDao(Dao, CacheInterface):
                     for k in order_by
                 ))
             return results
+
+    def upsert_cache(self, records: Dict) -> None:
+        with self.lock:
+            # TODO: removed None records first
+            self.update_many(records.keys(), records.values())
+            for _id in records:
+                self.rev_counter[_id] += 1
+
+    def fetch_cache(self, _ids: Set, rev=True, data=False, fields: Set = None) -> Dict:
+        do_fetch_many = data   # just aliasing to something more meaningful
+        do_fetch_rev = rev 
+        cache_records = defaultdict(CacheRecord)
+
+        if do_fetch_many:
+            records = self.fetch_many(_ids, fields=fields)
+            for _id, record in records.items():
+                cache_record = cache_records[_id]
+                cache_record.data = record
+                if do_fetch_rev:
+                    cache_record.rev = self.rev_counter.setdefault(_id, 1)
+        elif do_fetch_rev:
+            for _id in _ids:
+                cache_records[_id] = CacheRecord(
+                    rev=self.rev_counter.get(_id)
+                )
+
+        return cache_records
