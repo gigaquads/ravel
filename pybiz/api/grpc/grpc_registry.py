@@ -39,6 +39,10 @@ class GrpcRegistry(Registry):
         self._json_encoder = JsonEncoder()
         self._grpc_server = None
         self._grpc_servicer = None
+        self._grpc_server_addr = None
+        self._grpc_client_addr = None
+        self._grpc_secure_channel = None
+        self._protobuf_filepath = None
 
 
     def bootstrap(self, manifest_filepath: Text, build_grpc=False, grpc_options: dict = None):
