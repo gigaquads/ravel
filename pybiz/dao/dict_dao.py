@@ -5,12 +5,13 @@ import numpy as np
 import BTrees.OOBTree
 
 from copy import deepcopy
-from collections import defaultdict
+from collections import defaultdict, Counter
 from threading import RLock
 from functools import reduce
 from typing import Text, Dict, List, Set, Tuple
 
 from BTrees.OOBTree import BTree
+
 from appyratus.utils import DictUtils
 
 from pybiz.predicate import (
@@ -20,30 +21,43 @@ from pybiz.predicate import (
 )
 
 from .base import Dao
+from .cache_dao import CacheInterface, CacheRecord
 
 
-class DictDao(Dao):
+class DictDao(Dao, CacheInterface):
     """
     An in-memory Dao that stores data in Python dicts with BTrees indexes.
     """
 
-    _locks = defaultdict(RLock)
-    _indexes = defaultdict(lambda: defaultdict(BTree))
-    _records = defaultdict(dict)
-    _next_id = defaultdict(lambda: 1)
+    def __init__(self):
+        super().__init__()
+        self.lock = RLock()
+        self.indexes = defaultdict(BTree)
+        self.id_counter = 1
+        self.rev = Counter()
+        self.records = {}
 
     def next_id(self):
-        with self._locks[self.type_name]:
-            _id = self._next_id[self.type_name]
-            self._next_id[self.type_name] += 1
+        with self.lock:
+            _id = self.id_counter
+            self.id_counter += 1
             return _id
 
-    def __init__(self, type_name: Text):
-        super().__init__()
-        self.type_name = type_name
-        self.lock = self._locks[type_name]
-        self.indexes = self._indexes[type_name]
-        self.records = self._records[type_name]
+    def cache_fetch(self, _ids, fetch=False, fields=None):
+        cache_records = {}
+        if fetch:
+            records = self.fetch_many(_ids, fields=fields)
+            for _id, record in records.items():
+                cache_records[_id] = CacheRecord(
+                    rev=self.rev.get(_id),
+                    record=record,
+                )
+        else:
+            for _id in _ids:
+                cache_records[_id] = CacheRecord(
+                    rev=self.rev.get(_id)
+                )
+        return cache_records
 
     def exists(self, _id) -> bool:
         with self.lock:
@@ -76,6 +90,7 @@ class DictDao(Dao):
             _id = record.get('_id') or self.next_id()
             record['_id'] = _id
             self.records[_id] = record
+            self.rev[_id] += 1
             for k, v in record.items():
                 if not isinstance(v, dict):
                     if v not in self.indexes[k]:
@@ -87,16 +102,19 @@ class DictDao(Dao):
         results = {}
         with self.lock:
             for record in records:
+                _id = record['_id']
                 result = self.create(record)
-                results[result['_id']] = result
+                results[_id] = result
             return results
 
     def update(self, _id=None, data: Dict = None) -> Dict:
         with self.lock:
             old_record = self.records.get(_id, {})
+            old_rev = self.rev.get(_id, 0)
             if old_record:
                 self.delete(old_record['_id'])
             record = self.create(DictUtils.merge(old_record, data))
+            self.rev[_id] += old_rev
             return record
 
     def update_many(self, _ids: List, data: List = None) -> Dict:
@@ -109,7 +127,8 @@ class DictDao(Dao):
     def delete(self, _id) -> Dict:
         with self.lock:
             record = self.records.get(_id)
-            self.records.pop(_id, {})
+            self.records.pop(_id, None)
+            self.rev.pop(_id, None)
             for k, v in record.items():
                 self.indexes[k][v].remove(_id)
             return record

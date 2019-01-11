@@ -84,12 +84,12 @@ class FileSystemDao(Dao):
 
     def fetch(self, _id, fields=None) -> Dict:
         fpath = self.build_fpath(_id)
-        cached_record, modified_at = self.cache.get(_id)
+        local_record, modified_at = self.cache.get(_id)
 
-        if cached_record is not None:
+        if local_record is not None:
             stat = os.stat(fpath)
             if stat and (modified_at >= stat.st_mtime):
-                return deepcopy(cached_record)
+                return deepcopy(local_record)
 
         record = self.ftype.from_file(fpath)
         self.cache.insert(record)
@@ -137,23 +137,3 @@ class Cache(object):
     def invalidate(self, _id):
         self.modified_at.pop(_id, None)
         self.dao.delete(_id)
-
-
-if __name__ == '__main__':
-    from pybiz.biz import BizObject
-    from pybiz.schema import fields
-    from pybiz.api.repl import ReplRegistry
-
-    class User(BizObject):
-        name = fields.String()
-        age = fields.Int()
-
-    dao = FileSystemDao(root='/Users/dgabriele/Tmp/data')
-    dao.bind(User)
-
-    repl = ReplRegistry()
-    repl.manifest.process()
-    repl.start({
-        'User': User,
-        'dao': dao,
-    })

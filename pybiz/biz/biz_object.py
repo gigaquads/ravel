@@ -36,7 +36,7 @@ class BizObject(
         """
         Declare the DAO type/instance used by this BizObject class.
         """
-        return DictDao(type_name=cls.__name__)
+        return DictDao()
 
     @classmethod
     def get_dao(cls) -> 'Dao':
