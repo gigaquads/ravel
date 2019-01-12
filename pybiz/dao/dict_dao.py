@@ -202,6 +202,7 @@ class DictDao(Dao, CacheInterface):
                     rhs_result = process(rhs)
                     _ids = set.union(lhs_result, rhs_result)
                 else:
+                    # XXX: raise DaoError
                     raise Exception('unrecognized boolean predicate')
 
             return _ids

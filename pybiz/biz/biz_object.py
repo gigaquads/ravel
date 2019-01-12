@@ -2,12 +2,12 @@ from typing import List, Dict, Text, Type, Tuple, Set
 
 from pybiz.web.patch import JsonPatchMixin
 from pybiz.web.graphql import GraphQLObject
-from pybiz.dao.base import DaoManager
 from pybiz.dao.dict_dao import DictDao
 from pybiz.dirty import DirtyDict
 from pybiz.util import is_bizobj
 
 from .meta import BizObjectMeta
+from .dao_manager import DaoManager
 from .dump import DumpNested, DumpSideLoaded
 from .query import Query, QueryUtils
 

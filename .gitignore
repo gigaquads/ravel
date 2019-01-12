@@ -3,10 +3,11 @@
 *.swo
 *.swl
 *.egg-info
-__pycache__/
 *.pyc
 *.pyo
-/venv/
-.cache
+venv/
+__pycache__/
+.cache/
+.pytest_cache/
 dist/
 build/

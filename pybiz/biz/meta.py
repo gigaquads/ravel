@@ -10,7 +10,6 @@ from importlib import import_module
 from appyratus.schema.fields import Field
 from appyratus.schema import Schema
 
-from pybiz.dao.base import DaoManager
 from pybiz.web.patch import JsonPatchMixin
 from pybiz.web.graphql import GraphQLEngine
 from pybiz.constants import (
@@ -21,6 +20,7 @@ from pybiz.constants import (
     PATCH_ANNOTATION,
 )
 
+from .dao_manager import DaoManager
 from .relationship import Relationship, RelationshipProperty
 from .field_property import FieldProperty
 
