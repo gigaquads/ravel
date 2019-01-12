@@ -16,7 +16,7 @@ from pybiz.predicate import (
 )
 
 from ..base import Dao
-from .types import HashSet, StringIndex, NumericIndex
+from .redis_types import HashSet, StringIndex, NumericIndex
 
 
 #TODO: move next_id into Dao base class
