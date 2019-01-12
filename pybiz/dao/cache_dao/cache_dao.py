@@ -43,46 +43,46 @@ class CacheDao(Dao):
             latest_record = latest.get(_id)
             if latest_record and latest_record.rev is not None:
                 if cached_record.rev < latest_record.rev:
-                    # the cached record is stale, so collect the _id and fetch
-                    # from persistence, below.
+                    # the cached record is stale, so collect
+                    # the _id and fetch from persistence, below.
                     ids_to_update.add(_id)
                 elif fields:
                     # the cached record is up-to-date, so use it
-                    records[_id] = deepcopy({k: cached_record.data[k] for k in fields})
+                    records[_id] = deepcopy({
+                        k: cached_record.data[k] for k in fields
+                    })
                 else:
                     # the cached record is up-to-date, so use it
-                    print('USING CACHE RECORD')
                     records[_id] = deepcopy(cached_record.data)
             else:
-                # the requested record apparently doesn't exist in persistence,
-                # so collect its _ids to remove from cache, below.
+                # the requested record apparently doesn't
+                # exist in persistence, so collect its _ids
+                # to remove from cache, below.
                 ids_to_purge.add(_id)
 
-        # purge cache of any records that do not exist in persistence anymore
+        # purge cache of any records that do not
+        # exist in persistence anymore
         if ids_to_purge:
-            print('PURGING CACHE RECORDS', ids_to_purge)
             self.cache.delete_many(ids_to_purge)
 
-        # fetch the records not in cache and update cache accordingly
-        # TODO: fetch ALL records in one call to fetch_many and then partition them below
+        # fetch the records not in cache
+        fetched_records = self.persistence.fetch_many(
+            _ids=(ids_to_create | ids_to_update),
+            fields=fields
+        )
+
+        # upsert records to cache
         if ids_to_create:
-            fresh_records = self.persistence.fetch_many(
-                ids_to_create, fields=fields
+            self.cache.create_many(
+                records=[fetched_records[_id] for _id in ids_to_create]
             )
-            if fresh_records:
-                print('INSERTING CACHE RECORDS', ids_to_create)
-                self.cache.upsert_cache(fresh_records)
-                records.update(fresh_records)
-
         if ids_to_update:
-            refreshed_records = self.persistence.fetch_many(
-                ids_to_update, fields=fields
+            self.cache.update_many(
+                _ids=ids_to_update,
+                data=[fetched_records[_id] for _id in ids_to_update]
             )
-            if refreshed_records:
-                print('REFRESHING CACHE RECORDS', ids_to_update)
-                self.cache.upsert_cache(refreshed_records)
-                records.update(refreshed_records)
 
+        records.update(fetched_records)
         return records
 
     def query(self, predicate, **kwargs):

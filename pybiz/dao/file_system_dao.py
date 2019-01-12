@@ -1,107 +1,108 @@
 import os
+import uuid
 
-from typing import Text, Type, List, Set, Dict, Tuple
-from copy import deepcopy
+from typing import Text, List, Set, Dict, Tuple
 from datetime import datetime
 
 from appyratus.utils import (
     DictAccessor,
     DictUtils,
     StringUtils,
-    TimeUtils,
-    StringUtils,
 )
 
+from appyratus.enum import EnumValueStr
 from appyratus.files import File, Yaml, Json
 
 from .base import Dao
 from .dict_dao import DictDao
 
-# TODO: move extensiosn into base File
-#       class as required staticmethod
+
+class FileType(EnumValueStr):
+
+    @staticmethod
+    def values():
+        return {'json', 'yaml'}
+
 
 class FileSystemDao(Dao):
+
+    FILE_TYPE_NAME_2_CLASS = {
+        FileType.json: Json,
+        FileType.yaml: Yaml,
+    }
+
     def __init__(
         self,
         root: Text,
-        ftype: Type[File] = None,
+        ftype: FileType = None,
         extensions: Set[Text] = None,
-        prefetch=True,
     ):
+        # convert the ftype string arg into a File class ref
+        self.ftype = self.FILE_TYPE_NAME_2_CLASS[ftype]
+
+        # self.paths is where we store named file paths
         self.paths = DictAccessor({'root': root})
-        self.ftype = ftype or Yaml
-        self.extensions = extensions or {'yml', 'yaml'}
-        self.prefetch = prefetch
-        self.cache = None
+
+        # set of recognized (case-normalized) file extensions
+        self.extensions = {
+            ext.lower() for ext in (
+                extensions or self.ftype.extensions()
+            )
+        }
+
+    def mkpath(self, fname: Text) -> Text:
+        fname = self.ftype.format_file_name(fname)
+        return os.path.join(self.paths.data, fname)
 
     def bind(self, bizobj_type):
         super().bind(bizobj_type)
         self.paths.data = os.path.join(
             self.paths.root, StringUtils.snake(bizobj_type.__name__)
         )
-        self.cache = Cache(bizobj_type)
-        if self.prefetch:
-            # recursively load all recognized files in
-            # root data dir into cache..
-            for root, dirnames, fnames in os.walk(self.paths.data):
-                for fname in fnames:
-                    base, ext = os.path.splitext(fname)
-                    if not (ext and ext[1:] in self.extensions):
-                        continue
-                    fpath = os.path.join(root, fname)
-                    with open(fpath) as fin:
-                        record = self.ftype.from_file(fpath)
-                        if '_id' not in record:
-                            record['_id'] = os.path.basename(base)
-                        self.cache.insert(record)
+        os.makedirs(self.paths.data, exist_ok=True)
 
-    def build_fpath(self, file_name: Text) -> Text:
-        return os.path.join(
-            self.paths.data,
-            self.ftype.format_file_name(file_name)
-        )
+    def next_id(self):
+        return uuid.uuid4().hex
 
-    def exists(self, file_name: Text) -> bool:
-        return File.exists(self.build_fpath(file_name))
+    def exists(self, fname: Text) -> bool:
+        return File.exists(self.mkpath(fname))
 
     def create(self, record: Dict) -> Dict:
-        record['_id'] = record['name']
-        fpath = self.build_fpath(record['name'])
+        record.setdefault('_id', self.next_id())
+        return self.update(record['_id'], record)
 
-        self.ftype.to_file(file_path=fpath, data=record)
-        self.cache.insert(record)
-
-        return deepcopy(record)
-
-    def update(self, _id, data: Dict) -> Dict:
-        fpath = self.build_fpath(_id)
-        base_record = self.ftype.from_file(fpath)
-        merged_record = DictUtils.merge(base_record, data)
-
-        self.cache.insert(merged_record)
-
-        return deepcopy(merged_record)
+    def create_many(self, records):
+        for record in records:
+            self.create(record)
 
     def fetch(self, _id, fields=None) -> Dict:
-        fpath = self.build_fpath(_id)
-        local_record, modified_at = self.cache.get(_id)
-
-        if local_record is not None:
-            stat = os.stat(fpath)
-            if stat and (modified_at >= stat.st_mtime):
-                return deepcopy(local_record)
-
+        fpath = self.mkpath(_id)
         record = self.ftype.from_file(fpath)
-        self.cache.insert(record)
-
-        return deepcopy(record)
+        return record
 
     def fetch_many(self, _ids: List, fields: List = None) -> Dict:
-        return {_id: self.fetch(_id, fields) for _id in _ids}
+        if _ids:
+            records = {_id: self.fetch(_id, fields) for _id in _ids}
+        else:
+            records = {}
+            for fname in os.listdir(self.path.data):
+                base, ext = os.path.splitext(fname)
+                if (ext and ext[1:].lower() in self.extensions):
+                    if '_id' not in record:
+                        record['_id'] = os.path.basename(base)
+                    records[record['_id']] = record
+        return records
 
-    def delete(self, _id) -> None:
-        os.unlink(_id)
-        self.cache.invalidate(_id)
+    def update(self, _id, data: Dict) -> Dict:
+        fpath = self.mkpath(_id)
+        base_record = self.ftype.from_file(fpath)
+        if base_record:
+            record = DictUtils.merge(base_record, data)
+            self.ftype.to_file(file_path=fpath, data=merged_record)
+        else:
+            self.ftype.to_file(file_path=fpath, data=data)
+            record = data
+        return record
 
     def update_many(self, _ids: List, updates: List = None) -> Dict:
         return {
@@ -109,31 +110,12 @@ class FileSystemDao(Dao):
             for _id, data in zip(_ids, update)
         }
 
-    def delete_many(self, _ids: List) -> Dict:
+    def delete(self, _id) -> None:
+        os.unlink(_id)
+
+    def delete_many(self, _ids: List) -> None:
         for _id in _ids:
             self.delete(_id)
-        return {}
 
     def query(self, predicate: 'Predicate', **kwargs):
         raise NotImplementedError()
-
-    def create_many(self, records):
-        raise NotImplementedError()
-
-
-class Cache(object):
-    def __init__(self, bizobj_type):
-        self.dao = DictDao(type_name=bizobj_type.__name__)
-        self.modified_at = {}
-
-    def insert(self, record) -> None:
-        cache_record = deepcopy(record)
-        self.modified_at[cache_record['_id']] = TimeUtils.utc_timestamp()
-        self.dao.update(cache_record['_id'], cache_record)
-
-    def get(self, _id) -> Tuple[Dict, int]:
-        return (self.dao.fetch(_id), self.modified_at.get(_id))
-
-    def invalidate(self, _id):
-        self.modified_at.pop(_id, None)
-        self.dao.delete(_id)

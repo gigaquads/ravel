@@ -45,7 +45,7 @@ class DictDao(Dao, CacheInterface):
 
     def exists(self, _id) -> bool:
         with self.lock:
-            return _id in self.indexes['_id']
+            return _id in self.records
 
     def fetch(self, _id, fields=None) -> Dict:
         with self.lock:
@@ -82,7 +82,7 @@ class DictDao(Dao, CacheInterface):
                     if v not in self.indexes[k]:
                         self.indexes[k][v] = set()
                     self.indexes[k][v].add(_id)
-        return record
+        return deepcopy(record)
 
     def create_many(self, records: List = None) -> Dict:
         results = {}
@@ -216,16 +216,10 @@ class DictDao(Dao, CacheInterface):
                 ))
             return results
 
-    def upsert_cache(self, records: Dict) -> None:
-        with self.lock:
-            # TODO: removed None records first
-            self.update_many(records.keys(), records.values())
-            for _id in records:
-                self.rev_counter[_id] += 1
-
     def fetch_cache(self, _ids: Set, rev=True, data=False, fields: Set = None) -> Dict:
-        do_fetch_many = data   # just aliasing to something more meaningful
-        do_fetch_rev = rev 
+        do_fetch_many = data   # alias to something more meaningful
+        do_fetch_rev = rev     # "
+
         cache_records = defaultdict(CacheRecord)
 
         if do_fetch_many:
