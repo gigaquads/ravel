@@ -1,29 +1,21 @@
 from typing import List, Dict, Text, Type, Tuple, Set
 
-from pybiz.web.patch import JsonPatchMixin
-from pybiz.web.graphql import GraphQLObject
+from pybiz.dao.dal import DataAccessLayer
 from pybiz.dao.dict_dao import DictDao
 from pybiz.dirty import DirtyDict
 from pybiz.util import is_bizobj
 
 from .meta import BizObjectMeta
-from .dao_manager import DaoManager
 from .dump import DumpNested, DumpSideLoaded
 from .query import Query, QueryUtils
 
 
-class BizObject(
-    JsonPatchMixin, GraphQLObject,
-    metaclass=BizObjectMeta
-):
-    """
-    `BizObject` has built-in support for implementing GraphQL and REST API's.
-    """
+class BizObject(metaclass=BizObjectMeta):
 
     # set by metaclass:
     schema = None
     relationships = {}
-    dao_manager = None
+    dal = None
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -43,18 +35,11 @@ class BizObject(
         """
         Get the global Dao reference associated with this class.
         """
-        return cls.dao_manager.get_dao(cls)
+        return cls.dal.get_dao(cls)
 
     def __init__(self, data=None, **more_data):
-        JsonPatchMixin.__init__(self)
-        GraphQLObject.__init__(self)
-
-        self._related = {}
         self._data = DirtyDict()
-
-        # the metaclass has by now blessed this class Field and Relationship
-        # properties. Go ahead and merge in input data by setting said
-        # properties.
+        self._related = {}
         self.merge(dict(data or {}, **more_data))
 
     def __getitem__(self, key):
@@ -179,7 +164,7 @@ class BizObject(
             # recursively load nested relationships
             QueryUtils.query_relationships(bizobj, children)
             return bizobj.clean()
-       
+
         return None
 
     @classmethod

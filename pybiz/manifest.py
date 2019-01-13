@@ -120,7 +120,7 @@ class Manifest(object):
             if dao_class is None:
                 raise ManifestError('{} not found'.format(binding['dao']))
 
-            biz_class.dao_manager.register(
+            biz_class.dal.register(
                 biz_class, dao_class, dao_kwargs=binding.params
             )
 

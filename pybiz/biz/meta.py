@@ -10,24 +10,17 @@ from importlib import import_module
 from appyratus.schema.fields import Field
 from appyratus.schema import Schema
 
-from pybiz.web.patch import JsonPatchMixin
-from pybiz.web.graphql import GraphQLEngine
-from pybiz.constants import (
-    IS_BIZOBJ_ANNOTATION,
-    PRE_PATCH_ANNOTATION,
-    POST_PATCH_ANNOTATION,
-    PATCH_PATH_ANNOTATION,
-    PATCH_ANNOTATION,
-)
+from pybiz.dao.dal import DataAccessLayer
+from pybiz.constants import IS_BIZOBJ_ANNOTATION
 
-from .dao_manager import DaoManager
-from .relationship import Relationship, RelationshipProperty
+from .relationship import Relationship
+from .relationship_property import RelationshipProperty
 from .field_property import FieldProperty
 
 
 class BizObjectMeta(ABCMeta):
 
-    dao_manager = DaoManager()
+    dal = DataAccessLayer()
 
     def __new__(cls, name, bases, dict_):
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
@@ -37,14 +30,12 @@ class BizObjectMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
-        cls.graphql = GraphQLEngine(cls)
-        cls.dao_manager = BizObjectMeta.dao_manager
+        cls.dal = BizObjectMeta.dal
 
         relationships = cls.build_relationships()
         schema_class = cls.build_schema_class(name)
 
         cls.build_all_properties(schema_class, relationships)
-        cls.register_JsonPatch_hooks(bases)
         cls.register_dao()
 
         def venusian_callback(scanner, name, bizobj_type):
@@ -53,7 +44,7 @@ class BizObjectMeta(ABCMeta):
         venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
-        manager = BizObjectMeta.dao_manager
+        manager = BizObjectMeta.dal
         if not manager.is_registered(cls):
             dao_type = cls.__dao__()
             if dao_type:
@@ -142,24 +133,6 @@ class BizObjectMeta(ABCMeta):
             )
 
         return schema_class
-
-    def register_JsonPatch_hooks(cls, bases):
-        if not any(issubclass(x, JsonPatchMixin) for x in bases):
-            return
-
-        # scan class methods for those annotated as patch hooks
-        # and register them as such.
-        for k, v in inspect.getmembers(cls, predicate=inspect.ismethod):
-            path = getattr(v, PATCH_PATH_ANNOTATION, None)
-            if hasattr(v, PRE_PATCH_ANNOTATION):
-                assert path
-                cls.add_pre_patch_hook(path, k)
-            elif hasattr(v, PATCH_ANNOTATION):
-                assert path
-                cls.set_patch_hook(path, k)
-            elif hasattr(v, POST_PATCH_ANNOTATION):
-                assert path
-                cls.add_post_patch_hook(path, k)
 
     def build_relationships(cls):
         # aggregate all relationships delcared on the bizobj

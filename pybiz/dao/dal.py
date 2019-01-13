@@ -3,7 +3,7 @@ from typing import Dict, List, Type
 from pybiz.dao import Dao
 
 
-class DaoManager(object):
+class DataAccessLayer(object):
     """
     Stores and manages a global registry, entailing which BizObject class is
     associated with which Dao class.
