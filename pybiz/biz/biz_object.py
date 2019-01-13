@@ -112,6 +112,14 @@ class BizObject(
                 format(key, self.schema.__class__.__name__)
             )
 
+    def __delitem__(self, key):
+        if self.schema.fields[key].required:
+            raise AttributeError(
+                'cannot delete required field value: {}'.format(key)
+            )
+        else:
+            self.data.pop(key, None)
+
     def __iter__(self):
         return iter(self._data)
 

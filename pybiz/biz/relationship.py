@@ -9,6 +9,7 @@ from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,
+    OP_CODE,
 )
 
 from .query import QuerySpecification
@@ -37,10 +38,16 @@ class Relationship(object):
         many=False,
         private=False,
         lazy=True,
+        on_set=None,
+        on_get=None,
+        on_del=None,
     ):
         self.many = many
         self.private = private
         self.lazy = lazy
+        self.on_set = on_set
+        self.on_get = on_get
+        self.on_del = on_del
 
         # ensure `joins` is a tuple of callables that return predicates
         if callable(joins):
@@ -117,6 +124,10 @@ class Relationship(object):
         return self._name
 
     @property
+    def joins(self) -> Tuple:
+        return self._joins
+
+    @property
     def host(self) -> Type['BizObject']:
         return self._host
 
@@ -180,26 +191,15 @@ class RelationshipProperty(property):
                 if rel.lazy and rel.query:
                     # lazily fetch the related data, eagerly selecting all fields
                     related_obj = rel.query(self, {'*'})
-                    # make sure we are setting an instance object or collection
-                    # of objects according to the field's "many" flag.
-                    is_scalar = is_scalar_value(related_obj)
-                    expect_scalar = not rel.many
-                    if is_scalar and not expect_scalar:
-                        raise ValueError(
-                            'relationship "{}" query returned an object but '
-                            'expected a sequence because relationship.many '
-                            'is True'.format(key)
-                        )
-                    elif (not is_scalar) and expect_scalar:
-                        raise ValueError(
-                            'relationship "{}" query returned a sequence but '
-                            'expected a BizObject because relationship.many '
-                            'is False'.format(key)
-                        )
-                    self._related[key] = related_obj
+                    setattr(self, key, related_obj)
 
             default = [] if rel.many else None
-            return self._related.get(key, default)
+            value = self._related.get(key, default)
+
+            if rel.on_get is not None:
+                rel.on_get(self, value)
+
+            return value
 
         def fset(self, value):
             """
@@ -226,16 +226,45 @@ class RelationshipProperty(property):
                     'relationship "{}" cannot be a BizObject because '
                     'relationship.many is False'.format(key)
                 )
+
             self._related[key] = value
+
+            if (not rel.many) and rel.joins:
+                RelationshipProperty.set_foreign_keys(self, value, rel)
+
+            if rel.on_set is not None:
+                rel.on_set(self, value)
 
         def fdel(self):
             """
             Remove the related BizObject or list. The field will appeear in
             dump() results. You must assign None if you want to None to appear.
             """
-            del self._related[k]
+            value = self._related[key]
+
+            del self._related[key]
+
+            if rel.on_del is not None:
+                rel.on_del(self, value)
 
         return cls(relationship, fget=fget, fset=fset, fdel=fdel)
+
+    @staticmethod
+    def set_foreign_keys(bizobj, related_bizobj, rel):
+        """
+        When setting a relationship, we might be able to set any fields declared
+        on the host bizobj based on the contents of the Relationship's join
+        predicates. For example, a node might have a parent_id field, which we
+        would want to set when doing somehing like child.parent = parent (we
+        would want child.parent_id = parent._id to be performed automatically).
+        """
+        pred = rel.joins[0](MockBizObject())
+        if isinstance(pred, ConditionalPredicate):
+            if pred.op == OP_CODE.EQ:
+                attr_name = pred.value
+                related_attr_name = pred.field.name
+                related_value = getattr(related_bizobj, related_attr_name, None)
+                setattr(bizobj, attr_name, related_value)
 
 
 class MockBizObject(object):
@@ -257,7 +286,7 @@ class MockBizObject(object):
 
     def __getattr__(self, key):
         self.attrs.add(key)
-        return None
+        return key
 
     def __iter__(self):
         if self.inner is None:
