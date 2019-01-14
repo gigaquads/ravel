@@ -1,6 +1,6 @@
 import inspect
 
-from typing import List, Type, Dict
+from typing import List, Type, Dict, Tuple
 
 from appyratus.json import JsonEncoder
 from appyratus.utils import DictAccessor
@@ -25,7 +25,7 @@ class Registry(object):
         self._middleware = middleware or []
         self._json_encoder = JsonEncoder()
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> RegistryDecorator:
         """
         Use this to decorate functions, adding them to this Registry.
         Each time a function is decorated, it arives at the "on_decorate"
@@ -56,22 +56,22 @@ class Registry(object):
         return RegistryProxy
 
     @property
-    def manifest(self):
+    def manifest(self) -> Manifest:
         return self._manifest
 
     @memoized_property
-    def middleware(self):
+    def middleware(self) -> List['RegistryMiddleware']:
         return [
             m for m in self._middleware
             if isinstance(self, m.registry_types)
         ]
 
     @property
-    def proxies(self):
+    def proxies(self) -> List[RegistryProxy]:
         return self._proxies
 
     @property
-    def decorators(self):
+    def decorators(self) -> List[RegistryDecorator]:
         return self._decorators
 
     @property
@@ -114,7 +114,7 @@ class Registry(object):
         can add the decorated function to, say, a web framework as a route.
         """
 
-    def on_request(self, proxy, signature, *args, **kwargs):
+    def on_request(self, proxy, *args, **kwargs) -> Tuple[Tuple, Dict]:
         """
         This executes immediately before calling a registered function. You
         must return re-packaged args and kwargs here. However, if nothing is
@@ -122,7 +122,7 @@ class Registry(object):
         """
         return (args, kwargs)
 
-    def on_response(self, proxy, result, *args, **kwargs):
+    def on_response(self, proxy, result, *args, **kwargs) -> object:
         """
         The return value of registered callables come here as `result`. Here
         any global post-processing can be done. Args and kwargs consists of
