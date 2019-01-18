@@ -114,9 +114,8 @@ class Command(RegistryProxy):
     def _build_cli_args(self, func):
         required_args = []
         optional_args = []
-        signature = inspect.signature(func)
         args = []
-        for k, param in signature.parameters.items():
+        for k, param in self.signature.parameters.items():
             arg = None
             if param.annotation is inspect._empty:
                 dtype = None

@@ -2,7 +2,7 @@ import os
 
 import venusian
 
-from typing import Dict, List
+from typing import Dict, List, Type
 from abc import ABCMeta, abstractmethod
 
 
@@ -17,6 +17,13 @@ class DaoMeta(ABCMeta):
 
 
 class Dao(object, metaclass=DaoMeta):
+
+    # set by self.bind
+    bizobj_type = None
+
+    def bind(self, bizobj_type: Type['BizObject']):
+        self.bizobj_type = bizobj_type
+
     @abstractmethod
     def query(self, predicate, **kwargs):
         pass
@@ -82,41 +89,3 @@ class Dao(object, metaclass=DaoMeta):
         """
         Delete multiple records.
         """
-
-
-class DaoManager(object):
-    """
-    Stores and manages a global registry, entailing which BizObject class is
-    associated with which Dao class.
-    """
-
-    _instance = None    # the singleton instance
-
-    @classmethod
-    def get_instance(cls):
-        """
-        Get global DaoManager singleton instance.
-        """
-        if cls._instance is None:
-            cls._instance = DaoManager()
-        return cls._instance
-
-    def __init__(self):
-        self._bizobj_type_2_dao_type = {}    # i.e. BizObject => Dao
-
-    def register(self, bizobj_class, dao_class):
-        self._bizobj_type_2_dao_type[bizobj_class] = dao_class
-
-    def get_dao(self, bizobj_class) -> Dao:
-        if bizobj_class not in self._bizobj_type_2_dao_type:
-            raise KeyError(
-                'Unable to find "{}" in dao classes. '
-                'Hint: did you create a manifest file?'.format(
-                    bizobj_class.__name__
-                )
-            )
-        dao_class = self._bizobj_type_2_dao_type[bizobj_class]
-        return dao_class()
-
-    def is_registered(self, bizobj_class):
-        return bizobj_class in self._bizobj_type_2_dao_type

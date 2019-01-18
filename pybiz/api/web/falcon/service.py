@@ -8,11 +8,14 @@ from typing import Dict
 
 from appyratus.memoize import memoized_property
 from appyratus.env import Environment
+from appyratus.json import JsonEncoder
 
 from pybiz.api.wsgi import WsgiServiceRegistry
+from pybiz.util import is_bizobj
 
 from .resource import ResourceManager
 from .middleware import Middleware
+from .media import JsonHandler
 
 
 class FalconServiceRegistry(WsgiServiceRegistry):
@@ -20,6 +23,11 @@ class FalconServiceRegistry(WsgiServiceRegistry):
     env = Environment()
 
     class Request(falcon.Request):
+        class Options(falcon.RequestOptions):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.media_handlers['application/json'] = JsonHandler()
+
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.session = None
@@ -34,13 +42,21 @@ class FalconServiceRegistry(WsgiServiceRegistry):
             status_code = int(self.status[:3])
             return (200 <= status_code < 300)
 
+    class JsonEncoder(JsonEncoder):
+        def default(self, value):
+            if is_bizobj(value):
+                return value.dump()
+            else:
+                super().default(value)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._json_encoder = self.JsonEncoder()
         self._resource_manager = ResourceManager()
         self._url_path2resource = {}
 
     @property
-    def middleware(self):
+    def falcon_middleware(self):
         return []
 
     @property
@@ -57,7 +73,7 @@ class FalconServiceRegistry(WsgiServiceRegistry):
         traceback.print_exc()
 
     def start(self, environ=None, start_response=None, *args, **kwargs):
-        middleware = self.middleware
+        middleware = self.falcon_middleware
         for m in middleware:
             if isinstance(m, Middleware):
                 m.bind(self)
@@ -67,7 +83,7 @@ class FalconServiceRegistry(WsgiServiceRegistry):
             request_type=self.request_type,
             response_type=self.response_type,
         )
-
+        falcon_api.req_options = self.Request.Options()
         falcon_api.add_error_handler(Exception, self.handle_error)
 
         for url_path, resource in self._url_path2resource.items():
@@ -81,23 +97,25 @@ class FalconServiceRegistry(WsgiServiceRegistry):
             self._url_path2resource[route.url_path] = resource
 
     def on_request(self, route, signature, req, resp, *args, **kwargs):
-        api_kwargs = dict(req.json, session=req.session)
+        if req.content_length:
+            api_kwargs = dict(req.media or {}, **kwargs)
+        else:
+            api_kwargs = dict(kwargs)
+
         api_kwargs.update(req.params)
 
         if route.authorize is not None:
             route.authorize(req, resp)
 
-        # append URL path variables to positional args list
-        api_args = []
+        # append URL path variables
         url_path = req.path.strip('/').split('/')
         url_path_template = req.uri_template.strip('/').split('/')
         for k, v in zip(url_path_template, url_path):
             if k[0] == '{' and k[-1] == '}':
-                api_args.append(v)
+                api_kwargs[k[1:-1]] = v
 
-        api_args.extend(args)
-        return (api_args, api_kwargs)
+        #api_args.extend(args)
+        return (tuple(), api_kwargs)
 
     def on_response(self, route, result, request, response, *args, **kwargs):
-        # The `result` object needs to be serialized by middleware.
-        response.unserialized_body = result
+        response.media = result

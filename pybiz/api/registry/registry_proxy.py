@@ -10,7 +10,6 @@ from pybiz.manifest import Manifest
 from .registry_object import RegistryObject
 
 
-
 class RegistryProxy(RegistryObject):
     def __init__(self, func, decorator: 'RegistryDecorator'):
         super(). __init__()
@@ -18,6 +17,7 @@ class RegistryProxy(RegistryObject):
         self.decorator = decorator
         self.target = self.resolve(func)
         self.signature = inspect.signature(func)
+        self.is_async = False
 
     def __repr__(self):
         return '<{proxy_type}({target_name})>'.format(
@@ -26,33 +26,45 @@ class RegistryProxy(RegistryObject):
         )
 
     def __call__(self, *raw_args, **raw_kwargs):
-        # apply middleware's pre_request methods
+        args, kwargs = self.pre_process(raw_args, raw_kwargs)
+        raw_result = self.target(*args, **kwargs)
+        result = self.post_process(args, kwargs, raw_result)
+        return result
+
+    def pre_process(self, raw_args, raw_kwargs):
+        self._apply_middleware_pre_request(raw_args, raw_kwargs)
+        args, kwargs = self._apply_registry_on_request(raw_args, raw_kwargs)
+        self._apply_middleware_on_request(args, kwargs)
+        return (args, kwargs)
+
+    def post_process(self, args, kwargs, raw_result):
+        result = self._apply_registry_on_response(args, kwargs, raw_result)
+        self._apply_middleware_post_request(args, kwargs, result)
+        return result
+
+    def _apply_middleware_pre_request(self, raw_args, raw_kwargs):
         for m in self.registry.middleware:
-            m.pre_request(raw_args, raw_kwargs)
-        # apply the registry's global on_request method to transform the raw
-        # args and kwargs into the format expected by the proxy target callable.
-        on_request_retval = self.decorator.registry.on_request(
-            self, self.signature, *raw_args, **raw_kwargs
+            if isinstance(self.registry, m.registry_types):
+                m.pre_request(self, raw_args, raw_kwargs)
+
+    def _apply_middleware_on_request(self, prepared_args, prepared_kwargs):
+        for m in self.registry.middleware:
+            if isinstance(self.registry, m.registry_types):
+                m.on_request(self, prepared_args, prepared_kwargs)
+
+    def _apply_middleware_post_request(self, prepared_args, prepared_kwargs, result):
+        for m in self.registry.middleware:
+            if isinstance(self.registry, m.registry_types):
+                m.post_request(self, prepared_args, prepared_kwargs, result)
+
+    def _apply_registry_on_request(self, raw_args, raw_kwargs):
+        result = self.registry.on_request(self, *raw_args, **raw_kwargs)
+        return result if result is not None else (raw_args, raw_kwargs)
+
+    def _apply_registry_on_response(self, prepared_args, prepared_kwargs, result):
+        return self.decorator.registry.on_response(
+            self, result, *prepared_args, **prepared_kwargs
         )
-        # apply pre-request middleware
-        if on_request_retval:
-            prepared_args, prepared_kwargs = on_request_retval
-        else:
-            prepared_args, prepared_kwargs = raw_args, raw_kwargs
-        # apply middleware's on_request methods
-        for m in self.registry.middleware:
-            m.on_request(raw_args, raw_kwargs, prepared_args, prepared_kwargs)
-        result = self.target(*prepared_args, **prepared_kwargs)
-        processed_result = self.decorator.registry.on_response(
-            self, result, *raw_args, **raw_kwargs
-        )
-        # apply middleware's post_request methods
-        for m in self.registry.middleware:
-            m.post_request(
-                raw_args, raw_kwargs, prepared_args, prepared_kwargs, result
-            )
-        # apply post-response middleware
-        return processed_result or result
 
     def __getattr__(self, attr):
         return getattr(self.func, attr)
@@ -75,6 +87,7 @@ class RegistryProxy(RegistryObject):
         }
 
     def dump_signature(self) -> Dict:
+        # TODO: move this into a dump component rather than have as method
         args, kwargs = [], []
         recognized_param_kinds = {
             Parameter.POSITIONAL_OR_KEYWORD,
@@ -117,3 +130,17 @@ class RegistryProxy(RegistryObject):
             'kwargs': kwargs,
             'returns': returns,
         }
+
+
+class AsyncRegistryProxy(RegistryProxy):
+    async def __call__(self, *raw_args, **raw_kwargs):
+        args, kwargs = self.pre_process(raw_args, raw_kwargs)
+        raw_result = await self.target(*args, **kwargs)
+        result = self.post_process(args, kwargs, raw_result)
+        return result
+
+    def __repr__(self):
+        return '<{proxy_type}(async {target_name})>'.format(
+            proxy_type=self.__class__.__name__,
+            target_name=self.name,
+        )

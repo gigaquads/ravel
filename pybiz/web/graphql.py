@@ -7,12 +7,7 @@ from graphql.parser import GraphQLParser
 from pybiz.util import is_bizobj
 
 
-class GraphQLNode(object):
-    pass
-
-
-class GraphQLFieldNode(GraphQLNode):
-
+class GraphQLNode(GraphQLNode):
     def __init__(self, relationship, ast_field, parent):
         self.relationship = relationship
         self.parent = parent
@@ -28,17 +23,17 @@ class GraphQLFieldNode(GraphQLNode):
         self.args = {
             arg.name: arg.value for arg in
             getattr(ast_field, 'arguments', ())
-            }
+        }
 
         # initialize nested relationships and fields
         for child_ast_field in ast_field.selections:
             child_name = child_ast_field.name
-            rel = self.bizobj_class.relationships.get(child_name)
+            rel = self.biz_type.relationships.get(child_name)
             if rel is not None:
-                child = GraphQLFieldNode(rel, child_ast_field, self)
+                child = GraphQLNode(rel, child_ast_field, self)
                 self.relationships[child_name] = child
             else:
-                child = GraphQLFieldNode(None, child_ast_field, self)
+                child = GraphQLNode(None, child_ast_field, self)
                 self.fields[child_name] = child
 
     @property
@@ -50,8 +45,8 @@ class GraphQLFieldNode(GraphQLNode):
         return set(self.fields.keys())
 
     @property
-    def bizobj_class(self):
-        return self.relationship.bizobj_class
+    def biz_type(self):
+        return self.relationship.host
 
     def execute(self, func):
         """
@@ -85,7 +80,7 @@ class GraphQLObject(object):
         return []
 
     @classmethod
-    def graphql_query(cls, node: GraphQLFieldNode, fields: Set[Text] = None):
+    def graphql_query(cls, node: GraphQLNode, fields: Set[Text] = None):
         # memoize a list of getter methods
         if not hasattr(cls, '_memoized_graphql_getters'):
             cls._memoized_graphql_getters = cls.graphql_getters()
@@ -101,11 +96,11 @@ class GraphQLObject(object):
 
 class GraphQLEngine(object):
 
-    def __init__(self, root):
+    def __init__(self, root: GraphQLObject):
         self._parser = GraphQLParser()
         self._root = root
 
-    def query(self, query: str) -> dict:
+    def query(self, query: Text) -> Dict:
         tree = self._parse_query(query)
         results = {}
 
@@ -114,42 +109,36 @@ class GraphQLEngine(object):
 
         return results
 
-    def _parse_query(self, query: str) -> dict:
+    def _parse_query(self, query: Text) -> Dict:
         ast_query = self._parser.parse(query).definitions[0]
         tree = {}
         for field in ast_query.selections:
             rel = self._root.relationships.get(field.name)
             if rel:
-                node = GraphQLFieldNode(rel, field, None)
+                node = GraphQLNode(rel, field, None)
                 tree[node.key] = node
             else:
                 # TODO: use custom exception type
                 raise Exception('unrecognized field: {}'.format(field.name))
         return tree
 
-    def _eval_field_node(self, node):
-        assert issubclass(node.bizobj_class, GraphQLObject)
+    def _eval_field_node(self, node: GraphQLNode):
+        query_func = getattr(node.biz_type, 'graphql_query', None)
+        result = None
 
-        bizobj_class = node.bizobj_class
-        schema_class = bizobj_class.Schema
-
-        # "load" the field names so that they appear as they should
-        # when received by the bizobj instance.
-        field_keys = set(node.fields.keys())
-        fields = set(schema_class.load_keys(field_keys))
-
-        # load the BizObject with the requested fields
-        getter_result = bizobj_class.graphql_query(node, fields=fields)
+        if query_func is not None:
+            fields = set(node.fields.keys())
+            result = query_func(node, fields=fields)
 
         # return a plain dict or list of dicts from the result object
-        return self._format_result(getter_result)
+        return self._format_result(result)
 
     def _format_result(self, result):
         if is_bizobj(result):
             return result.dump(relationships=False)
         elif isinstance(result, (list, tuple, set)):
             return [self._format_result(obj) for obj in result]
-        elif isinstance(result, dict):
+        elif isinstance(result, dict) or result is None:
             return result
         raise ValueError(str(result))
 

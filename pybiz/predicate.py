@@ -1,7 +1,24 @@
 import pickle
 import codecs
 
+from collections import defaultdict
 from typing import Text
+
+from appyratus.enum import Enum
+
+
+OP_CODE = Enum(
+    EQ='=',
+    NEQ='!=',
+    GT='>',
+    LT='<',
+    GEQ='>=',
+    LEQ='<=',
+    INCLUDES='in',
+    EXCLUDES='ex',
+    AND='&',
+    OR='|',
+)
 
 
 class Predicate(object):
@@ -20,18 +37,30 @@ class Predicate(object):
 
 
 class ConditionalPredicate(Predicate):
-    def __init__(self, attr_name, op, value):
-        self.attr_name = attr_name
+    """
+    A `ConditionalPredicate` specifies a comparison between the name of a field
+    and a value. The field name is made available through the FieldProperty
+    objects that instantiated the predicate.
+    """
+    def __init__(self, op: Text, prop: 'FieldProperty', value):
+        super().__init__()
         self.op = op
+        self.prop = prop
         self.value = value
 
     def __repr__(self):
-        return '<{}({} {} {})>'.format(
+        return '<{}({})>'.format(
             self.__class__.__name__,
-            self.attr_name,
-            self.op,
-            self.value,
+            str(self)[1:-1],
         )
+
+    def __str__(self):
+        if self.prop:
+            host_name = self.prop.target.__name__
+            lhs = host_name + '.' + self.prop.key
+        else:
+            lhs = '[NULL]'
+        return '({} {} {})'.format(lhs, self.op, self.value)
 
     def __or__(self, other):
         return BooleanPredicate('|', self, other)
@@ -40,44 +69,66 @@ class ConditionalPredicate(Predicate):
         return BooleanPredicate('&', self, other)
 
     @property
-    def display_string(self):
-        return '({} {} {})'.format(
-            self.attr_name, self.op, self.value
-        )
+    def field(self):
+        return self.prop.field
+
+    @property
+    def targets(self):
+        return [self.prop.target]
 
 
 class BooleanPredicate(Predicate):
-    def __init__(self, op, lhs, rhs=None):
+    """
+    A `BooleanPredicate` is used for combining children `Predicate` objects in
+    a boolean expression, like (User._name == 'foo') & (User.smell == 'stink').
+    LSH, and LHS stand for "left-hand side" and "right-hand side", respectively.
+    """
+    def __init__(self, op, lhs: 'Predicate', rhs: 'Predicate' = None):
+        super().__init__()
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
 
-    def __repr__(self):
-        return '<{}({} {} {})>'.format(
-            self.__class__.__name__,
-            self.lhs,
-            self.op,
-            self.rhs,
-        )
+        # collect all BizObject classes whose fields are involved in the
+        # contained predicates. These classes are referred to as the "target"
+        # classes, in this context.
+        self.targets = set()
+        for predicate in [lhs, rhs]:
+            if predicate:
+                self.targets.update(predicate.targets)
+        self.targets = list(self.targets)
+
     def __or__(self, other):
         return BooleanPredicate('|', self, other)
 
     def __and__(self, other):
         return BooleanPredicate('&', self, other)
 
+    def __str__(self):
+        return self._build_string(self)
 
-    @property
-    def display_string(self):
-        def recurse(p):
-            substr = ''
-            if isinstance(p.lhs, BooleanPredicate):
-                substr += recurse(p.lhs)
-            else:
-                substr += p.lhs.display_string
-            substr += ' {} '.format(p.op)
-            if isinstance(p.rhs, BooleanPredicate):
-                substr += recurse(p.rhs)
-            else:
-                substr += p.rhs.display_string
+    def __repr__(self):
+        return '<{}({} {} {})>'.format(
+            self.__class__.__name__, self.lhs, self.op, self.rhs,
+        )
+
+    def _build_string(self, p, depth=0):
+        substr = ''
+        if isinstance(p.lhs, BooleanPredicate):
+            substr += self._build_string(p.lhs, depth+1)
+        else:
+            substr += str(p.lhs)
+        substr += ' {} '.format(p.op)
+        if isinstance(p.rhs, BooleanPredicate):
+            substr += self._build_string(p.rhs, depth+1)
+        else:
+            substr += str(p.rhs)
+        if depth == 1:
             return '(' + substr + ')'
-        return recurse(self)
+        elif depth == 2:
+            return '[' + substr + ']'
+        if depth > 2:
+            return '{' + substr + '}'
+        else:
+            return substr
+

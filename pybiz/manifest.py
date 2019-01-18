@@ -1,61 +1,41 @@
 import os
-import inspect
 import importlib
 
 import yaml
-import venusian
 
 from typing import Text, Dict
 
-from appyratus.schema import fields, Schema
+from venusian import Scanner
 from appyratus.memoize import memoized_property
 from appyratus.utils import DictUtils, DictAccessor
 from appyratus.files import Yaml, Json
 
-from pybiz.dao.base import DaoManager
 from pybiz.exc import ManifestError
 
 
 class Manifest(object):
     """
-    This thing reads manifest.yaml files and bootstraps each layer of the
-    framework, namely:
-
-        1. Associate each listed BizObject class with the Dao class it is
-           with which it is associated.
-
-        2. Do a venusian scan on the api endpoint packages and modules, which
-           has the side-effect of registering the api callables with the
-           ApiRegistry via ApiRegistryDecorators.
+    At its base, a manifest file declares the name of an installed pybiz project
+    and a list of bindings, relating each BizObject class defined in the project
+    with a Dao class.
     """
 
-    class Schema(Schema):
-        """
-        Describes the structure expected in manifest.yaml files.
-        """
+    def __init__(self, path: Text = None, data: Dict = None, load=True):
+        self.scanner = Scanner(bizobj_classes={}, dao_classes={})
+        self.types = DictAccessor({})
+        self.package = None
+        self.bindings = []
 
-        class BindingSchema(Schema):
-            biz = fields.String(required=True)
-            dao = fields.String(required=True)
-
-        package = fields.String()
-        bindings = fields.List(BindingSchema(), default=lambda: [])
-
-
-    def __init__(self, path: Text = None, data: Dict = None):
-        self.data = {}
-        self.schema = self.Schema()
         self.load(data=data, path=path)
-        self.scanner = venusian.Scanner(
-            bizobj_classes={},
-            dao_classes={},
-        )
 
     def load(self, data: Dict = None, path: Text = None):
+        self.package = None
+        self.bindings = []
+
         if not (data or path):
             return
 
-        data = data or {}
+        data = {}
 
         # load base data from file
         if path is None:
@@ -71,10 +51,14 @@ class Manifest(object):
             data = DictUtils.merge(file_data, data)
 
         # marshal in the computed data dict
-        self.data = DictUtils.merge(self.data, data)
-        self.data, errors = self.schema.process(self.data)
-        if errors:
-            raise ManifestError(str(errors))
+        self.package = data['package']
+        for binding_data in data['bindings']:
+            biz = binding_data['biz']
+            dao = binding_data['dao']
+            params = binding_data.get('parameters', {})
+            self.bindings.append(Binding(
+                biz=biz, dao=dao, params=params,
+            ))
 
         return self
 
@@ -85,20 +69,7 @@ class Manifest(object):
         """
         self._scan(namespace=namespace, on_error=on_error)
         self._bind()
-
         return self
-
-    @property
-    def package(self):
-        return self.data.get('package', None)
-
-    @property
-    def bindings(self):
-        return self.data.get('bindings', [])
-
-    @memoized_property
-    def types(self) -> DictAccessor:
-        return self._types
 
     def _scan(self, namespace : Dict = None, on_error=None):
         """
@@ -114,7 +85,7 @@ class Manifest(object):
                     if re.match(r'^\w+\.grpc', name):
                         return
 
-        pkg_path = self.data.get('package')
+        pkg_path = self.package
         if pkg_path:
             pkg = importlib.import_module(pkg_path)
             self.scanner.scan(pkg, onerror=on_error)
@@ -130,7 +101,7 @@ class Manifest(object):
                     elif issubclass(v, Dao):
                         self.scanner.dao_classes[k] = v
 
-        self._types = DictAccessor({
+        self.types = DictAccessor({
             'biz': self.scanner.bizobj_classes,
             'dao': self.scanner.dao_classes,
         })
@@ -140,14 +111,23 @@ class Manifest(object):
         Associate each BizObject class with a corresponding Dao class. Also bind
         Schema classes to their respective BizObject classes.
         """
-        for binding in (self.data.get('bindings') or []):
-            biz_class = self.scanner.bizobj_classes.get(binding['biz'])
+        for binding in self.bindings:
+            biz_class = self.scanner.bizobj_classes.get(binding.biz)
             if biz_class is None:
-                raise ManifestError('{} not found'.format(binding['biz']))
+                raise ManifestError('{} not found'.format(binding.biz))
 
-            dao_class = self.scanner.dao_classes.get(binding['dao'])
+            dao_class = self.scanner.dao_classes.get(binding.dao)
             if dao_class is None:
                 raise ManifestError('{} not found'.format(binding['dao']))
 
-            manager = DaoManager.get_instance()
-            manager.register(biz_class, dao_class)
+            biz_class.dal.register(
+                biz_class, dao_class, dao_kwargs=binding.params
+            )
+
+
+class Binding(object):
+    def __init__(self, biz, dao, params=None):
+        self.biz = biz
+        self.dao = dao
+        self.params = params
+

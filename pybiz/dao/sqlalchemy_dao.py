@@ -113,7 +113,7 @@ class SqlalchemyDao(Dao):
 
     def _prepare_predicate(self, pred, empty=set()):
         if isinstance(pred, ConditionalPredicate):
-            col = getattr(self.table.c, pred.attr_name)
+            col = getattr(self.table.c, pred.field.source)
             if pred.op == '=':
                 if isinstance(pred.value, (list, tuple, set)):
                     return col.in_(pred.value)
@@ -136,12 +136,12 @@ class SqlalchemyDao(Dao):
                 raise Exception('unrecognized conditional predicate')
         elif isinstance(pred, BooleanPredicate):
             if pred.op == '&':
-                lhs_result = self._query_dfs(pred.lhs)
-                rhs_result = self._query_dfs(pred.rhs)
+                lhs_result = self._prepare_predicate(pred.lhs)
+                rhs_result = self._prepare_predicate(pred.rhs)
                 return sa.and_(lhs_result, rhs_result)
             elif pred.op == '|':
-                lhs_result = self._query_dfs(pred.lhs)
-                rhs_result = self._query_dfs(pred.rhs)
+                lhs_result = self._prepare_predicate(pred.lhs)
+                rhs_result = self._prepare_predicate(pred.rhs)
                 return sa.or_(lhs_result, rhs_result)
             else:
                 raise Exception('unrecognized boolean predicate')

@@ -5,12 +5,13 @@ import numpy as np
 import BTrees.OOBTree
 
 from copy import deepcopy
-from collections import defaultdict
+from collections import defaultdict, Counter
 from threading import RLock
 from functools import reduce
-from typing import Text, Dict, List
+from typing import Text, Dict, List, Set, Tuple
 
 from BTrees.OOBTree import BTree
+
 from appyratus.utils import DictUtils
 
 from pybiz.predicate import (
@@ -20,84 +21,120 @@ from pybiz.predicate import (
 )
 
 from .base import Dao
+from .cache_dao import CacheInterface, CacheRecord
 
 
-class DictDao(Dao):
+class DictDao(Dao, CacheInterface):
     """
     An in-memory Dao that stores data in Python dicts with BTrees indexes.
     """
 
-    _lock = RLock()
-    _indexes = defaultdict(BTree)
-    _records = {}
+    def __init__(self):
+        super().__init__()
+        self.lock = RLock()
+        self.indexes = defaultdict(BTree)
+        self.id_counter = 1
+        self.rev_counter = Counter()
+        self.records = {}
 
-    @classmethod
-    def next_id(cls, data: Dict=None):
-        return uuid.uuid4().hex
+    def next_id(self, data: Dict=None):
+        with self.lock:
+            _id = self.id_counter
+            self.id_counter += 1
+            return _id
 
     def exists(self, _id) -> bool:
-        with self._lock:
-            return _id in self._indexes['_id']
+        with self.lock:
+            return _id in self.records
 
     def fetch(self, _id, fields=None) -> Dict:
-        with self._lock:
-            return deepcopy(self._records.get(_id))
+        with self.lock:
+            record = deepcopy(self.records.get(_id))
+            if record is not None:
+                if fields is not None:
+                    if fields:
+                        for k in set(record.keys()) - set(fields):
+                            del record[k]
+                    else:
+                        record = {'_id': _id}
+            return record
 
     def fetch_many(self, _ids: List, fields=None) -> Dict:
-        with self._lock:
-            return {
-                _id: deepcopy(self._records.get(_id))
-                for _id in _ids
-            }
+        with self.lock:
+            records = {}
+            for _id in _ids:
+                record = deepcopy(self.records.get(_id))
+                if record is not None:
+                    records[_id] = record
+                    if fields:
+                        for k in set(record.keys()) - set(fields):
+                            del record[k]
+            return records
 
     def create(self, record: Dict = None) -> Dict:
+<<<<<<< HEAD
         with self._lock:
             _id = record.get('_id') or self.next_id(record)
+=======
+        with self.lock:
+            _id = record.get('_id') or self.next_id()
+>>>>>>> origin/schema.v2.dump
             record['_id'] = _id
-            self._records[_id] = record
+            self.records[_id] = record
+            self.rev_counter[_id] += 1
             for k, v in record.items():
                 if not isinstance(v, dict):
-                    if v not in self._indexes[k]:
-                        self._indexes[k][v] = set()
-                    self._indexes[k][v].add(_id)
-        return record
+                    if v not in self.indexes[k]:
+                        self.indexes[k][v] = set()
+                    self.indexes[k][v].add(_id)
+        return deepcopy(record)
 
     def create_many(self, records: List = None) -> Dict:
         results = {}
-        with self._lock:
+        with self.lock:
             for record in records:
+                _id = record['_id']
                 result = self.create(record)
-                results[result['_id']] = result
+                results[_id] = result
             return results
 
     def update(self, _id=None, data: Dict = None) -> Dict:
-        with self._lock:
-            old_record = self._records.get(_id, {})
+        with self.lock:
+            old_record = self.records.get(_id, {})
+            old_rev = self.rev_counter.get(_id, 0)
             if old_record:
                 self.delete(old_record['_id'])
             record = self.create(DictUtils.merge(old_record, data))
+            self.rev_counter[_id] += old_rev
             return record
 
     def update_many(self, _ids: List, data: List = None) -> Dict:
-        with self._lock:
+        with self.lock:
             return {
                 _id: self.update(_id=_id, data=data_dict)
                 for _id, data_dict in zip(_ids, data)
             }
 
     def delete(self, _id) -> Dict:
-        with self._lock:
-            record = self._records.get(_id)
-            self._records.pop(_id, {})
+        with self.lock:
+            record = self.records.get(_id)
+            self.records.pop(_id, None)
+            self.rev_counter.pop(_id, None)
             for k, v in record.items():
-                self._indexes[k][v].remove(_id)
+                self.indexes[k][v].remove(_id)
             return record
 
     def delete_many(self, _ids: List) -> List:
-        with self._lock:
+        with self.lock:
             return {_id: self.delete(_id) for _id in _ids}
 
-    def query(self, predicate: Predicate, **kwargs) -> List:
+    def query(
+        self,
+        predicate: Predicate,
+        fields: Set[Text] = None,
+        order_by: Tuple[Text] = None,
+        **kwargs
+    ) -> List:
         def union(sequences):
             if sequences:
                 if len(sequences) == 1:
@@ -109,19 +146,19 @@ class DictDao(Dao):
 
         def process(predicate):
             if predicate is None:
-                return self._records.keys()
+                return self.records.keys()
 
             op = predicate.op
             empty = set()
             _ids = set()
 
             if isinstance(predicate, ConditionalPredicate):
-                k = predicate.attr_name
+                k = predicate.field.source
                 v = predicate.value
-                index = self._indexes[k]
+                index = self.indexes[k]
 
                 if op == '=':
-                    _ids = self._indexes[k].get(v, empty)
+                    _ids = self.indexes[k].get(v, empty)
                 elif op == '!=':
                     _ids = union([
                         _id_set for v_idx, _id_set in index.items()
@@ -164,18 +201,44 @@ class DictDao(Dao):
                     lhs_result = process(lhs)
                     if lhs_result:
                         rhs_result = process(rhs)
-                        intersect = BTrees.OOBTree.intersection
-                        _ids = intersect(lhs_result, rhs_result)
+                        _ids = set.intersection(lhs_result, rhs_result)
                 elif op == '|':
                     lhs_result = process(lhs)
                     rhs_result = process(rhs)
-                    _ids = BTrees.OOBTree.union(lhs_result, rhs_result)
+                    _ids = set.union(lhs_result, rhs_result)
                 else:
+                    # XXX: raise DaoError
                     raise Exception('unrecognized boolean predicate')
 
             return _ids
 
-        with self._lock:
+        with self.lock:
             _ids = process(predicate)
-            results = [self._records[_id] for _id in _ids]
+            results = list(self.fetch_many(_ids, fields=fields).values())
+            if order_by:
+                results = sorted(results, key=lambda x: tuple(
+                    x[k] if k[0] != '-' else -1 * x[k][1:]
+                    for k in order_by
+                ))
             return results
+
+    def fetch_cache(self, _ids: Set, rev=True, data=False, fields: Set = None) -> Dict:
+        do_fetch_many = data   # alias to something more meaningful
+        do_fetch_rev = rev     # "
+
+        cache_records = defaultdict(CacheRecord)
+
+        if do_fetch_many:
+            records = self.fetch_many(_ids, fields=fields)
+            for _id, record in records.items():
+                cache_record = cache_records[_id]
+                cache_record.data = record
+                if do_fetch_rev:
+                    cache_record.rev = self.rev_counter.setdefault(_id, 1)
+        elif do_fetch_rev:
+            for _id in _ids:
+                cache_records[_id] = CacheRecord(
+                    rev=self.rev_counter.get(_id)
+                )
+
+        return cache_records

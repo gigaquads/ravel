@@ -119,7 +119,7 @@ class GrpcRegistry(Registry):
     def on_decorate(self, proxy):
         pass
 
-    def on_request(self, proxy, signature, grpc_request):
+    def on_request(self, proxy, request, *args, **kwargs):
         """
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
@@ -127,10 +127,10 @@ class GrpcRegistry(Registry):
         # TODO: Implement verbosity levels
         print('>>> Calling "{}" RPC function...'.format(proxy.name))
         arguments = {
-            k: getattr(grpc_request, k, None)
+            k: getattr(request, k, None)
             for k in proxy.request_schema.fields
         }
-        args, kwargs = FuncUtils.partition_arguments(signature, arguments)
+        args, kwargs = FuncUtils.partition_arguments(proxy.signature, arguments)
         return (args, kwargs)
 
     def on_response(self, proxy, result, *raw_args, **raw_kwargs):
