@@ -72,13 +72,8 @@ class DictDao(Dao, CacheInterface):
             return records
 
     def create(self, record: Dict = None) -> Dict:
-<<<<<<< HEAD
         with self._lock:
             _id = record.get('_id') or self.next_id(record)
-=======
-        with self.lock:
-            _id = record.get('_id') or self.next_id()
->>>>>>> origin/schema.v2.dump
             record['_id'] = _id
             self.records[_id] = record
             self.rev_counter[_id] += 1
