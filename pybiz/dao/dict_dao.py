@@ -32,7 +32,7 @@ class DictDao(Dao):
     _records = {}
 
     @classmethod
-    def next_id(cls):
+    def next_id(cls, data: Dict=None):
         return uuid.uuid4().hex
 
     def exists(self, _id) -> bool:
@@ -52,7 +52,7 @@ class DictDao(Dao):
 
     def create(self, record: Dict = None) -> Dict:
         with self._lock:
-            _id = record.get('_id') or self.next_id()
+            _id = record.get('_id') or self.next_id(record)
             record['_id'] = _id
             self._records[_id] = record
             for k, v in record.items():
