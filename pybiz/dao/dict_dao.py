@@ -72,7 +72,7 @@ class DictDao(Dao, CacheInterface):
             return records
 
     def create(self, record: Dict = None) -> Dict:
-        with self._lock:
+        with self.lock:
             _id = record.get('_id') or self.next_id(record)
             record['_id'] = _id
             self.records[_id] = record
