@@ -5,6 +5,7 @@ from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,
+    OP_CODE,
 )
 
 
@@ -34,30 +35,30 @@ class FieldProperty(property):
         )
 
     def __eq__(self, other: Predicate) -> Predicate:
-        return self._build_predicate('=', other)
+        return self._build_predicate(OP_CODE.EQ, other)
 
     def __ne__(self, other: Predicate) -> Predicate:
-        return self._build_predicate('!=', other)
+        return self._build_predicate(OP_CODE.NEQ, other)
 
     def __lt__(self, other: Predicate) -> Predicate:
-        return self._build_predicate('<', other)
+        return self._build_predicate(OP_CODE.LT, other)
 
     def __le__(self, other: Predicate) -> Predicate:
-        return self._build_predicate('<=', other)
+        return self._build_predicate(OP_CODE.LEQ, other)
 
     def __gt__(self, other: Predicate) -> Predicate:
-        return self._build_predicate('>', other)
+        return self._build_predicate(OP_CODE.GT, other)
 
     def __ge__(self, other: Predicate) -> Predicate:
-        return self._build_predicate('>=', other)
+        return self._build_predicate(OP_CODE.GEQ, other)
 
-    def includes(self, others: List[Predicate]) -> Predicate:
+    def including(self, others: List) -> Predicate:
         others = {obj._id if is_bizobj(obj) else obj for obj in others}
-        return self._build_predicate('in', others)
+        return self._build_predicate(OP_CODE.INCLUDING, others)
 
-    def excludes(self, others: List[Predicate]) -> Predicate:
+    def excluding(self, others: List) -> Predicate:
         others = {obj._id if is_bizobj(obj) else obj for obj in others}
-        return self._build_predicate('ex', others)
+        return self._build_predicate(OP_CODE.EXCLUDING, others)
 
     @property
     def target(self):
@@ -90,22 +91,30 @@ class FieldProperty(property):
         key = field.name
 
         def fget(self):
-            if (key not in self.data) and '_id' in self.data:
-                # try to lazy load the field value
+            # try to lazy load the field value
+            if (key not in self.data) and ('_id' in self.data):
                 field = self.schema.fields.get(key)
                 if field and field.meta.get('lazy', True):
-                    record = self.dao.fetch(
-                        _id=self.data['_id'],
-                        fields={field.source}
-                    )
-                    if record:
-                        self.data[key] = record[key]
-            return self[key]
+                    self.load(self.schema.fields.keys() - self.data.keys())
+
+            # set the
+            if key in self._data:
+                return self._data[key]
+            else:
+                raise AttributeError(key)
 
         def fset(self, value):
-            self[key] = value
+            if key in self.schema.fields:
+                self._data[key] = value
+            else:
+                raise AttributeError(key)
 
         def fdel(self):
-            del self[key]
+            if self.schema.fields[key].required:
+                raise AttributeError(
+                    'cannot delete required field value: {}'.format(key)
+                )
+            else:
+                self.data.pop(key, None)
 
         return cls(target, field, fget=fget, fset=fset, fdel=fdel)

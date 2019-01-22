@@ -5,9 +5,9 @@ import ujson
 from typing import Type, Dict, List
 
 from redis import StrictRedis
-from appyratus.json import JsonEncoder
 
 from pybiz.schema import fields
+from pybiz.util import JsonEncoder
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -189,7 +189,7 @@ class RedisDao(Dao):
                     lower=predicate.value,
                     include_lower=False
                 ))
-            elif predicate.op == OP_CODE.INCLUDES:
+            elif predicate.op == OP_CODE.INCLUDING:
                 ids = set()
                 for v in predicate.value:
                     ids |= set(index.search(
@@ -198,7 +198,7 @@ class RedisDao(Dao):
                         include_upper=True,
                         include_lower=True
                     ))
-            elif predicate.op == OP_CODE.EXCLUDES:
+            elif predicate.op == OP_CODE.EXCLUDING:
                 ids = set()
                 for v in predicate.value:
                     ids |= set(index.search(

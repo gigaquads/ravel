@@ -7,8 +7,7 @@ from typing import Dict
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-from appyratus.json import JsonEncoder
-
+from pybiz.util import JsonEncoder
 from pybiz.api.http import HttpRegistry, HttpRoute
 
 

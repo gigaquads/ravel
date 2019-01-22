@@ -14,8 +14,8 @@ OP_CODE = Enum(
     LT='<',
     GEQ='>=',
     LEQ='<=',
-    INCLUDES='in',
-    EXCLUDES='ex',
+    INCLUDING='in',
+    EXCLUDING='ex',
     AND='&',
     OR='|',
 )
@@ -131,4 +131,3 @@ class BooleanPredicate(Predicate):
             return '{' + substr + '}'
         else:
             return substr
-

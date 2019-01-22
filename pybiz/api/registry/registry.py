@@ -2,11 +2,11 @@ import inspect
 
 from typing import List, Type, Dict, Tuple
 
-from appyratus.json import JsonEncoder
 from appyratus.utils import DictAccessor
 from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
+from pybiz.util import JsonEncoder
 
 from .registry_decorator import RegistryDecorator
 from .registry_proxy import RegistryProxy

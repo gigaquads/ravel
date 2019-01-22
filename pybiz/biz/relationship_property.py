@@ -81,7 +81,7 @@ class RelationshipProperty(property):
 
             self._related[key] = value
 
-            if (not rel.many) and rel.joins:
+            if (not rel.many) and rel.join:
                 RelationshipProperty.set_foreign_keys(self, value, rel)
 
             if rel.on_set is not None:
@@ -110,7 +110,7 @@ class RelationshipProperty(property):
         would want to set when doing somehing like child.parent = parent (we
         would want child.parent_id = parent._id to be performed automatically).
         """
-        pred = rel.joins[0](MockBizObject())
+        pred = rel.join[0](MockBizObject())
         if isinstance(pred, ConditionalPredicate):
             if pred.op == OP_CODE.EQ:
                 attr_name = pred.value

@@ -22,7 +22,7 @@ from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils
 from appyratus.json import JsonEncoder
 
-from pybiz.util import is_bizobj
+from pybiz.util import is_bizobj, JsonEncoder
 
 from ..registry import Registry, RegistryProxy
 from .grpc_registry_proxy import GrpcRegistryProxy
