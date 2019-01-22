@@ -8,10 +8,9 @@ from typing import Dict
 
 from appyratus.memoize import memoized_property
 from appyratus.env import Environment
-from appyratus.json import JsonEncoder
 
 from pybiz.api.wsgi import WsgiServiceRegistry
-from pybiz.util import is_bizobj
+from pybiz.util import JsonEncoder
 
 from .resource import ResourceManager
 from .middleware import Middleware
@@ -42,16 +41,9 @@ class FalconServiceRegistry(WsgiServiceRegistry):
             status_code = int(self.status[:3])
             return (200 <= status_code < 300)
 
-    class JsonEncoder(JsonEncoder):
-        def default(self, value):
-            if is_bizobj(value):
-                return value.dump()
-            else:
-                super().default(value)
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._json_encoder = self.JsonEncoder()
+        self._json_encoder = JsonEncoder()
         self._resource_manager = ResourceManager()
         self._url_path2resource = {}
 
@@ -96,7 +88,7 @@ class FalconServiceRegistry(WsgiServiceRegistry):
         if resource:
             self._url_path2resource[route.url_path] = resource
 
-    def on_request(self, route, signature, req, resp, *args, **kwargs):
+    def on_request(self, route, req, resp, *args, **kwargs):
         if req.content_length:
             api_kwargs = dict(req.media or {}, **kwargs)
         else:

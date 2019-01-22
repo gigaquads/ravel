@@ -12,28 +12,13 @@ from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 
 from .base import Dao
 
+# TODO: Move thread-local SQLAlchemy data management into a Profile class.
 
 class SqlalchemyDao(Dao):
 
     @classmethod
     def __table__(cls):
         raise NotImplementedError()
-
-    @classmethod
-    def factory(cls, name, url: Text, meta: sa.MetaData = None, echo=False):
-        derived_type = type(name, (SqlalchemyDao, ), {})
-        derived_type.url = url
-        derived_type.echo = echo
-        derived_type.metadata = meta or sa.MetaData()
-        derived_type.local = threading.local()
-        derived_type.local.engine = None
-        derived_type.local.connection = None
-
-        # _table class attr is set by subclasses and accessed
-        # via calls to cls.get_table() or the self.table property
-        derived_type._table = None
-
-        return derived_type
 
     @classmethod
     def create_engine(cls):
@@ -73,6 +58,22 @@ class SqlalchemyDao(Dao):
         if cls._table is None:
             cls._table = cls.__table__()
         return cls._table
+
+    @classmethod
+    def factory(cls, name, url: Text, meta: sa.MetaData = None, echo=False):
+        derived_type = type(name, (SqlalchemyDao, ), {})
+        derived_type.url = url
+        derived_type.echo = echo
+        derived_type.metadata = meta or sa.MetaData()
+        derived_type.local = threading.local()
+        derived_type.local.engine = None
+        derived_type.local.connection = None
+
+        # _table class attr is set by subclasses and accessed
+        # via calls to cls.get_table() or the self.table property
+        derived_type._table = None
+
+        return derived_type
 
     @property
     def table(self):

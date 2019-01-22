@@ -32,7 +32,7 @@ class Relationship(object):
 
     def __init__(
         self,
-        joins,
+        join,
         many=False,
         private=False,
         lazy=True,
@@ -47,13 +47,13 @@ class Relationship(object):
         self.on_get = on_get
         self.on_del = on_del
 
-        # ensure `joins` is a tuple of callables that return predicates
-        if callable(joins):
-            self._joins = (joins, )
-        elif isinstance(joins, (list, tuple)):
-            self._joins = tuple(joins)
+        # ensure `join` is a tuple of callables that return predicates
+        if callable(join):
+            self._join = (join, )
+        elif isinstance(join, (list, tuple)):
+            self._join = tuple(join)
 
-        assert isinstance(self._joins, tuple)
+        assert isinstance(self._join, tuple)
 
         # set in self.bind. Host is the BizObject class that hosts tis
         # relationship, and `name` is the relationship attribute on said class.
@@ -83,13 +83,13 @@ class Relationship(object):
         """
         # build up the sequence of field name sets to query
         if not self._query_fields:
-            for idx, func in enumerate(self._joins[1:]):
+            for idx, func in enumerate(self._join[1:]):
                 mock = MockBizObject()
                 func(mock)
                 self._query_fields.append(set(mock.keys()))
 
         # execute the sequence of "join" queries...
-        for idx, func in enumerate(self._joins):
+        for idx, func in enumerate(self._join):
             if not source:
                 return [] if self.many else None
 
@@ -98,7 +98,7 @@ class Relationship(object):
             target = self._resolve_target(predicate)
 
             # get the field name set to use in this query
-            if func is not self._joins[-1]:
+            if func is not self._join[-1]:
                 field_names = self._query_fields[idx]
                 spec = QuerySpecification(fields=field_names)
             else:
@@ -122,8 +122,8 @@ class Relationship(object):
         return self._name
 
     @property
-    def joins(self) -> Tuple:
-        return self._joins
+    def join(self) -> Tuple:
+        return self._join
 
     @property
     def host(self) -> Type['BizObject']:
@@ -131,7 +131,7 @@ class Relationship(object):
 
     @memoized_property
     def target(self) -> Type['BizObject']:
-        predicate = self._joins[-1](MockBizObject())
+        predicate = self._join[-1](MockBizObject())
         return self._resolve_target(predicate)
 
     @staticmethod
@@ -142,7 +142,7 @@ class Relationship(object):
             # we assume is the type of BizObject being queried in this
             # iteration.
             raise ValueError(
-                'ambiguous target BizObject in self.joins'
+                'ambiguous target BizObject in self.join'
             )
         if not predicate.targets:
             raise ValueError(

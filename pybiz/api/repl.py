@@ -25,7 +25,7 @@ class ReplRegistry(Registry):
     def on_decorate(self, proxy: 'Function'):
         pass
 
-    def on_request(self, proxy: 'Function', signature, *args, **kwargs):
+    def on_request(self, proxy: 'Function', *args, **kwargs):
         return (args, kwargs)
 
     def start(self, namespace: Dict = None, *args, **kwargs):

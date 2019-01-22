@@ -42,68 +42,24 @@ class BizObject(metaclass=BizObjectMeta):
         self._related = {}
         self.merge(dict(data or {}, **more_data))
 
-    def __getitem__(self, key):
-        """
-        If the key is the name of a field, return it. If it's a relationship,
-        return the related BizObject or list of BizObjects. Otherwise, raise
-        a KeyError.
-        """
-        if key in self._data:
-            return self._data[key]
-        elif key in self._related:
-            return self._related[key]
-        elif key in self.schema.fields:
-            return None
+    def __eq__(self):
+        return self._id == other._id if self._id is not None else False
 
+    def __getitem__(self, key):
+        if key in self.schema.fields or key in self.relationships:
+            return getattr(self, key)
         raise KeyError(key)
 
     def __setitem__(self, key, value):
-        """
-        Set the field or related BizObject on the instance, but if the key does
-        not correspond to either a field or Relationship, raise KeyError.
-        """
-        # if the data being set is a BizObject associated through a declared
-        # Relationship, add it to the "related_bizobj" storage dict.
-        if key in self.relationships:
-            rel = self.relationships[key]
-            is_sequence = isinstance(value, (list, tuple, set))
-            if rel.many:
-                assert is_sequence
-                if isinstance(data, dict):
-                    # we assume here that the data is in the form: {_id: obj}
-                    data = [
-                        x if is_bizobj(x) else rel.target(x)
-                        for x in value.values()
-                    ]
-                else:
-                    # assume data is a list, tuple, set
-                    data = [
-                        x if is_bizobj(x) else rel.target(x)
-                        for x in value
-                    ]
-            else:
-                assert not is_sequence
-                data = x if is_bizobj(x) else rel.target(x)
-
-            self._related[key] = data
-
-        # disallow assignment of any field not declared in the Schema class
-        # otherwise, set it on the data dict.
-        if key in self.schema.fields:
-            self._data[key] = value
-        else:
-            raise KeyError(
-                '{} not in {} schema'.
-                format(key, self.schema.__class__.__name__)
-            )
+        if key in self.schema.fields or key in self.relationships:
+            return setattr(self, key, value)
+        raise KeyError(key)
 
     def __delitem__(self, key):
-        if self.schema.fields[key].required:
-            raise AttributeError(
-                'cannot delete required field value: {}'.format(key)
-            )
+        if key in self.schema.fields or key in self.relationships:
+            delattr(self, key)
         else:
-            self.data.pop(key, None)
+            raise KeyError(key)
 
     def __iter__(self):
         return iter(self._data)
@@ -112,8 +68,13 @@ class BizObject(metaclass=BizObjectMeta):
         return key in self._data
 
     def __repr__(self):
+        _id = self.data.get('_id')
+        if _id is None:
+            id_str = '?'
+        else:
+            id_str = repr(_id)[:7]
         return '<{name}({id}){dirty}>'.format(
-            id=self._data.get('_id') or '?',
+            id=id_str
             name=self.__class__.__name__,
             dirty='*' if self._data.dirty else '',
         )
