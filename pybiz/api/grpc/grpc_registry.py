@@ -44,8 +44,12 @@ class GrpcRegistry(Registry):
         self._grpc_secure_channel = None
         self._protobuf_filepath = None
 
-
-    def bootstrap(self, manifest_filepath: Text, build_grpc=False, grpc_options: dict = None):
+    def bootstrap(
+        self,
+        manifest_filepath: Text,
+        build_grpc=False,
+        grpc_options: dict = None
+    ):
         self.manifest.load(path=manifest_filepath)
 
         pkg_path = self.manifest.package
@@ -54,11 +58,13 @@ class GrpcRegistry(Registry):
         pb2_mod_path = '{}.grpc.registry_pb2'.format(pkg_path)
         pb2_grpc_mod_path = '{}.grpc.registry_pb2_grpc'.format(pkg_path)
         grpc_build_dir = os.path.join(pkg_dir, 'grpc')
-        
+
         # a manifest could provide grpc options, but they could also come from
         # kwargs.  in this case the manifest will load first, and any data
         # specified in the `grpc_options` kwarg will take preference
-        manifest_grpc_options = self.manifest.data.get('grpc_options', {}) if hasattr(self.manifest, 'data') else {}
+        manifest_grpc_options = self.manifest.data.get(
+            'grpc_options', {}
+        ) if hasattr(self.manifest, 'data') else {}
         grpc_options = grpc_options or {}
         grpc_options = DictUtils.merge(manifest_grpc_options, grpc_options)
 
@@ -130,7 +136,9 @@ class GrpcRegistry(Registry):
             k: getattr(request, k, None)
             for k in proxy.request_schema.fields
         }
-        args, kwargs = FuncUtils.partition_arguments(proxy.signature, arguments)
+        args, kwargs = FuncUtils.partition_arguments(
+            proxy.signature, arguments
+        )
         return (args, kwargs)
 
     def on_response(self, proxy, result, *raw_args, **raw_kwargs):
@@ -172,8 +180,15 @@ class GrpcRegistry(Registry):
                     v_bytes = codecs.encode(pickle.dumps(v), 'base64')
                     setattr(resp, k, v_bytes)
                 elif isinstance(field, fields.List):
-                    nested_resp_type = getattr(resp, field.nested.__class__.__name__)
-                    getattr(resp, k).extend([recurseively_bind(nested_resp_type(), _v) for _v in v])
+                    nested_resp_type = getattr(
+                        resp, field.nested.__class__.__name__
+                    )
+                    getattr(resp, k).extend(
+                        [
+                            recurseively_bind(nested_resp_type(), _v)
+                            for _v in v
+                        ]
+                    )
                 elif isinstance(getattr(resp, k), Message):
                     recurseively_bind(getattr(resp, k), v)
                 else:
@@ -192,9 +207,9 @@ class GrpcRegistry(Registry):
             exit(-1)
 
         executor = ThreadPoolExecutor(
-            max_workers=None,  # TODO: put this value in manifest
-            # XXX TypeError: __init__() got an unexpected keyword argument 'initializer'
-            #initializer=initializer,
+            max_workers=None,    # TODO: put this value in manifest
+        # XXX TypeError: __init__() got an unexpected keyword argument 'initializer'
+        #initializer=initializer,
         )
 
         # build the grpc server
