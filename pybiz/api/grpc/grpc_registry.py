@@ -58,7 +58,7 @@ class GrpcRegistry(Registry):
         # a manifest could provide grpc options, but they could also come from
         # kwargs.  in this case the manifest will load first, and any data
         # specified in the `grpc_options` kwarg will take preference
-        manifest_grpc_options = self.manifest.data.get('grpc_options', {})
+        manifest_grpc_options = self.manifest.data.get('grpc_options', {}) if hasattr(self.manifest, 'data') else {}
         grpc_options = grpc_options or {}
         grpc_options = DictUtils.merge(manifest_grpc_options, grpc_options)
 
@@ -154,7 +154,7 @@ class GrpcRegistry(Registry):
         )
         resp = response_type()
 
-        def to_dict(field, value):
+        def to_dict(field, value, context=None):
             if is_bizobj(value):
                 return value.dump()
             elif isinstance(field, fields.List):
