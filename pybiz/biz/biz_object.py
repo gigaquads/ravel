@@ -74,7 +74,7 @@ class BizObject(metaclass=BizObjectMeta):
         else:
             id_str = repr(_id)[:7]
         return '<{name}({id}){dirty}>'.format(
-            id=id_str
+            id=id_str,
             name=self.__class__.__name__,
             dirty='*' if self._data.dirty else '',
         )
