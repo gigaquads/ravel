@@ -1,5 +1,4 @@
 # Business Objects
-## Introduction
 The main entities in pybiz applications are referred to as business objects. These are things like accounts, users, posts, and photo albums.
 
 ## Anatomy of a BizObject
