@@ -1,4 +1,4 @@
-# The Registry System
+# Registry Applications
 
 - [Overview](#registry-overview)
 - [Decorators and Proxies](#decorator-and-proxy-objects)
