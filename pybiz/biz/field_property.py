@@ -91,6 +91,10 @@ class FieldProperty(property):
         key = field.name
 
         def fget(self):
+            # raise if the field is not declared in the schema
+            if key not in self.schema.fields:
+                raise AttributeError(key)
+
             # try to lazy load the field value
             if (key not in self.data) and ('_id' in self.data):
                 field = self.schema.fields.get(key)
@@ -101,7 +105,7 @@ class FieldProperty(property):
             if key in self._data:
                 return self._data[key]
             else:
-                raise AttributeError(key)
+                return None
 
         def fset(self, value):
             if key in self.schema.fields:
