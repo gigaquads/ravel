@@ -176,7 +176,7 @@ class BizObject(metaclass=BizObjectMeta):
         data_to_save = {k: self[k] for k in self._data.dirty}
         path = path or []
 
-        if self._id is None:
+        if self.get('_id') is None:
             updated_data = self.dao.create(data_to_save)
         else:
             updated_data = self.dao.update(self._id, data_to_save)
