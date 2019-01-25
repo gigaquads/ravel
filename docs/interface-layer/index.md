@@ -7,9 +7,9 @@
 - [Middleware](#./middleware.md)
 
 ---
-At some point, every application needs a user interface or API. To this end, Pybiz provides a high-level interface abstraction layer that insulate application code from change, making it possible to reuse a single Python function as an endpoint or callback in a plurality of API's and user interface libraries simultaneously.
+At some point, every application needs an API or user interface. To this end, Pybiz provides a high-level interface abstraction that insulates business logic and makes it possible to share the same Python function as an endpoint or callback in a range of different API's and user interfaces simultaneously.
 
-Let's look at an example of one such function. It is incorporated in three different types of applications simultaneously through a stack of decorators.
+Let's look at an example of a function registered with three distinct interface abstractions.
 
 ```python
 @cli()
