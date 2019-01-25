@@ -1,4 +1,4 @@
-# Data Access Objects
+# Data Access Layer
 Business objects implement a CRUD interface, which means that data needs to be stored and accessed somehow. Depending on your needs, this can mean in-memory storage, filesystem storage, a database, a server, or any number of other things. In pybiz, a _data access object_ (DAO) is implements a CRUD interface for a particular persistence technology. The abstract base `Dao` class is defined in `pybiz.dao.base`.
 
 ## DAO Initialization

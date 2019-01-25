@@ -72,6 +72,10 @@ class RegistryProxy(RegistryObject):
     def name(self) -> Text:
         return self.target.__name__
 
+    @property
+    def doc(self):
+        return inspect.getdoc(self.target)
+
     def resolve(self, func):
         return func.target if isinstance(func, RegistryProxy) else func
 

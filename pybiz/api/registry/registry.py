@@ -1,6 +1,6 @@
 import inspect
 
-from typing import List, Type, Dict, Tuple
+from typing import List, Type, Dict, Tuple, Text
 
 from appyratus.utils import DictAccessor
 from appyratus.memoize import memoized_property
@@ -19,7 +19,7 @@ class Registry(object):
         middleware: List['RegistryMiddleware'] = None
     ):
         self._decorators = []
-        self._proxies = []
+        self._proxies = {}
         self._manifest = manifest or Manifest()
         self._is_bootstrapped = False
         self._middleware = middleware or []
@@ -67,7 +67,7 @@ class Registry(object):
         ]
 
     @property
-    def proxies(self) -> List[RegistryProxy]:
+    def proxies(self) -> Dict[Text, RegistryProxy]:
         return self._proxies
 
     @property
@@ -81,6 +81,9 @@ class Registry(object):
     @property
     def is_bootstrapped(self):
         return self._is_bootstrapped
+
+    def register(self, proxy):
+        self.proxies[proxy.name] = proxy
 
     def bootstrap(self):
         """
@@ -105,7 +108,7 @@ class Registry(object):
         Registry directly.
         """
         return {
-            'registry': {p.dump() for p in self.proxies}
+            'registry': {p.dump() for p in self.proxies.values()}
         }
 
     def on_decorate(self, proxy: 'RegistryProxy'):

@@ -10,6 +10,6 @@ class RegistryDecorator(RegistryObject):
 
     def __call__(self, func) -> 'RegistryProxy':
         proxy = self.registry.proxy_type(func, self)
-        self.registry.proxies.append(proxy)
+        self.registry.register(proxy)
         self.registry.on_decorate(proxy)
         return proxy

@@ -37,7 +37,7 @@ class ReplRegistry(Registry):
         local_ns = {}
         local_ns['repl'] = self
         local_ns.update(self.types.biz)
-        local_ns.update({p.name: p for p in self.proxies})
+        local_ns.update(dict(self.proxies))
         local_ns.update(namespace or {})
 
         # enter an ipython shell
@@ -71,7 +71,7 @@ class ReplRegistry(Registry):
         """
         Get list of names of all registered functions in the REPL.
         """
-        return sorted(p.target.__name__ for p in self.proxies)
+        return sorted(self.proxies.keys())
 
 
 class Function(RegistryProxy):

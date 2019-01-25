@@ -7,7 +7,7 @@ from typing import List, Type, Dict, Tuple, Text
 from .async_server_registry import AsyncServerRegistry
 
 
-class AsyncWebSocketServerRegistry(AsyncServerRegistry):
+class WebSocketServerRegistry(AsyncServerRegistry):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._name2praxy = {}

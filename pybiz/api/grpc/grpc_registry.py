@@ -264,7 +264,7 @@ class GrpcRegistry(Registry):
         if abstract_type is None:
             raise Exception('could not find grpc Servicer class')
 
-        methods = {p.name: p for p in self.proxies}
+        methods = dict(self.proxies)
         servicer_type = type(servicer_type_name, (abstract_type, ), methods)
         servicer = servicer_type()
         servicer.add_to_grpc_server = (
@@ -283,7 +283,7 @@ class GrpcRegistry(Registry):
         """
         chunks = ['syntax = "proto3";']
         func_decls = []
-        for proxy in self.proxies:
+        for proxy in self.proxies.values():
             chunks.extend(proxy.generate_protobuf_message_types())
             func_decls.append(proxy.generate_protobuf_function_declaration())
 
