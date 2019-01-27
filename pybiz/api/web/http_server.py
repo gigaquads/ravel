@@ -101,10 +101,10 @@ class HttpServerRegistry(HttpRegistry):
         self.server = HTTPServer((self.host, self.port), self.handler)
         self.server.serve_forever()
 
-    def on_request(self, proxy, signature, arguments: Dict) -> dict:
+    def on_request(self, proxy, arguments: Dict) -> dict:
         args, kwargs = [], {}
 
-        for k, param in signature.parameters.items():
+        for k, param in proxy.signature.parameters.items():
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
                     args.append(arguments.get(k))

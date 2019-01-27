@@ -1,3 +1,5 @@
+import uuid
+
 from typing import List, Dict, Text, Type, Tuple, Set
 
 from pybiz.dao.dal import DataAccessLayer
@@ -40,7 +42,11 @@ class BizObject(metaclass=BizObjectMeta):
     def __init__(self, data=None, **more_data):
         self._data = DirtyDict()
         self._related = {}
+        self._hash = int(uuid.uuid4().hex, 16)
         self.merge(dict(data or {}, **more_data))
+
+    def __hash__(self):
+        return self._hash
 
     def __eq__(self):
         return self._id == other._id if self._id is not None else False
@@ -185,7 +191,7 @@ class BizObject(metaclass=BizObjectMeta):
             for k, v in updated_data.items():
                 setattr(self, k, v)
 
-        # Save ditty child BizObjects before saving this BizObject so that the
+        # Save dirty child BizObjects before saving this BizObject so that the
         # updated child data can be passed into this object's dao.save/create
         # method
         for k, v in self._related.items():

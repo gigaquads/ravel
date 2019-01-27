@@ -1,6 +1,6 @@
 # Registry Applications
 
-- [Overview](#registry-overview)
+- [Overview](#overview)
 - [Decorators and Proxies](#decorator-and-proxy-objects)
 - [Walkthru](#registry-walkthru)
     1. [Implementing `Registry`](#step-1-implementing-registry)
