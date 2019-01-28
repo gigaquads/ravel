@@ -1,3 +1,5 @@
+import pybiz.biz.biz_object as biz_object
+
 from typing import Text, Type, Tuple
 
 from pybiz.predicate import (
@@ -69,15 +71,23 @@ class RelationshipProperty(property):
                 value = list(value.values())
 
             if is_scalar and not expect_scalar:
-                    raise ValueError(
-                        'relationship "{}" must be a sequence because '
-                        'relationship.many is True'.format(key)
-                    )
+                raise ValueError(
+                    'relationship "{}" must be a sequence because '
+                    'relationship.many is True'.format(key)
+                )
             elif (not is_scalar) and expect_scalar:
                 raise ValueError(
                     'relationship "{}" cannot be a BizObject because '
                     'relationship.many is False'.format(key)
                 )
+
+            # store a shallow copy of each related BizObject to avoid
+            # infinite recursion due to cyclic relationships.
+            if value:
+                if is_scalar:
+                    value = value.copy(deep=False)
+                else:
+                    value = [v.copy(deep=False) for v in value]
 
             self._related[key] = value
 

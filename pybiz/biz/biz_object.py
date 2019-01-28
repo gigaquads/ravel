@@ -1,5 +1,6 @@
 import uuid
 
+from copy import deepcopy, copy
 from typing import List, Dict, Text, Type, Tuple, Set
 
 from pybiz.dao.dal import DataAccessLayer
@@ -182,7 +183,7 @@ class BizObject(metaclass=BizObjectMeta):
         data_to_save = {k: self[k] for k in self._data.dirty}
         path = path or []
 
-        if self.get('_id') is None:
+        if self._id is None:
             updated_data = self.dao.create(data_to_save)
         else:
             updated_data = self.dao.update(self._id, data_to_save)
@@ -242,6 +243,39 @@ class BizObject(metaclass=BizObjectMeta):
     def mark(self, keys) -> 'BizObject':
         self._data.mark_dirty(keys)
         return self
+
+    def copy(self, deep=False) -> 'BizObject':
+        """
+        Create a clone of this BizObject. Deep copy its fields but, by
+        default, only _shallow_ copy BizObjects associated via Relationships
+        to avoid inifinite recursion during relationship traversal methods.
+        Consider this example of cyclic relationships.
+
+        ```python
+        account.owner = owner
+        owner.account = account
+        account.dump()
+        ```
+        Upon execution, this code would enter an infinite loop, were `account`
+        _deep_ copied to `owner.account`; therefore, we use shallow copy by
+        default.
+
+        Args:
+        - `deep`: If set, deep copy related BizObjects.
+        """
+        clone = self.__class__(deepcopy(self.data))
+
+        # select the copy method to use for relationship-loaded data
+        copy_related_value = deepcopy if deep else copy
+
+        # copy related BizObjects
+        for k, v in self.related.items():
+            if not self.relationships[k].many:
+                clone.related[k] = copy_related_value(v)
+            else:
+                clone.related[k] = [copy_related_value(i) for i in v]
+
+        return clone.clean()
 
     def merge(self, obj, process=True, mark=True) -> 'BizObject':
         """
