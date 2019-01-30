@@ -142,12 +142,12 @@ class GrpcRegistry(Registry):
         return (args, kwargs)
 
     def on_response(self, proxy, result, *raw_args, **raw_kwargs):
-        def recurseively_bind(target, data):
+        def recursively_bind(target, data):
             if data is None:
                 return None
             for k, v in data.items():
                 if isinstance(v, Message):
-                    recurseively_bind(getattr(target, k), v)
+                    recursively_bind(getattr(target, k), v)
                 else:
                     try:
                         setattr(target, k, v)
@@ -184,15 +184,13 @@ class GrpcRegistry(Registry):
                         resp, field.nested.__class__.__name__
                     )
                     getattr(resp, k).extend(
-                        [
-                            recurseively_bind(nested_resp_type(), _v)
-                            for _v in v
-                        ]
+                        [recursively_bind(nested_resp_type(), _v) for _v in v]
                     )
                 elif isinstance(getattr(resp, k), Message):
-                    recurseively_bind(getattr(resp, k), v)
+                    recursively_bind(getattr(resp, k), v)
                 else:
                     setattr(resp, k, v)
+
         return resp
 
     def start(self, initializer=None, grace=2):

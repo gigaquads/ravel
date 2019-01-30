@@ -24,7 +24,8 @@ class GrpcClient(object):
 
         self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(self._channel)
         self._funcs = {
-            k: self._build_func(p) for k, p in registry.proxies.items()
+            k: self._build_func(p)
+            for k, p in registry.proxies.items()
         }
 
     def __getattr__(self, func_name: Text):

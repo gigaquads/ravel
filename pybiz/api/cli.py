@@ -52,14 +52,14 @@ class CliRegistry(Registry):
         """
         self._commands.append(command)
 
-    def on_request(self, command, prog, *args, **kwargs):
+    def on_request(self, proxy, *args, **kwargs):
         """
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
         """
         args, kwargs = [], {}
-        for k, param in command.signature.parameters.items():
-            value = getattr(prog.cli_args, k, None)
+        for k, param in proxy.signature.parameters.items():
+            value = getattr(self._cli_program.cli_args, k, None)
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
                     args.append(value)
