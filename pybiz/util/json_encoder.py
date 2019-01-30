@@ -1,6 +1,6 @@
 from appyratus.json import JsonEncoder as BaseJsonEncoder
 
-from pybiz.constants import IS_BIZOBJ_ANNOTATION
+from .bizobj import is_bizobj
 
 
 class JsonEncoder(BaseJsonEncoder):
@@ -9,10 +9,3 @@ class JsonEncoder(BaseJsonEncoder):
             return target.dump()
         else:
             return super().default(target)
-
-
-def is_bizobj(obj):
-    """
-    Return True if obj is an instance of BizObject.
-    """
-    return getattr(obj, IS_BIZOBJ_ANNOTATION, False) if obj else False
