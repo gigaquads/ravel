@@ -18,7 +18,7 @@ class RegistryRouter(CliProgram):
         """
         return [PositionalArg(name='registry')]
 
-    def perform(self):
+    def perform(self, program):
         """
         # Perform routing
         Route to the registry provided in the CLI's first argument
