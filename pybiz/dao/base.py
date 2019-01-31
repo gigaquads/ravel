@@ -1,5 +1,4 @@
 import os
-
 import venusian
 
 from typing import Dict, List, Type

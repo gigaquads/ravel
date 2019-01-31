@@ -127,7 +127,7 @@ class DictDao(Dao, CacheInterface):
         self,
         predicate: Predicate,
         fields: Set[Text] = None,
-        order_by: Tuple[Text] = None,
+        order_by: Tuple = None,
         **kwargs
     ) -> List:
         def union(sequences):
@@ -207,15 +207,20 @@ class DictDao(Dao, CacheInterface):
 
             return _ids
 
+        results  = []
+
         with self.lock:
             _ids = process(predicate)
             results = list(self.fetch_many(_ids, fields=fields).values())
             if order_by:
-                results = sorted(results, key=lambda x: tuple(
-                    x[k] if k[0] != '-' else -1 * x[k][1:]
-                    for k in order_by
-                ))
-            return results
+                for item in order_by:
+                    results = sorted(
+                        results,
+                        key=lambda x: x[item.key],
+                        reverse=item.desc
+                    )
+
+        return results
 
     def fetch_cache(self, _ids: Set, rev=True, data=False, fields: Set = None) -> Dict:
         do_fetch_many = data   # alias to something more meaningful

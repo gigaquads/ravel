@@ -1,29 +1,31 @@
 import inspect
 
 from typing import List, Type, Dict, Tuple, Text
+from collections import deque
 
 from appyratus.utils import DictAccessor
 from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
 from pybiz.util import JsonEncoder
+from pybiz.api.middleware import ArgumentLoaderMiddleware
 
 from .registry_decorator import RegistryDecorator
 from .registry_proxy import RegistryProxy
 
 
 class Registry(object):
-    def __init__(
-        self,
-        manifest: Manifest = None,
-        middleware: List['RegistryMiddleware'] = None
-    ):
+    def __init__(self, middleware: List['RegistryMiddleware'] = None):
         self._decorators = []
         self._proxies = {}
-        self._manifest = manifest or Manifest()
+        self._manifest = None
         self._is_bootstrapped = False
-        self._middleware = middleware or []
+        self._is_started = False
         self._json_encoder = JsonEncoder()
+        self._middleware = deque([
+            m for m in (middleware or [])
+            if isinstance(self, m.registry_types)
+        ])
 
     def __call__(self, *args, **kwargs) -> RegistryDecorator:
         """
@@ -59,12 +61,9 @@ class Registry(object):
     def manifest(self) -> Manifest:
         return self._manifest
 
-    @memoized_property
+    @property
     def middleware(self) -> List['RegistryMiddleware']:
-        return [
-            m for m in self._middleware
-            if isinstance(self, m.registry_types)
-        ]
+        return self._middleware
 
     @property
     def proxies(self) -> Dict[Text, RegistryProxy]:
@@ -85,11 +84,32 @@ class Registry(object):
     def register(self, proxy):
         self.proxies[proxy.name] = proxy
 
-    def bootstrap(self):
+    def on_bootstrap(self):
+        pass
+
+    def on_start(self):
+        pass
+
+    def bootstrap(self, manifest: Manifest = None, namespace: Dict = None):
         """
         Bootstrap the data, business, and service layers, wiring them up.
-        Override in subclass.
         """
+        self._manifest = manifest or Manifest()
+        self._manifest.process(namespace=namespace)
+
+        # now that we've processed the manifest, let's add default middleware.
+        if self.types.biz:
+            has_arg_binder_mware = any([
+                isinstance(m, ArgumentLoaderMiddleware)
+                for m in self.middleware
+            ])
+            if not has_arg_binder_mware:
+                binder = ArgumentLoaderMiddleware.from_registry(self)
+                # we put this mware _last_ because it mutates the prepared
+                # args list passed into the proxy target, and we don't want
+                # it to interfer with the expectations of other mware.
+                self._middleware.append(binder)
+
         self._is_bootstrapped = True
 
     def start(self, *args, **kwargs):
@@ -97,7 +117,8 @@ class Registry(object):
         Enter the main loop in whatever program context your Registry is
         being used, like in a web framework or a REPL.
         """
-        raise NotImplementedError('override in subclass')
+        self._is_started = True
+        return self.on_start()
 
     def dump(self) -> Dict:
         """

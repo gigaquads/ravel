@@ -27,10 +27,11 @@ class RegistryProxy(RegistryObject):
         return result
 
     def pre_process(self, raw_args, raw_kwargs):
+        raw_args = list(raw_args)
         self._apply_middleware_pre_request(raw_args, raw_kwargs)
         args, kwargs = self._apply_registry_on_request(raw_args, raw_kwargs)
         self._apply_middleware_on_request(args, kwargs)
-        return (args, kwargs)
+        return (list(args), kwargs)
 
     def post_process(self, args, kwargs, raw_result):
         result = self._apply_registry_on_response(args, kwargs, raw_result)
@@ -54,7 +55,10 @@ class RegistryProxy(RegistryObject):
 
     def _apply_registry_on_request(self, raw_args, raw_kwargs):
         result = self.registry.on_request(self, *raw_args, **raw_kwargs)
-        return result if result is not None else (raw_args, raw_kwargs)
+        if result:
+            return (list(result[0]), result[1])
+        else:
+            return (raw_args, raw_kwargs)
 
     def _apply_registry_on_response(self, prepared_args, prepared_kwargs, result):
         return self.decorator.registry.on_response(
@@ -133,6 +137,7 @@ class RegistryProxy(RegistryObject):
 
 class AsyncRegistryProxy(RegistryProxy):
     async def __call__(self, *raw_args, **raw_kwargs):
+        raw_args = list(raw_args)
         args, kwargs = self.pre_process(raw_args, raw_kwargs)
         raw_result = await self.target(*args, **kwargs)
         result = self.post_process(args, kwargs, raw_result)

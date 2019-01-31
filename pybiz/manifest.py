@@ -4,6 +4,7 @@ import importlib
 import yaml
 
 from typing import Text, Dict
+from collections import defaultdict
 
 from venusian import Scanner
 from appyratus.memoize import memoized_property
@@ -21,21 +22,21 @@ class Manifest(object):
     """
 
     def __init__(self, path: Text = None, data: Dict = None, load=True):
-        self.scanner = Scanner(bizobj_classes={}, dao_classes={})
-        self.types = DictAccessor({})
+        self.scanner = Scanner(
+            bizobj_classes={},
+            dao_classes={}
+        )
+        self.types = DictAccessor({'biz': {}, 'dao': {}})
         self.package = None
         self.bindings = []
 
         self.load(data=data, path=path)
 
     def load(self, data: Dict = None, path: Text = None):
-        self.package = None
-        self.bindings = []
-
         if not (data or path):
             return
 
-        data = {}
+        data = data or {}
 
         # load base data from file
         if path is None:
@@ -51,10 +52,11 @@ class Manifest(object):
             data = DictUtils.merge(file_data, data)
 
         # marshal in the computed data dict
-        self.package = data['package']
+        self.package = data.get('package')
+
         for binding_data in data['bindings']:
             biz = binding_data['biz']
-            dao = binding_data['dao']
+            dao = binding_data.get('dao', 'DictDao')
             params = binding_data.get('parameters', {})
             self.bindings.append(Binding(
                 biz=biz, dao=dao, params=params,
@@ -67,11 +69,31 @@ class Manifest(object):
         Interpret the manifest file data, bootstrapping the layers of the
         framework.
         """
-        self._scan(namespace=namespace, on_error=on_error)
-        self._bind()
+        self._discover_pybiz_types(namespace, on_error)
+        self._bind_dao_to_bizobj_types()
         return self
 
-    def _scan(self, namespace : Dict = None, on_error=None):
+    def _discover_pybiz_types(self, namespace, on_error):
+        if self.package:
+            self._scan_venusian(namespace=namespace, on_error=on_error)
+        if namespace:
+            self._scan_namespace(namespace)
+
+    def _scan_namespace(self, namespace: Dict):
+        """
+        Populate self.types from namespace dict.
+        """
+        from pybiz.dao import Dao
+        from pybiz.biz import BizObject
+
+        for k, v in (namespace or {}).items():
+            if isinstance(v, type):
+                if issubclass(v, BizObject):
+                    self.types.biz[k] = v
+                elif issubclass(v, Dao):
+                    self.types.dao[k] = v
+
+    def _scan_venusian(self, namespace : Dict = None, on_error=None):
         """
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Api instance.
@@ -89,40 +111,31 @@ class Manifest(object):
         if pkg_path:
             pkg = importlib.import_module(pkg_path)
             self.scanner.scan(pkg, onerror=on_error)
-        else:
-            # try to load whatever's in global namespace
-            from pybiz.dao import Dao
-            from pybiz.biz import BizObject
 
-            for k, v in (namespace or {}).items():
-                if isinstance(v, type):
-                    if issubclass(v, BizObject):
-                        self.scanner.bizobj_classes[k] = v
-                    elif issubclass(v, Dao):
-                        self.scanner.dao_classes[k] = v
+        self.types.biz.update(self.scanner.biz_classes)
+        self.types.dao.update(self.scanner.dao_classes)
 
-        self.types = DictAccessor({
-            'biz': self.scanner.bizobj_classes,
-            'dao': self.scanner.dao_classes,
-        })
-
-    def _bind(self):
+    def _bind_dao_to_bizobj_types(self):
         """
         Associate each BizObject class with a corresponding Dao class. Also bind
         Schema classes to their respective BizObject classes.
         """
+        from pybiz.dao.dict_dao import DictDao
+
         for binding in self.bindings:
             biz_class = self.scanner.bizobj_classes.get(binding.biz)
             if biz_class is None:
                 raise ManifestError('{} not found'.format(binding.biz))
 
             dao_class = self.scanner.dao_classes.get(binding.dao)
-            if dao_class is None:
-                raise ManifestError('{} not found'.format(binding['dao']))
+            if dao_class is None and biz_class:
+                print(f'Binding default DictDao to {biz_class.__name__}...')
+                dao_class = DictDao
 
-            biz_class.dal.register(
-                biz_class, dao_class, dao_kwargs=binding.params
-            )
+            if not biz_class.dal.is_registered(biz_class):
+                biz_class.dal.register(
+                    biz_class, dao_class, dao_kwargs=binding.params
+                )
 
 
 class Binding(object):
@@ -130,4 +143,3 @@ class Binding(object):
         self.biz = biz
         self.dao = dao
         self.params = params
-

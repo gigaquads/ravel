@@ -1,5 +1,5 @@
 # Pybiz
-Pybiz is a general-purpose application framework that lets you focus on what's important from the get-go, without burning out or getting sidetracked by idiosyncratic database languages, user interface libraries or network communication protocols. It builds upon tried and true patterns for scaling, extending and maintaining applications without sacrificing efficiency or simplicity.
+Pybiz is a general-purpose Python application framework that lets you focus on what's important from the get-go, without burning out or getting sidetracked by databases, user interface libraries or network communication protocols. It builds upon tried and true patterns for scaling, extending and maintaining applications without sacrificing efficiency or simplicity.
 
 The development process in Pybiz is designed to mirror the natural evolution of ideas, from notes scrawled on a piece of paper to a full-fledged microservice architecture, offering a handful of nifty tools to facilitate debugging and testing.
 
@@ -25,8 +25,8 @@ class Account(BizObject):
 class User(BizObject):
   account = Relationship(lambda self: Account._id == self.account_id)
   account_id = Field(private=True, required=True)
+  password = String(private=True)
   email = Email()
-  password = String()
 ```
 
 ### The Application Interface
@@ -47,8 +47,8 @@ http = HttpServerRegistry()
 @http(url_path='/signup', http_method='POST')
 def signup(email, password):
   owner = User(email=email.lower(), password=password).save()
-  account = Account(owner=owner).save()
-  return account
+  owner.account = Account(owner_id=owner._id).save()
+  return owner.save()
 
 
 @repl()
@@ -64,14 +64,33 @@ def login(email, password):
 
 At this point, we can start the application in a REPL by running the following code:
 ```python
-from example import repl
+import sys
+
+from example import repl, http
 
 
-repl.manifest.process()
-repl.start()
+api = sys.argv[1]
+
+if api == 'http':
+  app = http
+elif api == 'repl':
+  app = repl
+
+app.manifest.process()
+app.start()
 ```
 
-Note that the app is now fully functional, without the need for a database or ORM. In the REPL, you can try something like this:
+Note that the app is now fully functional, without the need for a database or ORM. We can lauch the app as a JSON web service or REPL.
+
+```sh
+# start an IPython session with API functions built-in.
+python example.py repl
+
+# start the app as a JSON API web server.
+python example.py http
+```
+
+In the REPL, you can try something like this:
 
 ```python
 account = signup('foo@bar.baz', 'password')

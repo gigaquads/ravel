@@ -1,7 +1,9 @@
 from typing import List, Dict, Set, Text, Type, Tuple
 
 from appyratus.utils import DictUtils
+
 from pybiz.util import is_bizobj
+from pybiz.constants import IS_BIZOBJ_ANNOTATION
 
 
 class QuerySpecification(tuple):
@@ -27,7 +29,7 @@ class QuerySpecification(tuple):
         relationships: Dict[Text, 'QuerySpecification'] = None,
         limit: int  =None,
         offset: int = None,
-        order_by: Tuple[Text] = None,
+        order_by: Tuple = None,
     ):
         # set epxected default values for items in the tuple.
         # always work on a copy of the input `fields` set.
@@ -42,7 +44,7 @@ class QuerySpecification(tuple):
         if offset is not None:
             offset = max(0, offset)
 
-        order_by = order_by or []
+        order_by = tuple(order_by or tuple())
 
         return tuple.__new__(cls, (
             fields,
@@ -84,8 +86,8 @@ class QuerySpecification(tuple):
             return spec
 
         if isinstance(spec, QuerySpecification):
-            pass    # nothing special to do,
-                    # since spec is already type <QuerySpecification>
+            if '*' in spec.fields:
+                 spec.fields = set(bizobj_type.schema.fields.keys())
         elif isinstance(spec, dict):
             names = DictUtils.unflatten_keys({k: None for k in spec})
             spec = recursive_init(bizobj_type, names)
@@ -102,10 +104,8 @@ class QuerySpecification(tuple):
             )
 
         # ensure that _id and required fields are *always* specified
+        spec.fields |= bizobj_type.schema.required_fields.keys()
         spec.fields.add('_id')
-        for k, field in bizobj_type.schema.fields.items():
-            if field.required:
-                spec.fields.add(k)
 
         return spec
 
@@ -138,14 +138,14 @@ class Query(object):
             offset=self.spec.offset,
             order_by=self.spec.order_by,
         )
-        bizobjs = [
+        multiset = self.bizobj_type.Multiset([
             self._recursive_execute(
                 bizobj=self.bizobj_type(record).clean(),
                 spec=self.spec
-            )
+            ).clean()
             for record in records
-        ]
-        return bizobjs
+        ])
+        return multiset
 
     def _recursive_execute(
         self,
@@ -191,17 +191,18 @@ class QueryUtils(object):
                 k: None for k in bizobj_type.schema.fields.keys()
             }
         else:
-            if isinstance(argument, (set, list, tuple)):
+            dict_keys_type = type({}.keys())
+            if isinstance(argument, (dict_keys_type, set, list, tuple)):
                 spec = DictUtils.unflatten_keys({k: None for k in argument})
             elif isinstance(argument, dict):
                 if parent is None:
                     spec = DictUtils.unflatten_keys(argument)
                 else:
                     spec = argument
-            # ensure _id is always selected
-            spec['_id'] = None
-            # add required fields
-            for k in bizobj_type.schema.required_fields:
+            else:
+                spec = {}
+
+            for k in bizobj_type.schema.fields:
                 spec.setdefault(k, None)
 
         if '*' in spec:
@@ -250,3 +251,26 @@ class QueryUtils(object):
                 else:
                     for x in related:
                         cls.query_relationships(x, nested_children)
+
+
+class QueryResult(list):
+
+    class Reducer(object):
+        def __init__(self, query_result):
+            self.query_result = query_result
+
+        def __getattr__(self, key):
+            if key not in self.query_result.bizobj_type.schema.fields:
+                raise AttributeError(f'unrecognized field name: {key}')
+            return [i[key] for i in self.query_result]
+
+    def __init__(self, bizobj_type, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.bizobj_type = bizobj_type
+        self.f = QueryResult.Reducer(self)
+
+    def dump(self, *args, **kwargs):
+        return [
+            bizobj.dump(*args, **kwargs)
+            for bizobj in self
+        ]

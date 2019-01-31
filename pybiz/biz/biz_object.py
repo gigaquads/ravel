@@ -18,7 +18,6 @@ class BizObject(metaclass=BizObjectMeta):
     # set by metaclass:
     schema = None
     relationships = {}
-    dal = None
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -116,14 +115,19 @@ class BizObject(metaclass=BizObjectMeta):
         if order_by:
             query.spec.order_by = order_by
 
-        bizobjs = query.execute()
+        result = query.execute()
+
         if first:
-            return bizobjs[0].clean() if bizobjs else None
+            return result[0] if result else None
         else:
-            return [obj.clean() for obj in bizobjs]
+            return result
 
     @classmethod
     def get(cls, _id, fields: Dict = None) -> 'BizObject':
+        _id, err = cls.schema.fields['_id'].process(_id)
+        if err:
+            raise Exception(err)  # TODO: raise validation error
+
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
         record = cls.get_dao().fetch(_id=_id, fields=fields)
         if record is not None:
@@ -137,12 +141,19 @@ class BizObject(metaclass=BizObjectMeta):
 
     @classmethod
     def get_many(cls, _ids, fields: List=None, as_list=True):
+        processed_ids = []
+        for _id in _ids:
+            processed_id, err = cls.schema.fields['_id'].process(_id)
+            processed_ids.append(processed_id)
+            if err:
+                raise Exception(err)  # TODO: raise validation error
+
         # separate field names into those corresponding to this BizObjects
         # class and those of the related BizObject classes.
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
 
         # fetch data from the dao
-        records = cls.get_dao().fetch_many(_ids=_ids, fields=fields)
+        records = cls.get_dao().fetch_many(_ids=processed_ids, fields=fields)
 
         # now fetch and merge related business objects.
         # This could be optimized.
@@ -241,23 +252,17 @@ class BizObject(metaclass=BizObjectMeta):
         return self
 
     def mark(self, keys) -> 'BizObject':
-        self._data.mark_dirty(keys)
+        if not isinstance(keys, (set, list, tuple)):
+            keys = {keys}
+        self._data.mark_dirty({k for k in keys if k in self.schema.fields})
+        for k in keys:
+            if k in self.related:
+                del self.related[k]
         return self
 
     def copy(self, deep=False) -> 'BizObject':
         """
         Create a clone of this BizObject. Deep copy its fields but, by
-        default, only _shallow_ copy BizObjects associated via Relationships
-        to avoid inifinite recursion during relationship traversal methods.
-        Consider this example of cyclic relationships.
-
-        ```python
-        account.owner = owner
-        owner.account = account
-        account.dump()
-        ```
-        Upon execution, this code would enter an infinite loop, were `account`
-        _deep_ copied to `owner.account`; therefore, we use shallow copy by
         default.
 
         Args:
@@ -317,6 +322,8 @@ class BizObject(metaclass=BizObjectMeta):
         Assuming _id is not None, this will load the rest of the BizObject's
         data.
         """
+        if isinstance(fields, str):
+            fields = {fields}
         fresh = self.get(_id=self._id, fields=fields)
         self.merge(fresh, mark=False)
         return self

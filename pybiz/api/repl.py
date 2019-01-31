@@ -36,6 +36,7 @@ class ReplRegistry(Registry):
         # build the shell namespace
         local_ns = {}
         local_ns['repl'] = self
+
         local_ns.update(self.types.biz)
         local_ns.update(dict(self.proxies))
         local_ns.update(namespace or {})
@@ -79,5 +80,5 @@ class Function(RegistryProxy):
         super().__init__(func, decorator)
 
     @property
-    def source(self) -> Text:
+    def source(self) -> None:
         print(inspect.getsource(self.target))

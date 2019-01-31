@@ -1,11 +1,13 @@
 import sys
 import copy
 import inspect
+import threading
 
 import venusian
 
 from abc import ABCMeta
 from importlib import import_module
+from typing import Type, List
 
 from appyratus.schema.fields import Field
 from appyratus.schema import Schema
@@ -20,7 +22,8 @@ from .field_property import FieldProperty
 
 class BizObjectMeta(ABCMeta):
 
-    dal = DataAccessLayer()
+    local = threading.local()
+    local.dal = DataAccessLayer()
 
     def __new__(cls, name, bases, dict_):
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
@@ -30,11 +33,11 @@ class BizObjectMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
-        cls.dal = BizObjectMeta.dal
-
+        cls.dal = BizObjectMeta.local.dal
         relationships = cls.build_relationships()
         schema_class = cls.build_schema_class(name)
 
+        cls.Multiset = Multiset.type_factory(cls)
         cls.build_all_properties(schema_class, relationships)
         cls.register_dao()
 
@@ -44,11 +47,11 @@ class BizObjectMeta(ABCMeta):
         venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
-        manager = BizObjectMeta.dal
-        if not manager.is_registered(cls):
+        dal = BizObjectMeta.local.dal
+        if not dal.is_registered(cls):
             dao_type = cls.__dao__()
             if dao_type:
-                manager.register(cls, dao_type)
+                dal.register(cls, dao_type)
 
     def build_schema_class(cls, name):
         """
@@ -92,6 +95,15 @@ class BizObjectMeta(ABCMeta):
         # bless each bizobj with a mandatory _id field.
         if '_id' not in fields:
             fields['_id'] = Field(nullable=True)
+
+        # Normally, the Field `default` kwarg is generated upon Field.process
+        # but we don't want this. We only want to apply the default upon
+        # BizObject.save. Therefore, we unset the `default` attribute on all
+        # fields and take care of setting defaults in custom BizObject logic.
+        cls.defaults = {}
+        for k, field in fields.items():
+            cls.defaults[k] = field.default
+            field.default = None
 
         # Build string name of the new Schema class
         # and construct the Schema class object:

@@ -3,6 +3,7 @@ from typing import Text, Type, Tuple
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
+from pybiz.util import is_bizobj
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -10,7 +11,7 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from .query import QuerySpecification
+from .query import QuerySpecification, QueryResult
 
 # TODO: rename "host" to something more clear
 
@@ -34,6 +35,7 @@ class Relationship(object):
         self,
         join,
         many=False,
+        ordering=None,
         private=False,
         lazy=True,
         on_set=None,
@@ -46,6 +48,17 @@ class Relationship(object):
         self.on_set = on_set
         self.on_get = on_get
         self.on_del = on_del
+
+        # ensure self.ordering is a tuple
+        if ordering:
+            if callable(ordering):
+                self.ordering = ordering
+            elif isinstance(ordering, (tuple, list)):
+                self.ordering = tuple(ordering)
+            else:
+                self.ordering = (ordering, )
+        else:
+            self.ordering = tuple()
 
         # ensure `join` is a tuple of callables that return predicates
         if callable(join):
@@ -77,10 +90,12 @@ class Relationship(object):
             ])
         )
 
-    def query(self, source, specification):
+    def query(self, source, specification=None):
         """
         Execute a chain of queries to fetch the target Relationship data.
         """
+        specification = specification or QuerySpecification(fields={'*'})
+
         # build up the sequence of field name sets to query
         if not self._query_fields:
             for idx, func in enumerate(self._join[1:]):
@@ -91,7 +106,11 @@ class Relationship(object):
         # execute the sequence of "join" queries...
         for idx, func in enumerate(self._join):
             if not source:
-                return [] if self.many else None
+                return QueryResult(self.bizobj_type) if self.many else None
+            elif (not idx) or (not self.many):
+                source_type = source.__class__
+            else:
+                source_type = source.data[0].__class__
 
             # `target` is the BizObject class we are querying
             predicate = func(source)
@@ -102,7 +121,22 @@ class Relationship(object):
                 field_names = self._query_fields[idx]
                 spec = QuerySpecification(fields=field_names)
             else:
-                spec = specification
+                spec = QuerySpecification.prepare(
+                    specification, source_type,
+                )
+
+            # set relationship's default order by on spec
+            if self.ordering and (not spec.order_by):
+                if callable(self.ordering):
+                    spec.order_by = self.ordering(source)
+                else:
+                    spec.order_by = self.ordering
+
+            # ensure that any key we are ordering by
+            # is included in fields
+            if spec.order_by:
+                for item in spec.order_by:
+                    spec.fields.add(item.key)
 
             # do it!
             source = target.query(predicate=predicate, specification=spec)
@@ -171,6 +205,9 @@ class MockBizObject(object):
     def __getattr__(self, key):
         self.attrs.add(key)
         return key
+
+    def __getitem__(self, key):
+        return getattr(self, key)
 
     def __iter__(self):
         if self.inner is None:

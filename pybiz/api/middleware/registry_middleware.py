@@ -4,10 +4,11 @@ from typing import Dict, Tuple, Set, Type
 
 from appyratus.memoize import memoized_property
 
-from pybiz.api.registry import RegistryObject
 
+class RegistryMiddleware(object):
 
-class RegistryMiddleware(RegistryObject):
+    def __repr__(self):
+        return f'<Middleware({self.__class__.__name__})>'
 
     @memoized_property
     def registry_types(self) -> Tuple[Type['Registry']]:

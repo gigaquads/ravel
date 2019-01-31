@@ -2,6 +2,7 @@ import pybiz.biz.biz_object as biz_object
 
 from typing import Text, Type, Tuple
 
+from pybiz.biz.meta import Multiset  # TODO: move into own module
 from pybiz.predicate import (
     ConditionalPredicate,
     BooleanPredicate,
@@ -9,6 +10,7 @@ from pybiz.predicate import (
 )
 
 from .relationship import Relationship, MockBizObject
+from .query import QuerySpecification
 
 
 class RelationshipProperty(property):
@@ -33,18 +35,14 @@ class RelationshipProperty(property):
         rel = relationship
         key = relationship.name
 
-        def is_scalar_value(obj):
-            # just a helper func
-            return not isinstance(obj, (list, set, tuple))
-
         def fget(self):
             """
             Return the related BizObject instance or list.
             """
             if key not in self._related:
-                if rel.lazy and rel.query:
-                    # lazily fetch the related data, eagerly selecting all fields
-                    related_obj = rel.query(self, {'*'})
+                if rel.lazy:
+                    # fetch all fields
+                    related_obj = rel.query(self)
                     setattr(self, key, related_obj)
 
             default = [] if rel.many else None
@@ -61,7 +59,7 @@ class RelationshipProperty(property):
             assigned to a Relationship with many == False and vice versa.
             """
             rel = self.relationships[key]
-            is_scalar = is_scalar_value(value)
+            is_scalar = not isinstance(value, (Multiset, list, set, tuple))
             expect_scalar = not rel.many
 
             if (not expect_scalar) and isinstance(value, dict):
@@ -80,14 +78,6 @@ class RelationshipProperty(property):
                     'relationship "{}" cannot be a BizObject because '
                     'relationship.many is False'.format(key)
                 )
-
-            # store a shallow copy of each related BizObject to avoid
-            # infinite recursion due to cyclic relationships.
-            if value:
-                if is_scalar:
-                    value = value.copy(deep=False)
-                else:
-                    value = [v.copy(deep=False) for v in value]
 
             self._related[key] = value
 

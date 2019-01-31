@@ -2,6 +2,8 @@ import typing
 
 from typing import List, Dict, ForwardRef, Text, Tuple, Set, Type
 
+from pybiz.util import is_bizobj
+
 from .registry_middleware import RegistryMiddleware
 
 
@@ -21,22 +23,25 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
         def __init__(
             self,
             target_type: Type['BizObject'],
-            source_type: Type = int,
+            source_type: Type = str,  # XXX: deprecated
         ):
             super().__init__(target_type.__name__)
             self.target_type = target_type
             self.source_type = source_type
 
         def load(self, proxy, _id, args, kwargs):
-            target = self.target_type
-            _id = self.source_type(_id) if self.source_type else _id
-            return target.query( predicate=(target._id == _id), first=True)
+            return self.target_type.get(_id)
 
         def load_many(self, proxy, _ids, args, kwargs):
-            if self.source_type is not None:
-                _ids = {self.source_type(_id) for _id in _ids}
-            target = self.target_type
-            return target.query(predicate=(target._id.is_in(_ids)))
+            return self.target_type.get_many(_ids)
+
+    @classmethod
+    def from_registry(cls, registry: 'Registry'):
+        loaders = [
+            cls.BizObjectLoader(bizobj_type)
+            for bizobj_type in registry.types.biz.values()
+        ]
+        return cls(loaders)
 
     def __init__(self, loaders: List[Loader]):
         super().__init__()
@@ -63,9 +68,19 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
         return key
 
     def on_request(self, proxy, args, kwargs):
-        for k, param in proxy.signature.parameters.items():
-            if (k in kwargs) and (param.annotation is not None):
-                loader_key = self.parse_annotation(param.annotation)
-                loader_func = self.loaders.get(loader_key)
-                if loader_func is not None:
-                    kwargs[k] = loader_func(proxy, kwargs[k], args, kwargs)
+        for idx, (k, param) in enumerate(proxy.signature.parameters.items()):
+            if (param.annotation is None):
+                continue
+
+            loader_key = self.parse_annotation(param.annotation)
+            loader_func = self.loaders.get(loader_key)
+
+            if not loader_func:
+                continue
+
+            if idx < len(args) and not is_bizobj(args[idx]):
+                val = args[idx]
+                args[idx] = loader_func(proxy, val, args, kwargs)
+            elif k in kwargs and not is_bizobj(kwargs[k]):
+                val = kwargs[k]
+                kwargs[k] = loader_func(proxy, val, args, kwargs)
