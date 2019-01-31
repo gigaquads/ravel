@@ -53,8 +53,13 @@ class DictDao(Dao, CacheInterface):
             if record is not None:
                 if fields is not None:
                     if fields:
-                        for k in set(record.keys()) - set(fields):
+                        fields = set(fields)
+                        record_keys = set(record.keys())
+                        missing_keys = fields - record_keys
+                        for k in record_keys - fields:
                             del record[k]
+                        if missing_keys:
+                            record.update({k: None for k in missing_keys})
                     else:
                         record = {'_id': _id}
             return record
@@ -62,13 +67,18 @@ class DictDao(Dao, CacheInterface):
     def fetch_many(self, _ids: List, fields=None) -> Dict:
         with self.lock:
             records = {}
+            fields = set(fields or [])
             for _id in _ids:
                 record = deepcopy(self.records.get(_id))
                 if record is not None:
                     records[_id] = record
                     if fields:
-                        for k in set(record.keys()) - set(fields):
+                        record_keys = set(record.keys())
+                        missing_keys = fields - record_keys
+                        for k in record_keys - fields:
                             del record[k]
+                        if missing_keys:
+                            record.update({k: None for k in missing_keys})
             return records
 
     def create(self, record: Dict = None) -> Dict:

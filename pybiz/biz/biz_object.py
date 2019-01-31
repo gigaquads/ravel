@@ -6,7 +6,7 @@ from typing import List, Dict, Text, Type, Tuple, Set
 from pybiz.dao.dal import DataAccessLayer
 from pybiz.dao.dict_dao import DictDao
 from pybiz.dirty import DirtyDict
-from pybiz.util import is_bizobj
+from pybiz.util import is_bizobj, is_sequence
 
 from .meta import BizObjectMeta
 from .dump import DumpNested, DumpSideLoaded
@@ -194,6 +194,13 @@ class BizObject(metaclass=BizObjectMeta):
         data_to_save = {k: self[k] for k in self._data.dirty}
         path = path or []
 
+        for k, default in self.defaults.items():
+            if k not in data_to_save:
+                if callable(default):
+                    data_to_save[k] = default()
+                else:
+                    data_to_save[k] = deepcopy(default)
+
         if self._id is None:
             updated_data = self.dao.create(data_to_save)
         else:
@@ -252,7 +259,7 @@ class BizObject(metaclass=BizObjectMeta):
         return self
 
     def mark(self, keys) -> 'BizObject':
-        if not isinstance(keys, (set, list, tuple)):
+        if not is_sequence(keys):
             keys = {keys}
         self._data.mark_dirty({k for k in keys if k in self.schema.fields})
         for k in keys:
@@ -262,8 +269,7 @@ class BizObject(metaclass=BizObjectMeta):
 
     def copy(self, deep=False) -> 'BizObject':
         """
-        Create a clone of this BizObject. Deep copy its fields but, by
-        default.
+        Create a clone of this BizObject. Deep copy its fields but, by default.
 
         Args:
         - `deep`: If set, deep copy related BizObjects.

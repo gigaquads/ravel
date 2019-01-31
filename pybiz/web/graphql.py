@@ -4,7 +4,7 @@ from typing import Dict, Set, Text, List
 
 from graphql.parser import GraphQLParser
 
-from pybiz.util import is_bizobj
+from pybiz.util import is_bizobj, is_sequence
 
 
 class GraphQLNode(GraphQLNode):
@@ -65,7 +65,7 @@ class GraphQLNode(GraphQLNode):
                 for child in self.relationships.values()
             })
         else:
-            assert isinstance(results, (list, tuple))
+            assert is_sequence(results)
             for child in self.relationships.values():
                 child_results = child.execute(func)
                 for parent_res, child_res in zip(results, child_results):
@@ -136,7 +136,7 @@ class GraphQLEngine(object):
     def _format_result(self, result):
         if is_bizobj(result):
             return result.dump(relationships=False)
-        elif isinstance(result, (list, tuple, set)):
+        elif is_sequence(result):
             return [self._format_result(obj) for obj in result]
         elif isinstance(result, dict) or result is None:
             return result

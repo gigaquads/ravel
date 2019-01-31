@@ -2,7 +2,7 @@ from typing import List, Dict, Set, Text, Type, Tuple
 
 from appyratus.utils import DictUtils
 
-from pybiz.util import is_bizobj
+from pybiz.util import is_bizobj, is_sequence
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
 
 
@@ -91,7 +91,7 @@ class QuerySpecification(tuple):
         elif isinstance(spec, dict):
             names = DictUtils.unflatten_keys({k: None for k in spec})
             spec = recursive_init(bizobj_type, names)
-        elif isinstance(spec, (set, list, tuple)):
+        elif is_sequence(spec):
             # spec is an array of field and relationship names
             # so partition the names between fields and relationships
             # in a new spec object.
@@ -187,27 +187,19 @@ class QueryUtils(object):
         # standardized the `argument` to a nested dict structure
         if argument is None:
             # if none, specified, select all fields and relationships
-            spec = {
-                k: None for k in bizobj_type.schema.fields.keys()
-            }
+            spec = {k: None for k in bizobj_type.schema.fields}
         else:
-            dict_keys_type = type({}.keys())
-            if isinstance(argument, (dict_keys_type, set, list, tuple)):
+            if is_sequence(argument):
                 spec = DictUtils.unflatten_keys({k: None for k in argument})
             elif isinstance(argument, dict):
                 if parent is None:
                     spec = DictUtils.unflatten_keys(argument)
                 else:
                     spec = argument
-            else:
-                spec = {}
-
-            for k in bizobj_type.schema.fields:
-                spec.setdefault(k, None)
-
-        if '*' in spec:
-            del spec['*']
-            spec.update({k: None for k in bizobj_type.schema.fields})
+            if '*' in spec:
+                del spec['*']
+            if not spec:
+                spec = {k: None for k in bizobj_type.schema.fields}
 
         fields = set()      # <- set of fields to query on this bizobj_type
         relationships = {}  # <- map from relationship name to recursive result
@@ -251,26 +243,3 @@ class QueryUtils(object):
                 else:
                     for x in related:
                         cls.query_relationships(x, nested_children)
-
-
-class QueryResult(list):
-
-    class Reducer(object):
-        def __init__(self, query_result):
-            self.query_result = query_result
-
-        def __getattr__(self, key):
-            if key not in self.query_result.bizobj_type.schema.fields:
-                raise AttributeError(f'unrecognized field name: {key}')
-            return [i[key] for i in self.query_result]
-
-    def __init__(self, bizobj_type, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.bizobj_type = bizobj_type
-        self.f = QueryResult.Reducer(self)
-
-    def dump(self, *args, **kwargs):
-        return [
-            bizobj.dump(*args, **kwargs)
-            for bizobj in self
-        ]

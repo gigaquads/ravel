@@ -11,7 +11,7 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from .query import QuerySpecification, QueryResult
+from .query import QuerySpecification
 
 # TODO: rename "host" to something more clear
 
@@ -94,7 +94,7 @@ class Relationship(object):
         """
         Execute a chain of queries to fetch the target Relationship data.
         """
-        specification = specification or QuerySpecification(fields={'*'})
+        specification = QuerySpecification.prepare(specification, self.target)
 
         # build up the sequence of field name sets to query
         if not self._query_fields:
@@ -106,7 +106,7 @@ class Relationship(object):
         # execute the sequence of "join" queries...
         for idx, func in enumerate(self._join):
             if not source:
-                return QueryResult(self.bizobj_type) if self.many else None
+                return self.bizobj_type.Multiset() if self.many else None
             elif (not idx) or (not self.many):
                 source_type = source.__class__
             else:

@@ -18,6 +18,7 @@ from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from .relationship import Relationship
 from .relationship_property import RelationshipProperty
 from .field_property import FieldProperty
+from .multiset import Multiset
 
 
 class BizObjectMeta(ABCMeta):

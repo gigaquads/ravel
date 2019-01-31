@@ -2,7 +2,7 @@ import pybiz.biz.biz_object as biz_object
 
 from typing import Text, Type, Tuple
 
-from pybiz.biz.meta import Multiset  # TODO: move into own module
+from pybiz.util import is_sequence
 from pybiz.predicate import (
     ConditionalPredicate,
     BooleanPredicate,
@@ -11,6 +11,7 @@ from pybiz.predicate import (
 
 from .relationship import Relationship, MockBizObject
 from .query import QuerySpecification
+from .multiset import Multiset
 
 
 class RelationshipProperty(property):
@@ -59,7 +60,11 @@ class RelationshipProperty(property):
             assigned to a Relationship with many == False and vice versa.
             """
             rel = self.relationships[key]
-            is_scalar = not isinstance(value, (Multiset, list, set, tuple))
+
+            if is_sequence(value):
+                value = rel.bizobj_type.Multiset(value)
+
+            is_scalar = not isinstance(value, Multiset)
             expect_scalar = not rel.many
 
             if (not expect_scalar) and isinstance(value, dict):
