@@ -15,7 +15,6 @@ from .query import Query, QueryUtils
 
 class BizObject(metaclass=BizObjectMeta):
 
-    # set by metaclass:
     schema = None
     relationships = {}
 
@@ -74,11 +73,15 @@ class BizObject(metaclass=BizObjectMeta):
         return key in self._data
 
     def __repr__(self):
-        _id = self.data.get('_id')
+        _id = self._data.get('_id')
         if _id is None:
             id_str = '?'
+        elif isinstance(_id, str):
+            id_str = _id[:7]
+        elif isinstance(_id, uuid.UUID):
+            id_str = _id.hex[:7]
         else:
-            id_str = repr(_id)[:7]
+            id_str = repr(_id)
         return '<{name}({id}){dirty}>'.format(
             id=id_str,
             name=self.__class__.__name__,
@@ -115,12 +118,11 @@ class BizObject(metaclass=BizObjectMeta):
         if order_by:
             query.spec.order_by = order_by
 
-        result = query.execute()
-
+        results = query.execute()
         if first:
-            return result[0] if result else None
+            return results[0] if results else None
         else:
-            return result
+            return cls.BizList(results)
 
     @classmethod
     def get(cls, _id, fields: Dict = None) -> 'BizObject':
@@ -166,7 +168,10 @@ class BizObject(metaclass=BizObjectMeta):
                 bizobjs[_id] = None
 
         # return results either as a list or a mapping from id to object
-        return bizobjs if not as_list else list(bizobjs.values())
+        if as_list:
+            return cls.BizList(list(bizobjs.values()))
+        else:
+            return bizobjs
 
     @classmethod
     def delete_many(cls, bizobjs) -> None:
@@ -242,6 +247,7 @@ class BizObject(metaclass=BizObjectMeta):
     @property
     def dao(self) -> 'Dao':
         return self.get_dao()
+
     @property
     def data(self) -> 'DirtyDict':
         return self._data

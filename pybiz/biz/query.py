@@ -5,6 +5,8 @@ from appyratus.utils import DictUtils
 from pybiz.util import is_bizobj, is_sequence
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
 
+from .biz_list import BizList
+
 
 class QuerySpecification(tuple):
     """
@@ -138,14 +140,13 @@ class Query(object):
             offset=self.spec.offset,
             order_by=self.spec.order_by,
         )
-        multiset = self.bizobj_type.Multiset([
+        return [
             self._recursive_execute(
                 bizobj=self.bizobj_type(record).clean(),
                 spec=self.spec
             ).clean()
             for record in records
-        ])
-        return multiset
+        ]
 
     def _recursive_execute(
         self,
@@ -162,6 +163,7 @@ class Query(object):
             v = rel.query(bizobj, child_spec)
             setattr(bizobj, k, v)
             if rel.many:
+                assert isinstance(v, BizList)
                 for child in v:
                     self._recursive_execute(child, child_spec)
             else:
@@ -187,7 +189,7 @@ class QueryUtils(object):
         # standardized the `argument` to a nested dict structure
         if argument is None:
             # if none, specified, select all fields and relationships
-            spec = {k: None for k in bizobj_type.schema.fields}
+            spec = {k: None for k in bizobj_type.schema.required_fields}
         else:
             if is_sequence(argument):
                 spec = DictUtils.unflatten_keys({k: None for k in argument})
@@ -198,8 +200,9 @@ class QueryUtils(object):
                     spec = argument
             if '*' in spec:
                 del spec['*']
-            if not spec:
                 spec = {k: None for k in bizobj_type.schema.fields}
+            if not spec:
+                spec = {k: None for k in bizobj_type.schema.required_fields}
 
         fields = set()      # <- set of fields to query on this bizobj_type
         relationships = {}  # <- map from relationship name to recursive result

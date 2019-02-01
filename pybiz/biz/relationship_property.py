@@ -11,7 +11,7 @@ from pybiz.predicate import (
 
 from .relationship import Relationship, MockBizObject
 from .query import QuerySpecification
-from .multiset import Multiset
+from .biz_list import BizList
 
 
 class RelationshipProperty(property):
@@ -45,8 +45,14 @@ class RelationshipProperty(property):
                     # fetch all fields
                     related_obj = rel.query(self)
                     setattr(self, key, related_obj)
+                    if rel.on_insert is not None:
+                        if rel.many:
+                            for bizobj in related_obj:
+                                rel.on_insert(self, bizobj)
+                        else:
+                            rel.on_insert(self, related_obj)
 
-            default = [] if rel.many else None
+            default = self.BizList([], rel, self) if rel.many else None
             value = self._related.get(key, default)
 
             if rel.on_get is not None:
@@ -61,10 +67,12 @@ class RelationshipProperty(property):
             """
             rel = self.relationships[key]
 
-            if is_sequence(value):
-                value = rel.bizobj_type.Multiset(value)
+            if value is None and rel.many:
+                value = rel.target.BizList([], rel, self)
+            elif is_sequence(value):
+                value = rel.target.BizList(value, rel, self)
 
-            is_scalar = not isinstance(value, Multiset)
+            is_scalar = not isinstance(value, BizList)
             expect_scalar = not rel.many
 
             if (not expect_scalar) and isinstance(value, dict):

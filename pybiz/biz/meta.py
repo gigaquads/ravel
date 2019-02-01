@@ -18,7 +18,7 @@ from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from .relationship import Relationship
 from .relationship_property import RelationshipProperty
 from .field_property import FieldProperty
-from .multiset import Multiset
+from .biz_list import BizList
 
 
 class BizObjectMeta(ABCMeta):
@@ -38,9 +38,9 @@ class BizObjectMeta(ABCMeta):
         relationships = cls.build_relationships()
         schema_class = cls.build_schema_class(name)
 
-        cls.Multiset = Multiset.type_factory(cls)
-        cls.build_all_properties(schema_class, relationships)
         cls.register_dao()
+        cls.build_all_properties(schema_class, relationships)
+        cls.BizList = BizList.type_factory(cls)
 
         def venusian_callback(scanner, name, bizobj_type):
             scanner.bizobj_classes[name] = bizobj_type
@@ -101,10 +101,15 @@ class BizObjectMeta(ABCMeta):
         # but we don't want this. We only want to apply the default upon
         # BizObject.save. Therefore, we unset the `default` attribute on all
         # fields and take care of setting defaults in custom BizObject logic.
-        cls.defaults = {}
+        inherited_defaults = getattr(cls, 'defaults', {})
+        cls.defaults = copy.deepcopy(inherited_defaults)
+
+        # add defaults from this class's Schema class, updating the
+        # defaults inherited from its super Schema.
         for k, field in fields.items():
-            cls.defaults[k] = field.default
-            field.default = None
+            if (k not in cls.defaults) and (field.default is not None):
+                cls.defaults[k] = field.default
+                field.default = None
 
         # Build string name of the new Schema class
         # and construct the Schema class object:

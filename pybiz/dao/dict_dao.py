@@ -14,6 +14,7 @@ from BTrees.OOBTree import BTree
 
 from appyratus.utils import DictUtils
 
+from pybiz.schema import fields
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -36,6 +37,13 @@ class DictDao(Dao, CacheInterface):
         self.id_counter = 1
         self.rev_counter = Counter()
         self.records = {}
+        self.ignored_indexes = set()
+
+    def bind(self, bizobj_type):
+        super().bind(bizobj_type)
+        for k, v in bizobj_type.schema.fields.items():
+            if isinstance(v, fields.Dict):
+                self.ignored_indexes.add(k)
 
     def next_id(self, data: Dict=None):
         with self.lock:
@@ -51,17 +59,14 @@ class DictDao(Dao, CacheInterface):
         with self.lock:
             record = deepcopy(self.records.get(_id))
             if record is not None:
-                if fields is not None:
-                    if fields:
-                        fields = set(fields)
-                        record_keys = set(record.keys())
-                        missing_keys = fields - record_keys
-                        for k in record_keys - fields:
-                            del record[k]
-                        if missing_keys:
-                            record.update({k: None for k in missing_keys})
-                    else:
-                        record = {'_id': _id}
+                if fields:
+                    fields = set(fields)
+                    record_keys = set(record.keys())
+                    missing_keys = fields - record_keys
+                    for k in record_keys - fields:
+                        del record[k]
+                    if missing_keys:
+                        record.update({k: None for k in missing_keys})
             return record
 
     def fetch_many(self, _ids: List, fields=None) -> Dict:
@@ -88,7 +93,7 @@ class DictDao(Dao, CacheInterface):
             self.records[_id] = record
             self.rev_counter[_id] += 1
             for k, v in record.items():
-                if not isinstance(v, dict):
+                if k not in self.ignored_indexes:
                     if v not in self.indexes[k]:
                         self.indexes[k][v] = set()
                     self.indexes[k][v].add(_id)
@@ -126,7 +131,8 @@ class DictDao(Dao, CacheInterface):
             self.records.pop(_id, None)
             self.rev_counter.pop(_id, None)
             for k, v in record.items():
-                self.indexes[k][v].remove(_id)
+                if k not in self.ignored_indexes:
+                    self.indexes[k][v].remove(_id)
             return record
 
     def delete_many(self, _ids: List) -> List:

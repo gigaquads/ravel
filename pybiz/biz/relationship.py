@@ -12,8 +12,7 @@ from pybiz.predicate import (
 )
 
 from .query import QuerySpecification
-
-# TODO: rename "host" to something more clear
+# TODO: rename "host" to source_type
 
 class Relationship(object):
     """
@@ -41,6 +40,7 @@ class Relationship(object):
         on_set=None,
         on_get=None,
         on_del=None,
+        on_insert=None,
     ):
         self.many = many
         self.private = private
@@ -48,6 +48,7 @@ class Relationship(object):
         self.on_set = on_set
         self.on_get = on_get
         self.on_del = on_del
+        self.on_insert = on_insert
 
         # ensure self.ordering is a tuple
         if ordering:
@@ -90,12 +91,17 @@ class Relationship(object):
             ])
         )
 
-    def query(self, source, specification=None):
+    def query(
+        self,
+        owner: 'BizObject',
+        specification: QuerySpecification = None,
+    ):
         """
         Execute a chain of queries to fetch the target Relationship data.
         """
-        specification = QuerySpecification.prepare(specification, self.target)
-
+        specification = QuerySpecification.prepare(
+            specification, self.target
+        )
         # build up the sequence of field name sets to query
         if not self._query_fields:
             for idx, func in enumerate(self._join[1:]):
@@ -104,17 +110,22 @@ class Relationship(object):
                 self._query_fields.append(set(mock.keys()))
 
         # execute the sequence of "join" queries...
+        obj = owner
         for idx, func in enumerate(self._join):
-            if not source:
-                return self.bizobj_type.Multiset() if self.many else None
-            elif (not idx) or (not self.many):
-                source_type = source.__class__
+            if not obj:
+                if self.many:
+                    return self.host.BizList([], self, owner)
+                else:
+                    return None
+
+            if (not idx) or (not self.many):
+                obj_type = obj.__class__
             else:
-                source_type = source.data[0].__class__
+                obj_type = obj.bizobj_type
 
             # `target` is the BizObject class we are querying
-            predicate = func(source)
-            target = self._resolve_target(predicate)
+            predicate = func(obj)
+            target_type = self._resolve_target(predicate)
 
             # get the field name set to use in this query
             if func is not self._join[-1]:
@@ -122,15 +133,8 @@ class Relationship(object):
                 spec = QuerySpecification(fields=field_names)
             else:
                 spec = QuerySpecification.prepare(
-                    specification, source_type,
+                    specification, obj_type,
                 )
-
-            # set relationship's default order by on spec
-            if self.ordering and (not spec.order_by):
-                if callable(self.ordering):
-                    spec.order_by = self.ordering(source)
-                else:
-                    spec.order_by = self.ordering
 
             # ensure that any key we are ordering by
             # is included in fields
@@ -138,14 +142,23 @@ class Relationship(object):
                 for item in spec.order_by:
                     spec.fields.add(item.key)
 
-            # do it!
-            source = target.query(predicate=predicate, specification=spec)
+            # do it! `obj` is a BizList
+            obj = target_type.query(predicate=predicate, specification=spec)
+            obj.relationship = self
+            obj.owner = owner
+
+        # set relationship's default order by on spec
+        if obj and self.ordering and (not spec.order_by):
+            if callable(self.ordering):
+                spec.order_by = self.ordering(obj)
+            else:
+                spec.order_by = self.ordering
 
         # return one or more depending on self.many
         if self.many:
-            return source if source else []
+            return obj if obj else self.host.BizList([], self, owner)
         else:
-            return source[0] if source else None
+            return obj[0] if obj else None
 
     def bind(self, host: Type['BizObject'], name: Text):
         self._host = host
@@ -161,10 +174,12 @@ class Relationship(object):
 
     @property
     def host(self) -> Type['BizObject']:
+        # rename to source_type
         return self._host
 
     @memoized_property
     def target(self) -> Type['BizObject']:
+        # TODO: rename to target_type
         predicate = self._join[-1](MockBizObject())
         return self._resolve_target(predicate)
 

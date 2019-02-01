@@ -24,3 +24,8 @@ def is_bizobj(obj):
 
 def is_sequence(obj):
     return isinstance(obj, (list, tuple, set, dict_keys, dict_values))
+
+
+def ensure(*conditions):
+    for cond in conditions:
+        assert cond
