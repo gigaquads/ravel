@@ -104,8 +104,7 @@ class BizObjectMeta(ABCMeta):
         inherited_defaults = getattr(cls, 'defaults', {})
         cls.defaults = copy.deepcopy(inherited_defaults)
 
-        # add defaults from this class's Schema class, updating the
-        # defaults inherited from its super Schema.
+        # collect remaining defaults
         for k, field in fields.items():
             if (k not in cls.defaults) and (field.default is not None):
                 cls.defaults[k] = field.default

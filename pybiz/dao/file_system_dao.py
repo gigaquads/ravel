@@ -15,6 +15,7 @@ from appyratus.files import File, Yaml, Json
 
 from .base import Dao
 from .dict_dao import DictDao
+from .cache_dao import CacheInterface, CacheRecord
 
 
 class FileType(EnumValueStr):
@@ -24,7 +25,7 @@ class FileType(EnumValueStr):
         return {'json', 'yaml'}
 
 
-class FileSystemDao(Dao):
+class FileSystemDao(Dao, CacheInterface):
 
     FILE_TYPE_NAME_2_CLASS = {
         FileType.json: Json,
@@ -119,3 +120,19 @@ class FileSystemDao(Dao):
 
     def query(self, predicate: 'Predicate', **kwargs):
         raise NotImplementedError()
+
+    def fetch_cache(self, _ids: Set, rev=True, data=False, fields: Set = None) -> Dict:
+        do_fetch_data = data   # alias to something more meaningful
+        do_fetch_rev = rev     # "
+        cache_records = defaultdict(CacheRecord)
+        fpaths = [self.mkpath(_id) for _id in _ids]
+
+        if do_fetch_rev:
+            for fpath in fpaths:
+                cache_records[_id].rev = int(os.path.getmtime(fpath))
+        if do_fetch_data
+            records = self.fetch_many(_ids)
+            for _id, record in records.items():
+                cache_records[_id].data = record
+
+        return cache_records
