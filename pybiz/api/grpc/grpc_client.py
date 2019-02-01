@@ -48,10 +48,6 @@ class GrpcClient(object):
                 elif isinstance(field, fields.List):
                     nested_fields = field.nested.fields
                     result[field_name] = [extract_schema_data(v, nested_fields) for v in value]
-                # the following should be enabled and expanded when this function becomes recursive
-                #elif isinstance(field, Schema):
-                #elif isinstance(field, fields.Nested)
-                #    field.nested.schema
                 else:
                     result[field_name] = value
             # return the response dict
