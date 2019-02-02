@@ -10,27 +10,15 @@ from appyratus.utils import (
     DictUtils,
     StringUtils,
 )
+from appyratus.files import BaseFile
 
-from appyratus.enum import EnumValueStr
-from appyratus.files import File, Yaml, Json
+from pybiz.util import import_object
 
 from .base import Dao
 from .dict_dao import DictDao
 
 
-class FileType(EnumValueStr):
-
-    @staticmethod
-    def values():
-        return {'json', 'yaml'}
-
-
 class FilesystemDao(Dao):
-
-    FILE_TYPE_NAME_2_CLASS = {
-        FileType.json: Json,
-        FileType.yaml: Yaml,
-    }
 
     def __init__(
         self,
@@ -39,7 +27,9 @@ class FilesystemDao(Dao):
         extensions: Set[Text] = None,
     ):
         # convert the ftype string arg into a File class ref
-        self.ftype = self.FILE_TYPE_NAME_2_CLASS[ftype]
+        self.ftype = import_object(ftype)
+
+        assert issubclass(self.ftype, BaseFile)
 
         # self.paths is where we store named file paths
         self.paths = DictAccessor({'root': root})
