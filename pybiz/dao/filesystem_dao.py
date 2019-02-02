@@ -79,13 +79,25 @@ class FilesystemDao(Dao):
                 base, ext = os.path.splitext(fname)
                 if (ext and ext[1:].lower() in self.extensions):
                     _ids.add(os.path.basename(base))
+
         records = {}
-        for _id in _ids:
-            fpath = self.mkpath(_id)
-            record = self.ftype.from_file(fpath) or {}
-            record.setdefault('_id', _id)
-            record['_rev'] = int(os.path.getmtime(fpath))
-            records[_id] = record
+        fields = fields if isinstance(fields, set) else set(fields or [])
+        only_mtime = fields - {'_id'} == {'_rev'}
+
+        if not only_mtime:
+            for _id in _ids:
+                fpath = self.mkpath(_id)
+                record = self.ftype.from_file(fpath) or {}
+                record.setdefault('_id', _id)
+                record['_rev'] = int(os.path.getmtime(fpath))
+                records[_id] = record
+        else:
+            for _id in _ids:
+                fpath = self.mkpath(_id)
+                records[_id] = {
+                    '_id': _id,
+                    '_rev': int(os.path.getmtime(fpath))
+                }
         return records
 
     def fetch_all(self, fields=None):

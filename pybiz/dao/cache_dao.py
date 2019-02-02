@@ -73,9 +73,11 @@ class CacheDao(Dao):
         }
 
         # records in BE ONLY
-        be_records = self.be.fetch_many(
-            ids_missing | ids_to_update, fields=fields
-        )
+        ids_to_fetch_from_be = ids_missing | ids_to_update
+        if ids_to_fetch_from_be:
+            be_records = self.be.fetch_many(ids_to_fetch_from_be, fields)
+        else:
+            be_records = {}
 
         # partition fe_records into separate lists for
         # performing batch insert and update
@@ -88,15 +90,20 @@ class CacheDao(Dao):
                 records_to_update.append(be_rec)
 
         # perform batch operations in FE
-        self.fe.delete_many(ids_to_delete)
-        self.fe.create_many(records_to_create)
-        self.fe.update_many(
-            (rec['_id'] for rec in records_to_update),
-            records_to_update
-        )
+        if ids_to_delete:
+            self.fe.delete_many(ids_to_delete)
+        if records_to_create:
+            self.fe.create_many(records_to_create)
+        if records_to_update:
+            self.fe.update_many(
+                (rec['_id'] for rec in records_to_update),
+                records_to_update
+            )
 
         # merge fresh BE records to return into FE records
-        fe_records.update(be_records)
+        if be_records:
+            fe_records.update(be_records)
+            
         return fe_records
 
     def query(self, predicate, **kwargs):

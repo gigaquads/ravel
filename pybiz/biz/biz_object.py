@@ -132,7 +132,8 @@ class BizObject(metaclass=BizObjectMeta):
         return None
 
     @classmethod
-    def get_many(cls, _ids, fields: List=None, as_list=True):
+    def get_many(cls, _ids = None, fields: List=None, as_list=True):
+        _ids = _ids or []
         processed_ids = []
         for _id in _ids:
             processed_id, err = cls.schema.fields['_id'].process(_id)
@@ -162,7 +163,7 @@ class BizObject(metaclass=BizObjectMeta):
             return cls.BizList(list(bizobjs.values()))
         else:
             return bizobjs
-
+        
     @classmethod
     def delete_many(cls, bizobjs) -> None:
         bizobj_ids = []
