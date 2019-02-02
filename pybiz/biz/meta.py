@@ -6,12 +6,12 @@ import threading
 import venusian
 
 from abc import ABCMeta
-from importlib import import_module
 from typing import Type, List
 
 from pybiz.dao.dal import DataAccessLayer
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from pybiz.schema import Schema, fields, Field, Int
+from pybiz.util import import_object
 
 from .relationship import Relationship
 from .relationship_property import RelationshipProperty
@@ -66,7 +66,8 @@ class BizObjectMeta(ABCMeta):
         obj = cls.__schema__()
         if obj:
             if isinstance(obj, str):
-                schema_class = cls.import_schema_class(obj)
+                class_name = obj
+                schema_class = import_object(class_name)
             elif isinstance(obj, type) and issubclass(obj, Schema):
                 schema_class = obj
             else:
@@ -133,23 +134,6 @@ class BizObjectMeta(ABCMeta):
         cls.build_relationship_properties(relationships)
         cls.relationships = relationships
         cls.build_field_properties(cls.schema, relationships)
-
-    def import_schema_class(self, class_path_str):
-        class_path = class_path_str.split('.')
-        assert len(class_path) > 1
-
-        module_path_str = '.'.join(class_path[:-1])
-        class_name = class_path[-1]
-
-        try:
-            schema_module = import_module(module_path_str)
-            schema_class = getattr(schema_module, class_name)
-        except Exception:
-            raise ImportError(
-                'failed to import schema class {}'.format(class_name)
-            )
-
-        return schema_class
 
     def build_relationships(cls):
         # aggregate all relationships delcared on the bizobj
