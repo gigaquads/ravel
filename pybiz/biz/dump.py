@@ -65,12 +65,17 @@ class DumpNested(Dump):
         ```
         """
         # `record` is the return values
-        record = {'id': target._id}
+        record = {
+            'id': target._id,
+            'rev': target._rev,
+        }
+
+        pybiz_field_names = {'_id', '_rev'}
 
         # add each specified field data to the return record
         # and recurse on nested targets available through Relationships
         for k in fields:
-            if k == '_id':
+            if k in pybiz_field_names:
                 continue
             field = target.schema.fields.get(k)
             if field is not None:

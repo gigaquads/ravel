@@ -6,7 +6,7 @@ from typing import List, Dict, Text, Type, Tuple, Set
 from pybiz.dao.dal import DataAccessLayer
 from pybiz.dao.dict_dao import DictDao
 from pybiz.dirty import DirtyDict
-from pybiz.util import is_bizobj, is_sequence
+from pybiz.util import is_bizobj, is_sequence, repr_id
 
 from .meta import BizObjectMeta
 from .dump import DumpNested, DumpSideLoaded
@@ -73,20 +73,10 @@ class BizObject(metaclass=BizObjectMeta):
         return key in self._data
 
     def __repr__(self):
-        _id = self._data.get('_id')
-        if _id is None:
-            id_str = '?'
-        elif isinstance(_id, str):
-            id_str = _id[:7]
-        elif isinstance(_id, uuid.UUID):
-            id_str = _id.hex[:7]
-        else:
-            id_str = repr(_id)
-        return '<{name}({id}){dirty}>'.format(
-            id=id_str,
-            name=self.__class__.__name__,
-            dirty='*' if self._data.dirty else '',
-        )
+        id_str = repr_id(self)
+        name = self.__class__.__name__
+        dirty = '*' if self._data.dirty else ''
+        return f'<{name}({id_str}){dirty}>'
 
     @classmethod
     def exists(cls, _id=None) -> bool:

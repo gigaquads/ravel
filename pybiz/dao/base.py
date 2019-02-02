@@ -16,12 +16,33 @@ class DaoMeta(ABCMeta):
 
 
 class Dao(object, metaclass=DaoMeta):
+    def __init__(self, *args, **kwargs):
+        self._is_bound = False
+        self._bizobj_type = None
+        self.is_cache = False  # XXX: hacky
 
-    # set by self.bind
-    bizobj_type = None
+    def __repr__(self):
+        if self.is_bound:
+            return (
+                f'<{self.__class__.__name__}'
+                f'({self.bizobj_type.__name__})>'
+            )
+        else:
+            return (
+                f'<{self.__class__.__name__}>'
+            )
 
     def bind(self, bizobj_type: Type['BizObject']):
-        self.bizobj_type = bizobj_type
+        self._bizobj_type = bizobj_type
+        self._is_bound = True
+
+    @property
+    def is_bound(self):
+        return self._is_bound
+
+    @property
+    def bizobj_type(self):
+        return self._bizobj_type
 
     @abstractmethod
     def query(self, predicate, **kwargs):

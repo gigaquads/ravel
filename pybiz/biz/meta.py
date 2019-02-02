@@ -9,11 +9,9 @@ from abc import ABCMeta
 from importlib import import_module
 from typing import Type, List
 
-from appyratus.schema.fields import Field
-from appyratus.schema import Schema
-
 from pybiz.dao.dal import DataAccessLayer
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
+from pybiz.schema import Schema, fields, Field, Int
 
 from .relationship import Relationship
 from .relationship_property import RelationshipProperty
@@ -96,6 +94,8 @@ class BizObjectMeta(ABCMeta):
         # bless each bizobj with a mandatory _id field.
         if '_id' not in fields:
             fields['_id'] = Field(nullable=True)
+        if '_rev' not in fields:
+            fields['_rev'] = Int(nullable=True)
 
         # Normally, the Field `default` kwarg is generated upon Field.process
         # but we don't want this. We only want to apply the default upon

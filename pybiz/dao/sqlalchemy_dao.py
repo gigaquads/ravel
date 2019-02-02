@@ -88,6 +88,7 @@ class SqlalchemyDao(Dao):
         return self.local.engine.dialect.implicit_returning
 
     def __init__(self):
+        super().__init__()
         if self.table.metadata.bind is None:
             self.table.metadata.bind = self.local.engine
 

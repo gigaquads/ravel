@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from appyratus.json import JsonEncoder as BaseJsonEncoder
 
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
@@ -29,3 +31,15 @@ def is_sequence(obj):
 def ensure(*conditions):
     for cond in conditions:
         assert cond
+
+
+def repr_id(bizobj):
+    _id = bizobj['_id']
+    if _id is None:
+        return '?'
+    elif isinstance(_id, str):
+        return _id[:7]
+    elif isinstance(_id, UUID):
+        return _id.hex[:7]
+    else:
+        return repr(_id)

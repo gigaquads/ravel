@@ -7,7 +7,7 @@ from appyratus.test import mark
 
 from pybiz.biz import BizObject
 from pybiz.schema import fields
-from pybiz.dao.file_system_dao import FileSystemDao
+from pybiz.dao.filesystem_dao import FilesystemDao
 
 
 @pytest.fixture(scope='module')
@@ -22,7 +22,7 @@ def Thing():
 def dao(Thing):
     shutil.rmtree('/tmp/fs_dao_test', ignore_errors=True)
 
-    dao = FileSystemDao(root='/tmp/fs_dao_test', ftype='yaml')
+    dao = FilesystemDao(root='/tmp/fs_dao_test', ftype='yaml')
     dao.bind(Thing)
 
     return dao

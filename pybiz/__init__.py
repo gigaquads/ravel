@@ -1,3 +1,2 @@
-from appyratus.schema import fields
-
-from .biz import BizObject, Relationship
+from pybiz.biz import BizObject, Relationship
+from pybiz.schema import Schema, fields

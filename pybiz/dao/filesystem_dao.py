@@ -2,6 +2,7 @@ import os
 import uuid
 
 from typing import Text, List, Set, Dict, Tuple
+from collections import defaultdict
 from datetime import datetime
 
 from appyratus.utils import (
@@ -15,7 +16,6 @@ from appyratus.files import File, Yaml, Json
 
 from .base import Dao
 from .dict_dao import DictDao
-from .cache_dao import CacheInterface, CacheRecord
 
 
 class FileType(EnumValueStr):
@@ -25,7 +25,7 @@ class FileType(EnumValueStr):
         return {'json', 'yaml'}
 
 
-class FileSystemDao(Dao, CacheInterface):
+class FilesystemDao(Dao):
 
     FILE_TYPE_NAME_2_CLASS = {
         FileType.json: Json,
@@ -35,7 +35,7 @@ class FileSystemDao(Dao, CacheInterface):
     def __init__(
         self,
         root: Text,
-        ftype: FileType = None,
+        ftype: Text = None,
         extensions: Set[Text] = None,
     ):
         # convert the ftype string arg into a File class ref
@@ -69,30 +69,37 @@ class FileSystemDao(Dao, CacheInterface):
         return File.exists(self.mkpath(fname))
 
     def create(self, record: Dict) -> Dict:
-        record.setdefault('_id', self.next_id())
-        return self.update(record['_id'], record)
+        _id = record.get('_id') or self.next_id()
+        record = self.update(_id, record)
+        record['_id'] = _id
+        return record
 
     def create_many(self, records):
         for record in records:
             self.create(record)
 
     def fetch(self, _id, fields=None) -> Dict:
-        fpath = self.mkpath(_id)
-        record = self.ftype.from_file(fpath)
-        return record
+        records = self.fetch_many([_id], fields=fields)
+        return records.get(_id) if records else None
 
     def fetch_many(self, _ids: List, fields: List = None) -> Dict:
-        if _ids:
-            records = {_id: self.fetch(_id, fields) for _id in _ids}
-        else:
-            records = {}
-            for fname in os.listdir(self.path.data):
+        if not _ids:
+            _ids = set()
+            for fname in os.listdir(self.paths.data):
                 base, ext = os.path.splitext(fname)
                 if (ext and ext[1:].lower() in self.extensions):
-                    if '_id' not in record:
-                        record['_id'] = os.path.basename(base)
-                    records[record['_id']] = record
+                    _ids.add(os.path.basename(base))
+        records = {}
+        for _id in _ids:
+            fpath = self.mkpath(_id)
+            record = self.ftype.from_file(fpath) or {}
+            record.setdefault('_id', _id)
+            record['_rev'] = int(os.path.getmtime(fpath))
+            records[_id] = record
         return records
+
+    def fetch_all(self, fields=None):
+        return self.fetch_many(None, fields=fields)
 
     def update(self, _id, data: Dict) -> Dict:
         fpath = self.mkpath(_id)
@@ -103,6 +110,7 @@ class FileSystemDao(Dao, CacheInterface):
         else:
             self.ftype.to_file(file_path=fpath, data=data)
             record = data
+        record['_rev'] = int(os.path.getmtime(fpath))
         return record
 
     def update_many(self, _ids: List, updates: List = None) -> Dict:
@@ -119,20 +127,4 @@ class FileSystemDao(Dao, CacheInterface):
             self.delete(_id)
 
     def query(self, predicate: 'Predicate', **kwargs):
-        raise NotImplementedError()
-
-    def fetch_cache(self, _ids: Set, rev=True, data=False, fields: Set = None) -> Dict:
-        do_fetch_data = data   # alias to something more meaningful
-        do_fetch_rev = rev     # "
-        cache_records = defaultdict(CacheRecord)
-        fpaths = [self.mkpath(_id) for _id in _ids]
-
-        if do_fetch_rev:
-            for fpath in fpaths:
-                cache_records[_id].rev = int(os.path.getmtime(fpath))
-        if do_fetch_data
-            records = self.fetch_many(_ids)
-            for _id, record in records.items():
-                cache_records[_id].data = record
-
-        return cache_records
+        return []  # not implemented

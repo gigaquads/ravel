@@ -22,10 +22,9 @@ from pybiz.predicate import (
 )
 
 from .base import Dao
-from .cache_dao import CacheInterface, CacheRecord
 
 
-class DictDao(Dao, CacheInterface):
+class DictDao(Dao):
     """
     An in-memory Dao that stores data in Python dicts with BTrees indexes.
     """
@@ -37,7 +36,7 @@ class DictDao(Dao, CacheInterface):
         self.id_counter = 1
         self.rev_counter = Counter()
         self.records = {}
-        self.ignored_indexes = set()
+        self.ignored_indexes = {}
 
     def bind(self, bizobj_type):
         super().bind(bizobj_type)
@@ -86,12 +85,20 @@ class DictDao(Dao, CacheInterface):
                             record.update({k: None for k in missing_keys})
             return records
 
+    def fetch_all(self, fields=None):
+        with self.lock:
+            return deepcopy(self.records)
+
     def create(self, record: Dict = None) -> Dict:
         with self.lock:
             _id = record.get('_id') or self.next_id(record)
             record['_id'] = _id
-            self.records[_id] = record
-            self.rev_counter[_id] += 1
+            if not self.is_cache:
+                record['_rev'] = self.rev_counter[_id]
+                self.rev_counter[_id] += 1
+                self.records[_id] = record
+            else:
+                self.records[_id] = record
             for k, v in record.items():
                 if k not in self.ignored_indexes:
                     if v not in self.indexes[k]:
@@ -112,10 +119,14 @@ class DictDao(Dao, CacheInterface):
         with self.lock:
             old_record = self.records.get(_id, {})
             old_rev = self.rev_counter.get(_id, 0)
+
             if old_record:
-                self.delete(old_record['_id'])
-            record = self.create(DictUtils.merge(old_record, data))
-            self.rev_counter[_id] += old_rev
+                self.delete(old_record['_id'], clear_rev=False)
+
+            merged_record = DictUtils.merge(old_record, data)
+            merged_record['_rev'] += 1
+
+            record = self.create(merged_record)
             return record
 
     def update_many(self, _ids: List, data: List = None) -> Dict:
@@ -125,19 +136,23 @@ class DictDao(Dao, CacheInterface):
                 for _id, data_dict in zip(_ids, data)
             }
 
-    def delete(self, _id) -> Dict:
+    def delete(self, _id, clear_rev=True) -> Dict:
         with self.lock:
             record = self.records.get(_id)
             self.records.pop(_id, None)
-            self.rev_counter.pop(_id, None)
+            if clear_rev:
+                self.rev_counter.pop(_id, None)
             for k, v in record.items():
                 if k not in self.ignored_indexes:
                     self.indexes[k][v].remove(_id)
             return record
 
-    def delete_many(self, _ids: List) -> List:
+    def delete_many(self, _ids: List, clear_rev=True) -> List:
         with self.lock:
-            return {_id: self.delete(_id) for _id in _ids}
+            return {
+                _id: self.delete(_id, clear_rev=clear_rev)
+                for _id in _ids
+            }
 
     def query(
         self,
@@ -237,24 +252,3 @@ class DictDao(Dao, CacheInterface):
                     )
 
         return results
-
-    def fetch_cache(self, _ids: Set, rev=True, data=False, fields: Set = None) -> Dict:
-        do_fetch_many = data   # alias to something more meaningful
-        do_fetch_rev = rev     # "
-
-        cache_records = defaultdict(CacheRecord)
-
-        if do_fetch_many:
-            records = self.fetch_many(_ids, fields=fields)
-            for _id, record in records.items():
-                cache_record = cache_records[_id]
-                cache_record.data = record
-                if do_fetch_rev:
-                    cache_record.rev = self.rev_counter.setdefault(_id, 1)
-        elif do_fetch_rev:
-            for _id in _ids:
-                cache_records[_id] = CacheRecord(
-                    rev=self.rev_counter.get(_id)
-                )
-
-        return cache_records

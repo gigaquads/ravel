@@ -1,4 +1,7 @@
 from typing import Type, List
+from uuid import UUID
+
+from pybiz.util import repr_id
 
 
 class BizList(object):
@@ -50,10 +53,9 @@ class BizList(object):
     def __repr__(self):
         id_parts = []
         for bizobj in self.data:
-            id_parts.append('{}{}'.format(
-                bizobj._id or '?',
-                '*' if bizobj.dirty else ''
-            ))
+            id_str = repr_id(bizobj)
+            dirty_flag = '*' if bizobj.dirty else ''
+            id_parts.append(f'{id_str}{dirty_flag}')
         ids = ', '.join(id_parts)
         return (
             f'<BizList(type={self.bizobj_type.__name__}, '
