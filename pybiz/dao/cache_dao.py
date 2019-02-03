@@ -4,6 +4,8 @@ from datetime import datetime
 
 from appyratus.enum import EnumValueStr
 
+from pybiz.util import remove_keys
+
 from .base import Dao
 
 
@@ -29,7 +31,7 @@ class CacheDao(Dao):
 
         self.be = backend
         self.fe = frontend or DictDao()
-        self.fe.is_cache = True
+        self.fe.ignore_rev = True
 
         self.prefetch = prefetch
         self.mode = mode
@@ -45,6 +47,12 @@ class CacheDao(Dao):
         self.fe.bind(bizobj_type)
         if self.prefetch:
             self.fetch_all()
+
+    def next_id(self, record):
+        raise NotImplementedError()
+
+    def count(self) -> int:
+        return self.be.count()
 
     def fetch(self, _id, fields: Dict = None) -> Dict:
         return self.fetch_many({_id}, fields=fields).get(_id)
@@ -103,10 +111,10 @@ class CacheDao(Dao):
             if fields:
                 all_fields = set(self.bizobj_type.schema.fields.keys())
                 fields_to_remove = all_fields - fields
-                for _id, be_rec in be_records.items():
-                    fe_records[_id] = DictUtils(
-                        be_rec, keys=fields_to_remove, in_place=True
-                    )
+                for be_rec in remove_keys(
+                    be_records.values(), fields_to_remove, in_place=True
+                ):
+                    fe_records[be_rec['_id']] = be_rec
             else:
                 fe_records.update(be_records)
 

@@ -2,17 +2,20 @@ from typing import Type, List
 from uuid import UUID
 
 from pybiz.util import repr_id
+from pybiz.constants import IS_BIZLIST_ANNOTATION
 
+# TODO: implement dirty interface for bizlists
 
 class BizList(object):
 
     @classmethod
     def type_factory(cls, bizobj_type: Type['BizObject']):
         derived_name = f'{bizobj_type.__name__}BizList'
-        derived_type = type(derived_name, (cls, ), {})
-        derived_type.bizobj_type = bizobj_type
+        derived_type = type(derived_name, (cls, ), {
+            IS_BIZLIST_ANNOTATION: True,
+            'bizobj_type': bizobj_type,
+        })
 
-        # TODO: implement dirty interface and cache field props
         def build_property(attr_name):
             return property(
                 fget=lambda self: [bizobj[attr_name] for bizobj in self.data]
@@ -64,7 +67,7 @@ class BizList(object):
 
     def __add__(self, other):
         """
-        Create and return a copy, containing the concategated data lists.
+        Create and return a copy, containing the concatenated data lists.
         """
         clone = self.copy()
         if isinstance(other, (list, tuple)):
@@ -97,20 +100,20 @@ class BizList(object):
 
     def append(self, bizobj):
         self.data.append(bizobj)
-        self.perform_on_insert([bizobj])
+        self._perform_on_insert([bizobj])
         return self
 
     def extend(self, bizobjs):
         self.data.extend(bizobjs)
-        self.perform_on_insert(bizobjs)
+        self._perform_on_insert(bizobjs)
         return self
 
     def insert(self, index, bizobj):
         self.data.insert(index, bizobj)
-        self.perform_on_insert([bizobj])
+        self._perform_on_insert([bizobj])
         return self
 
-    def perform_on_insert(self, bizobjs):
+    def _perform_on_insert(self, bizobjs):
         if self.relationship and self.relationship.on_insert:
             for bizobj in bizobjs:
                 self.relationship.on_insert(self.owner, bizobj)

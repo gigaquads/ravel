@@ -1,9 +1,11 @@
 from uuid import UUID
 from importlib import import_module
+from typing import Dict, Set, Text, List
+from copy import deepcopy
 
 from appyratus.json import JsonEncoder as BaseJsonEncoder
 
-from pybiz.constants import IS_BIZOBJ_ANNOTATION
+from pybiz.constants import IS_BIZOBJ_ANNOTATION, IS_BIZLIST_ANNOTATION
 
 
 dict_keys = {}.keys().__class__
@@ -25,6 +27,12 @@ def is_bizobj(obj):
     return getattr(obj, IS_BIZOBJ_ANNOTATION, False) if obj else False
 
 
+def is_bizlist(obj):
+    """
+    Return True if obj is an instance of BizObject.
+    """
+    return getattr(obj, IS_BIZLIST_ANNOTATION, False) if obj else False
+
 def is_sequence(obj):
     return isinstance(obj, (list, tuple, set, dict_keys, dict_values))
 
@@ -34,7 +42,7 @@ def ensure(*conditions):
         assert cond
 
 
-def repr_id(bizobj):
+def repr_id(bizobj: 'BizObject'):
     _id = bizobj['_id']
     if _id is None:
         return '?'
@@ -46,7 +54,7 @@ def repr_id(bizobj):
         return repr(_id)
 
 
-def import_object(dotted_path):
+def import_object(dotted_path: Text) -> object:
     obj_path = dotted_path.split('.')
     assert len(obj_path) > 1
 
@@ -61,3 +69,16 @@ def import_object(dotted_path):
             'failed to import object {}'.format(obj_name)
         )
     return obj
+
+
+def remove_keys(
+    records: List[Dict], keys: Set[Text], in_place=True
+) -> List[Dict]:
+    records_out = []
+    for record in records:
+        if not in_place:
+            record = deepcopy(record)
+        for k in keys:
+            record.pop(k, None)
+        records_out.append(record)
+    return records_out

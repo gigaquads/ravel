@@ -19,17 +19,11 @@ from ..base import Dao
 from .redis_types import HashSet, StringIndex, NumericIndex
 
 
-#TODO: move next_id into Dao base class
-
 class RedisDao(Dao):
-
-    @classmethod
-    def next_id(self):
-        return uuid.uuid4().hex
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.redis = StrictRedis()
+        self.redis = None
         self.encoder = JsonEncoder()
         self.field_2_index_type = {
             fields.String: StringIndex,
@@ -44,6 +38,7 @@ class RedisDao(Dao):
     def bind(self, bizobj_type: Type['BizObject']):
         super().bind(bizobj_type)
         self.type_name = bizobj_type.__name__.lower()
+        self.redis = StrictRedis()
         self.records = HashSet(self.redis, self.type_name)
         self.indexes = {}
 
@@ -54,21 +49,31 @@ class RedisDao(Dao):
                 index_type = StringIndex
             self.indexes[k] = index_type(self.redis, index_name)
 
+    def next_id(self, record):
+        return record.get('_id', uuid.uuid4().hex)
+
     def exists(self, _id) -> bool:
         return (_id in self.records)
 
-    def fetch(self, _id, fields: Dict = None) -> Dict:
+    def count(self) -> int:
+        return len(self.records)
+
+    def fetch(self, _id, fields: Set[Text] = None) -> Dict:
         record_json = self.records.get(_id)
         if not record_json:
             return None
 
         full_record = ujson.loads(record_json)
+        fields = fields if isinstance(fields, set) else set(fields or [])
+
         if fields:
-            return {k: full_record[k] for k in fields}
+            fields.update(['_id', '_rev'])
+            return {k: full_record.get(k) for k in fields}
         else:
             return full_record
 
-    def fetch_many(self, _ids: List, fields: Dict = None) -> Dict:
+    def fetch_many(self, _ids: List, fields: Set[Text] = None) -> Dict:
+        fields = fields if isinstance(fields, set) else set(fields or [])
         records_json = self.records.get_many(_ids)
         records = []
 
@@ -76,7 +81,7 @@ class RedisDao(Dao):
             for record_json in records_json:
                 full_record = ujson.loads(record_json)
                 records.append({
-                    k: full_record[k] for k in fields
+                    k: full_record.get(k) for k in fields
                 })
         else:
             records = [
@@ -86,10 +91,13 @@ class RedisDao(Dao):
 
         return records
 
+    def fetch_all(self, fields: Set[Text] = None) -> Dict:
+        fields = fields if isinstance(fields, set) else set(fields or [])
+        keys_to_remove = self.bizobj_type.schema.fields.keys() - fields
+        return remove_keys(self.records, keys_to_remove, in_place=False)
+
     def upsert(self, record: Dict) -> Dict:
-        _id = record.pop('_id', None)
-        if _id is None:
-            _id = self.next_id()
+        _id = self.next_id(record)
 
         self.records[_id] = self.encoder.encode(record)
         for k, v in record.items():
@@ -103,14 +111,15 @@ class RedisDao(Dao):
     def create(self, data: Dict) -> Dict:
         return self.upsert(data)
 
-    def update(self, _id, data: Dict) -> Dict:
+    def update(self, _id, record: Dict) -> Dict:
+        # TODO: remove _id arg from Dao.update inteface
         data['_id'] = _id
         return self.upsert(data)
 
-    def create_many(self, records: List[Dict]) -> None:
+    def create_many(self, records: List[Dict]) -> Dict:
         pass # TODO: impl
 
-    def update_many(self, _ids: List, data: List[Dict] = None) -> None:
+    def update_many(self, _ids: List, data: Dict = None) -> Dict:
         pass
 
     def delete(self, _id) -> None:

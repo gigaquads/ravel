@@ -54,6 +54,10 @@ class DictDao(Dao):
         with self.lock:
             return _id in self.records
 
+    def count(self) -> int:
+        with self.lock:
+            return len(self.records)
+
     def fetch(self, _id, fields=None) -> Dict:
         with self.lock:
             record = deepcopy(self.records.get(_id))
@@ -93,7 +97,7 @@ class DictDao(Dao):
         with self.lock:
             _id = record.get('_id') or self.next_id(record)
             record['_id'] = _id
-            if not self.is_cache:
+            if not self.ignore_rev:
                 record['_rev'] = self.rev_counter[_id]
                 self.rev_counter[_id] += 1
                 self.records[_id] = record

@@ -1,17 +1,24 @@
 from collections import defaultdict
 
 from pybiz.util import is_bizobj
-from pybiz.constants import (
-    ROOT_ATTR,
-    PATCH_PATH_ANNOTATION,
-    PRE_PATCH_ANNOTATION,
-    POST_PATCH_ANNOTATION,
-    PATCH_ANNOTATION,
-    OP_DELTA_REMOVE,
+
+
+ROOT_ATTR = '/'
+
+PATCH_PATH_ANNOTATION = '_pre_patch'
+PRE_PATCH_ANNOTATION = '_pre_patch'
+POST_PATCH_ANNOTATION = '_post_patch'
+PATCH_ANNOTATION = '_patch'
+
+OP_DELTA_ADD = 'add'
+OP_DELTA_REMOVE = 'remove'
+OP_DELTA_REPLACE = 'replace'
+
+RECOGNIZED_DELTA_OPS = frozenset({
     OP_DELTA_ADD,
+    OP_DELTA_REMOVE,
     OP_DELTA_REPLACE,
-    RECOGNIZED_DELTA_OPS,
-    )
+})
 
 
 class JsonPatchMixin(object):

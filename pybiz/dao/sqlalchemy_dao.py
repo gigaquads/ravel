@@ -92,26 +92,45 @@ class SqlalchemyDao(Dao):
         if self.table.metadata.bind is None:
             self.table.metadata.bind = self.local.engine
 
+    def next_id(self, record: Dict) -> object:
+        # id generation should occurs in the database, not here.
+        raise NotImplementedError()
+
     def query(
         self,
         predicate,
         fields=None,
-        order_by=None,
+        limit=None,
+        offset=None,
+        order_by=None,  # TODO: implement order_by
         **kwargs,
     ):
-        predicate = Predicate.deserialize(predicate)
-        fields = fields or self.table.c.keys()
-        filters = self._prepare_predicate(predicate)
+        fields = fields or self.bizobj_type.schema.fields.keys()
+        fields.update(['_id', '_rev'])
+
         columns = [getattr(self.table.c, k) for k in fields]
+        predicate = Predicate.deserialize(predicate)
+        filters = self._prepare_predicate(predicate)
+
+        # build the query object
         query = sa.select(columns).where(filters)
+        if limit is not None:
+            query = query.limit(max(0, limit))
+        if offset is not None:
+            query = query.offset(max(0, limit))
+
+        # execute query, aggregating resulting records
         cursor = self.conn.execute(query)
-        results = []
+        records = []
+
         while True:
-            page = [dict(row.items()) for row in cursor.fetchmany(256)]
+            page = [dict(row.items()) for row in cursor.fetchmany(512)]
             if page:
-                results.extend(page)
+                records.extend(page)
             else:
-                return results
+                break
+
+        return records
 
     def _prepare_predicate(self, pred, empty=set()):
         if isinstance(pred, ConditionalPredicate):
@@ -159,24 +178,32 @@ class SqlalchemyDao(Dao):
         result = self.conn.execute(query)
         return bool(result.scalar())
 
+    def count(self) -> int:
+        query = sa.select([sa.func.count(self.table.c._id)])
+        result = self.conn.execute(query)
+        return result.scalar()
+
     def fetch(self, _id, fields=None) -> Dict:
         records = self.fetch_many(_ids=[_id], fields=fields)
         return records[_id] if records else None
 
     def fetch_many(self, _ids: List, fields=None) -> Dict:
-        # TODO: get field names from __schema__
-        fields = set(fields or self.table.c.keys()) | {'_id'}
+        fields = set(fields or self.bizobj_type.schema.keys())
+        fields.update(['_id', '_rev'])
         columns = [getattr(self.table.c, k) for k in fields]
         select_stmt = sa.select(columns).where(self.table.c._id.in_(_ids))
         cursor = self.conn.execute(select_stmt)
         records = {}
         while True:
-            page = cursor.fetchmany(256)
+            page = cursor.fetchmany(512)
             if page:
                 for row in page:
                     records[row._id] = dict(row.items())
             else:
                 return records
+
+    def fetch_all(self, fields: Set[Text] = None) -> Dict:
+        raise NotImplementedError()
 
     def create(self, record: dict) -> dict:
         insert_stmt = self.table.insert().values(**record)

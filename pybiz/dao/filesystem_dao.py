@@ -1,5 +1,6 @@
 import os
 import uuid
+import glob
 
 from typing import Text, List, Set, Dict, Tuple
 from collections import defaultdict
@@ -28,7 +29,6 @@ class FilesystemDao(Dao):
     ):
         # convert the ftype string arg into a File class ref
         self.ftype = import_object(ftype)
-
         assert issubclass(self.ftype, BaseFile)
 
         # self.paths is where we store named file paths
@@ -40,10 +40,8 @@ class FilesystemDao(Dao):
                 extensions or self.ftype.extensions()
             )
         }
-
-    def mkpath(self, fname: Text) -> Text:
-        fname = self.ftype.format_file_name(fname)
-        return os.path.join(self.paths.data, fname)
+        if extensions:
+            self.extensions.update(extensions)
 
     def bind(self, bizobj_type):
         super().bind(bizobj_type)
@@ -52,14 +50,14 @@ class FilesystemDao(Dao):
         )
         os.makedirs(self.paths.data, exist_ok=True)
 
-    def next_id(self):
-        return uuid.uuid4().hex
+    def next_id(self, record):
+        return record.get('_id', uuid.uuid4().hex)
 
     def exists(self, fname: Text) -> bool:
         return File.exists(self.mkpath(fname))
 
     def create(self, record: Dict) -> Dict:
-        _id = record.get('_id') or self.next_id()
+        _id = self.next_id(record)
         record = self.update(_id, record)
         record['_id'] = _id
         return record
@@ -68,6 +66,13 @@ class FilesystemDao(Dao):
         for record in records:
             self.create(record)
 
+    def count(self) -> int:
+        running_count = 0
+        for ext in self.extensions:
+            fnames = glob.glob(f'{self.paths.data}/*.{ext}')
+            running_count += len(fnames)
+        return running_count
+
     def fetch(self, _id, fields=None) -> Dict:
         records = self.fetch_many([_id], fields=fields)
         return records.get(_id) if records else None
@@ -75,9 +80,9 @@ class FilesystemDao(Dao):
     def fetch_many(self, _ids: List, fields: List = None) -> Dict:
         if not _ids:
             _ids = set()
-            for fname in os.listdir(self.paths.data):
-                base, ext = os.path.splitext(fname)
-                if (ext and ext[1:].lower() in self.extensions):
+            for ext in self.extensions:
+                for fname in glob.glob(f'{self.paths.data}/*.{ext}'):
+                    base = fname.split('.')[0]
                     _ids.add(os.path.basename(base))
 
         records = {}
@@ -100,7 +105,7 @@ class FilesystemDao(Dao):
                 }
         return records
 
-    def fetch_all(self, fields=None):
+    def fetch_all(self, fields: Set[Text] = None) -> Dict:
         return self.fetch_many(None, fields=fields)
 
     def update(self, _id, data: Dict) -> Dict:
@@ -130,3 +135,7 @@ class FilesystemDao(Dao):
 
     def query(self, predicate: 'Predicate', **kwargs):
         return []  # not implemented
+
+    def mkpath(self, fname: Text) -> Text:
+        fname = self.ftype.format_file_name(fname)
+        return os.path.join(self.paths.data, fname)

@@ -1,7 +1,7 @@
 import os
 import venusian
 
-from typing import Dict, List, Type
+from typing import Dict, List, Type, Set, Text, Tuple
 from abc import ABCMeta, abstractmethod
 
 
@@ -19,7 +19,7 @@ class Dao(object, metaclass=DaoMeta):
     def __init__(self, *args, **kwargs):
         self._is_bound = False
         self._bizobj_type = None
-        self.is_cache = False  # XXX: hacky
+        self.ignore_rev = False  # XXX: hacky
 
     def __repr__(self):
         if self.is_bound:
@@ -45,13 +45,35 @@ class Dao(object, metaclass=DaoMeta):
         return self._bizobj_type
 
     @abstractmethod
-    def query(self, predicate, **kwargs):
-        pass
+    def next_id(self, record: Dict) -> object:
+        """
+        Generate and return a new ID for the given not-yet-created record.
+        """
 
     @abstractmethod
     def exists(self, _id) -> bool:
         """
         Return True if the record with the given _id exists.
+        """
+
+    @abstractmethod
+    def count(self) -> int:
+        """
+        Return the total number of stored records.
+        """
+
+    @abstractmethod
+    def query(
+        self,
+        predicate: 'Predicate',
+        fields: Set[Text] = None,
+        limit: int = None,
+        offset: int = None,
+        order_by: Tuple = None,
+        **kwargs
+    ) -> List[Dict]:
+        """
+        Return all records whose fields match a logical predicate.
         """
 
     @abstractmethod
@@ -66,6 +88,12 @@ class Dao(object, metaclass=DaoMeta):
         """
         Read multiple records by _id, selecting only the designated fields (or
         all by default).
+        """
+
+    @abstractmethod
+    def fetch_all(self, fields: Set[Text] = None) -> Dict:
+        """
+        Return all records managed by this Dao.
         """
 
     @abstractmethod
