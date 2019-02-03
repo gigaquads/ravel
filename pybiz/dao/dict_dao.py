@@ -44,7 +44,7 @@ class DictDao(Dao):
             if isinstance(v, fields.Dict):
                 self.ignored_indexes.add(k)
 
-    def next_id(self, data: Dict=None):
+    def create_id(self, data: Dict=None):
         with self.lock:
             _id = self.id_counter
             self.id_counter += 1
@@ -95,7 +95,7 @@ class DictDao(Dao):
 
     def create(self, record: Dict = None) -> Dict:
         with self.lock:
-            _id = record.get('_id') or self.next_id(record)
+            _id = self.create_id(record)
             record['_id'] = _id
             if not self.ignore_rev:
                 record['_rev'] = self.rev_counter[_id]

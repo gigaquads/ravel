@@ -50,14 +50,14 @@ class FilesystemDao(Dao):
         )
         os.makedirs(self.paths.data, exist_ok=True)
 
-    def next_id(self, record):
+    def create_id(self, record):
         return record.get('_id', uuid.uuid4().hex)
 
     def exists(self, fname: Text) -> bool:
         return File.exists(self.mkpath(fname))
 
     def create(self, record: Dict) -> Dict:
-        _id = self.next_id(record)
+        _id = self.create_id(record)
         record = self.update(_id, record)
         record['_id'] = _id
         return record

@@ -49,7 +49,7 @@ class RedisDao(Dao):
                 index_type = StringIndex
             self.indexes[k] = index_type(self.redis, index_name)
 
-    def next_id(self, record):
+    def create_id(self, record):
         return record.get('_id', uuid.uuid4().hex)
 
     def exists(self, _id) -> bool:
@@ -97,7 +97,7 @@ class RedisDao(Dao):
         return remove_keys(self.records, keys_to_remove, in_place=False)
 
     def upsert(self, record: Dict) -> Dict:
-        _id = self.next_id(record)
+        _id = self.create_id(record)
 
         self.records[_id] = self.encoder.encode(record)
         for k, v in record.items():

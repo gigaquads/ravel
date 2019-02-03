@@ -92,7 +92,7 @@ class SqlalchemyDao(Dao):
         if self.table.metadata.bind is None:
             self.table.metadata.bind = self.local.engine
 
-    def next_id(self, record: Dict) -> object:
+    def create_id(self, record: Dict) -> object:
         # id generation should occurs in the database, not here.
         raise NotImplementedError()
 

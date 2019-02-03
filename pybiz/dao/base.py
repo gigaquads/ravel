@@ -45,7 +45,7 @@ class Dao(object, metaclass=DaoMeta):
         return self._bizobj_type
 
     @abstractmethod
-    def next_id(self, record: Dict) -> object:
+    def create_id(self, record: Dict) -> object:
         """
         Generate and return a new ID for the given not-yet-created record.
         """

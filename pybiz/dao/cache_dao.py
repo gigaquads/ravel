@@ -48,7 +48,7 @@ class CacheDao(Dao):
         if self.prefetch:
             self.fetch_all()
 
-    def next_id(self, record):
+    def create_id(self, record):
         raise NotImplementedError()
 
     def count(self) -> int:
