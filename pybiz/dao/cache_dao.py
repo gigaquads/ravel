@@ -33,7 +33,6 @@ class CacheDao(Dao):
 
         self.prefetch = prefetch
         self.mode = mode
-        self.revisions = {}
 
     def bind(self, bizobj_type):
         super().bind(bizobj_type)
@@ -42,22 +41,20 @@ class CacheDao(Dao):
             records = self.persistence.fetch_cache(None, data=True, rev=True)
             self.cache.create_many(records=(r.data for r in records.values()))
         """
-        # TODO: add fetch_all to Dao interface
-        # TODO: add _rev as builtin BizObject field
         self.be.bind(bizobj_type)
         self.fe.bind(bizobj_type)
         if self.prefetch:
-            records = self.be.fetch_all()
-            self.fe.create_many(records=records.values())
-            # TODO: do create OR update to maek this work with persistent
-            # cache DAOs, like RedisDao.
-            for _id, record in records.items():
-                _rev = record.get('_rev')
-                if _rev is not None:
-                    self.revisions[_id] = _rev
+            self.fetch_all()
 
     def fetch(self, _id, fields: Dict = None) -> Dict:
         return self.fetch_many({_id}, fields=fields).get(_id)
+
+    def fetch_all(self, fields: Set[Text] = None) -> Dict:
+        be_ids = {
+            rec['_id'] for rec in
+            self.be.fetch_all(fields={'_id'}).values()
+        }
+        return self.fetch_many(be_ids, fields=fields)
 
     def fetch_many(self, _ids, fields: Dict = None) -> Dict:
         fe_records = self.fe.fetch_many(_ids, fields=fields)
@@ -75,7 +72,7 @@ class CacheDao(Dao):
         # records in BE ONLY
         ids_to_fetch_from_be = ids_missing | ids_to_update
         if ids_to_fetch_from_be:
-            be_records = self.be.fetch_many(ids_to_fetch_from_be, fields)
+            be_records = self.be.fetch_many(ids_to_fetch_from_be)
         else:
             be_records = {}
 
@@ -102,8 +99,17 @@ class CacheDao(Dao):
 
         # merge fresh BE records to return into FE records
         if be_records:
-            fe_records.update(be_records)
-            
+            # TODO: prune the be_records to fields
+            if fields:
+                all_fields = set(self.bizobj_type.schema.fields.keys())
+                fields_to_remove = all_fields - fields
+                for _id, be_rec in be_records.items():
+                    fe_records[_id] = DictUtils(
+                        be_rec, keys=fields_to_remove, in_place=True
+                    )
+            else:
+                fe_records.update(be_records)
+
         return fe_records
 
     def query(self, predicate, **kwargs):
