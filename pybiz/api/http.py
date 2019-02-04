@@ -21,9 +21,6 @@ class HttpRegistry(Registry):
     def proxy_type(self):
         return HttpRoute
 
-    def on_decorate(self, route: 'HttpRoute'):
-        pass
-
     def route(self, http_method, url_path, args=None, kwargs=None):
         http_method = http_method.lower()
         url_path = url_path.lower()

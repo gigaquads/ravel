@@ -64,7 +64,10 @@ class FalconServiceRegistry(WsgiServiceRegistry):
         resp.status = falcon.HTTP_500
         traceback.print_exc()
 
-    def start(self, environ=None, start_response=None, *args, **kwargs):
+    def start(self):
+        return self.entrypoint
+
+    def entrypoint(self, environ=None, start_response=None, *args, **kwargs):
         middleware = self.falcon_middleware
         for m in middleware:
             if isinstance(m, Middleware):

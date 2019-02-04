@@ -22,6 +22,7 @@ class Registry(object):
         self._is_bootstrapped = False
         self._is_started = False
         self._json_encoder = JsonEncoder()
+        self._namespace = {}
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.registry_types)
@@ -84,17 +85,24 @@ class Registry(object):
     def register(self, proxy):
         self.proxies[proxy.name] = proxy
 
-    def on_bootstrap(self):
+    def on_bootstrap(self, *args, **kwargs):
         pass
 
     def on_start(self):
         pass
 
-    def bootstrap(self, manifest: Manifest = None, namespace: Dict = None):
+    def bootstrap(
+        self,
+        manifest: Manifest = None,
+        namespace: Dict = None,
+        *args, **kwargs
+    ):
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
         from pybiz import BizObject
+
+        self._namespace.update(namespace or {})
 
         self._manifest = manifest or Manifest()
         self._manifest.process(namespace=namespace)
@@ -121,7 +129,7 @@ class Registry(object):
 
         BizObject.dal.bind()
 
-        self.on_bootstrap()
+        self.on_bootstrap(*args, **kwargs)
         self._is_bootstrapped = True
 
     def start(self, *args, **kwargs):

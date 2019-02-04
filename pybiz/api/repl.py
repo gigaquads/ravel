@@ -17,32 +17,11 @@ class ReplRegistry(Registry):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.shell = InteractiveShellEmbed()
+        self._namespace = {}
 
     @property
     def proxy_type(self):
         return Function
-
-    def on_decorate(self, proxy: 'Function'):
-        pass
-
-    def on_request(self, proxy: 'Function', *args, **kwargs):
-        return (args, kwargs)
-
-    def start(self, namespace: Dict = None, *args, **kwargs):
-        """
-        Start a new REPL with all registered functions available in the REPL
-        namespace.
-        """
-        # build the shell namespace
-        local_ns = {}
-        local_ns['repl'] = self
-
-        local_ns.update(self.types.biz)
-        local_ns.update(dict(self.proxies))
-        local_ns.update(namespace or {})
-
-        # enter an ipython shell
-        self.shell.mainloop(local_ns=local_ns)
 
     @property
     def namespace(self) -> Dict:
@@ -73,6 +52,34 @@ class ReplRegistry(Registry):
         Get list of names of all registered functions in the REPL.
         """
         return sorted(self.proxies.keys())
+
+    def on_decorate(self, proxy: 'Function'):
+        pass
+
+    def on_bootstrap(self, *args, **kwargs):
+        pass
+
+    def on_start(self):
+        """
+        Start a new REPL with all registered functions available in the REPL
+        namespace.
+        """
+        # build the shell namespace
+        local_ns = {}
+        local_ns['repl'] = self
+
+        local_ns.update(self.types.biz)
+        local_ns.update(dict(self.proxies))
+        local_ns.update(self._namespace)
+
+        # enter an ipython shell
+        self.shell.mainloop(local_ns=local_ns)
+
+    def on_request(self, proxy: 'Function', *args, **kwargs):
+        return (args, kwargs)
+
+    def on_response(self, proxy: 'Function', result, *args, **kwargs):
+        return super().on_response(proxy, result, *args, **kwargs)
 
 
 class Function(RegistryProxy):

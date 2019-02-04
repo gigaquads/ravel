@@ -36,21 +36,26 @@ class CliRegistry(Registry):
         self._cli_program = None
         self._cli_program_kwargs = {
             'name': name,
-            'version': kwargs.get('version'),
-            'tagline': kwargs.get('tagline'),
-            'defaults': kwargs.get('defaults'),
+            'version': version,
+            'tagline': tagline,
+            'defaults': defaults,
         }
 
     @property
     def proxy_type(self):
         return Command
 
-    def on_decorate(self, command):
+    def on_start(self):
         """
-        Collect each RegistryProxy, which contains a reference to a function
-        we're going to inject into the namespace of the REPL.
+        Build and run the CliProgram.
         """
-        self._commands.append(command)
+        subparsers = [
+            c.subparser for c in self.proxies.values() if c.subparser
+        ]
+        self._cli_program = CliProgram(
+            subparsers=subparsers, **self._cli_program_kwargs
+        )
+        SysUtils.safe_main(self._cli_program.run, debug_level=2)
 
     def on_request(self, command, prog, *args, **kwargs):
         """
@@ -74,17 +79,8 @@ class CliRegistry(Registry):
     def on_response(self, proxy, result, *args, **kwargs):
         if self._echo:
             pprint(result)
-        return super().on_response(proxy, result, *args, **kwargs)
-
-    def start(self, *args, **kwargs):
-        """
-        Build and run the CliProgram.
-        """
-        self._cli_program = CliProgram(
-            subparsers=[c.subparser for c in self._commands if c.subparser],
-            **self._cli_program_kwargs
-        )
-        SysUtils.safe_main(self._cli_program.run, debug_level=2)
+        response = super().on_response(proxy, result, *args, **kwargs)
+        return response
 
 
 class Command(RegistryProxy):
@@ -99,14 +95,14 @@ class Command(RegistryProxy):
 
     def _build_subparser_kwargs(self, func, decorator):
         parser_kwargs = decorator.kwargs.get('parser') or {}
-        args = self._build_cli_args(func)
+        cli_args = self._build_cli_args(func)
         return dict(
             parser_kwargs,
             **dict(
                 name=parser_kwargs.get(
                     'name', func.__name__.replace('_', '-')
                 ),
-                args=args,
+                args=cli_args,
                 perform=self,
             )
         )

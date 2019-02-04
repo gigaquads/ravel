@@ -45,10 +45,12 @@ class DictDao(Dao):
                 self.ignored_indexes.add(k)
 
     def create_id(self, data: Dict=None):
-        with self.lock:
-            _id = self.id_counter
-            self.id_counter += 1
-            return _id
+        _id = data.get('_id')
+        if not _id:
+            with self.lock:
+                _id = self.id_counter
+                self.id_counter += 1
+        return _id
 
     def exists(self, _id) -> bool:
         with self.lock:
@@ -125,6 +127,7 @@ class DictDao(Dao):
             old_rev = self.rev_counter.get(_id, 0)
 
             if old_record:
+                # TODO: only delete from updated indexes
                 self.delete(old_record['_id'], clear_rev=False)
 
             merged_record = DictUtils.merge(old_record, data)

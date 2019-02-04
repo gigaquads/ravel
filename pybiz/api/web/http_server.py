@@ -88,17 +88,21 @@ class HttpServerRegistry(HttpRegistry):
         def do_DELETE(self):
             self.process()
 
-    def __init__(self, host='', port=8000, json_encode=None, *args, **kwargs):
+    def __init__(self, json_encode=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.handler = type('Handler', (self.Handler, ), {'service': self})
         self.json_encode = json_encode or JsonEncoder().encode
-        self.host = host
-        self.port = port
+        self.host = None
+        self.port = None
         self.server = None
 
-    def start(self, *args, **kwargs):
-        print('Listening on http://{}:{}'.format(self.host, self.port))
+    def on_bootstrap(self, host, port):
+        self.host = host
+        self.port = port
         self.server = HTTPServer((self.host, self.port), self.handler)
+
+    def on_start(self):
+        print('Listening on http://{}:{}'.format(self.host, self.port))
         self.server.serve_forever()
 
     def on_request(self, proxy, arguments: Dict) -> dict:

@@ -10,10 +10,12 @@ from .async_server_registry import AsyncServerRegistry
 class WebSocketServerRegistry(AsyncServerRegistry):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._name2praxy = {}
 
-    def on_decorate(self, proxy: 'RegistryProxy'):
-        self._name2praxy[proxy.name] = proxy
+    def on_bootstrap(self, host: Text = None, port: int = None):
+        super().on_bootstrap(server=websockets.serve(self.serve, host, port))
+
+    def on_start(self):
+        self.server = websockets.serve(self.serve, self.host, self.port)
 
     def on_request(self, proxy, socket, request: Dict) -> Tuple[Tuple, Dict]:
         args = tuple()
@@ -23,10 +25,6 @@ class WebSocketServerRegistry(AsyncServerRegistry):
 
     def on_response(self, proxy, result, *args, **kwargs):
         return ujson.dumps(result).encode('utf-8')
-
-    def start(self, host: Text, port: int):
-        server = websockets.serve(self.serve, host, port)
-        super().start(server)
 
     async def serve(self, socket, path):
         async for message in socket:
@@ -40,7 +38,7 @@ class WebSocketServerRegistry(AsyncServerRegistry):
 
             # route the request to the appropriate
             # proxy and await response
-            proxy = self._name2praxy.get(request['method'])
+            proxy = self.proxies.get(request['method'])
             if proxy is None:
                 print(f'>>> Unrecognized method: {request["method"]}')
             else:
