@@ -291,7 +291,7 @@ class SqlalchemyDao(Dao):
         cls.local.metadata = sa.MetaData()
         cls.local.metadata.bind = sa.create_engine(
             name_or_url=kwargs.get('url', cls.env.SQLALCHEMY_URL),
-            echo=kwargs.get('echo', False),
+            echo=bool(kwargs.get('echo', False)),
         )
 
     def bind(self, bizobj_type: Type['BizObject']):

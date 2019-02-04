@@ -1,5 +1,6 @@
 import os
 import importlib
+import re
 
 import yaml
 
@@ -10,6 +11,7 @@ from venusian import Scanner
 from appyratus.memoize import memoized_property
 from appyratus.utils import DictUtils, DictAccessor
 from appyratus.files import Yaml, Json
+from appyratus.env import Environment
 
 from pybiz.exc import ManifestError
 
@@ -36,7 +38,7 @@ class Manifest(object):
         if data or path:
             self.load(data=data, path=path)
 
-    def load(self, data: Dict = None, path: Text = None):
+    def load(self, data: Dict = None, path: Text = None, env=None):
         if not (data or path):
             return
 
@@ -54,6 +56,8 @@ class Manifest(object):
                 file_data = Json.load_file(path)
             # merge contents of file with data dict arg
             data = DictUtils.merge(file_data, data)
+
+        self._expand_environment_vars(data, env)
 
         # marshal in the computed data dict
         self.package = data.get('package')
@@ -151,6 +155,29 @@ class Manifest(object):
                 biz_class.dal.register(
                     biz_class, dao_class, dao_kwargs=binding.params
                 )
+
+    def _expand_environment_vars(self, data, env=None):
+        re_env_var = re.compile(r'^\$([\w\-]+)$')
+        env = env or Environment(allow_additional=True)
+
+        def expand(data):
+            if isinstance(data, str):
+                match = re_env_var.match(data)
+                if match:
+                    var_name = match.groups()[0]
+                    return env[var_name]
+                else:
+                    return data
+            elif isinstance(data, list):
+                return [expand(x) for x in data]
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    data[k] = expand(v)
+                return data
+            else:
+                return data
+
+        return expand(data)
 
 
 class Binding(object):
