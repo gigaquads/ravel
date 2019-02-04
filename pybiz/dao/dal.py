@@ -20,13 +20,21 @@ class DataAccessLayer(object):
         dao_type: Type['BizObject'],
         dao_kwargs: Dict = None
     ):
+        dao_kwargs = dao_kwargs or {}
         self._bizobj_type_2_dao_type[bizobj_type] = dao_type
-        self._bizobj_type_2_dao_kwargs[bizobj_type] = dao_kwargs or {}
+        self._bizobj_type_2_dao_kwargs[bizobj_type] = dao_kwargs
+
+    def bind(self, bizobj_types=None):
+        if not bizobj_types:
+            bizobj_types = self._bizobj_type_2_dao_type.keys()
+        for bizobj_type in bizobj_types:
+            self.get_dao(bizobj_type)
 
     def get_dao(self, bizobj_type: Type['BizObject']) -> Dao:
         dao = self._bizobj_type_2_instance.get(bizobj_type)
         if dao is not None:
             return dao
+
         if bizobj_type not in self._bizobj_type_2_dao_type:
             raise KeyError(
                 'Unable to find "{}" in dao classes. '
@@ -44,8 +52,9 @@ class DataAccessLayer(object):
         else:
             dao = dao_obj
 
-        self._bizobj_type_2_instance[bizobj_type] = dao
         dao.bind(bizobj_type)
+        
+        self._bizobj_type_2_instance[bizobj_type] = dao
         return dao
 
     def is_registered(self, bizobj_type: Type['BizObject']) -> bool:

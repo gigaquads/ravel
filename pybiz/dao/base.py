@@ -19,7 +19,8 @@ class Dao(object, metaclass=DaoMeta):
     def __init__(self, *args, **kwargs):
         self._is_bound = False
         self._bizobj_type = None
-        self.ignore_rev = False  # XXX: hacky
+        self._registry = None
+        self.ignore_rev = False  # XXX: hacky, for CacheDao to work
 
     def __repr__(self):
         if self.is_bound:
@@ -32,10 +33,6 @@ class Dao(object, metaclass=DaoMeta):
                 f'<{self.__class__.__name__}>'
             )
 
-    def bind(self, bizobj_type: Type['BizObject']):
-        self._bizobj_type = bizobj_type
-        self._is_bound = True
-
     @property
     def is_bound(self):
         return self._is_bound
@@ -43,6 +40,18 @@ class Dao(object, metaclass=DaoMeta):
     @property
     def bizobj_type(self):
         return self._bizobj_type
+
+    def bind(self, bizobj_type: Type['BizObject']):
+        self._bizobj_type = bizobj_type
+        self._is_bound = True
+
+    @classmethod
+    def bootstrap(cls, registry: 'Registry' = None, **kwargs):
+        """
+        Perform class-level initialization, like getting
+        a connectio pool, for example.
+        """
+        cls._registry = registry
 
     @abstractmethod
     def create_id(self, record: Dict) -> object:

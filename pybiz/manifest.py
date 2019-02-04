@@ -26,11 +26,15 @@ class Manifest(object):
             bizobj_classes={},
             dao_classes={}
         )
-        self.types = DictAccessor({'biz': {}, 'dao': {}})
+        self.types = DictAccessor({
+            'biz': self.scanner.bizobj_classes,
+            'dao': self.scanner.dao_classes,
+        })
         self.package = None
         self.bindings = []
-
-        self.load(data=data, path=path)
+        self.bootstraps = {}
+        if data or path:
+            self.load(data=data, path=path)
 
     def load(self, data: Dict = None, path: Text = None):
         if not (data or path):
@@ -61,6 +65,13 @@ class Manifest(object):
             self.bindings.append(Binding(
                 biz=biz, dao=dao, params=params,
             ))
+
+        self.bootstraps = {}
+        for record in data.get('bootstraps', []):
+            self.bootstraps[record['dao']] = Bootstrap(
+                dao=record['dao'],
+                params=record.get('params', {})
+            )
 
         return self
 
@@ -130,9 +141,13 @@ class Manifest(object):
             dao_class = self.scanner.dao_classes.get(binding.dao)
             if dao_class is None and biz_class:
                 print(f'Binding default DictDao to {biz_class.__name__}...')
-                dao_class = DictDao
+                if not biz_class.dal.is_registered(biz_class):
+                    biz_class.dal.register(
+                        biz_class, DictDao, dao_kwargs=binding.params
+                    )
+                    continue
 
-            if not biz_class.dal.is_registered(biz_class):
+            if biz_class and dao_class:
                 biz_class.dal.register(
                     biz_class, dao_class, dao_kwargs=binding.params
                 )
@@ -143,3 +158,9 @@ class Binding(object):
         self.biz = biz
         self.dao = dao
         self.params = params
+
+
+class Bootstrap(object):
+    def __init__(self, dao: Text, params: Dict = None):
+        self.dao = dao
+        self.params = params or {}

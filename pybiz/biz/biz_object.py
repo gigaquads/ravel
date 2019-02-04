@@ -163,13 +163,14 @@ class BizObject(metaclass=BizObjectMeta):
             return cls.BizList(list(bizobjs.values()))
         else:
             return bizobjs
-        
+
     @classmethod
     def delete_many(cls, bizobjs) -> None:
         bizobj_ids = []
         for obj in bizobjs:
             obj.mark(obj.data.keys())
             bizobj_ids.append(obj._id)
+            obj._id = None
         cls.get_dao().delete_many(bizobj_ids)
 
     def delete(self) -> 'BizObject':

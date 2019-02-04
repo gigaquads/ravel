@@ -94,6 +94,8 @@ class Registry(object):
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
+        from pybiz import BizObject
+
         self._manifest = manifest or Manifest()
         self._manifest.process(namespace=namespace)
 
@@ -110,6 +112,16 @@ class Registry(object):
                 # it to interfer with the expectations of other mware.
                 self._middleware.append(binder)
 
+        # initialize DAO globals, like connection pools, etc.
+        # Do this in the DAL object
+        for dao_type_name, dao_type in self.types.dao.items():
+            dao_bootstrap = self.manifest.bootstraps.get(dao_type_name)
+            if dao_bootstrap is not None:
+                dao_type.bootstrap(self, **dao_bootstrap.params)
+
+        BizObject.dal.bind()
+
+        self.on_bootstrap()
         self._is_bootstrapped = True
 
     def start(self, *args, **kwargs):

@@ -22,7 +22,7 @@ from .biz_list import BizList
 class BizObjectMeta(ABCMeta):
 
     local = threading.local()
-    local.dal = DataAccessLayer()
+    local.dal = DataAccessLayer()  # TODO: put this on Dao class instead
 
     def __new__(cls, name, bases, dict_):
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
