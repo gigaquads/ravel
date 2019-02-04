@@ -298,7 +298,9 @@ class BizObject(metaclass=BizObjectMeta):
         if is_bizobj(obj):
             self._data.update(obj._data)
             self._related.update(obj._related)
+            dirty_keys = obj._data.keys()
         else:
+            dirty_keys = obj.keys()
             for k, v in obj.items():
                 setattr(self, k, v)
 
@@ -309,15 +311,16 @@ class BizObject(metaclass=BizObjectMeta):
                 # TODO: raise custom exception
                 raise Exception(str(error))
 
+            previous_dirty = set(self.dirty)
             self._data = DirtyDict(processed_data)
+            self.clean()
+        else:
+            previous_dirty = set()
 
         # clear cached dump data because we now have different data :)
         # and mark all new keys as dirty.
-        dirty_func = self.mark if mark else self.clean
-        if is_bizobj(obj):
-            dirty_func(obj.data.keys())
-        else:
-            dirty_func({k for k in obj if k in self.schema.fields})
+        if mark:
+            self.mark(dirty_keys | previous_dirty)
 
         return self
 

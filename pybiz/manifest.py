@@ -23,22 +23,33 @@ class Manifest(object):
     with a Dao class.
     """
 
-    def __init__(self, path: Text = None, data: Dict = None, load=True):
+    def __init__(
+        self,
+        path: Text = None,
+        data: Dict = None,
+        env: Environment = None,
+        load=True
+    ):
+        self.package = None
+        self.bindings = []
+        self.bootstraps = {}
+        self.env = env or Environment()
+
         self.scanner = Scanner(
+            env=env,
             bizobj_classes={},
             dao_classes={}
         )
+
         self.types = DictAccessor({
             'biz': self.scanner.bizobj_classes,
             'dao': self.scanner.dao_classes,
         })
-        self.package = None
-        self.bindings = []
-        self.bootstraps = {}
+
         if data or path:
             self.load(data=data, path=path)
 
-    def load(self, data: Dict = None, path: Text = None, env=None):
+    def load(self, data: Dict = None, path: Text = None):
         if not (data or path):
             return
 
@@ -57,7 +68,7 @@ class Manifest(object):
             # merge contents of file with data dict arg
             data = DictUtils.merge(file_data, data)
 
-        self._expand_environment_vars(data, env)
+        self._expand_environment_vars(data)
 
         # marshal in the computed data dict
         self.package = data.get('package')
@@ -156,16 +167,15 @@ class Manifest(object):
                     biz_class, dao_class, dao_kwargs=binding.params
                 )
 
-    def _expand_environment_vars(self, data, env=None):
+    def _expand_environment_vars(self, data):
         re_env_var = re.compile(r'^\$([\w\-]+)$')
-        env = env or Environment(allow_additional=True)
 
         def expand(data):
             if isinstance(data, str):
                 match = re_env_var.match(data)
                 if match:
                     var_name = match.groups()[0]
-                    return env[var_name]
+                    return self.env[var_name]
                 else:
                     return data
             elif isinstance(data, list):
