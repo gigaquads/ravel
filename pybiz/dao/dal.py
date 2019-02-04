@@ -53,7 +53,6 @@ class DataAccessLayer(object):
             dao = dao_obj
 
         dao.bind(bizobj_type)
-        
         self._bizobj_type_2_instance[bizobj_type] = dao
         return dao
 

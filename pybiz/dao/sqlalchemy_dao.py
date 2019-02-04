@@ -287,10 +287,10 @@ class SqlalchemyDao(Dao):
     @classmethod
     def bootstrap(cls, registry: 'Registry' = None, **kwargs):
         super().bootstrap(registry)
-        cls.dialect = kwargs.get('dialect', cls.env.SQLALCHEMY_DIALECT)
+        cls.dialect = kwargs.get('dialect') or cls.env.SQLALCHEMY_DIALECT
         cls.local.metadata = sa.MetaData()
         cls.local.metadata.bind = sa.create_engine(
-            name_or_url=kwargs.get('url', cls.env.SQLALCHEMY_URL),
+            name_or_url=kwargs.get('url') or cls.env.SQLALCHEMY_URL,
             echo=bool(kwargs.get('echo', False)),
         )
 

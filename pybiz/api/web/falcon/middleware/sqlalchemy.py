@@ -6,18 +6,6 @@ from .base import Middleware
 
 
 class SqlalchemyDaoMiddleware(Middleware):
-    def __init__(self, metadata, echo=False):
-        super().__init__()
-        self.metadata = metadata
-        self.echo = echo
-
-    def bind(self, service):
-        SqlalchemyDao.initialize(
-            url=service.env['SQLALCHEMY_DAO_DB_URL'],
-            meta=self.metadata,
-            echo=self.echo,
-        )
-
     def process_request(self, request, response):
         SqlalchemyDao.connect()
         SqlalchemyDao.begin()
