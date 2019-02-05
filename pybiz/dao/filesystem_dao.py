@@ -43,10 +43,10 @@ class FilesystemDao(Dao):
         if extensions:
             self.extensions.update(extensions)
 
-    def bind(self, bizobj_type):
-        super().bind(bizobj_type)
+    def bind(self, biz_type):
+        super().bind(biz_type)
         self.paths.data = os.path.join(
-            self.paths.root, StringUtils.snake(bizobj_type.__name__)
+            self.paths.root, StringUtils.snake(biz_type.__name__)
         )
         os.makedirs(self.paths.data, exist_ok=True)
 

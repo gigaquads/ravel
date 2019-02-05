@@ -121,7 +121,7 @@ class Relationship(object):
             if (not idx) or (not self.many):
                 obj_type = obj.__class__
             else:
-                obj_type = obj.bizobj_type
+                obj_type = obj.biz_type
 
             # `target` is the BizObject class we are querying
             predicate = func(obj)

@@ -38,8 +38,8 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
     @classmethod
     def from_registry(cls, registry: 'Registry'):
         loaders = [
-            cls.BizObjectLoader(bizobj_type)
-            for bizobj_type in registry.types.biz.values()
+            cls.BizObjectLoader(biz_type)
+            for biz_type in registry.types.biz.values()
         ]
         return cls(loaders)
 

@@ -35,14 +35,14 @@ class RedisDao(Dao):
             fields.Bool: NumericIndex,
         }
 
-    def bind(self, bizobj_type: Type['BizObject']):
-        super().bind(bizobj_type)
-        self.type_name = bizobj_type.__name__.lower()
+    def bind(self, biz_type: Type['BizObject']):
+        super().bind(biz_type)
+        self.type_name = biz_type.__name__.lower()
         self.redis = StrictRedis()
         self.records = HashSet(self.redis, self.type_name)
         self.indexes = {}
 
-        for k, field in bizobj_type.schema.fields.items():
+        for k, field in biz_type.schema.fields.items():
             index_name = '{}:{}'.format(self.type_name, k.lower())
             index_type = self.field_2_index_type.get(field.__class__)
             if index_type is None:
@@ -93,7 +93,7 @@ class RedisDao(Dao):
 
     def fetch_all(self, fields: Set[Text] = None) -> Dict:
         fields = fields if isinstance(fields, set) else set(fields or [])
-        keys_to_remove = self.bizobj_type.schema.fields.keys() - fields
+        keys_to_remove = self.biz_type.schema.fields.keys() - fields
         return remove_keys(self.records, keys_to_remove, in_place=False)
 
     def upsert(self, record: Dict) -> Dict:

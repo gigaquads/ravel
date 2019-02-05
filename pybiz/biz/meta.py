@@ -8,7 +8,9 @@ import venusian
 from abc import ABCMeta
 from typing import Type, List
 
-from pybiz.dao.dal import DataAccessLayer
+from pybiz.dao.base import Dao
+from pybiz.dao.dao_binder import DaoBinder
+from pybiz.dao.dict_dao import DictDao
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from pybiz.schema import Schema, fields, Field, Int
 from pybiz.util import import_object
@@ -20,10 +22,6 @@ from .biz_list import BizList
 
 
 class BizObjectMeta(ABCMeta):
-
-    local = threading.local()
-    local.dal = DataAccessLayer()  # TODO: put this on Dao class instead
-
     def __new__(cls, name, bases, dict_):
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
         cls.add_is_bizobj_annotation(new_class)
@@ -32,25 +30,36 @@ class BizObjectMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
-        cls.dal = BizObjectMeta.local.dal
-        relationships = cls.build_relationships()
-        schema_class = cls.build_schema_class(name)
+        cls.Schema = cls.build_schema_class(name)
 
+        cls.schema = cls.Schema()
+        cls.relationships = cls.build_relationships()
+        cls.build_relationship_properties(cls.relationships)
+        cls.build_field_properties(cls.schema, cls.relationships)
         cls.register_dao()
-        cls.build_all_properties(schema_class, relationships)
+
         cls.BizList = BizList.type_factory(cls)
 
-        def venusian_callback(scanner, name, bizobj_type):
-            scanner.bizobj_classes[name] = bizobj_type
+        def venusian_callback(scanner, name, biz_type):
+            scanner.bizobj_classes[name] = biz_type
 
         venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
-        dal = BizObjectMeta.local.dal
-        if not dal.is_registered(cls):
-            dao_type = cls.__dao__()
-            if dao_type:
-                dal.register(cls, dao_type)
+        binder = DaoBinder.get_instance()
+
+        if not binder.is_registered(cls):
+            dao_class_or_instance = cls.__dao__()
+
+            if isinstance(dao_class_or_instance, type):
+                dao_instance = dao_class_or_instance()
+            elif isinstance(dao_class_or_instance, Dao):
+                dao_instance = dao_class_or_instance
+            else:
+                # default to DictDao
+                dao_instance = DictDao()
+
+            binder.register(biz_type=cls, dao_instance=dao_instance)
 
     def build_schema_class(cls, name):
         """
@@ -113,10 +122,7 @@ class BizObjectMeta(ABCMeta):
 
         # Build string name of the new Schema class
         # and construct the Schema class object:
-        cls.Schema = Schema.factory('{}Schema'.format(name), fields)
-        cls.schema = cls.Schema()
-
-        return cls.Schema
+        return Schema.factory('{}Schema'.format(name), fields)
 
     def add_is_bizobj_annotation(new_class):
         """
@@ -124,16 +130,6 @@ class BizObjectMeta(ABCMeta):
         isinstance of BizObjects.
         """
         setattr(new_class, IS_BIZOBJ_ANNOTATION, True)
-
-    def build_all_properties(cls, schema_class, relationships):
-        """
-        The names of Fields declared in the Schema and Relationships declared on
-        the BizObject will overwrite any methods or attributes defined
-        explicitly on the BizObject class. This happens here.
-        """
-        cls.build_relationship_properties(relationships)
-        cls.relationships = relationships
-        cls.build_field_properties(cls.schema, relationships)
 
     def build_relationships(cls):
         # aggregate all relationships delcared on the bizobj

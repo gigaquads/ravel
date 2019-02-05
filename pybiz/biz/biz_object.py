@@ -3,10 +3,10 @@ import uuid
 from copy import deepcopy, copy
 from typing import List, Dict, Text, Type, Tuple, Set
 
-from pybiz.dao.dal import DataAccessLayer
+from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.dict_dao import DictDao
-from pybiz.dirty import DirtyDict
 from pybiz.util import is_bizobj, is_sequence, repr_id
+from pybiz.dirty import DirtyDict
 
 from .meta import BizObjectMeta
 from .dump import DumpNested, DumpSideLoaded
@@ -36,7 +36,8 @@ class BizObject(metaclass=BizObjectMeta):
         """
         Get the global Dao reference associated with this class.
         """
-        return cls.dal.get_dao(cls)
+        binder = DaoBinder.get_instance()
+        return binder.get_dao_instance(cls, bind=True)
 
     def __init__(self, data=None, **more_data):
         self._data = DirtyDict()

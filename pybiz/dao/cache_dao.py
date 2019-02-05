@@ -36,15 +36,15 @@ class CacheDao(Dao):
         self.prefetch = prefetch
         self.mode = mode
 
-    def bind(self, bizobj_type):
-        super().bind(bizobj_type)
+    def bind(self, biz_type):
+        super().bind(biz_type)
         """
         if self.prefetch:
             records = self.persistence.fetch_cache(None, data=True, rev=True)
             self.cache.create_many(records=(r.data for r in records.values()))
         """
-        self.be.bind(bizobj_type)
-        self.fe.bind(bizobj_type)
+        self.be.bind(biz_type)
+        self.fe.bind(biz_type)
         if self.prefetch:
             self.fetch_all()
 
@@ -109,7 +109,7 @@ class CacheDao(Dao):
         if be_records:
             # TODO: prune the be_records to fields
             if fields:
-                all_fields = set(self.bizobj_type.schema.fields.keys())
+                all_fields = set(self.biz_type.schema.fields.keys())
                 fields_to_remove = all_fields - fields
                 for be_rec in remove_keys(
                     be_records.values(), fields_to_remove, in_place=True
@@ -127,7 +127,7 @@ class CacheDao(Dao):
         ids_fe = {rec['_id'] for rec in fe_records}
 
         # TODO: update predicate to fetch records with stale revs too
-        predicate = self.bizobj_type._id.excluding(ids_fe) & predicate
+        predicate = self.biz_type._id.excluding(ids_fe) & predicate
         be_records = self.be.query(predicate=predicate, **kwargs)
 
         # do batch FE operations

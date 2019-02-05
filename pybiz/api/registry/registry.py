@@ -8,6 +8,7 @@ from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
 from pybiz.util import JsonEncoder
+from pybiz.dao.dao_binder import DaoBinder
 from pybiz.api.middleware import ArgumentLoaderMiddleware
 
 from .registry_decorator import RegistryDecorator
@@ -104,6 +105,7 @@ class Registry(object):
 
         self._namespace.update(namespace or {})
 
+        # create, load, and process the manifest
         self._manifest = manifest or Manifest()
         self._manifest.process(namespace=namespace)
 
@@ -120,17 +122,24 @@ class Registry(object):
                 # it to interfer with the expectations of other mware.
                 self._middleware.append(binder)
 
-        # initialize DAO globals, like connection pools, etc.
-        # Do this in the DAL object
-        for dao_type_name, dao_type in self.types.dao.items():
-            dao_bootstrap = self.manifest.bootstraps.get(dao_type_name)
-            if dao_bootstrap is not None:
-                dao_type.bootstrap(self, **dao_bootstrap.params)
+        binder = DaoBinder.get_instance()
 
-        BizObject.dal.bind()
+        # initialize each Dao at the class-level
+        for binding in binder.bindings:
+            strap = self.manifest.bootstraps.get(binding.dao_type_name)
+            if strap is not None:
+                binding.dao_type.bootstrap(**strap.params)
+            else:
+                binding.dao_type.bootstrap()
 
+        # initialize each Dao *instance*
+        binder.bind()
+
+        # execute developer-provided custom logic
         self.on_bootstrap(*args, **kwargs)
+
         self._is_bootstrapped = True
+        return self
 
     def start(self, *args, **kwargs):
         """

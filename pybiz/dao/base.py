@@ -18,7 +18,7 @@ class DaoMeta(ABCMeta):
 class Dao(object, metaclass=DaoMeta):
     def __init__(self, *args, **kwargs):
         self._is_bound = False
-        self._bizobj_type = None
+        self._biz_type = None
         self._registry = None
         self.ignore_rev = False  # XXX: hacky, for CacheDao to work
 
@@ -26,7 +26,7 @@ class Dao(object, metaclass=DaoMeta):
         if self.is_bound:
             return (
                 f'<{self.__class__.__name__}'
-                f'({self.bizobj_type.__name__})>'
+                f'({self.biz_type.__name__})>'
             )
         else:
             return (
@@ -38,11 +38,11 @@ class Dao(object, metaclass=DaoMeta):
         return self._is_bound
 
     @property
-    def bizobj_type(self):
-        return self._bizobj_type
+    def biz_type(self):
+        return self._biz_type
 
-    def bind(self, bizobj_type: Type['BizObject']):
-        self._bizobj_type = bizobj_type
+    def bind(self, biz_type: Type['BizObject']):
+        self._biz_type = biz_type
         self._is_bound = True
 
     @classmethod

@@ -19,11 +19,11 @@ class SqlalchemyDaoMiddleware(RegistryMiddleware):
         In post_request, args and kwargs are in the form output by
         registry.on_request.
         """
-        # TODO: pass in exc to post_request if there was an exception and rollback
+        # TODO: pass in exc to post_request if there
+        #   was an exception and rollback
         try:
             SqlalchemyDao.commit()
         except:
             SqlalchemyDao.rollback()
         finally:
             SqlalchemyDao.close()
-

@@ -158,13 +158,13 @@ class Manifest(object):
                 print(f'Binding default DictDao to {biz_class.__name__}...')
                 if not biz_class.dal.is_registered(biz_class):
                     biz_class.dal.register(
-                        biz_class, DictDao, dao_kwargs=binding.params
+                        biz_class, DictDao, bind_kwargs=binding.params
                     )
                     continue
 
             if biz_class and dao_class:
                 biz_class.dal.register(
-                    biz_class, dao_class, dao_kwargs=binding.params
+                    biz_class, dao_class, bind_kwargs=binding.params
                 )
 
     def _expand_environment_vars(self, data):

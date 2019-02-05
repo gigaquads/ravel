@@ -9,8 +9,8 @@ When overriding this method, be sure to call `super().bind(biz_type)`.
 Here is the base bind method:
 
 ```python
-def bind(self, bizobj_type: Type[BizObject]) -> None:
-  self.bizobj_type = bizobj_type
+def bind(self, biz_type: Type[BizObject]) -> None:
+  self.biz_type = biz_type
 ```
 
 From `bind`, you can inspect the `BizObject` class with which the `Dao` instance is being bound to initialize any schema or storage configuration for this kind of business object.

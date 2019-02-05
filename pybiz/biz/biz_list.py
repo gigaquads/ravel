@@ -9,11 +9,11 @@ from pybiz.constants import IS_BIZLIST_ANNOTATION
 class BizList(object):
 
     @classmethod
-    def type_factory(cls, bizobj_type: Type['BizObject']):
-        derived_name = f'{bizobj_type.__name__}BizList'
+    def type_factory(cls, biz_type: Type['BizObject']):
+        derived_name = f'{biz_type.__name__}BizList'
         derived_type = type(derived_name, (cls, ), {
             IS_BIZLIST_ANNOTATION: True,
-            'bizobj_type': bizobj_type,
+            'biz_type': biz_type,
         })
 
         def build_property(attr_name):
@@ -21,11 +21,11 @@ class BizList(object):
                 fget=lambda self: [bizobj[attr_name] for bizobj in self.data]
             )
 
-        for field_name in bizobj_type.schema.fields:
+        for field_name in biz_type.schema.fields:
             prop = build_property(field_name)
             setattr(derived_type, field_name, prop)
 
-        for rel_name in bizobj_type.relationships:
+        for rel_name in biz_type.relationships:
             prop = build_property(rel_name)
             setattr(derived_type, rel_name, prop)
 
@@ -61,7 +61,7 @@ class BizList(object):
             id_parts.append(f'{id_str}{dirty_flag}')
         ids = ', '.join(id_parts)
         return (
-            f'<BizList(type={self.bizobj_type.__name__}, '
+            f'<BizList(type={self.biz_type.__name__}, '
             f'size={len(self)}, ids=[{ids}])>'
         )
 
@@ -89,7 +89,7 @@ class BizList(object):
         return self
 
     def delete(self):
-        return self.bizobj_type.delete_many(
+        return self.biz_type.delete_many(
             bizobj._id for bizobj in self.data
             if bizobj.data.get('_id')
         )

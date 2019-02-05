@@ -7,13 +7,14 @@ import ujson
 import sqlalchemy as sa
 
 from copy import deepcopy
-from typing import List, Dict, Text, Type, Set
+from typing import List, Dict, Text, Type, Set, Tuple
 
 from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
 
+from pybiz.api.middleware import RegistryMiddleware
 from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from pybiz.schema import fields, Field
 from pybiz.util import JsonEncoder
@@ -216,8 +217,8 @@ class TableBuilder(object):
         adapters: List[ColumnAdapter] = None
     ):
         self._dialect = dao.dialect
-        self._bizobj_type = dao.bizobj_type
-        self._metadata = dao.local.metadata
+        self._biz_type = dao.biz_type
+        self._metadata = dao.get_metadata()
         self._adapters = {
             adapter.source: adapter for adapter in
             ColumnAdapter.defaults(self._dialect) + (adapters or [])
@@ -234,9 +235,9 @@ class TableBuilder(object):
     def build_table(self) -> sa.Table:
         columns = [
             self.build_column(field)
-            for field in self._bizobj_type.schema.fields.values()
+            for field in self._biz_type.schema.fields.values()
         ]
-        table_name = StringUtils.snake(self._bizobj_type.__name__)
+        table_name = StringUtils.snake(self._biz_type.__name__)
         table = sa.Table(table_name, self._metadata, *columns)
         return table
 
@@ -264,7 +265,32 @@ class TableBuilder(object):
         )
 
 
+class SqlalchemyDaoMiddleware(RegistryMiddleware):
+    def pre_request(self, proxy, args: Tuple, kwargs: Dict):
+        """
+        In pre_request, args and kwargs are in the raw form before being
+        processed by registry.on_request.
+        """
+        SqlalchemyDao.connect()
+        SqlalchemyDao.begin()
+
+    def post_request(self, proxy, args: Tuple, kwargs: Dict, result):
+        """
+        In post_request, args and kwargs are in the form output by
+        registry.on_request.
+        """
+        # TODO: pass in exc to post_request if there
+        #   was an exception and rollback
+        try:
+            SqlalchemyDao.commit()
+        except:
+            SqlalchemyDao.rollback()
+        finally:
+            SqlalchemyDao.close()
+
+
 class SqlalchemyDao(Dao):
+    Middleware = SqlalchemyDaoMiddleware
 
     local = threading.local()
     local.metadata = None
@@ -273,7 +299,7 @@ class SqlalchemyDao(Dao):
     dialect = None
 
     env = Environment(
-        SQLALCHEMY_ECHO=fields.Bool(required=True, default=False),
+        SQLALCHEMY_ECHO=fields.Bool(required=True, default=lambda: False),
         SQLALCHEMY_URL=fields.String(required=True, default='sqlite://'),
         SQLALCHEMY_DIALECT=fields.Enum(
             fields.String(), list(Dialect.values()), default=Dialect.sqlite
@@ -291,11 +317,11 @@ class SqlalchemyDao(Dao):
         cls.local.metadata = sa.MetaData()
         cls.local.metadata.bind = sa.create_engine(
             name_or_url=kwargs.get('url') or cls.env.SQLALCHEMY_URL,
-            echo=bool(kwargs.get('echo', False)),
+            echo=bool(kwargs.get('echo', cls.env.SQLALCHEMY_ECHO)),
         )
 
-    def bind(self, bizobj_type: Type['BizObject']):
-        super().bind(bizobj_type)
+    def bind(self, biz_type: Type['BizObject']):
+        super().bind(biz_type)
         self._table = TableBuilder(dao=self).build_table()
 
     def create_id(self, record: Dict) -> object:
@@ -310,7 +336,7 @@ class SqlalchemyDao(Dao):
         order_by=None,  # TODO: implement order_by
         **kwargs,
     ):
-        fields = fields or self.bizobj_type.schema.fields.keys()
+        fields = fields or self.biz_type.schema.fields.keys()
         fields.update(['_id', '_rev'])
 
         columns = [getattr(self.table.c, k) for k in fields]
@@ -393,7 +419,7 @@ class SqlalchemyDao(Dao):
         return records[_id] if records else None
 
     def fetch_many(self, _ids: List, fields=None) -> Dict:
-        fields = set(fields or self.bizobj_type.schema.fields.keys())
+        fields = set(fields or self.biz_type.schema.fields.keys())
         fields.update(['_id', '_rev'])
         columns = [getattr(self.table.c, k) for k in fields]
         select_stmt = sa.select(columns)
@@ -442,9 +468,10 @@ class SqlalchemyDao(Dao):
             update_stmt = update_stmt.return_defaults()
             result = self.conn.execute(update_stmt)
             return dict(data, **(result.returned_defaults or {}))
+            # TODO: ensure _rev comes back too in defaults
         else:
             self.conn.execute(update_stmt)
-            return None
+            return self.fetch(_id)
 
     def update_many(self, _ids: List, data: Dict = None) -> None:
         assert data
@@ -455,6 +482,7 @@ class SqlalchemyDao(Dao):
                 .where(self.table.c._id.in_(_ids))
             )
         self.conn.execute(update_stmt)
+        # TODO: return updated
 
     def delete(self, _id) -> None:
         delete_stmt = self.table.delete().where(self.table.c._id == _id)

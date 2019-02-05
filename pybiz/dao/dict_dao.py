@@ -38,9 +38,9 @@ class DictDao(Dao):
         self.records = {}
         self.ignored_indexes = {}
 
-    def bind(self, bizobj_type):
-        super().bind(bizobj_type)
-        for k, v in bizobj_type.schema.fields.items():
+    def bind(self, biz_type):
+        super().bind(biz_type)
+        for k, v in biz_type.schema.fields.items():
             if isinstance(v, fields.Dict):
                 self.ignored_indexes.add(k)
 
