@@ -40,8 +40,8 @@ class ColumnAdapter(object):
     ):
         self.source = source
         self.on_define = on_define
-        self.on_serialize = on_serialize
-        self.on_deserialize = on_deserialize
+        self.on_serialize = on_serialize or (lambda x: x)
+        self.on_deserialize = on_deserialize or (lambda x: x)
 
     def serialize(self, value):
         if self.on_serialize is not None:
@@ -205,24 +205,23 @@ class ColumnAdapter(object):
                     on_serialize=lambda x: cls.json_encoder.encode(x),
                     on_deserialize=lambda x: set(ujson.loads(x))
                 ),
+                cls(
+                    source=fields.Nested,
+                    on_define=lambda field: sa.Text,
+                    on_serialize=lambda x: cls.json_encoder.encode(x),
+                    on_deserialize=lambda x: ujson.loads(x)
+                ),
             ])
 
         return adapters
 
 
 class TableBuilder(object):
-    def __init__(
-        self,
-        dao: 'SqlalchemyDao',
-        adapters: List[ColumnAdapter] = None
-    ):
+    def __init__(self, dao: 'SqlalchemyDao'):
         self._dialect = dao.dialect
         self._biz_type = dao.biz_type
         self._metadata = dao.get_metadata()
-        self._adapters = {
-            adapter.source: adapter for adapter in
-            ColumnAdapter.defaults(self._dialect) + (adapters or [])
-        }
+        self._adapters = dao.adapters
 
     @property
     def adapters(self):
@@ -306,9 +305,12 @@ class SqlalchemyDao(Dao):
         )
     )
 
-    def __init__(self):
+    def __init__(self, adapters: List[ColumnAdapter] = None):
         super().__init__()
+        self._custom_adapters = adapters or []
         self._table = None
+        self._builder = None
+        self._adapters = None
 
     @classmethod
     def bootstrap(cls, registry: 'Registry' = None, **kwargs):
@@ -320,9 +322,18 @@ class SqlalchemyDao(Dao):
             echo=bool(kwargs.get('echo', cls.env.SQLALCHEMY_ECHO)),
         )
 
+    @property
+    def adapters(self):
+        return self._adapters
+
     def bind(self, biz_type: Type['BizObject']):
         super().bind(biz_type)
-        self._table = TableBuilder(dao=self).build_table()
+        self._adapters = {
+            adapter.source: adapter for adapter in
+            ColumnAdapter.defaults(self.dialect) + self._custom_adapters
+        }
+        self._builder = TableBuilder(self)
+        self._table = self._builder.build_table()
 
     def create_id(self, record: Dict) -> object:
         return record.get('_id', uuid.uuid4().hex)
@@ -431,17 +442,44 @@ class SqlalchemyDao(Dao):
             page = cursor.fetchmany(512)
             if page:
                 for row in page:
-                    records[row._id] = dict(row.items())
+                    raw_record = dict(row.items())
+                    record = self.deserialize(raw_record)
+                    records[row._id] = record
             else:
-                return records
+                break
+        return records
 
     def fetch_all(self, fields: Set[Text] = None) -> Dict:
         return self.fetch_many([], fields=fields)
 
+    def serialize(self, record: Dict) -> Dict:
+        prepared_record = {}
+        for k, v in record.items():
+            field = self.biz_type.schema.fields.get(k)
+            if field:
+                adapter = self._adapters.get(type(field))
+                if adapter:
+                    prepared_record[k] = adapter.on_serialize(v)
+                    continue
+            prepared_record[k] = v
+        return prepared_record
+
+    def deserialize(self, record: Dict) -> Dict:
+        prepared_record = {}
+        for k, v in record.items():
+            field = self.biz_type.schema.fields.get(k)
+            if field:
+                adapter = self._adapters.get(type(field))
+                if adapter:
+                    prepared_record[k] = adapter.on_deserialize(v)
+                    continue
+            prepared_record[k] = v
+        return prepared_record
+
     def create(self, record: dict) -> dict:
         record['_id'] = self.create_id(record)
-        insert_stmt = self.table.insert().values(**record)
-
+        prepared_record = self.serialize(record)
+        insert_stmt = self.table.insert().values(**prepared_record)
         if self.supports_returning:
             insert_stmt = insert_stmt.return_defaults()
             result = self.conn.execute(insert_stmt)
@@ -451,17 +489,19 @@ class SqlalchemyDao(Dao):
             return self.fetch(_id=record['_id'])
 
     def create_many(self, records: List[Dict]) -> Dict:
+        prepared_records = []
         for record in records:
             record['_id'] = self.create_id(record)
-        self.conn.execute(self.table.insert(), records)
+            prepared_records.append(self.serialize(record))
+        self.conn.execute(self.table.insert(), prepared_records)
         # TODO: return something
 
     def update(self, _id, data: Dict) -> Dict:
-        assert data
+        prepared_data = self.serialize(data)
         update_stmt = (
             self.table
                 .update()
-                .values(**data)
+                .values(**prepared_data)
                 .where(self.table.c._id == _id)
             )
         if self.supports_returning:
@@ -475,10 +515,11 @@ class SqlalchemyDao(Dao):
 
     def update_many(self, _ids: List, data: Dict = None) -> None:
         assert data
+        prepared_data = self.serialize(data)
         update_stmt = (
             self.table
                 .update()
-                .values(**data)
+                .values(**prepared_data)
                 .where(self.table.c._id.in_(_ids))
             )
         self.conn.execute(update_stmt)
