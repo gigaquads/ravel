@@ -30,7 +30,7 @@ class BizObjectMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
-        cls.Schema = cls.build_schema_class(name)
+        cls.Schema = cls.build_schema_type(name)
 
         cls.schema = cls.Schema()
         cls.relationships = cls.build_relationships()
@@ -41,7 +41,7 @@ class BizObjectMeta(ABCMeta):
         cls.BizList = BizList.type_factory(cls)
 
         def venusian_callback(scanner, name, biz_type):
-            scanner.bizobj_classes[name] = biz_type
+            scanner.biz_types[name] = biz_type
 
         venusian.attach(cls, venusian_callback, category='biz')
 
@@ -49,19 +49,19 @@ class BizObjectMeta(ABCMeta):
         binder = DaoBinder.get_instance()
 
         if not binder.is_registered(cls):
-            dao_class_or_instance = cls.__dao__()
+            dao_type_or_instance = cls.__dao__()
 
-            if isinstance(dao_class_or_instance, type):
-                dao_instance = dao_class_or_instance()
-            elif isinstance(dao_class_or_instance, Dao):
-                dao_instance = dao_class_or_instance
+            if isinstance(dao_type_or_instance, type):
+                dao_instance = dao_type_or_instance()
+            elif isinstance(dao_type_or_instance, Dao):
+                dao_instance = dao_type_or_instance
             else:
                 # default to PythonDao
                 dao_instance = PythonDao()
 
             binder.register(biz_type=cls, dao_instance=dao_instance)
 
-    def build_schema_class(cls, name):
+    def build_schema_type(cls, name):
         """
         Builds cls.Schema from the fields declared on the business object. All
         business objects automatically inherit an _id field.
@@ -76,20 +76,20 @@ class BizObjectMeta(ABCMeta):
         if obj:
             if isinstance(obj, str):
                 class_name = obj
-                schema_class = import_object(class_name)
+                schema_type = import_object(class_name)
             elif isinstance(obj, type) and issubclass(obj, Schema):
-                schema_class = obj
+                schema_type = obj
             else:
                 raise ValueError(str(obj))
         else:
-            schema_class = None
+            schema_type = None
 
-        fields = copy.deepcopy(schema_class.fields) if schema_class else {}
+        fields = copy.deepcopy(schema_type.fields) if schema_type else {}
 
         # "inherit" fields of parent BizObject.Schema
-        inherited_schema_class = getattr(cls, 'Schema', None)
-        if inherited_schema_class is not None:
-            for k, v in inherited_schema_class.fields.items():
+        inherited_schema_type = getattr(cls, 'Schema', None)
+        if inherited_schema_type is not None:
+            for k, v in inherited_schema_type.fields.items():
                 fields.setdefault(k, copy.deepcopy(v))
 
         # collect and field declared on this BizObject class

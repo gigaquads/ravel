@@ -37,13 +37,13 @@ class Manifest(object):
 
         self.scanner = Scanner(
             env=env,
-            bizobj_classes={},
-            dao_classes={}
+            biz_types={},
+            dao_types={}
         )
 
         self.types = DictAccessor({
-            'biz': self.scanner.bizobj_classes,
-            'dao': self.scanner.dao_classes,
+            'biz': self.scanner.biz_types,
+            'dao': self.scanner.dao_types,
         })
 
         if data or path:
@@ -139,7 +139,7 @@ class Manifest(object):
             self.scanner.scan(pkg, onerror=on_error)
 
         self.types.biz.update(self.scanner.biz_classes)
-        self.types.dao.update(self.scanner.dao_classes)
+        self.types.dao.update(self.scanner.dao_types)
 
     def _bind_dao_to_biz_types(self):
         """
@@ -152,19 +152,19 @@ class Manifest(object):
         binder = DaoBinder.get_instance()
 
         for binding in self.bindings:
-            biz_class = self.scanner.bizobj_classes.get(binding.biz)
+            biz_class = self.scanner.biz_types.get(binding.biz)
             if biz_class is None:
                 raise ManifestError('{} not found'.format(binding.biz))
 
             # get dao class to bind, default to PythonDao
-            dao_class = self.scanner.dao_classes.get(binding.dao)
-            if dao_class is None:
-                dao_class = PythonDao
+            dao_type = self.scanner.dao_types.get(binding.dao)
+            if dao_type is None:
+                dao_type = PythonDao
 
             if not binder.is_registered(biz_class):
                 binder.register(
                     biz_type=biz_class,
-                    dao_instance=dao_class(),
+                    dao_instance=dao_type(),
                     dao_bind_kwargs=binding.params
                 )
 
