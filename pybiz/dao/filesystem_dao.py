@@ -11,12 +11,12 @@ from appyratus.utils import (
     DictUtils,
     StringUtils,
 )
-from appyratus.files import BaseFile
+from appyratus.files import BaseFile, Yaml
 
 from pybiz.util import import_object
 
 from .base import Dao
-from .dict_dao import DictDao
+from .python_dao import PythonDao
 
 
 class FilesystemDao(Dao):
@@ -28,7 +28,11 @@ class FilesystemDao(Dao):
         extensions: Set[Text] = None,
     ):
         # convert the ftype string arg into a File class ref
-        self.ftype = import_object(ftype)
+        if not ftype:
+            self.ftype = Yaml
+        elif not isinstance(ftype, BaseFile):
+            self.ftype = import_object(ftype)
+
         assert issubclass(self.ftype, BaseFile)
 
         # self.paths is where we store named file paths
@@ -44,6 +48,9 @@ class FilesystemDao(Dao):
             self.extensions.update(extensions)
 
     def bind(self, biz_type):
+        """
+        Ensure the data dir exists for this BizObject type.
+        """
         super().bind(biz_type)
         self.paths.data = os.path.join(
             self.paths.root, StringUtils.snake(biz_type.__name__)
@@ -113,7 +120,7 @@ class FilesystemDao(Dao):
         base_record = self.ftype.from_file(fpath)
         if base_record:
             record = DictUtils.merge(base_record, data)
-            self.ftype.to_file(file_path=fpath, data=merged_record)
+            self.ftype.to_file(file_path=fpath, data=record)
         else:
             self.ftype.to_file(file_path=fpath, data=data)
             record = data

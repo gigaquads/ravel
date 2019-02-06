@@ -10,7 +10,7 @@ from typing import Type, List
 
 from pybiz.dao.base import Dao
 from pybiz.dao.dao_binder import DaoBinder
-from pybiz.dao.dict_dao import DictDao
+from pybiz.dao.python_dao import PythonDao
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from pybiz.schema import Schema, fields, Field, Int
 from pybiz.util import import_object
@@ -56,8 +56,8 @@ class BizObjectMeta(ABCMeta):
             elif isinstance(dao_class_or_instance, Dao):
                 dao_instance = dao_class_or_instance
             else:
-                # default to DictDao
-                dao_instance = DictDao()
+                # default to PythonDao
+                dao_instance = PythonDao()
 
             binder.register(biz_type=cls, dao_instance=dao_instance)
 

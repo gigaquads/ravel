@@ -18,6 +18,9 @@ class CacheMode(EnumValueStr):
 
 
 class CacheDao(Dao):
+    
+    Mode = CacheMode
+
     def __init__(
         self,
         backend: Dao,
@@ -25,12 +28,12 @@ class CacheDao(Dao):
         prefetch=False,
         mode='writethru'
     ):
-        from pybiz.dao.dict_dao import DictDao
+        from pybiz.dao.python_dao import PythonDao
 
         super().__init__()
 
         self.be = backend
-        self.fe = frontend or DictDao()
+        self.fe = frontend or PythonDao()
         self.fe.ignore_rev = True
 
         self.prefetch = prefetch

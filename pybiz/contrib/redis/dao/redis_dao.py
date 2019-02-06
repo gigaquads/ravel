@@ -49,9 +49,6 @@ class RedisDao(Dao):
                 index_type = StringIndex
             self.indexes[k] = index_type(self.redis, index_name)
 
-    def create_id(self, record):
-        return record.get('_id', uuid.uuid4().hex)
-
     def exists(self, _id) -> bool:
         return (_id in self.records)
 

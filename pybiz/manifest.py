@@ -75,7 +75,7 @@ class Manifest(object):
 
         for binding_data in data['bindings']:
             biz = binding_data['biz']
-            dao = binding_data.get('dao', 'DictDao')
+            dao = binding_data.get('dao', 'PythonDao')
             params = binding_data.get('parameters', {})
             self.bindings.append(Binding(
                 biz=biz, dao=dao, params=params,
@@ -146,7 +146,7 @@ class Manifest(object):
         Associate each BizObject class with a corresponding Dao class. Also bind
         Schema classes to their respective BizObject classes.
         """
-        from pybiz.dao.dict_dao import DictDao
+        from pybiz.dao.python_dao import PythonDao
         from pybiz.dao.dao_binder import DaoBinder
 
         binder = DaoBinder.get_instance()
@@ -156,10 +156,10 @@ class Manifest(object):
             if biz_class is None:
                 raise ManifestError('{} not found'.format(binding.biz))
 
-            # get dao class to bind, default to DictDao
+            # get dao class to bind, default to PythonDao
             dao_class = self.scanner.dao_classes.get(binding.dao)
             if dao_class is None:
-                dao_class = DictDao
+                dao_class = PythonDao
 
             if not binder.is_registered(biz_class):
                 binder.register(

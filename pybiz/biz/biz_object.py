@@ -4,7 +4,7 @@ from copy import deepcopy, copy
 from typing import List, Dict, Text, Type, Tuple, Set
 
 from pybiz.dao.dao_binder import DaoBinder
-from pybiz.dao.dict_dao import DictDao
+from pybiz.dao.python_dao import PythonDao
 from pybiz.util import is_bizobj, is_sequence, repr_biz_id
 from pybiz.dirty import DirtyDict
 
@@ -29,7 +29,7 @@ class BizObject(metaclass=BizObjectMeta):
         """
         Declare the DAO type/instance used by this BizObject class.
         """
-        return DictDao()
+        return PythonDao()
 
     @classmethod
     def get_dao(cls) -> 'Dao':
@@ -166,6 +166,13 @@ class BizObject(metaclass=BizObjectMeta):
             return bizobjs
 
     @classmethod
+    def get_all(cls, fields: Set[Text] = None) -> Dict:
+        return {
+            _id: cls(record).clean()
+            for _id, record in cls.get_dao().fetch_all().items()
+        }
+
+    @classmethod
     def delete_many(cls, bizobjs) -> None:
         bizobj_ids = []
         for obj in bizobjs:
@@ -183,6 +190,10 @@ class BizObject(metaclass=BizObjectMeta):
         self.mark(self.data.keys())
         self._id = None
         return self
+
+    @classmethod
+    def save_many(cls, bizobjs: List['BizObject']) -> List['BizObject']:
+        return [bizobj.save() for bizobj in bizobjs]
 
     def save(self, path: List['BizObject'] = None) -> 'BizObject':
         # TODO: allow fields kwarg to specify a subset of fields and

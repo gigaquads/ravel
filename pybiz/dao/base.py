@@ -1,4 +1,6 @@
 import os
+import uuid
+
 import venusian
 
 from typing import Dict, List, Type, Set, Text, Tuple
@@ -53,11 +55,11 @@ class Dao(object, metaclass=DaoMeta):
         """
         cls._registry = registry
 
-    @abstractmethod
     def create_id(self, record: Dict) -> object:
         """
         Generate and return a new ID for the given not-yet-created record.
         """
+        return record.get('_id') or uuid.uuid4().hex
 
     @abstractmethod
     def exists(self, _id) -> bool:

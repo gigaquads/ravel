@@ -24,7 +24,7 @@ from pybiz.predicate import (
 from .base import Dao
 
 
-class DictDao(Dao):
+class PythonDao(Dao):
     """
     An in-memory Dao that stores data in Python dicts with BTrees indexes.
     """
@@ -43,14 +43,6 @@ class DictDao(Dao):
         for k, v in biz_type.schema.fields.items():
             if isinstance(v, fields.Dict):
                 self.ignored_indexes.add(k)
-
-    def create_id(self, data: Dict=None):
-        _id = data.get('_id')
-        if not _id:
-            with self.lock:
-                _id = self.id_counter
-                self.id_counter += 1
-        return _id
 
     def exists(self, _id) -> bool:
         with self.lock:

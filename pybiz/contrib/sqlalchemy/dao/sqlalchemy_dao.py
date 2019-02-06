@@ -189,12 +189,6 @@ class SqlalchemyDao(Dao):
         self._builder = SqlalchemyTableBuilder(self)
         self._table = self._builder.build_table()
 
-    def create_id(self, record: Dict):
-        _id = record.get('_id')
-        if _id is None:
-            _id = uuid.uuid4().hex
-        return _id
-
     def query(
         self,
         predicate,
