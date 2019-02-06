@@ -1,4 +1,4 @@
-from pybiz.api.http import HttpRegistry
+from .http import HttpRegistry
 
 
 class WsgiServiceRegistry(HttpRegistry):

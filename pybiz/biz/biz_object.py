@@ -5,7 +5,7 @@ from typing import List, Dict, Text, Type, Tuple, Set
 
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.dict_dao import DictDao
-from pybiz.util import is_bizobj, is_sequence, repr_id
+from pybiz.util import is_bizobj, is_sequence, repr_biz_id
 from pybiz.dirty import DirtyDict
 
 from .meta import BizObjectMeta
@@ -74,7 +74,7 @@ class BizObject(metaclass=BizObjectMeta):
         return key in self._data
 
     def __repr__(self):
-        id_str = repr_id(self)
+        id_str = repr_biz_id(self)
         name = self.__class__.__name__
         dirty = '*' if self._data.dirty else ''
         return f'<{name}({id_str}){dirty}>'

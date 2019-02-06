@@ -4,7 +4,7 @@ import uvloop
 
 from typing import Type, Coroutine
 
-from ..registry import Registry, AsyncRegistryProxy
+from .registry import Registry, AsyncRegistryProxy
 
 
 class AsyncServerRegistry(Registry):

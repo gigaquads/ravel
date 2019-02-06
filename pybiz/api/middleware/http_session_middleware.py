@@ -1,6 +1,6 @@
 from typing import Dict, Tuple, Type, Text
 
-from .registry_middleware import RegistryMiddleware
+from .base import RegistryMiddleware
 
 
 class HttpSessionMiddleware(RegistryMiddleware):
@@ -13,7 +13,7 @@ class HttpSessionMiddleware(RegistryMiddleware):
     @property
     def registry_types(self) -> Tuple[Type['Registry']]:
         from pybiz.api.http import HttpRegistry
-        
+
         return (HttpRegistry, )
 
     def pre_request(self, proxy, raw_args, raw_kwargs):

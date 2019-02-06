@@ -14,9 +14,9 @@ from appyratus.env import Environment
 
 from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from pybiz.schema import fields, Field
-from pybiz.util import JsonEncoder
+from pybiz.json import JsonEncoder
+from pybiz.dao.base import Dao
 
-from ..base import Dao
 from .dialect import Dialect
 from .sqlalchemy_table_builder import SqlalchemyTableBuilder
 
@@ -54,7 +54,7 @@ class SqlalchemyDao(Dao):
             fields.Field.adapt(
                 on_adapt=lambda field: sa.Text,
                 on_encode=lambda x: cls.json_encoder.encode(x),
-                on_decode=lambda x: ujson.loads(x),
+                on_decode=lambda x: JsonEncoder.decode(x),
             ),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
             fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
@@ -133,7 +133,7 @@ class SqlalchemyDao(Dao):
             field_type.adapt(
                 on_adapt=lambda field: sa.Text,
                 on_encode=lambda x: cls.json_encoder.encode(x),
-                on_decode=lambda x: ujson.loads(x)
+                on_decode=lambda x: JsonEncoder.decode(x)
             )
             for field_type in {
                 fields.Dict, fields.List,

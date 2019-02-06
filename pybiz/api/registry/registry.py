@@ -7,7 +7,7 @@ from appyratus.utils import DictAccessor
 from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
-from pybiz.util import JsonEncoder
+from pybiz.json import JsonEncoder
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.api.middleware import ArgumentLoaderMiddleware
 

@@ -4,10 +4,11 @@ from typing import List, Dict, ForwardRef, Text, Tuple, Set, Type
 
 from pybiz.util import is_bizobj
 
-from .registry_middleware import RegistryMiddleware
+from .base import RegistryMiddleware
 
 LOAD_ONE  = 1
 LOAD_MANY = 2
+
 
 class ArgumentLoaderMiddleware(RegistryMiddleware):
 

@@ -1,6 +1,7 @@
 import ujson
 
 from pybiz.util import is_bizobj
+from pybiz.json import JsonEncoder
 
 from .base import Middleware
 
@@ -22,7 +23,7 @@ class JsonBodyMiddleware(Middleware):
 
     def process_request(self, request, response):
         if request.content_length:
-            request.json = ujson.loads(request.stream.read().decode())
+            request.json = JsonEncoder.decode(request.stream.read().decode())
         else:
             request.json = {}
 

@@ -7,7 +7,7 @@ from falcon import errors
 from falcon.media import BaseHandler
 from falcon.util import json
 
-from pybiz.util import JsonEncoder
+from pybiz.json import JsonEncoder
 
 
 class JsonHandler(BaseHandler):
@@ -21,7 +21,7 @@ class JsonHandler(BaseHandler):
 
     def deserialize(self, raw):
         try:
-            return ujson.loads(raw.decode('utf-8'))
+            return JsonEncoder.decode(raw.decode('utf-8'))
         except ValueError as err:
             raise errors.HTTPBadRequest(
                 'Invalid JSON',

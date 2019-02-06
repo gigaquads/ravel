@@ -10,7 +10,7 @@ from appyratus.memoize import memoized_property
 from appyratus.env import Environment
 
 from pybiz.api.wsgi import WsgiServiceRegistry
-from pybiz.util import JsonEncoder
+from pybiz.json import JsonEncoder
 
 from .resource import ResourceManager
 from .middleware import Middleware

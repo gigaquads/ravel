@@ -7,7 +7,7 @@ from typing import Type, Dict, List
 from redis import StrictRedis
 
 from pybiz.schema import fields
-from pybiz.util import JsonEncoder
+from pybiz.json import JsonEncoder
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -63,7 +63,7 @@ class RedisDao(Dao):
         if not record_json:
             return None
 
-        full_record = ujson.loads(record_json)
+        full_record = JsonEncoder.decode(record_json)
         fields = fields if isinstance(fields, set) else set(fields or [])
 
         if fields:
@@ -79,13 +79,13 @@ class RedisDao(Dao):
 
         if fields:
             for record_json in records_json:
-                full_record = ujson.loads(record_json)
+                full_record = JsonEncoder.decode(record_json)
                 records.append({
                     k: full_record.get(k) for k in fields
                 })
         else:
             records = [
-                ujson.loads(record_json) for record_json
+                JsonEncoder.decode(record_json) for record_json
                 in self.records.get_many(_ids)
             ]
 
@@ -139,13 +139,13 @@ class RedisDao(Dao):
 
         if predicate is None:
             for _id, record_json in self.record.items():
-                record = ujson.loads(record_json)
+                record = JsonEncoder.decode(record_json)
                 record['_id'] = _id.decode()
                 records.append(record)
         else:
             ids = self.query_ids(predicate)
             for _id in ids:
-                record = ujson.loads(self.records[_id])
+                record = JsonEncoder.decode(self.records[_id])
                 record['_id'] = _id.decode()
                 records.append(record)
 

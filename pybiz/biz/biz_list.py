@@ -1,7 +1,7 @@
 from typing import Type, List
 from uuid import UUID
 
-from pybiz.util import repr_id
+from pybiz.util import repr_biz_id
 from pybiz.constants import IS_BIZLIST_ANNOTATION
 
 # TODO: implement dirty interface for bizlists
@@ -56,7 +56,7 @@ class BizList(object):
     def __repr__(self):
         id_parts = []
         for bizobj in self.data:
-            id_str = repr_id(bizobj)
+            id_str = repr_biz_id(bizobj)
             dirty_flag = '*' if bizobj.dirty else ''
             id_parts.append(f'{id_str}{dirty_flag}')
         ids = ', '.join(id_parts)

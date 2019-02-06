@@ -21,7 +21,7 @@ class ReplRegistry(Registry):
 
     @property
     def proxy_type(self):
-        return Function
+        return ReplFunction
 
     @property
     def namespace(self) -> Dict:
@@ -53,7 +53,7 @@ class ReplRegistry(Registry):
         """
         return sorted(self.proxies.keys())
 
-    def on_decorate(self, proxy: 'Function'):
+    def on_decorate(self, proxy: 'ReplFunction'):
         pass
 
     def on_bootstrap(self, *args, **kwargs):
@@ -75,14 +75,14 @@ class ReplRegistry(Registry):
         # enter an ipython shell
         self.shell.mainloop(local_ns=local_ns)
 
-    def on_request(self, proxy: 'Function', *args, **kwargs):
+    def on_request(self, proxy: 'ReplFunction', *args, **kwargs):
         return (args, kwargs)
 
-    def on_response(self, proxy: 'Function', result, *args, **kwargs):
+    def on_response(self, proxy: 'ReplFunction', result, *args, **kwargs):
         return super().on_response(proxy, result, *args, **kwargs)
 
 
-class Function(RegistryProxy):
+class ReplFunction(RegistryProxy):
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
 

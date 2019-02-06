@@ -43,7 +43,7 @@ class CliRegistry(Registry):
 
     @property
     def proxy_type(self):
-        return Command
+        return CliCommand
 
     def on_start(self):
         """
@@ -83,9 +83,9 @@ class CliRegistry(Registry):
         return response
 
 
-class Command(RegistryProxy):
+class CliCommand(RegistryProxy):
     """
-    Command represents a top-level CliProgram Subparser.
+    CliCommand represents a top-level CliProgram Subparser.
     """
 
     def __init__(self, func, decorator):

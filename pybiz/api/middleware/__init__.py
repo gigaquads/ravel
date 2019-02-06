@@ -1,4 +1,3 @@
-from .registry_middleware import RegistryMiddleware
+from .base import RegistryMiddleware
 from .http_session_middleware import HttpSessionMiddleware
 from .argument_loader_middleware import ArgumentLoaderMiddleware
-from .sqlalchemy_middleware import SqlalchemyMiddleware

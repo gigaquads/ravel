@@ -3,46 +3,36 @@ from importlib import import_module
 from typing import Dict, Set, Text, List
 from copy import deepcopy
 
-from appyratus.json import JsonEncoder as BaseJsonEncoder
-
 from pybiz.constants import IS_BIZOBJ_ANNOTATION, IS_BIZLIST_ANNOTATION
 
-
-dict_keys = {}.keys().__class__
-dict_values = {}.values().__class__
-
-
-class JsonEncoder(BaseJsonEncoder):
-    def default(self, target):
-        if is_bizobj(target):
-            return target.dump()
-        else:
-            return super().default(target)
+_dict_keys = {}.keys().__class__
+_dict_values = {}.values().__class__
 
 
-def is_bizobj(obj):
+def is_bizobj(obj) -> bool:
     """
     Return True if obj is an instance of BizObject.
     """
     return getattr(obj, IS_BIZOBJ_ANNOTATION, False) if obj else False
 
 
-def is_bizlist(obj):
+def is_bizlist(obj) -> bool:
     """
     Return True if obj is an instance of BizObject.
     """
     return getattr(obj, IS_BIZLIST_ANNOTATION, False) if obj else False
 
-def is_sequence(obj):
-    return isinstance(obj, (list, tuple, set, dict_keys, dict_values))
+def is_sequence(obj) -> bool:
+    """
+    Return True if obj is a generic sequence type, like a list or tuple.
+    """
+    return isinstance(obj, (list, tuple, set, _dict_keys, _dict_values))
 
 
-def ensure(*conditions):
-    for cond in conditions:
-        assert cond
-
-
-def repr_id(bizobj: 'BizObject'):
+def repr_biz_id(bizobj: 'BizObject') -> Text:
+    """
+    Return a string version of a BizObject ID.
+    """
     _id = bizobj['_id']
     if _id is None:
         return '?'
@@ -55,6 +45,9 @@ def repr_id(bizobj: 'BizObject'):
 
 
 def import_object(dotted_path: Text) -> object:
+    """
+    Import an object from a module, given a dotted path to it.
+    """
     obj_path = dotted_path.split('.')
     assert len(obj_path) > 1
 
@@ -74,6 +67,9 @@ def import_object(dotted_path: Text) -> object:
 def remove_keys(
     records: List[Dict], keys: Set[Text], in_place=True
 ) -> List[Dict]:
+    """
+    Remove keys from a dict. Non-recursive.
+    """
     records_out = []
     for record in records:
         if not in_place:

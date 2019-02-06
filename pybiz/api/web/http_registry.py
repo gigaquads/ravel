@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from pybiz.exc import ApiError
 
-from .registry import Registry, RegistryProxy, RegistryDecorator
+from ..registry import Registry, RegistryProxy, RegistryDecorator
 
 
 class HttpRegistry(Registry):
@@ -127,5 +127,3 @@ class HttpClient(object):
     def __getattr__(self, route_name):
         handler = self._handlers[route_name]
         return handler
-
-

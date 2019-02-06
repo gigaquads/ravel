@@ -7,8 +7,9 @@ from typing import Dict
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-from pybiz.util import JsonEncoder
-from pybiz.api.http import HttpRegistry, HttpRoute
+from pybiz.json import JsonEncoder
+
+from .http import HttpRegistry, HttpRoute
 
 
 class HttpServerRegistry(HttpRegistry):
@@ -63,7 +64,7 @@ class HttpServerRegistry(HttpRegistry):
             if content_len:
                 body_bytes = self.rfile.read(content_len)
                 if body_bytes:
-                    body = ujson.loads(body_bytes.decode())
+                    body = JsonEncoder.decode(body_bytes.decode())
             return body
 
         def extract_query_params(self, url) -> Dict:

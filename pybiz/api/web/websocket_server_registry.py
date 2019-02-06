@@ -4,10 +4,12 @@ import ujson
 
 from typing import List, Type, Dict, Tuple, Text
 
-from .async_server_registry import AsyncServerRegistry
+from pybiz.json import JsonEncoder
+
+from ..async_server_registry import AsyncServerRegistry
 
 
-class WebSocketServerRegistry(AsyncServerRegistry):
+class WebsocketServerRegistry(AsyncServerRegistry):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -32,7 +34,7 @@ class WebSocketServerRegistry(AsyncServerRegistry):
 
             # decode raw request bytes
             try:
-                request = ujson.loads(message)
+                request = JsonEncoder.decode(message)
             except ValueError as exc:
                 print(f'invalid request data:  {message}')
 
