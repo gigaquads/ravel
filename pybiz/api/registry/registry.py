@@ -103,28 +103,25 @@ class Registry(object):
         """
         from pybiz import BizObject
 
+        if self.is_bootstrapped:
+            # if already bootstrapped, don't re-trigger all the base behavior
+            # of this method. instead, only execute custom on_boostrap logic,
+            # and make it the developer's responsiblity to make on_bootstrap
+            # idempotent.
+            self.on_bootstrap()
+            return self
+
         self._namespace.update(namespace or {})
 
         # create, load, and process the manifest
         self._manifest = manifest or Manifest()
         self._manifest.process(namespace=namespace)
 
-        # now that we've processed the manifest, let's add default middleware.
-        if self.types.biz:
-            has_arg_binder_mware = any([
-                isinstance(m, ArgumentLoaderMiddleware)
-                for m in self.middleware
-            ])
-            if not has_arg_binder_mware:
-                binder = ArgumentLoaderMiddleware.from_registry(self)
-                # we put this mware _last_ because it mutates the prepared
-                # args list passed into the proxy target, and we don't want
-                # it to interfer with the expectations of other mware.
-                self._middleware.append(binder)
+        for mware in self.middleware:
+            mware.bootstrap(registry=self)
 
+        # bootstrap the data access layer (DAL)
         binder = DaoBinder.get_instance()
-
-        # initialize each Dao at the class-level
         for binding in binder.bindings:
             strap = self.manifest.bootstraps.get(binding.dao_type_name)
             if strap is not None:
@@ -132,7 +129,6 @@ class Registry(object):
             else:
                 binding.dao_type.bootstrap()
 
-        # initialize each Dao *instance*
         binder.bind()
 
         # execute developer-provided custom logic

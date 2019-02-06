@@ -1,11 +1,13 @@
 from typing import List, Dict, Text, Type, Set, Tuple
 
-from pybiz.api.middleware import RegistryMiddleware
+from pybiz.dao.sqlalchemy_dao import SqlalchemyDao
+
+from .registry_middleware import RegistryMiddleware
 
 
 class SqlalchemyMiddleware(RegistryMiddleware):
 
-    def pre_request(self, proxy, args: Tuple, kwargs: Dict):
+    def pre_request(self, proxy, raw_args: Tuple, raw_kwargs: Dict):
         """
         In pre_request, args and kwargs are in the raw form before being
         processed by registry.on_request.
@@ -14,6 +16,8 @@ class SqlalchemyMiddleware(RegistryMiddleware):
 
         SqlalchemyDao.connect()
         SqlalchemyDao.begin()
+
+        return (raw_args, raw_kwargs)
 
     def post_request(self, proxy, args: Tuple, kwargs: Dict, result):
         """

@@ -6,9 +6,27 @@ from appyratus.memoize import memoized_property
 
 
 class RegistryMiddleware(object):
-
     def __repr__(self):
-        return f'<Middleware({self.__class__.__name__})>'
+        return (
+            f'<Middleware({self.__class__.__name__}, '
+            f'bootstrapped={self.is_bootstrapped})>'
+        )
+
+    def bootstrap(self, registry: 'Registry'):
+        self._is_bootstrapped = True
+        self._registry = registry
+        self.on_bootstrap()
+
+    def on_bootstrap(self):
+        pass
+
+    @property
+    def is_bootstrapped(self) -> bool:
+        return self._is_bootstrapped
+
+    @property
+    def registry(self) -> 'Registry':
+        return self._registry
 
     @memoized_property
     def registry_types(self) -> Tuple[Type['Registry']]:
@@ -25,6 +43,7 @@ class RegistryMiddleware(object):
         In pre_request, args and kwargs are in the raw form before being
         processed by registry.on_request.
         """
+        return (args, kwargs)
 
     def on_request(self, proxy: 'RegistryProxy', args: Tuple, kwargs: Dict):
         """

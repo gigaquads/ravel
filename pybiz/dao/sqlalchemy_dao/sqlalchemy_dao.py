@@ -19,7 +19,6 @@ from pybiz.util import JsonEncoder
 from ..base import Dao
 from .dialect import Dialect
 from .sqlalchemy_table_builder import SqlalchemyTableBuilder
-from .sqlalchemy_middleware import SqlalchemyMiddleware
 
 
 class SqlalchemyDao(Dao):
@@ -394,12 +393,15 @@ class SqlalchemyDao(Dao):
 
     @classmethod
     def create_tables(cls):
-        engine = cls.get_metadata().bind
-        cls.get_metadata().create_all(engine)
+        meta = cls.get_metadata()
+        engine = cls.get_engine()
+
+        # create all tables
+        meta.create_all(engine)
 
         # add a trigger to each table to auto-increment
         # the _rev column on update.
-        for table in cls.get_metadata().tables.values():
+        for table in meta.tables.values():
             engine.execute(f'''
                 create trigger incr_{table.name}_rev_on_update
                 after update on {table.name}
@@ -434,3 +436,7 @@ class SqlalchemyDao(Dao):
     @classmethod
     def get_metadata(cls):
         return cls.local.metadata
+
+    @classmethod
+    def get_engine(cls):
+        return cls.get_metadata().bind
