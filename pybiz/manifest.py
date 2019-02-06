@@ -96,7 +96,7 @@ class Manifest(object):
         framework.
         """
         self._discover_pybiz_types(namespace, on_error)
-        self._bind_dao_to_bizobj_types()
+        self._bind_dao_to_biz_types()
         return self
 
     def _discover_pybiz_types(self, namespace, on_error):
@@ -141,30 +141,31 @@ class Manifest(object):
         self.types.biz.update(self.scanner.biz_classes)
         self.types.dao.update(self.scanner.dao_classes)
 
-    def _bind_dao_to_bizobj_types(self):
+    def _bind_dao_to_biz_types(self):
         """
         Associate each BizObject class with a corresponding Dao class. Also bind
         Schema classes to their respective BizObject classes.
         """
         from pybiz.dao.dict_dao import DictDao
+        from pybiz.dao.dao_binder import DaoBinder
+
+        binder = DaoBinder.get_instance()
 
         for binding in self.bindings:
             biz_class = self.scanner.bizobj_classes.get(binding.biz)
             if biz_class is None:
                 raise ManifestError('{} not found'.format(binding.biz))
 
+            # get dao class to bind, default to DictDao
             dao_class = self.scanner.dao_classes.get(binding.dao)
-            if dao_class is None and biz_class:
-                print(f'Binding default DictDao to {biz_class.__name__}...')
-                if not biz_class.dal.is_registered(biz_class):
-                    biz_class.dal.register(
-                        biz_class, DictDao, bind_kwargs=binding.params
-                    )
-                    continue
+            if dao_class is None:
+                dao_class = DictDao
 
-            if biz_class and dao_class:
-                biz_class.dal.register(
-                    biz_class, dao_class, bind_kwargs=binding.params
+            if not binder.is_registered(biz_class):
+                binder.register(
+                    biz_type=biz_class,
+                    dao_instance=dao_class(),
+                    dao_bind_kwargs=binding.params
                 )
 
     def _expand_environment_vars(self, data):
