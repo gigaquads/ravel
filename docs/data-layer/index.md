@@ -9,8 +9,8 @@ When overriding this method, be sure to call `super().bind(biz_type)`.
 Here is the base bind method:
 
 ```python
-def bind(self, bizobj_type: Type[BizObject]) -> None:
-  self.bizobj_type = bizobj_type
+def bind(self, biz_type: Type[BizObject]) -> None:
+  self.biz_type = biz_type
 ```
 
 From `bind`, you can inspect the `BizObject` class with which the `Dao` instance is being bound to initialize any schema or storage configuration for this kind of business object.
@@ -93,17 +93,17 @@ You are free to implement deletion however you see fit, whether it means removin
 
 ### Next ID
 ```python
-def next_id(self, record: Dict) -> object:
+def create_id(self, record: Dict) -> object:
   pass
 ```
 
-The purpose of `next_id` is to give the Pybiz application a chance to generate the next `_id` for a new record being created. This method may return `None`, which is a signal that the underlying persistence technology is expected to create and return the `_id` instead.
+The purpose of `create_id` is to give the Pybiz application a chance to generate the next `_id` for a new record being created. This method may return `None`, which is a signal that the underlying persistence technology is expected to create and return the `_id` instead.
 
 #### Example 1
 Using a random UUID hex string
 
 ```python
-def next_id(self, record):
+def create_id(self, record):
   return uuid.uuid4().hex
 ```
 
@@ -111,7 +111,7 @@ def next_id(self, record):
 Using a value in the new record
 
 ```python
-def next_id(self, record):
+def create_id(self, record):
   return record['name'].lower().replace(' ', '_')
 ```
 
@@ -119,7 +119,7 @@ def next_id(self, record):
 Using a persistent counter
 
 ```python
-def next_id(self, record):
+def create_id(self, record):
   return redis.incr('id-counter')
 ```
 ## Built-in DAO Types

@@ -1,27 +1,27 @@
 import sys
 import copy
 import inspect
+import threading
 
 import venusian
 
 from abc import ABCMeta
-from importlib import import_module
+from typing import Type, List
 
-from appyratus.schema.fields import Field
-from appyratus.schema import Schema
-
-from pybiz.dao.dal import DataAccessLayer
+from pybiz.dao.base import Dao
+from pybiz.dao.dao_binder import DaoBinder
+from pybiz.dao.python_dao import PythonDao
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
+from pybiz.schema import Schema, fields, Field, Int
+from pybiz.util import import_object
 
 from .relationship import Relationship
 from .relationship_property import RelationshipProperty
 from .field_property import FieldProperty
+from .biz_list import BizList
 
 
 class BizObjectMeta(ABCMeta):
-
-    dal = DataAccessLayer()
-
     def __new__(cls, name, bases, dict_):
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
         cls.add_is_bizobj_annotation(new_class)
@@ -30,27 +30,38 @@ class BizObjectMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
-        cls.dal = BizObjectMeta.dal
+        cls.Schema = cls.build_schema_type(name)
 
-        relationships = cls.build_relationships()
-        schema_class = cls.build_schema_class(name)
-
-        cls.build_all_properties(schema_class, relationships)
+        cls.schema = cls.Schema()
+        cls.relationships = cls.build_relationships()
+        cls.build_relationship_properties(cls.relationships)
+        cls.build_field_properties(cls.schema, cls.relationships)
         cls.register_dao()
 
-        def venusian_callback(scanner, name, bizobj_type):
-            scanner.bizobj_classes[name] = bizobj_type
+        cls.BizList = BizList.type_factory(cls)
+
+        def venusian_callback(scanner, name, biz_type):
+            scanner.biz_types.setdefault(name, biz_type)
 
         venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
-        manager = BizObjectMeta.dal
-        if not manager.is_registered(cls):
-            dao_type = cls.__dao__()
-            if dao_type:
-                manager.register(cls, dao_type)
+        binder = DaoBinder.get_instance()
 
-    def build_schema_class(cls, name):
+        dao_type_or_instance = cls.__dao__()
+
+        if isinstance(dao_type_or_instance, type):
+            dao_instance = dao_type_or_instance()
+        elif isinstance(dao_type_or_instance, Dao):
+            dao_instance = dao_type_or_instance
+        else:
+            # default to PythonDao
+            dao_instance = PythonDao()
+
+        # TODO: Insert Dao class into manifest.types.dao somehow if DNE
+        binder.register(biz_type=cls, dao_instance=dao_instance)
+
+    def build_schema_type(cls, name):
         """
         Builds cls.Schema from the fields declared on the business object. All
         business objects automatically inherit an _id field.
@@ -64,20 +75,21 @@ class BizObjectMeta(ABCMeta):
         obj = cls.__schema__()
         if obj:
             if isinstance(obj, str):
-                schema_class = cls.import_schema_class(obj)
+                class_name = obj
+                schema_type = import_object(class_name)
             elif isinstance(obj, type) and issubclass(obj, Schema):
-                schema_class = obj
+                schema_type = obj
             else:
                 raise ValueError(str(obj))
         else:
-            schema_class = None
+            schema_type = None
 
-        fields = copy.deepcopy(schema_class.fields) if schema_class else {}
+        fields = copy.deepcopy(schema_type.fields) if schema_type else {}
 
         # "inherit" fields of parent BizObject.Schema
-        inherited_schema_class = getattr(cls, 'Schema', None)
-        if inherited_schema_class is not None:
-            for k, v in inherited_schema_class.fields.items():
+        inherited_schema_type = getattr(cls, 'Schema', None)
+        if inherited_schema_type is not None:
+            for k, v in inherited_schema_type.fields.items():
                 fields.setdefault(k, copy.deepcopy(v))
 
         # collect and field declared on this BizObject class
@@ -92,13 +104,25 @@ class BizObjectMeta(ABCMeta):
         # bless each bizobj with a mandatory _id field.
         if '_id' not in fields:
             fields['_id'] = Field(nullable=True)
+        if '_rev' not in fields:
+            fields['_rev'] = Int(nullable=True)
+
+        # Normally, the Field `default` kwarg is generated upon Field.process
+        # but we don't want this. We only want to apply the default upon
+        # BizObject.save. Therefore, we unset the `default` attribute on all
+        # fields and take care of setting defaults in custom BizObject logic.
+        inherited_defaults = getattr(cls, 'defaults', {})
+        cls.defaults = copy.deepcopy(inherited_defaults)
+
+        # collect remaining defaults
+        for k, field in fields.items():
+            if (k not in cls.defaults) and (field.default is not None):
+                cls.defaults[k] = field.default
+                field.default = None
 
         # Build string name of the new Schema class
         # and construct the Schema class object:
-        cls.Schema = Schema.factory('{}Schema'.format(name), fields)
-        cls.schema = cls.Schema()
-
-        return cls.Schema
+        return Schema.factory('{}Schema'.format(name), fields)
 
     def add_is_bizobj_annotation(new_class):
         """
@@ -106,33 +130,6 @@ class BizObjectMeta(ABCMeta):
         isinstance of BizObjects.
         """
         setattr(new_class, IS_BIZOBJ_ANNOTATION, True)
-
-    def build_all_properties(cls, schema_class, relationships):
-        """
-        The names of Fields declared in the Schema and Relationships declared on
-        the BizObject will overwrite any methods or attributes defined
-        explicitly on the BizObject class. This happens here.
-        """
-        cls.build_relationship_properties(relationships)
-        cls.relationships = relationships
-        cls.build_field_properties(cls.schema, relationships)
-
-    def import_schema_class(self, class_path_str):
-        class_path = class_path_str.split('.')
-        assert len(class_path) > 1
-
-        module_path_str = '.'.join(class_path[:-1])
-        class_name = class_path[-1]
-
-        try:
-            schema_module = import_module(module_path_str)
-            schema_class = getattr(schema_module, class_name)
-        except Exception:
-            raise ImportError(
-                'failed to import schema class {}'.format(class_name)
-            )
-
-        return schema_class
 
     def build_relationships(cls):
         # aggregate all relationships delcared on the bizobj

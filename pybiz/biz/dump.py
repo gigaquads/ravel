@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from appyratus.utils import StringUtils, DictUtils
 
-from pybiz.util import is_bizobj
+from pybiz.util import is_bizobj, is_sequence
 
 
 class Dump(object):
@@ -13,7 +13,7 @@ class Dump(object):
         # normaize the incoming `fields` data structure to a nested dict
         if isinstance(fields, dict):
             fields = DictUtils.unflatten_keys(fields)
-        elif (not fields) or isinstance(fields, (set, list, tuple)):
+        elif (not fields) or is_sequence(fields):
             fields = DictUtils.unflatten_keys({
                 k: None for k in (
                     fields or (target.data.keys() | target.related.keys())
@@ -65,12 +65,17 @@ class DumpNested(Dump):
         ```
         """
         # `record` is the return values
-        record = {'id': target._id}
+        record = {
+            'id': target._id,
+            'rev': target._rev,
+        }
+
+        pybiz_field_names = {'_id', '_rev'}
 
         # add each specified field data to the return record
         # and recurse on nested targets available through Relationships
         for k in fields:
-            if k == '_id':
+            if k in pybiz_field_names:
                 continue
             field = target.schema.fields.get(k)
             if field is not None:
@@ -78,7 +83,7 @@ class DumpNested(Dump):
                 if not field.meta.get('private', False):
                     # only dump "public" fields
                     v = target.data[k]
-                    if isinstance(v, (dict, list, set, tuple)):
+                    if is_sequence(v):
                         v = copy.deepcopy(v)
                     record[k] = v
             elif k in target.relationships:

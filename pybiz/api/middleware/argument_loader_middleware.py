@@ -2,7 +2,12 @@ import typing
 
 from typing import List, Dict, ForwardRef, Text, Tuple, Set, Type
 
-from .registry_middleware import RegistryMiddleware
+from pybiz.util import is_bizobj
+
+from .base import RegistryMiddleware
+
+LOAD_ONE  = 1
+LOAD_MANY = 2
 
 
 class ArgumentLoaderMiddleware(RegistryMiddleware):
@@ -18,54 +23,71 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
             raise NotImplementedError()
 
     class BizObjectLoader(Loader):
-        def __init__(
-            self,
-            target_type: Type['BizObject'],
-            source_type: Type = int,
-        ):
-            super().__init__(target_type.__name__)
-            self.target_type = target_type
-            self.source_type = source_type
+        def __init__(self, biz_type: Type['BizObject']):
+            super().__init__(biz_type.__name__)
+            self.biz_type = biz_type
 
         def load(self, proxy, _id, args, kwargs):
-            target = self.target_type
-            _id = self.source_type(_id) if self.source_type else _id
-            return target.query( predicate=(target._id == _id), first=True)
+            return self.biz_type.get(_id)
 
         def load_many(self, proxy, _ids, args, kwargs):
-            if self.source_type is not None:
-                _ids = {self.source_type(_id) for _id in _ids}
-            target = self.target_type
-            return target.query(predicate=(target._id.is_in(_ids)))
+            return self.biz_type.get_many(_ids)
 
-    def __init__(self, loaders: List[Loader]):
+    def __init__(self):
         super().__init__()
-        self.loaders = {}
-        for loader in loaders:
-            self.loaders[('O', loader.type_name)] = loader.load
-            self.loaders[('L', loader.type_name)] = loader.load_many
+        self._load_funcs = {}
 
-    def parse_annotation(self, obj):
+    def on_bootstrap(self):
+        for biz_type in self.registry.types.biz.values():
+            self._load_funcs[LOAD_ONE, loader.type_name] = loader.load
+            self._load_funcs[LOAD_MANY, loader.type_name] = loader.load_many
+
+    def on_request(self, proxy, args, kwargs):
+        """
+        For any positional or keyword argument declared on a proxy target
+        function, try to replace it if the actual bound value is not a BizObject
+        type, assuming that this non-BizObject value is an ID or sequence of
+        IDs.
+        """
+        new_args = list(args)
+
+        for idx, (k, param) in enumerate(proxy.signature.parameters.items()):
+            if (param.annotation is None):
+                continue
+
+            # get loader function
+            load = self._get_loader_func_for_param(param)
+
+            if idx < len(new_args) and not is_bizobj(new_args[idx]):
+                # bind to a positional argument
+                val = new_args[idx]
+                new_args[idx] = load(proxy, val, args, kwargs)
+            elif k in kwargs and not is_bizobj(kwargs[k]):
+                # bind to a keyword argument
+                val = kwargs[k]
+                kwargs[k] = load(proxy, val, args, kwargs)
+
+            return (tuple(new_args), kwargs)
+
+    def _get_loader_func_for_param(self, param):
+        key = self._get_loader_func(param.annotation)
+        return self._load_funcs.get(key)
+
+    def _parse_type_annotation(self, obj):
         key = None
+
         if isinstance(obj, str):
-            key = ('O', obj)
+            key = (LOAD_ONE, obj)
         elif isinstance(obj, type):
-            key = ('O', obj.__name__)
+            key = (LOAD_ONE, obj.__name__)
         elif isinstance(obj, ForwardRef):
-            key = ('O', obj.__forward_arg__)
+            key = (LOAD_ONE, obj.__forward_arg__)
         elif (
             (isinstance(obj, typing._GenericAlias)) and
             (obj._name in {'List', 'Tuple', 'Set'})
         ):
             if obj.__args__:
                 arg = obj.__args__[0]
-                key = ('L', self.parse_annotation(arg)[1])
-        return key
+                key = (LOAD_MANY, self._parse_type_annotation(arg)[1])
 
-    def on_request(self, proxy, args, kwargs):
-        for k, param in proxy.signature.parameters.items():
-            if (k in kwargs) and (param.annotation is not None):
-                loader_key = self.parse_annotation(param.annotation)
-                loader_func = self.loaders.get(loader_key)
-                if loader_func is not None:
-                    kwargs[k] = loader_func(proxy, kwargs[k], args, kwargs)
+        return key

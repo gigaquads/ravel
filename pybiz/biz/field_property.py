@@ -73,12 +73,12 @@ class FieldProperty(property):
         return self._field.source
 
     @property
-    def asc(self) -> Tuple:
-        return (self._key, +1)
+    def asc(self) -> 'OrderBy':
+        return OrderBy(self.key, desc=False)
 
     @property
-    def desc(self) -> Tuple:
-        return (self._key, -1)
+    def desc(self) -> 'OrderBy':
+        return OrderBy(self.key, desc=True)
 
     @classmethod
     def build(
@@ -96,10 +96,10 @@ class FieldProperty(property):
                 raise AttributeError(key)
 
             # try to lazy load the field value
-            if (key not in self.data) and ('_id' in self.data):
+            if (key not in self._data) and ('_id' in self._data):
                 field = self.schema.fields.get(key)
                 if field and field.meta.get('lazy', True):
-                    self.load(self.schema.fields.keys() - self.data.keys())
+                    self.load(self.schema.fields.keys() - self._data.keys())
 
             # set the
             if key in self._data:
@@ -119,6 +119,16 @@ class FieldProperty(property):
                     'cannot delete required field value: {}'.format(key)
                 )
             else:
-                self.data.pop(key, None)
+                self._data.pop(key, None)
 
         return cls(target, field, fget=fget, fset=fset, fdel=fdel)
+
+
+class OrderBy(object):
+    def __init__(self, key: Text, desc=False):
+        self.key = key
+        self.desc = desc
+
+    @property
+    def asc(self):
+        return not self.desc

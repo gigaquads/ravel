@@ -40,7 +40,10 @@ class RegistryProxy(RegistryObject):
     def _apply_middleware_pre_request(self, raw_args, raw_kwargs):
         for m in self.registry.middleware:
             if isinstance(self.registry, m.registry_types):
-                m.pre_request(self, raw_args, raw_kwargs)
+                result = m.pre_request(self, raw_args, raw_kwargs)
+                if result:
+                    # pre_request can mutate arguments
+                    raw_args, raw_kwargs = result
 
     def _apply_middleware_on_request(self, prepared_args, prepared_kwargs):
         for m in self.registry.middleware:
@@ -54,7 +57,7 @@ class RegistryProxy(RegistryObject):
 
     def _apply_registry_on_request(self, raw_args, raw_kwargs):
         result = self.registry.on_request(self, *raw_args, **raw_kwargs)
-        return result if result is not None else (raw_args, raw_kwargs)
+        return result if result else (raw_args, raw_kwargs)
 
     def _apply_registry_on_response(self, prepared_args, prepared_kwargs, result):
         return self.decorator.registry.on_response(

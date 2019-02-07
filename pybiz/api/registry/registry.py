@@ -1,29 +1,33 @@
 import inspect
 
 from typing import List, Type, Dict, Tuple, Text
+from collections import deque
 
-from appyratus.utils import DictAccessor
+from appyratus.utils import DictAccessor, DictUtils
 from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
-from pybiz.util import JsonEncoder
+from pybiz.json import JsonEncoder
+from pybiz.dao.dao_binder import DaoBinder
+from pybiz.api.middleware import ArgumentLoaderMiddleware
 
 from .registry_decorator import RegistryDecorator
 from .registry_proxy import RegistryProxy
 
 
 class Registry(object):
-    def __init__(
-        self,
-        manifest: Manifest = None,
-        middleware: List['RegistryMiddleware'] = None
-    ):
+    def __init__(self, middleware: List['RegistryMiddleware'] = None):
         self._decorators = []
         self._proxies = {}
-        self._manifest = manifest or Manifest()
+        self._manifest = None
         self._is_bootstrapped = False
-        self._middleware = middleware or []
+        self._is_started = False
         self._json_encoder = JsonEncoder()
+        self._namespace = {}
+        self._middleware = deque([
+            m for m in (middleware or [])
+            if isinstance(self, m.registry_types)
+        ])
 
     def __call__(self, *args, **kwargs) -> RegistryDecorator:
         """
@@ -59,12 +63,9 @@ class Registry(object):
     def manifest(self) -> Manifest:
         return self._manifest
 
-    @memoized_property
+    @property
     def middleware(self) -> List['RegistryMiddleware']:
-        return [
-            m for m in self._middleware
-            if isinstance(self, m.registry_types)
-        ]
+        return self._middleware
 
     @property
     def proxies(self) -> Dict[Text, RegistryProxy]:
@@ -85,19 +86,66 @@ class Registry(object):
     def register(self, proxy):
         self.proxies[proxy.name] = proxy
 
-    def bootstrap(self):
+    def on_bootstrap(self, *args, **kwargs):
+        pass
+
+    def on_start(self):
+        pass
+
+    def bootstrap(
+        self,
+        manifest: Manifest = None,
+        namespace: Dict = None,
+        *args, **kwargs
+    ):
         """
         Bootstrap the data, business, and service layers, wiring them up.
-        Override in subclass.
         """
+        from pybiz import BizObject
+        
+        if self.is_bootstrapped:
+            # if already bootstrapped, don't re-trigger all the base behavior
+            # of this method. instead, only execute custom on_boostrap logic,
+            # and make it the developer's responsiblity to make on_bootstrap
+            # idempotent.
+            self.on_bootstrap()
+            return self
+
+        # merge additional namespace data into namespace accumulator
+        self._namespace = DictUtils.merge(self._namespace, namespace or {})
+
+        # create, load, and process the manifest
+        self._manifest = manifest or Manifest()
+        self._manifest.load().process(namespace=self._namespace)
+
+        for mware in self.middleware:
+            mware.bootstrap(registry=self)
+
+        # bootstrap the data access layer (DAL)
+        binder = DaoBinder.get_instance()
+
+        for binding in binder.bindings:
+            strap = self.manifest.bootstraps.get(binding.dao_type_name)
+            if strap is not None:
+                binding.dao_type.bootstrap(**strap.params)
+            else:
+                binding.dao_type.bootstrap()
+
+        binder.bind()
+
+        # execute developer-provided custom logic
+        self.on_bootstrap(*args, **kwargs)
+
         self._is_bootstrapped = True
+        return self
 
     def start(self, *args, **kwargs):
         """
         Enter the main loop in whatever program context your Registry is
         being used, like in a web framework or a REPL.
         """
-        raise NotImplementedError('override in subclass')
+        self._is_started = True
+        return self.on_start()
 
     def dump(self) -> Dict:
         """

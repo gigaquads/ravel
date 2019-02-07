@@ -1,7 +1,11 @@
 from typing import List, Dict, Set, Text, Type, Tuple
 
 from appyratus.utils import DictUtils
-from pybiz.util import is_bizobj
+
+from pybiz.util import is_bizobj, is_sequence
+from pybiz.constants import IS_BIZOBJ_ANNOTATION
+
+from .biz_list import BizList
 
 
 class QuerySpecification(tuple):
@@ -27,7 +31,7 @@ class QuerySpecification(tuple):
         relationships: Dict[Text, 'QuerySpecification'] = None,
         limit: int  =None,
         offset: int = None,
-        order_by: Tuple[Text] = None,
+        order_by: Tuple = None,
     ):
         # set epxected default values for items in the tuple.
         # always work on a copy of the input `fields` set.
@@ -42,7 +46,7 @@ class QuerySpecification(tuple):
         if offset is not None:
             offset = max(0, offset)
 
-        order_by = order_by or []
+        order_by = tuple(order_by or tuple())
 
         return tuple.__new__(cls, (
             fields,
@@ -61,22 +65,22 @@ class QuerySpecification(tuple):
     @staticmethod
     def prepare(
         spec: 'QuerySpecification',
-        bizobj_type: Type['BizObject']
+        biz_type: Type['BizObject']
     ) -> 'QuerySpecification':
         """
         Translate input "spec" data structure into a well-formed
         QuerySpecification object with appropriate starting conditions.
         """
-        def recursive_init(bizobj_type, names):
+        def recursive_init(biz_type, names):
             spec = QuerySpecification()
             if '*' in names:
-                spec.fields = set(bizobj_type.schema.fields.keys())
+                spec.fields = set(biz_type.schema.fields.keys())
                 del names['*']
             for k, v in names.items():
-                if k in bizobj_type.schema.fields:
+                if k in biz_type.schema.fields:
                     spec.fields.add(k)
-                elif k in bizobj_type.relationships:
-                    rel = bizobj_type.relationships[k]
+                elif k in biz_type.relationships:
+                    rel = biz_type.relationships[k]
                     if v is None:  # => is terminal
                         spec.relationships[k] = QuerySpecification()
                     elif isinstance(v, dict):
@@ -84,28 +88,26 @@ class QuerySpecification(tuple):
             return spec
 
         if isinstance(spec, QuerySpecification):
-            pass    # nothing special to do,
-                    # since spec is already type <QuerySpecification>
+            if '*' in spec.fields:
+                 spec.fields = set(biz_type.schema.fields.keys())
         elif isinstance(spec, dict):
             names = DictUtils.unflatten_keys({k: None for k in spec})
-            spec = recursive_init(bizobj_type, names)
-        elif isinstance(spec, (set, list, tuple)):
+            spec = recursive_init(biz_type, names)
+        elif is_sequence(spec):
             # spec is an array of field and relationship names
             # so partition the names between fields and relationships
             # in a new spec object.
             names = DictUtils.unflatten_keys({k: None for k in spec})
-            spec = recursive_init(bizobj_type, names)
+            spec = recursive_init(biz_type, names)
         elif spec is None:
             # by default, a new spec includes all fields and relationships
             spec = QuerySpecification(
-                fields={k for k, field in bizobj_type.schema.fields.items()},
+                fields={k for k, field in biz_type.schema.fields.items()},
             )
 
         # ensure that _id and required fields are *always* specified
+        spec.fields |= biz_type.schema.required_fields.keys()
         spec.fields.add('_id')
-        for k, field in bizobj_type.schema.fields.items():
-            if field.required:
-                spec.fields.add(k)
 
         return spec
 
@@ -113,7 +115,7 @@ class QuerySpecification(tuple):
 class Query(object):
     def __init__(
         self,
-        bizobj_type: Type['BizObject'],
+        biz_type: Type['BizObject'],
         predicate: 'Predicate',
         spec: 'QuerySpecification'
     ):
@@ -121,9 +123,9 @@ class Query(object):
         Execute a recursive query according to a given logical match predicate
         and target field/relationship spec.
         """
-        self.bizobj_type = bizobj_type
-        self.dao = bizobj_type.get_dao()
-        self.spec = QuerySpecification.prepare(spec, bizobj_type)
+        self.biz_type = biz_type
+        self.dao = biz_type.get_dao()
+        self.spec = QuerySpecification.prepare(spec, biz_type)
         self.predicate = predicate
 
     def execute(self) -> List['BizObject']:
@@ -138,14 +140,13 @@ class Query(object):
             offset=self.spec.offset,
             order_by=self.spec.order_by,
         )
-        bizobjs = [
+        return [
             self._recursive_execute(
-                bizobj=self.bizobj_type(record).clean(),
+                bizobj=self.biz_type(record).clean(),
                 spec=self.spec
-            )
+            ).clean()
             for record in records
         ]
-        return bizobjs
 
     def _recursive_execute(
         self,
@@ -162,6 +163,7 @@ class Query(object):
             v = rel.query(bizobj, child_spec)
             setattr(bizobj, k, v)
             if rel.many:
+                assert isinstance(v, BizList)
                 for child in v:
                     self._recursive_execute(child, child_spec)
             else:
@@ -177,7 +179,7 @@ class QueryUtils(object):
     @classmethod
     def prepare_fields_argument(
         cls,
-        bizobj_type: Type['BizObject'],
+        biz_type: Type['BizObject'],
         argument: object,
         parent: Type['BizObject'] = None,
     ) -> Tuple[Set[Text], Dict[Text, Dict]]:
@@ -187,37 +189,31 @@ class QueryUtils(object):
         # standardized the `argument` to a nested dict structure
         if argument is None:
             # if none, specified, select all fields and relationships
-            spec = {
-                k: None for k in bizobj_type.schema.fields.keys()
-            }
+            spec = {k: None for k in biz_type.schema.required_fields}
         else:
-            if isinstance(argument, (set, list, tuple)):
+            if is_sequence(argument):
                 spec = DictUtils.unflatten_keys({k: None for k in argument})
             elif isinstance(argument, dict):
                 if parent is None:
                     spec = DictUtils.unflatten_keys(argument)
                 else:
                     spec = argument
-            # ensure _id is always selected
-            spec['_id'] = None
-            # add required fields
-            for k in bizobj_type.schema.required_fields:
-                spec.setdefault(k, None)
+            if '*' in spec:
+                del spec['*']
+                spec = {k: None for k in biz_type.schema.fields}
+            if not spec:
+                spec = {k: None for k in biz_type.schema.required_fields}
 
-        if '*' in spec:
-            del spec['*']
-            spec.update({k: None for k in bizobj_type.schema.fields})
-
-        fields = set()      # <- set of fields to query on this bizobj_type
+        fields = set()      # <- set of fields to query on this biz_type
         relationships = {}  # <- map from relationship name to recursive result
 
         # recursively partition keys between the `fields`
         # set and `relationships` dict
         for k, v in spec.items():
-            if k in bizobj_type.schema.fields:
+            if k in biz_type.schema.fields:
                 fields.add(k)
-            elif k in bizobj_type.relationships:
-                rel = bizobj_type.relationships[k]
+            elif k in biz_type.relationships:
+                rel = biz_type.relationships[k]
                 if v is None:
                     related_fields = {}
                 else:
@@ -225,9 +221,9 @@ class QueryUtils(object):
 
                 # recurse on relationship
                 relationships[k] = cls.prepare_fields_argument(
-                    bizobj_type=rel.target,
+                    biz_type=rel.target,
                     argument=related_fields,
-                    parent=bizobj_type,
+                    parent=biz_type,
                 )
 
         return (fields, relationships)

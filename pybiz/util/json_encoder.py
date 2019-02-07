@@ -1,5 +1,3 @@
-from appyratus.json import JsonEncoder as BaseJsonEncoder
-
 from .bizobj import is_bizobj
 
 

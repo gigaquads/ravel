@@ -1,8 +1,9 @@
 import os
+import uuid
 
 import venusian
 
-from typing import Dict, List, Type
+from typing import Dict, List, Type, Set, Text, Tuple
 from abc import ABCMeta, abstractmethod
 
 
@@ -10,28 +11,89 @@ class DaoMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
-        def callback(scanner, name, dao_class):
-            scanner.dao_classes[name] = dao_class
+        def callback(scanner, name, dao_type):
+            scanner.dao_types.setdefault(name, dao_type)
 
         venusian.attach(cls, callback, category='dao')
 
 
 class Dao(object, metaclass=DaoMeta):
+    def __init__(self, *args, **kwargs):
+        self._is_bound = False
+        self._biz_type = None
+        self._registry = None
+        self.ignore_rev = False  # XXX: hacky, for CacheDao to work
 
-    # set by self.bind
-    bizobj_type = None
+    def __repr__(self):
+        if self.is_bound:
+            return (
+                f'<{self.__class__.__name__}'
+                f'({self.biz_type.__name__})>'
+            )
+        else:
+            return (
+                f'<{self.__class__.__name__}>'
+            )
 
-    def bind(self, bizobj_type: Type['BizObject']):
-        self.bizobj_type = bizobj_type
+    @property
+    def is_bound(self):
+        return self._is_bound
 
-    @abstractmethod
-    def query(self, predicate, **kwargs):
+    @property
+    def biz_type(self):
+        return self._biz_type
+
+    @property
+    def registry(self):
+        return self._registry
+
+    def bind(self, biz_type: Type['BizObject']):
+        self._biz_type = biz_type
+        self._is_bound = True
+
+    @classmethod
+    def bootstrap(cls, registry: 'Registry' = None, **kwargs):
+        """
+        Perform class-level initialization, like getting
+        a connectio pool, for example.
+        """
+        cls._registry = registry
+        cls.on_bootstrap()
+
+    @classmethod
+    def on_bootstrap(cls, **kwargs):
         pass
+
+    def create_id(self, record: Dict) -> object:
+        """
+        Generate and return a new ID for the given not-yet-created record.
+        """
+        return record.get('_id') or uuid.uuid4().hex
 
     @abstractmethod
     def exists(self, _id) -> bool:
         """
         Return True if the record with the given _id exists.
+        """
+
+    @abstractmethod
+    def count(self) -> int:
+        """
+        Return the total number of stored records.
+        """
+
+    @abstractmethod
+    def query(
+        self,
+        predicate: 'Predicate',
+        fields: Set[Text] = None,
+        limit: int = None,
+        offset: int = None,
+        order_by: Tuple = None,
+        **kwargs
+    ) -> List[Dict]:
+        """
+        Return all records whose fields match a logical predicate.
         """
 
     @abstractmethod
@@ -46,6 +108,12 @@ class Dao(object, metaclass=DaoMeta):
         """
         Read multiple records by _id, selecting only the designated fields (or
         all by default).
+        """
+
+    @abstractmethod
+    def fetch_all(self, fields: Set[Text] = None) -> Dict:
+        """
+        Return all records managed by this Dao.
         """
 
     @abstractmethod

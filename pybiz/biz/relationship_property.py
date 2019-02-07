@@ -1,5 +1,8 @@
+import pybiz.biz.biz_object as biz_object
+
 from typing import Text, Type, Tuple
 
+from pybiz.util import is_sequence
 from pybiz.predicate import (
     ConditionalPredicate,
     BooleanPredicate,
@@ -7,6 +10,8 @@ from pybiz.predicate import (
 )
 
 from .relationship import Relationship, MockBizObject
+from .query import QuerySpecification
+from .biz_list import BizList
 
 
 class RelationshipProperty(property):
@@ -31,21 +36,23 @@ class RelationshipProperty(property):
         rel = relationship
         key = relationship.name
 
-        def is_scalar_value(obj):
-            # just a helper func
-            return not isinstance(obj, (list, set, tuple))
-
         def fget(self):
             """
             Return the related BizObject instance or list.
             """
             if key not in self._related:
-                if rel.lazy and rel.query:
-                    # lazily fetch the related data, eagerly selecting all fields
-                    related_obj = rel.query(self, {'*'})
+                if rel.lazy:
+                    # fetch all fields
+                    related_obj = rel.query(self)
                     setattr(self, key, related_obj)
+                    if rel.on_insert is not None:
+                        if rel.many:
+                            for bizobj in related_obj:
+                                rel.on_insert(self, bizobj)
+                        else:
+                            rel.on_insert(self, related_obj)
 
-            default = [] if rel.many else None
+            default = self.BizList([], rel, self) if rel.many else None
             value = self._related.get(key, default)
 
             if rel.on_get is not None:
@@ -59,7 +66,13 @@ class RelationshipProperty(property):
             assigned to a Relationship with many == False and vice versa.
             """
             rel = self.relationships[key]
-            is_scalar = is_scalar_value(value)
+
+            if value is None and rel.many:
+                value = rel.target.BizList([], rel, self)
+            elif is_sequence(value):
+                value = rel.target.BizList(value, rel, self)
+
+            is_scalar = not isinstance(value, BizList)
             expect_scalar = not rel.many
 
             if (not expect_scalar) and isinstance(value, dict):
@@ -69,10 +82,10 @@ class RelationshipProperty(property):
                 value = list(value.values())
 
             if is_scalar and not expect_scalar:
-                    raise ValueError(
-                        'relationship "{}" must be a sequence because '
-                        'relationship.many is True'.format(key)
-                    )
+                raise ValueError(
+                    'relationship "{}" must be a sequence because '
+                    'relationship.many is True'.format(key)
+                )
             elif (not is_scalar) and expect_scalar:
                 raise ValueError(
                     'relationship "{}" cannot be a BizObject because '

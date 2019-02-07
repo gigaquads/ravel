@@ -1,9 +1,12 @@
+import uuid
+
+from copy import deepcopy, copy
 from typing import List, Dict, Text, Type, Tuple, Set
 
-from pybiz.dao.dal import DataAccessLayer
-from pybiz.dao.dict_dao import DictDao
+from pybiz.dao.dao_binder import DaoBinder
+from pybiz.dao.python_dao import PythonDao
+from pybiz.util import is_bizobj, is_sequence, repr_biz_id
 from pybiz.dirty import DirtyDict
-from pybiz.util import is_bizobj
 
 from .meta import BizObjectMeta
 from .dump import DumpNested, DumpSideLoaded
@@ -12,10 +15,8 @@ from .query import Query, QueryUtils
 
 class BizObject(metaclass=BizObjectMeta):
 
-    # set by metaclass:
     schema = None
     relationships = {}
-    dal = None
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -28,19 +29,24 @@ class BizObject(metaclass=BizObjectMeta):
         """
         Declare the DAO type/instance used by this BizObject class.
         """
-        return DictDao()
+        return PythonDao()
 
     @classmethod
     def get_dao(cls) -> 'Dao':
         """
         Get the global Dao reference associated with this class.
         """
-        return cls.dal.get_dao(cls)
+        binder = DaoBinder.get_instance()
+        return binder.get_dao_instance(cls, bind=True)
 
     def __init__(self, data=None, **more_data):
         self._data = DirtyDict()
         self._related = {}
+        self._hash = int(uuid.uuid4().hex, 16)
         self.merge(dict(data or {}, **more_data))
+
+    def __hash__(self):
+        return self._hash
 
     def __eq__(self):
         return self._id == other._id if self._id is not None else False
@@ -68,16 +74,10 @@ class BizObject(metaclass=BizObjectMeta):
         return key in self._data
 
     def __repr__(self):
-        _id = self.data.get('_id')
-        if _id is None:
-            id_str = '?'
-        else:
-            id_str = repr(_id)[:7]
-        return '<{name}({id}){dirty}>'.format(
-            id=id_str,
-            name=self.__class__.__name__,
-            dirty='*' if self._data.dirty else '',
-        )
+        id_str = repr_biz_id(self)
+        name = self.__class__.__name__
+        dirty = '*' if self._data.dirty else ''
+        return f'<{name}({id_str}){dirty}>'
 
     @classmethod
     def exists(cls, _id=None) -> bool:
@@ -109,14 +109,18 @@ class BizObject(metaclass=BizObjectMeta):
         if order_by:
             query.spec.order_by = order_by
 
-        bizobjs = query.execute()
+        results = query.execute()
         if first:
-            return bizobjs[0].clean() if bizobjs else None
+            return results[0] if results else None
         else:
-            return [obj.clean() for obj in bizobjs]
+            return cls.BizList(results)
 
     @classmethod
     def get(cls, _id, fields: Dict = None) -> 'BizObject':
+        _id, err = cls.schema.fields['_id'].process(_id)
+        if err:
+            raise Exception(err)  # TODO: raise validation error
+
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
         record = cls.get_dao().fetch(_id=_id, fields=fields)
         if record is not None:
@@ -129,13 +133,21 @@ class BizObject(metaclass=BizObjectMeta):
         return None
 
     @classmethod
-    def get_many(cls, _ids, fields: List=None, as_list=True):
+    def get_many(cls, _ids = None, fields: List=None, as_list=True):
+        _ids = _ids or []
+        processed_ids = []
+        for _id in _ids:
+            processed_id, err = cls.schema.fields['_id'].process(_id)
+            processed_ids.append(processed_id)
+            if err:
+                raise Exception(err)  # TODO: raise validation error
+
         # separate field names into those corresponding to this BizObjects
         # class and those of the related BizObject classes.
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
 
         # fetch data from the dao
-        records = cls.get_dao().fetch_many(_ids=_ids, fields=fields)
+        records = cls.get_dao().fetch_many(_ids=processed_ids, fields=fields)
 
         # now fetch and merge related business objects.
         # This could be optimized.
@@ -148,7 +160,17 @@ class BizObject(metaclass=BizObjectMeta):
                 bizobjs[_id] = None
 
         # return results either as a list or a mapping from id to object
-        return bizobjs if not as_list else list(bizobjs.values())
+        if as_list:
+            return cls.BizList(list(bizobjs.values()))
+        else:
+            return bizobjs
+
+    @classmethod
+    def get_all(cls, fields: Set[Text] = None) -> Dict:
+        return {
+            _id: cls(record).clean()
+            for _id, record in cls.get_dao().fetch_all().items()
+        }
 
     @classmethod
     def delete_many(cls, bizobjs) -> None:
@@ -156,6 +178,7 @@ class BizObject(metaclass=BizObjectMeta):
         for obj in bizobjs:
             obj.mark(obj.data.keys())
             bizobj_ids.append(obj._id)
+            obj._id = None
         cls.get_dao().delete_many(bizobj_ids)
 
     def delete(self) -> 'BizObject':
@@ -168,6 +191,10 @@ class BizObject(metaclass=BizObjectMeta):
         self._id = None
         return self
 
+    @classmethod
+    def save_many(cls, bizobjs: List['BizObject']) -> List['BizObject']:
+        return [bizobj.save() for bizobj in bizobjs]
+
     def save(self, path: List['BizObject'] = None) -> 'BizObject':
         # TODO: allow fields kwarg to specify a subset of fields and
         # relationships to save instead of all changes.
@@ -176,7 +203,14 @@ class BizObject(metaclass=BizObjectMeta):
         data_to_save = {k: self[k] for k in self._data.dirty}
         path = path or []
 
-        if self.get('_id') is None:
+        for k, default in self.defaults.items():
+            if k not in data_to_save:
+                if callable(default):
+                    data_to_save[k] = default()
+                else:
+                    data_to_save[k] = deepcopy(default)
+
+        if self._id is None:
             updated_data = self.dao.create(data_to_save)
         else:
             updated_data = self.dao.update(self._id, data_to_save)
@@ -185,7 +219,7 @@ class BizObject(metaclass=BizObjectMeta):
             for k, v in updated_data.items():
                 setattr(self, k, v)
 
-        # Save ditty child BizObjects before saving this BizObject so that the
+        # Save dirty child BizObjects before saving this BizObject so that the
         # updated child data can be passed into this object's dao.save/create
         # method
         for k, v in self._related.items():
@@ -217,6 +251,7 @@ class BizObject(metaclass=BizObjectMeta):
     @property
     def dao(self) -> 'Dao':
         return self.get_dao()
+
     @property
     def data(self) -> 'DirtyDict':
         return self._data
@@ -234,8 +269,34 @@ class BizObject(metaclass=BizObjectMeta):
         return self
 
     def mark(self, keys) -> 'BizObject':
-        self._data.mark_dirty(keys)
+        if not is_sequence(keys):
+            keys = {keys}
+        self._data.mark_dirty({k for k in keys if k in self.schema.fields})
+        for k in keys:
+            if k in self.related:
+                del self.related[k]
         return self
+
+    def copy(self, deep=False) -> 'BizObject':
+        """
+        Create a clone of this BizObject. Deep copy its fields but, by default.
+
+        Args:
+        - `deep`: If set, deep copy related BizObjects.
+        """
+        clone = self.__class__(deepcopy(self.data))
+
+        # select the copy method to use for relationship-loaded data
+        copy_related_value = deepcopy if deep else copy
+
+        # copy related BizObjects
+        for k, v in self.related.items():
+            if not self.relationships[k].many:
+                clone.related[k] = copy_related_value(v)
+            else:
+                clone.related[k] = [copy_related_value(i) for i in v]
+
+        return clone.clean()
 
     def merge(self, obj, process=True, mark=True) -> 'BizObject':
         """
@@ -249,7 +310,9 @@ class BizObject(metaclass=BizObjectMeta):
         if is_bizobj(obj):
             self._data.update(obj._data)
             self._related.update(obj._related)
+            dirty_keys = obj._data.keys()
         else:
+            dirty_keys = obj.keys()
             for k, v in obj.items():
                 setattr(self, k, v)
 
@@ -260,15 +323,16 @@ class BizObject(metaclass=BizObjectMeta):
                 # TODO: raise custom exception
                 raise Exception(str(error))
 
+            previous_dirty = set(self.dirty)
             self._data = DirtyDict(processed_data)
+            self.clean()
+        else:
+            previous_dirty = set()
 
         # clear cached dump data because we now have different data :)
         # and mark all new keys as dirty.
-        dirty_func = self.mark if mark else self.clean
-        if is_bizobj(obj):
-            dirty_func(obj.data.keys())
-        else:
-            dirty_func({k for k in obj if k in self.schema.fields})
+        if mark:
+            self.mark(dirty_keys | previous_dirty)
 
         return self
 
@@ -277,6 +341,8 @@ class BizObject(metaclass=BizObjectMeta):
         Assuming _id is not None, this will load the rest of the BizObject's
         data.
         """
+        if isinstance(fields, str):
+            fields = {fields}
         fresh = self.get(_id=self._id, fields=fields)
         self.merge(fresh, mark=False)
         return self
