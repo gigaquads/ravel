@@ -193,7 +193,36 @@ class BizObject(metaclass=BizObjectMeta):
 
     @classmethod
     def save_many(cls, bizobjs: List['BizObject']) -> List['BizObject']:
-        return [bizobj.save() for bizobj in bizobjs]
+        """
+        Save many BizObjects
+        """
+        records_to_create = []
+        records_to_update = []
+
+        for b in bizobjs:
+            record = {k: self._data[k] for k in b.dirty}
+            for k, default in self.defaults.items():
+                field = self.schema.fields[k]
+                if k not in data or (record[v] is None and not field.nullable):
+                    if callable(default):
+                        record[k] = default()
+                    else:
+                        record[k] = deepcopy(default)
+            if b._id is None:
+                # TODO: generate defaults into this
+                records_to_create.append(record)
+            else:
+                records_to_update.append(record)
+
+        created_records = cls.get_dao().create_many(records_to_create)
+        created_bizobjs = [cls(x).clean() for x in created_records.values()]
+
+        updated_records = cls.get_dao().update_many(records_to_update)
+        updated_bizobjs = [cls(x).clean() for x in updated_records.values()]
+
+        # TODO: recurse on relationships
+
+        return (created_bizobjs + updated_records)
 
     def save(self, path: List['BizObject'] = None) -> 'BizObject':
         # TODO: allow fields kwarg to specify a subset of fields and
@@ -203,14 +232,13 @@ class BizObject(metaclass=BizObjectMeta):
         data_to_save = {k: self[k] for k in self._data.dirty}
         path = path or []
 
-        for k, default in self.defaults.items():
-            if k not in data_to_save:
-                if callable(default):
-                    data_to_save[k] = default()
-                else:
-                    data_to_save[k] = deepcopy(default)
-
         if self._id is None:
+            for k, default in self.defaults.items():
+                if k not in data_to_save:
+                    if callable(default):
+                        data_to_save[k] = default()
+                    else:
+                        data_to_save[k] = deepcopy(default)
             updated_data = self.dao.create(data_to_save)
         else:
             updated_data = self.dao.update(self._id, data_to_save)
