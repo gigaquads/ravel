@@ -1,5 +1,6 @@
 import os
 import importlib
+import traceback
 import re
 
 import yaml
@@ -14,6 +15,7 @@ from appyratus.files import Yaml, Json
 from appyratus.env import Environment
 
 from pybiz.exc import ManifestError
+from pybiz.util import import_object
 
 
 class Manifest(object):
@@ -28,52 +30,46 @@ class Manifest(object):
         path: Text = None,
         data: Dict = None,
         env: Environment = None,
-        load=True
     ):
+        from pybiz.dao import PythonDao
+
+        self.data = data or {}
+        self.path = path
         self.package = None
         self.bindings = []
         self.bootstraps = {}
         self.env = env or Environment()
-
+        self.types = DictAccessor({
+            'dao': {'PythonDao': PythonDao},
+            'biz': {},
+        })
         self.scanner = Scanner(
-            env=env,
-            biz_types={},
-            dao_types={}
+            biz_types=self.types.biz,
+            dao_types=self.types.dao,
+            env=self.env,
         )
 
-        self.types = DictAccessor({
-            'biz': self.scanner.biz_types,
-            'dao': self.scanner.dao_types,
-        })
+    def load(self):
+        if not (self.data or self.path):
+            return self
 
-        if data or path:
-            self.load(data=data, path=path)
+        # try to load manifest file from a YAML or JSON file
+        if self.path is not None:
+            ext = os.path.splitext(self.path)[1].lstrip('.').lower()
+            if ext in Yaml.extensions():
+                file_data = Yaml.load_file(self.path)
+            elif ext in Json.extensions():
+                file_data = Json.load_file(self.path)
 
-    def load(self, data: Dict = None, path: Text = None):
-        if not (data or path):
-            return
-
-        data = data or {}
-
-        # load base data from file
-        if path is None:
-            path = os.environ.get('PYBIZ_MANIFEST')
-        if path is not None:
-            _, ext = os.path.splitext(path)
-            ext = ext.lstrip('.').lower()
-            if ext in ('yml', 'yaml'):
-                file_data = Yaml.load_file(path)
-            elif ext == 'json':
-                file_data = Json.load_file(path)
             # merge contents of file with data dict arg
-            data = DictUtils.merge(file_data, data)
+            self.data = DictUtils.merge(file_data, self.data)
 
-        self._expand_environment_vars(data)
+        # replace env $var names with values from env
+        self._expand_environment_vars(self.data)
 
-        # marshal in the computed data dict
-        self.package = data.get('package')
+        self.package = self.data.get('package')
 
-        for binding_data in data['bindings']:
+        for binding_data in self.data['bindings']:
             biz = binding_data['biz']
             dao = binding_data.get('dao', 'PythonDao')
             params = binding_data.get('parameters', {})
@@ -81,8 +77,9 @@ class Manifest(object):
                 biz=biz, dao=dao, params=params,
             ))
 
+        # TODO: rename to something that means parameters to bootstrap methods
         self.bootstraps = {}
-        for record in data.get('bootstraps', []):
+        for record in self.data.get('bootstraps', []):
             self.bootstraps[record['dao']] = Bootstrap(
                 dao=record['dao'],
                 params=record.get('params', {})
@@ -90,20 +87,34 @@ class Manifest(object):
 
         return self
 
-    def process(self, namespace: Dict = None, on_error=None):
+    def process(self, namespace: Dict = None, override=True, on_error=None):
         """
         Interpret the manifest file data, bootstrapping the layers of the
         framework.
         """
-        self._discover_pybiz_types(namespace, on_error)
-        self._bind_dao_to_biz_types()
+        self._discover_pybiz_types(namespace, override, on_error)
+        self._bind_dao_to_biz_types(override)
         return self
 
-    def _discover_pybiz_types(self, namespace, on_error):
+    def _discover_pybiz_types(self, namespace: Dict, override: bool, on_error):
         if self.package:
-            self._scan_venusian(namespace=namespace, on_error=on_error)
+            # package name for venusian scan
+            self._scan_venusian(on_error=on_error)
         if namespace:
+            # load BizObject and Dao classes from a namespace dict
             self._scan_namespace(namespace)
+
+        # load BizObject and Dao classes from dotted path strings in bindings
+        self._scan_dotted_paths(override)
+
+    def _scan_dotted_paths(self, override: bool):
+        for binding in self.bindings:
+            if override or (binding.biz not in self.types.biz and binding.biz_module):
+                biz_type = import_object(f'{binding.biz_module}.{binding.biz}')
+                self.types.biz[binding.biz] = biz_type
+            if override or (binding.dao not in self.types.dao and binding.dao_module):
+                dao_type = import_object(f'{binding.dao_module}.{binding.dao}')
+                self.types.dao[binding.dao] = dao_type
 
     def _scan_namespace(self, namespace: Dict):
         """
@@ -119,56 +130,43 @@ class Manifest(object):
                 elif issubclass(v, Dao):
                     self.types.dao[k] = v
 
-    def _scan_venusian(self, namespace : Dict = None, on_error=None):
+    def _scan_venusian(self, on_error=None):
         """
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Api instance.
         """
         if on_error is None:
             def on_error(name):
-                import sys, re
                 if issubclass(sys.exc_info()[0], ImportError):
-                    # XXX add logging otherwise things
-                    # like import errors do not surface
-                    if re.match(r'^\w+\.grpc', name):
-                        return
+                    traceback.print_exc()
 
         pkg_path = self.package
         if pkg_path:
             pkg = importlib.import_module(pkg_path)
             self.scanner.scan(pkg, onerror=on_error)
 
-        self.types.biz.update(self.scanner.biz_classes)
-        self.types.dao.update(self.scanner.dao_types)
-
-    def _bind_dao_to_biz_types(self):
+    def _bind_dao_to_biz_types(self, override=True):
         """
         Associate each BizObject class with a corresponding Dao class. Also bind
         Schema classes to their respective BizObject classes.
         """
-        from pybiz.dao.python_dao import PythonDao
-        from pybiz.dao.dao_binder import DaoBinder
+        from pybiz.biz import BizObject
+        from pybiz.dao import DaoBinder
 
         binder = DaoBinder.get_instance()
 
         for binding in self.bindings:
-            biz_class = self.scanner.biz_types.get(binding.biz)
-            if biz_class is None:
-                raise ManifestError('{} not found'.format(binding.biz))
-
-            # get dao class to bind, default to PythonDao
-            dao_type = self.scanner.dao_types.get(binding.dao)
-            if dao_type is None:
-                dao_type = PythonDao
-
-            if not binder.is_registered(biz_class):
+            biz_type = self.types.biz.get(binding.biz)
+            dao_type = self.types.dao[binding.dao]
+            if override or (not binder.is_registered(biz_type)):
                 binder.register(
-                    biz_type=biz_class,
+                    biz_type=biz_type,
                     dao_instance=dao_type(),
                     dao_bind_kwargs=binding.params
                 )
 
-    def _expand_environment_vars(self, data):
+    @staticmethod
+    def _expand_environment_vars(data):
         re_env_var = re.compile(r'^\$([\w\-]+)$')
 
         def expand(data):
@@ -192,10 +190,28 @@ class Manifest(object):
 
 
 class Binding(object):
-    def __init__(self, biz, dao, params=None):
-        self.biz = biz
+    def __init__(
+        self,
+        biz: Text, dao:
+        Text, params: Dict = None,
+    ):
         self.dao = dao
         self.params = params
+
+        if '.' in biz:
+            self.biz_module, self.biz = os.path.splitext(biz)
+            self.biz = self.biz[1:]
+        else:
+            self.biz_module, self.biz = None, biz
+
+        if '.' in dao:
+            self.dao_module, self.dao = os.path.splitext(dao)
+            self.dao = self.dao[1:]
+        else:
+            self.dao_module, self.dao = None, dao
+
+    def __repr__(self):
+        return f'<ManifestBinding({self.biz}, {self.dao})>'
 
 
 class Bootstrap(object):

@@ -12,7 +12,7 @@ class DaoMeta(ABCMeta):
         ABCMeta.__init__(cls, name, bases, dict_)
 
         def callback(scanner, name, dao_type):
-            scanner.dao_types[name] = dao_type
+            scanner.dao_types.setdefault(name, dao_type)
 
         venusian.attach(cls, callback, category='dao')
 
@@ -43,6 +43,10 @@ class Dao(object, metaclass=DaoMeta):
     def biz_type(self):
         return self._biz_type
 
+    @property
+    def registry(self):
+        return self._registry
+
     def bind(self, biz_type: Type['BizObject']):
         self._biz_type = biz_type
         self._is_bound = True
@@ -54,6 +58,11 @@ class Dao(object, metaclass=DaoMeta):
         a connectio pool, for example.
         """
         cls._registry = registry
+        cls.on_bootstrap()
+
+    @classmethod
+    def on_bootstrap(cls, **kwargs):
+        pass
 
     def create_id(self, record: Dict) -> object:
         """

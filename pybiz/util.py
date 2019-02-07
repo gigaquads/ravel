@@ -49,7 +49,9 @@ def import_object(dotted_path: Text) -> object:
     Import an object from a module, given a dotted path to it.
     """
     obj_path = dotted_path.split('.')
-    assert len(obj_path) > 1
+
+    if len(obj_path) < 2:
+        raise ImportError(dotted_path)
 
     module_path_str = '.'.join(obj_path[:-1])
     obj_name = obj_path[-1]
@@ -58,9 +60,8 @@ def import_object(dotted_path: Text) -> object:
         module = import_module(module_path_str)
         obj = getattr(module, obj_name)
     except Exception:
-        raise ImportError(
-            'failed to import object {}'.format(obj_name)
-        )
+        raise ImportError(f'failed to import {dotted_path}')
+
     return obj
 
 

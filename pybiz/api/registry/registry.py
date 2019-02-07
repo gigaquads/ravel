@@ -3,7 +3,7 @@ import inspect
 from typing import List, Type, Dict, Tuple, Text
 from collections import deque
 
-from appyratus.utils import DictAccessor
+from appyratus.utils import DictAccessor, DictUtils
 from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
@@ -102,7 +102,7 @@ class Registry(object):
         Bootstrap the data, business, and service layers, wiring them up.
         """
         from pybiz import BizObject
-
+        
         if self.is_bootstrapped:
             # if already bootstrapped, don't re-trigger all the base behavior
             # of this method. instead, only execute custom on_boostrap logic,
@@ -111,17 +111,19 @@ class Registry(object):
             self.on_bootstrap()
             return self
 
-        self._namespace.update(namespace or {})
+        # merge additional namespace data into namespace accumulator
+        self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
         # create, load, and process the manifest
         self._manifest = manifest or Manifest()
-        self._manifest.process(namespace=namespace)
+        self._manifest.load().process(namespace=self._namespace)
 
         for mware in self.middleware:
             mware.bootstrap(registry=self)
 
         # bootstrap the data access layer (DAL)
         binder = DaoBinder.get_instance()
+
         for binding in binder.bindings:
             strap = self.manifest.bootstraps.get(binding.dao_type_name)
             if strap is not None:

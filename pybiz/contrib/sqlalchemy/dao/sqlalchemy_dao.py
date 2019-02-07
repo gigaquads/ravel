@@ -3,8 +3,6 @@ import threading
 import uuid
 import pickle
 
-import ujson
-
 import sqlalchemy as sa
 
 from typing import List, Dict, Text, Type, Set, Tuple
@@ -54,7 +52,7 @@ class SqlalchemyDao(Dao):
             fields.Field.adapt(
                 on_adapt=lambda field: sa.Text,
                 on_encode=lambda x: cls.json_encoder.encode(x),
-                on_decode=lambda x: JsonEncoder.decode(x),
+                on_decode=lambda x: cls.json_encoder.decode(x),
             ),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
             fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
@@ -123,23 +121,30 @@ class SqlalchemyDao(Dao):
             fields.Set.adapt(
                 on_adapt=lambda field: sa.JSON,
                 on_encode=lambda x: cls.json_encoder.encode(x),
-                on_decode=lambda x: set(x)
+                on_decode=lambda x: set(cls.json_encoder.decode(x))
             ),
         ]
 
     @classmethod
     def get_sqlite_default_adapters(cls) -> List[Field.TypeAdapter]:
-        return [
+        adapters = [
             field_type.adapt(
                 on_adapt=lambda field: sa.Text,
                 on_encode=lambda x: cls.json_encoder.encode(x),
-                on_decode=lambda x: JsonEncoder.decode(x)
+                on_decode=lambda x: cls.json_encoder.decode(x),
             )
             for field_type in {
-                fields.Dict, fields.List,
-                fields.Set, fields.Nested
+                fields.Dict, fields.List, fields.Nested
             }
         ]
+        adapters.append(
+            fields.Set.adapt(
+                on_adapt=lambda field: sa.Text,
+                on_encode=lambda x: cls.json_encoder.encode(x),
+                on_decode=lambda x: set(cls.json_encoder.decode(x))
+            )
+        )
+        return adapters
 
     def adapt_record(self, record: Dict, serialize=True) -> Dict:
         cb_name = 'on_encode' if serialize else 'on_decode'
@@ -166,13 +171,12 @@ class SqlalchemyDao(Dao):
         return _id
 
     @classmethod
-    def bootstrap(cls, registry: 'Registry' = None, **kwargs):
-        super().bootstrap(registry)
-        cls.dialect = kwargs.get('dialect') or cls.env.SQLALCHEMY_DIALECT
+    def on_bootstrap(cls, url=None, dialect=None, echo=False):
+        cls.dialect = dialect or cls.env.SQLALCHEMY_DIALECT
         cls.local.metadata = sa.MetaData()
         cls.local.metadata.bind = sa.create_engine(
-            name_or_url=kwargs.get('url') or cls.env.SQLALCHEMY_URL,
-            echo=bool(kwargs.get('echo', cls.env.SQLALCHEMY_ECHO)),
+            name_or_url=url or cls.env.SQLALCHEMY_URL,
+            echo=bool(echo or cls.env.SQLALCHEMY_ECHO),
         )
 
     def bind(self, biz_type: Type['BizObject']):

@@ -1,2 +1,2 @@
-from .service import FalconServiceRegistry
+from .registry import FalconServiceRegistry
 from .resource import Resource

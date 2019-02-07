@@ -41,25 +41,25 @@ class BizObjectMeta(ABCMeta):
         cls.BizList = BizList.type_factory(cls)
 
         def venusian_callback(scanner, name, biz_type):
-            scanner.biz_types[name] = biz_type
+            scanner.biz_types.setdefault(name, biz_type)
 
         venusian.attach(cls, venusian_callback, category='biz')
 
     def register_dao(cls):
         binder = DaoBinder.get_instance()
 
-        if not binder.is_registered(cls):
-            dao_type_or_instance = cls.__dao__()
+        dao_type_or_instance = cls.__dao__()
 
-            if isinstance(dao_type_or_instance, type):
-                dao_instance = dao_type_or_instance()
-            elif isinstance(dao_type_or_instance, Dao):
-                dao_instance = dao_type_or_instance
-            else:
-                # default to PythonDao
-                dao_instance = PythonDao()
+        if isinstance(dao_type_or_instance, type):
+            dao_instance = dao_type_or_instance()
+        elif isinstance(dao_type_or_instance, Dao):
+            dao_instance = dao_type_or_instance
+        else:
+            # default to PythonDao
+            dao_instance = PythonDao()
 
-            binder.register(biz_type=cls, dao_instance=dao_instance)
+        # TODO: Insert Dao class into manifest.types.dao somehow if DNE
+        binder.register(biz_type=cls, dao_instance=dao_instance)
 
     def build_schema_type(cls, name):
         """
