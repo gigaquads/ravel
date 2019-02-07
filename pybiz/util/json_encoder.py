@@ -1,3 +1,7 @@
+from __future__ import absolute_import
+
+from appyratus.json import JsonEncoder as BaseJsonEncoder
+
 from .bizobj import is_bizobj
 
 

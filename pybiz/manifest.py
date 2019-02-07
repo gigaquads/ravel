@@ -1,7 +1,8 @@
-import os
 import importlib
-import traceback
+import os
 import re
+import sys
+import traceback
 
 import yaml
 
@@ -39,10 +40,14 @@ class Manifest(object):
         self.bindings = []
         self.bootstraps = {}
         self.env = env or Environment()
-        self.types = DictAccessor({
-            'dao': {'PythonDao': PythonDao},
-            'biz': {},
-        })
+        self.types = DictAccessor(
+            {
+                'dao': {
+                    'PythonDao': PythonDao
+                },
+                'biz': {},
+            }
+        )
         self.scanner = Scanner(
             biz_types=self.types.biz,
             dao_types=self.types.dao,
@@ -65,24 +70,25 @@ class Manifest(object):
             self.data = DictUtils.merge(file_data, self.data)
 
         # replace env $var names with values from env
-        self._expand_environment_vars(self.data)
+        self._expand_environment_vars(self.env, self.data)
 
         self.package = self.data.get('package')
 
         for binding_data in self.data['bindings']:
             biz = binding_data['biz']
             dao = binding_data.get('dao', 'PythonDao')
-            params = binding_data.get('parameters', {})
+            params = binding_data.get('params', {})
             self.bindings.append(Binding(
-                biz=biz, dao=dao, params=params,
+                biz=biz,
+                dao=dao,
+                params=params,
             ))
 
         # TODO: rename to something that means parameters to bootstrap methods
         self.bootstraps = {}
         for record in self.data.get('bootstraps', []):
             self.bootstraps[record['dao']] = Bootstrap(
-                dao=record['dao'],
-                params=record.get('params', {})
+                dao=record['dao'], params=record.get('params', {})
             )
 
         return self
@@ -109,10 +115,14 @@ class Manifest(object):
 
     def _scan_dotted_paths(self, override: bool):
         for binding in self.bindings:
-            if override or (binding.biz not in self.types.biz and binding.biz_module):
+            if binding.biz_module and (
+                override or binding.biz not in self.types.biz
+            ):
                 biz_type = import_object(f'{binding.biz_module}.{binding.biz}')
                 self.types.biz[binding.biz] = biz_type
-            if override or (binding.dao not in self.types.dao and binding.dao_module):
+            if binding.dao_module and (
+                override or binding.dao not in self.types.dao
+            ):
                 dao_type = import_object(f'{binding.dao_module}.{binding.dao}')
                 self.types.dao[binding.dao] = dao_type
 
@@ -161,12 +171,11 @@ class Manifest(object):
             if override or (not binder.is_registered(biz_type)):
                 binder.register(
                     biz_type=biz_type,
-                    dao_instance=dao_type(),
-                    dao_bind_kwargs=binding.params
+                    dao_instance=dao_type(**binding.params)
                 )
 
     @staticmethod
-    def _expand_environment_vars(data):
+    def _expand_environment_vars(env, data):
         re_env_var = re.compile(r'^\$([\w\-]+)$')
 
         def expand(data):
@@ -174,7 +183,7 @@ class Manifest(object):
                 match = re_env_var.match(data)
                 if match:
                     var_name = match.groups()[0]
-                    return self.env[var_name]
+                    return env[var_name]
                 else:
                     return data
             elif isinstance(data, list):
@@ -192,8 +201,9 @@ class Manifest(object):
 class Binding(object):
     def __init__(
         self,
-        biz: Text, dao:
-        Text, params: Dict = None,
+        biz: Text,
+        dao: Text,
+        params: Dict = None,
     ):
         self.dao = dao
         self.params = params

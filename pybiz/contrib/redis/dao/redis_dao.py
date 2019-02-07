@@ -1,13 +1,11 @@
 import uuid
 
-import ujson
-
 from typing import Type, Dict, List
 
 from redis import StrictRedis
 
 from pybiz.schema import fields
-from pybiz.json import JsonEncoder
+from pybiz.util import JsonEncoder
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,

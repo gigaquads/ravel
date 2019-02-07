@@ -1,4 +1,4 @@
-from .http import HttpRegistry
+from .http_registry import HttpRegistry
 
 
 class WsgiServiceRegistry(HttpRegistry):

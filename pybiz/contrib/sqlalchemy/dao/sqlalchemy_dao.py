@@ -12,7 +12,7 @@ from appyratus.env import Environment
 
 from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from pybiz.schema import fields, Field
-from pybiz.json import JsonEncoder
+from pybiz.util import JsonEncoder
 from pybiz.dao.base import Dao
 
 from .dialect import Dialect

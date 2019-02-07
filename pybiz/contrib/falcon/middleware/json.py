@@ -1,7 +1,6 @@
 import ujson
 
-from pybiz.util import is_bizobj
-from pybiz.json import JsonEncoder
+from pybiz.util import is_bizobj, JsonEncoder
 
 from .base import Middleware
 

@@ -8,7 +8,7 @@ class DaoBinding(object):
     def __init__(self, biz_type, dao_instance, dao_bind_kwargs=None):
         self.biz_type = biz_type
         self.dao_instance = dao_instance
-        self.dao_bind_kwargs = dao_bind_kwargs or {}
+        self.dao_bind_kwargs = dao_bind_kwargs if dao_bind_kwargs is not None else {}
         self._is_bound = False
 
     def __repr__(self):

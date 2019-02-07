@@ -11,6 +11,7 @@ grpcio
 grpcio_tools
 btrees
 falcon
+websockets
 
 pytest
 mock

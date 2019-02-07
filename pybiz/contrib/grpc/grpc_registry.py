@@ -20,12 +20,10 @@ from google.protobuf.message import Message
 from appyratus.schema import fields
 from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils
-from appyratus.json import JsonEncoder
 
-from pybiz.util import is_bizobj
-from pybiz.json import JsonEncoder
+from pybiz.util import is_bizobj, JsonEncoder
 
-from ..registry import Registry, RegistryProxy
+from pybiz.api import Registry, RegistryProxy
 from .grpc_registry_proxy import GrpcRegistryProxy
 from .grpc_client import GrpcClient
 

@@ -3,7 +3,6 @@ import threading
 import uuid
 import pickle
 
-import ujson
 
 import sqlalchemy as sa
 
@@ -18,7 +17,7 @@ from appyratus.env import Environment
 from pybiz.api.middleware import RegistryMiddleware
 from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from pybiz.schema import fields, Field
-from pybiz.json import JsonEncoder
+from pybiz.util import JsonEncoder
 
 from .dialect import Dialect
 
