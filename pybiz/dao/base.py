@@ -125,7 +125,7 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def create_many(self, records: List[Dict]) -> None:
+    def create_many(self, records: List[Dict]) -> List[Dict]:
         """
         Create a new record.  It is the responsibility of the Dao class to
         generate the _id.
@@ -138,7 +138,7 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def update_many(self, _ids: List, data: List[Dict] = None) -> None:
+    def update_many(self, _ids: List, data: List[Dict] = None) -> List[Dict]:
         """
         Update multiple records. If a single data dict is passed in, then try to
         apply the same update to all records; otherwise, if a list of data dicts

@@ -2,15 +2,17 @@ import uuid
 
 from copy import deepcopy, copy
 from typing import List, Dict, Text, Type, Tuple, Set
+from collections import defaultdict
 
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
 from pybiz.util import is_bizobj, is_sequence, repr_biz_id
 from pybiz.dirty import DirtyDict
 
-from .meta import BizObjectMeta
-from .dump import DumpNested, DumpSideLoaded
-from .query import Query, QueryUtils
+from .biz_object_meta import BizObjectMeta
+from .internal.save import SaveMethod, BreadthFirstSaver
+from .internal.dump import NestingDumper, SideLoadingDumper
+from .internal.query import Query, QueryUtils
 
 
 class BizObject(metaclass=BizObjectMeta):
@@ -181,6 +183,19 @@ class BizObject(metaclass=BizObjectMeta):
             obj._id = None
         cls.get_dao().delete_many(bizobj_ids)
 
+    @classmethod
+    def insert_defaults(cls, record: Dict) -> None:
+        """
+        This method is used internally and externally to insert field defaults
+        into the `record` dict param.
+        """
+        for k, default in cls.defaults.items():
+            if k not in record:
+                if callable(default):
+                    record[k] = default()
+                else:
+                    record[k] = deepcopy(default)
+
     def delete(self) -> 'BizObject':
         """
         Call delete on this object's dao and therefore mark all fields as dirty
@@ -192,89 +207,59 @@ class BizObject(metaclass=BizObjectMeta):
         return self
 
     @classmethod
-    def save_many(cls, bizobjs: List['BizObject']) -> List['BizObject']:
-        """
-        Save many BizObjects
-        """
-        records_to_create = []
-        records_to_update = []
+    def save_many(
+        cls,
+        bizobjs: List['BizObject'],
+        method: SaveMethod = None,
+    ) -> 'BizList':
+        method = SaveMethod(method or SaveMethod.breadth_first)
+        if method == SaveMethod.breadth_first:
+            saver = BreadthFirstSaver(cls)
 
-        for b in bizobjs:
-            record = {k: self._data[k] for k in b.dirty}
-            for k, default in self.defaults.items():
-                field = self.schema.fields[k]
-                if k not in data or (record[v] is None and not field.nullable):
-                    if callable(default):
-                        record[k] = default()
-                    else:
-                        record[k] = deepcopy(default)
-            if b._id is None:
-                # TODO: generate defaults into this
-                records_to_create.append(record)
-            else:
-                records_to_update.append(record)
+        return saver.save_many(bizobjs)
 
-        created_records = cls.get_dao().create_many(records_to_create)
-        created_bizobjs = [cls(x).clean() for x in created_records.values()]
+    @classmethod
+    def create_many(cls, bizobjs: List['BizObject']) -> 'BizList':
+        records = []
+        for bizobj in bizobjs:
+            record = bizobj._data
+            cls.insert_defaults(record)
+            records.append(record)
 
-        updated_records = cls.get_dao().update_many(records_to_update)
-        updated_bizobjs = [cls(x).clean() for x in updated_records.values()]
+        created_records = cls.get_dao().create_many(records)
+        for bizobj, record in zip(bizobjs, created_records):
+            bizobj._data.update(record)
+            bizobj.clean()
 
-        # TODO: recurse on relationships
+        return cls.BizList(bizobjs)
 
-        return (created_bizobjs + updated_records)
+    @classmethod
+    def update_many(cls, bizobjs: List['BizObject']) -> 'BizList':
+        partitions = defaultdict(list)
 
-    def save(self, path: List['BizObject'] = None) -> 'BizObject':
-        # TODO: allow fields kwarg to specify a subset of fields and
-        # relationships to save instead of all changes.
-        self.pre_save(path)
+        for bizobj in bizobjs:
+            record = bizobj._data
+            partitions[tuple(bizobj.dirty)].append(bizobj)
 
-        data_to_save = {k: self[k] for k in self._data.dirty}
-        path = path or []
+        for bizobj_partition in partitions.values():
+            records, _ids = [], []
+            for bizobj in bizobj_partition:
+                records.append(bizobj._data)
+                _ids.append(bizobj._id)
+            updated_records = cls.get_dao().update_many(_ids, records)
+            for bizobj, record in zip(bizobj_partition, updated_records):
+                bizobj._data.update(record)
+                bizobj.clean()
 
-        if self._id is None:
-            for k, default in self.defaults.items():
-                if k not in data_to_save:
-                    if callable(default):
-                        data_to_save[k] = default()
-                    else:
-                        data_to_save[k] = deepcopy(default)
-            updated_data = self.dao.create(data_to_save)
-        else:
-            updated_data = self.dao.update(self._id, data_to_save)
+        return cls.BizList(bizobjs)
 
-        if updated_data:
-            for k, v in updated_data.items():
-                setattr(self, k, v)
+    def save(self, method: SaveMethod = None) -> 'BizObject':
+        method = SaveMethod(method or SaveMethod.breadth_first)
 
-        # Save dirty child BizObjects before saving this BizObject so that the
-        # updated child data can be passed into this object's dao.save/create
-        # method
-        for k, v in self._related.items():
-            # `k` is the declared name of the relationship
-            # `v` is the related bizobj or list of bizbojs
-            if not v:
-                continue
-            rel = self.relationships[k]
-            if rel.many:
-                # this is a non-scalar relationship
-                for i, bizobj in enumerate(v):
-                    if bizobj.dirty:
-                        bizobj.save(path=path+[self])
-            elif v.dirty:
-                # this is a scalar relationship
-                v.save(path=path + [self])
+        if method == SaveMethod.breadth_first:
+            saver = BreadthFirstSaver(self.__type__)
 
-        self.clean()
-        self.post_save(path)
-
-        return self
-
-    def pre_save(self, path: List['BizObject']):
-        pass
-
-    def post_save(self, path: List['BizObject']):
-        pass
+        return saver.save_one(self)
 
     @property
     def dao(self) -> 'Dao':
@@ -390,9 +375,9 @@ class BizObject(metaclass=BizObjectMeta):
         (declared as relationships) to a plain ol' dict.
         """
         if style == 'nested':
-            dump = DumpNested()
+            dump = NestingDumper()
         elif style == 'side':
-            dump = DumpSideLoaded()
+            dump = SideLoadingDumper()
         else:
             return None
 

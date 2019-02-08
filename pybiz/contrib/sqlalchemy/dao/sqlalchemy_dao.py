@@ -9,6 +9,7 @@ from typing import List, Dict, Text, Type, Set, Tuple
 
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
+from sqlalchemy.sql import bindparam
 
 from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from pybiz.schema import fields, Field
@@ -176,7 +177,7 @@ class SqlalchemyDao(Dao):
         cls.local.metadata = sa.MetaData()
         cls.local.metadata.bind = sa.create_engine(
             name_or_url=url or cls.env.SQLALCHEMY_URL,
-            echo=bool(echo or cls.env.SQLALCHEMY_ECHO),
+            echo=False#bool(echo or cls.env.SQLALCHEMY_ECHO),
         )
 
     def bind(self, biz_type: Type['BizObject']):
@@ -284,7 +285,7 @@ class SqlalchemyDao(Dao):
         records = self.fetch_many(_ids=[_id], fields=fields)
         return records[_id] if records else None
 
-    def fetch_many(self, _ids: List, fields=None) -> Dict:
+    def fetch_many(self, _ids: List, fields=None, as_list=False) -> Dict:
         prepared_ids = [self.adapt_id(_id, serialize=True) for _id in _ids]
         fields = set(fields or self.biz_type.schema.fields.keys())
         fields.update(['_id', '_rev'])
@@ -293,7 +294,7 @@ class SqlalchemyDao(Dao):
         if prepared_ids:
             select_stmt = select_stmt.where(self.table.c._id.in_(prepared_ids))
         cursor = self.conn.execute(select_stmt)
-        records = {}
+        records = {} if not as_list else []
 
         while True:
             page = cursor.fetchmany(512)
@@ -302,7 +303,10 @@ class SqlalchemyDao(Dao):
                     raw_record = dict(row.items())
                     record = self.adapt_record(raw_record, serialize=False)
                     _id = self.adapt_id(row._id, serialize=False)
-                    records[_id] = record
+                    if as_list:
+                        records.append(record)
+                    else:
+                        records[_id] = record
             else:
                 break
 
@@ -331,7 +335,12 @@ class SqlalchemyDao(Dao):
             prepared_records.append(prepared_record)
 
         self.conn.execute(self.table.insert(), prepared_records)
-        # TODO: return something
+        if self.supports_returning:
+            # TODO: use implicit returning if possible
+            pass
+        else:
+            return self.fetch_many(
+                (rec['_id'] for rec in records), as_list=True)
 
     def update(self, _id, data: Dict) -> Dict:
         prepared_id = self.adapt_id(_id)
@@ -351,21 +360,30 @@ class SqlalchemyDao(Dao):
             self.conn.execute(update_stmt)
             return self.fetch(_id)
 
-    def update_many(self, _ids: List, data: Dict = None) -> None:
+    def update_many(self, _ids: List, data: List[Dict] = None) -> None:
         assert data
         prepared_ids = [self.adapt_id(_id) for _id in _ids]
         prepared_data = [
             self.adapt_record(record, serialize=True)
             for record in data
         ]
+        values = {
+            k: bindparam(k) for k in prepared_data[0].keys()
+        }
         update_stmt = (
             self.table
                 .update()
-                .values(**prepared_data)
-                .where(self.table.c._id.in_(prepared_ids))
-            )
-        self.conn.execute(update_stmt)
-        # TODO: return updated
+                .where(self.table.c._id == bindparam('_id'))
+                .values(**values)
+        )
+
+        self.conn.execute(update_stmt, prepared_data)
+
+        if self.supports_returning:
+            # TODO: use implicit returning if possible
+            pass
+        else:
+            return self.fetch_many(_ids, as_list=True)
 
     def delete(self, _id) -> None:
         # TODO: prepare ID

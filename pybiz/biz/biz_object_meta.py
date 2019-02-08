@@ -15,10 +15,10 @@ from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from pybiz.schema import Schema, fields, Field, Int
 from pybiz.util import import_object
 
-from .relationship import Relationship
-from .relationship_property import RelationshipProperty
-from .field_property import FieldProperty
 from .biz_list import BizList
+from .relationship import Relationship
+from .internal.relationship_property import RelationshipProperty
+from .internal.field_property import FieldProperty
 
 
 class BizObjectMeta(ABCMeta):

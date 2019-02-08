@@ -3,7 +3,8 @@ from typing import Text, List
 from appyratus.schema import Schema
 from appyratus.utils import StringUtils
 
-from ..registry import Registry, RegistryProxy
+from pybiz.api.registry import RegistryProxy
+
 from .proto import MessageGenerator
 
 

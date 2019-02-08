@@ -10,6 +10,21 @@ class RedisObject(object):
         self.name = name
 
 
+class Counter(RedisObject):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reset(value=0)
+
+    def increment(self, value=1):
+        return self.redis.incrby(self.name value)
+
+    def get(self):
+        return self.redis.get(self.name) or 0
+
+    def reset(self, value=0):
+        return self.redis.set(self.name, value)
+
+
 class HashSet(RedisObject):
     def __contains__(self, key):
         return self.redis.hexists(self.name, key)
@@ -28,6 +43,9 @@ class HashSet(RedisObject):
 
     def __len__(self):
         return self.redis.hlen(self.name)
+
+    def increment(self, key, delta=1):
+        return self.redis.hincrby(self.name, key, delta)
 
     def delete(self, key) -> bool:
         return bool(seld.redis.hdel(self.name, key))

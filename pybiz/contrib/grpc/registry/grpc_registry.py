@@ -24,8 +24,8 @@ from appyratus.json import JsonEncoder
 
 from pybiz.util import is_bizobj
 from pybiz.json import JsonEncoder
+from pybiz.api.registry import Registry
 
-from ..registry import Registry, RegistryProxy
 from .grpc_registry_proxy import GrpcRegistryProxy
 from .grpc_client import GrpcClient
 

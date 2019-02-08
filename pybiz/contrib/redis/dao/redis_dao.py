@@ -3,8 +3,10 @@ import uuid
 import ujson
 
 from typing import Type, Dict, List
+from copy import deepcopy
 
 from redis import StrictRedis
+from appyratus.utils import StringUtils
 
 from pybiz.schema import fields
 from pybiz.json import JsonEncoder
@@ -37,9 +39,10 @@ class RedisDao(Dao):
 
     def bind(self, biz_type: Type['BizObject']):
         super().bind(biz_type)
-        self.type_name = biz_type.__name__.lower()
+        self.type_name = StringUtils.snake(biz_type.__name__).lower()
         self.redis = StrictRedis()
         self.records = HashSet(self.redis, self.type_name)
+        self.revs = HashSet(self.redis, f'{self.type_name}_revisions')
         self.indexes = {}
 
         for k, field in biz_type.schema.fields.items():
@@ -95,38 +98,36 @@ class RedisDao(Dao):
 
     def upsert(self, record: Dict) -> Dict:
         _id = self.create_id(record)
+        _rev = self.revs.increment(_id, delta=1)
 
-        self.records[_id] = self.encoder.encode(record)
+        upserted_record = deepcopy(record)
+        upserted_record.pop('_rev', None)
+        upserted_record['_id'] = _id
+
         for k, v in record.items():
             self.indexes[k].upsert(_id, v)
 
-        self.indexes['_id'].upsert(_id, _id)
-        record['_id'] = _id
-
-        return record
+        upserted_record['_rev'] = _rev
+        return upserted_record
 
     def create(self, data: Dict) -> Dict:
         return self.upsert(data)
 
     def update(self, _id, record: Dict) -> Dict:
-        # TODO: remove _id arg from Dao.update inteface
-        data['_id'] = _id
-        return self.upsert(data)
+        return self.upsert(record)
 
     def create_many(self, records: List[Dict]) -> Dict:
-        pass # TODO: impl
+        return [self.upsert(record) for record in records]
 
     def update_many(self, _ids: List, data: Dict = None) -> Dict:
-        pass
+        return [self.upsert(record) for record in records]
 
     def delete(self, _id) -> None:
-        # TODO: needs testing
         if self.records.delete(_id):
             for index in self.indexes.values():
                 index.delete(_id)
 
     def delete_many(self, _ids: List) -> None:
-        # TODO: needs testing
         if self.records.delete_many(_ids):
             for index in self.indexes:
                 index.delete_many(_ids)

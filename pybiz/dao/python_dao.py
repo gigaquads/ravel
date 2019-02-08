@@ -104,13 +104,13 @@ class PythonDao(Dao):
                     self.indexes[k][v].add(_id)
         return deepcopy(record)
 
-    def create_many(self, records: List = None) -> Dict:
-        results = {}
+    def create_many(self, records: List[Dict] = None) -> List[Dict]:
+        results = []
         with self.lock:
             for record in records:
-                _id = record['_id']
+                record['_id'] = self.create_id(record)
                 result = self.create(record)
-                results[_id] = result
+                results.append(result)
             return results
 
     def update(self, _id=None, data: Dict = None) -> Dict:
@@ -128,12 +128,12 @@ class PythonDao(Dao):
             record = self.create(merged_record)
             return record
 
-    def update_many(self, _ids: List, data: List = None) -> Dict:
+    def update_many(self, _ids, data: Dict = None) -> Dict:
         with self.lock:
-            return {
-                _id: self.update(_id=_id, data=data_dict)
-                for _id, data_dict in zip(_ids, data)
-            }
+            return [
+                self.update(_id=_id, data=values)
+                for _id, values in zip(_id, data)
+            ]
 
     def delete(self, _id, clear_rev=True) -> Dict:
         with self.lock:

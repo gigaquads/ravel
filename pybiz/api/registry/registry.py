@@ -102,7 +102,7 @@ class Registry(object):
         Bootstrap the data, business, and service layers, wiring them up.
         """
         from pybiz import BizObject
-        
+
         if self.is_bootstrapped:
             # if already bootstrapped, don't re-trigger all the base behavior
             # of this method. instead, only execute custom on_boostrap logic,

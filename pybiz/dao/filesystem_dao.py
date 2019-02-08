@@ -61,7 +61,7 @@ class FilesystemDao(Dao):
         return record.get('_id', uuid.uuid4().hex)
 
     def exists(self, fname: Text) -> bool:
-        return File.exists(self.mkpath(fname))
+        return BaseFile.exists(self.mkpath(fname))
 
     def create(self, record: Dict) -> Dict:
         _id = self.create_id(record)
@@ -116,14 +116,22 @@ class FilesystemDao(Dao):
         return self.fetch_many(None, fields=fields)
 
     def update(self, _id, data: Dict) -> Dict:
+        if not self.exists(_id):
+            # this is here, because update in this dao is can be used like #
+            # upsert, but in the BizObject class, insert_defaults is only called
+            # on create, not update.
+            self.biz_type.insert_defaults(data)
+
         fpath = self.mkpath(_id)
         base_record = self.ftype.from_file(fpath)
+
         if base_record:
             record = DictUtils.merge(base_record, data)
             self.ftype.to_file(file_path=fpath, data=record)
         else:
             self.ftype.to_file(file_path=fpath, data=data)
             record = data
+
         record['_rev'] = int(os.path.getmtime(fpath))
         return record
 
