@@ -257,7 +257,7 @@ class BizObject(metaclass=BizObjectMeta):
         method = SaveMethod(method or SaveMethod.breadth_first)
 
         if method == SaveMethod.breadth_first:
-            saver = BreadthFirstSaver(self.__type__)
+            saver = BreadthFirstSaver(self.__class__)
 
         return saver.save_one(self)
 

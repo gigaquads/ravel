@@ -95,7 +95,7 @@ class BreadthFirstSaver(Saver):
                 for x in v:
                     self._aggregate_related(x, to_create, to_update)
             else:
-                v_type = v.__type__
+                v_type = v.__class__
                 if v._id is None:
                     to_create[v_type].append(v)
                 elif x.dirty:
