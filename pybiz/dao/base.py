@@ -3,11 +3,17 @@ import uuid
 
 import venusian
 
+from threading import local
+from collections import defaultdict
 from typing import Dict, List, Type, Set, Text, Tuple
 from abc import ABCMeta, abstractmethod
 
 
 class DaoMeta(ABCMeta):
+
+    _local = local()
+    _local.is_bootstrapped = defaultdict(bool)
+
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
@@ -18,6 +24,7 @@ class DaoMeta(ABCMeta):
 
 
 class Dao(object, metaclass=DaoMeta):
+
     def __init__(self, *args, **kwargs):
         self._is_bound = False
         self._biz_type = None
@@ -60,9 +67,15 @@ class Dao(object, metaclass=DaoMeta):
         cls._registry = registry
         cls.on_bootstrap()
 
+        DaoMeta._local.is_bootstrapped[cls.__name__] = True
+
     @classmethod
     def on_bootstrap(cls, **kwargs):
         pass
+
+    @classmethod
+    def is_bootstrapped(cls):
+        return cls._local.is_bootstrapped[cls.__name__]
 
     def create_id(self, record: Dict) -> object:
         """
@@ -156,4 +169,10 @@ class Dao(object, metaclass=DaoMeta):
     def delete_many(self, _ids: List) -> None:
         """
         Delete multiple records.
+        """
+
+    @abstractmethod
+    def delete_all(self) -> None:
+        """
+        Delete all records.
         """

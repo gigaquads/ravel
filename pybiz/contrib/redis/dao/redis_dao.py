@@ -2,12 +2,14 @@ import uuid
 
 import ujson
 
-from typing import Type, Dict, List
+from typing import Type, Dict, List, Set, Text
+from collections import defaultdict
 from copy import deepcopy
 
 from redis import StrictRedis
 from appyratus.utils import StringUtils
 
+from pybiz.dao import Dao
 from pybiz.schema import fields
 from pybiz.json import JsonEncoder
 from pybiz.predicate import (
@@ -17,12 +19,10 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from ..base import Dao
-from .redis_types import HashSet, StringIndex, NumericIndex
+from .redis_types import RedisClient, HashSet, StringIndex, NumericIndex
 
 
 class RedisDao(Dao):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.redis = None
@@ -39,18 +39,21 @@ class RedisDao(Dao):
 
     def bind(self, biz_type: Type['BizObject']):
         super().bind(biz_type)
+        self.redis = RedisClient()
         self.type_name = StringUtils.snake(biz_type.__name__).lower()
-        self.redis = StrictRedis()
         self.records = HashSet(self.redis, self.type_name)
         self.revs = HashSet(self.redis, f'{self.type_name}_revisions')
-        self.indexes = {}
+        self.indexes = self._bind_indexes()
 
-        for k, field in biz_type.schema.fields.items():
-            index_name = '{}:{}'.format(self.type_name, k.lower())
+    def _bind_indexes(self):
+        indexes = {}
+        for k, field in self.biz_type.schema.fields.items():
+            index_name = f'{self.type_name}:{k.lower()}'
             index_type = self.field_2_index_type.get(field.__class__)
             if index_type is None:
                 index_type = StringIndex
-            self.indexes[k] = index_type(self.redis, index_name)
+            indexes[k] = index_type(self.redis, index_name)
+        return indexes
 
     def exists(self, _id) -> bool:
         return (_id in self.records)
@@ -59,98 +62,137 @@ class RedisDao(Dao):
         return len(self.records)
 
     def fetch(self, _id, fields: Set[Text] = None) -> Dict:
-        record_json = self.records.get(_id)
+        fields = fields if isinstance(fields, set) else set(fields or [])
+
+        pipe = self.redis.pipeline()
+
+        self.records.get(_id)
+        self.revs.get(_id)
+
+        record_json, rev_str = pipe.execute()
+
         if not record_json:
             return None
 
         full_record = JsonEncoder.decode(record_json)
-        fields = fields if isinstance(fields, set) else set(fields or [])
+        full_record['_rev'] = int(rev_str) - 1
 
         if fields:
-            fields.update(['_id', '_rev'])
             return {k: full_record.get(k) for k in fields}
         else:
             return full_record
 
     def fetch_many(self, _ids: List, fields: Set[Text] = None) -> Dict:
+        pipe = self.redis.pipeline()
+
+        self.records.get_many(_ids, pipe=pipe)
+        self.revs.get_many(_ids, pipe=pipe)
+
+        json_records, rev_strs = pipe.execute()
+
         fields = fields if isinstance(fields, set) else set(fields or [])
-        records_json = self.records.get_many(_ids)
-        records = []
+        records = {}
 
         if fields:
-            for record_json in records_json:
-                full_record = JsonEncoder.decode(record_json)
-                records.append({
-                    k: full_record.get(k) for k in fields
-                })
+            for record_json, _rev in zip(json_records, rev_strs):
+                record = JsonEncoder.decode(record_json)
+                record = {k: record.get(k) for k in fields}
+                record['_rev'] = int(_rev) - 1
+                records[record['_id']] = record
         else:
-            records = [
-                JsonEncoder.decode(record_json) for record_json
-                in self.records.get_many(_ids)
-            ]
+            for record_json, _rev in zip(json_records, rev_strs):
+                record = JsonEncoder.decode(record_json)
+                record['_rev'] = int(_rev) - 1
+                records[record['_id']] = record
 
         return records
 
     def fetch_all(self, fields: Set[Text] = None) -> Dict:
-        fields = fields if isinstance(fields, set) else set(fields or [])
-        keys_to_remove = self.biz_type.schema.fields.keys() - fields
-        return remove_keys(self.records, keys_to_remove, in_place=False)
+        return self.fetch_many(list(self.records.keys()), fields=fields)
 
-    def upsert(self, record: Dict) -> Dict:
+    def upsert(self, record: Dict, pipe=None) -> Dict:
         _id = self.create_id(record)
-        _rev = self.revs.increment(_id, delta=1)
 
-        upserted_record = deepcopy(record)
-        upserted_record.pop('_rev', None)
+        # prepare the record for upsert
+        upserted_record = record.copy()
         upserted_record['_id'] = _id
 
+        # json encode and store record JSON
+        self.records[_id] = self.encoder.encode(upserted_record)
+
+        # update indexes
         for k, v in record.items():
             self.indexes[k].upsert(_id, v)
 
-        upserted_record['_rev'] = _rev
+        # add rev to record AFTER insert to avoid storing _rev in records hset
+        upserted_record['_rev'] = self.revs.increment(_id)
         return upserted_record
 
     def create(self, data: Dict) -> Dict:
-        return self.upsert(data)
+        pipe = self.redis.pipeline()
+        created_record = self.upsert(data)
+        pipe.execute()
+        return created_record
 
     def update(self, _id, record: Dict) -> Dict:
-        return self.upsert(record)
+        pipe = self.redis.pipeline()
+        updated_record = self.upsert(record, pipe=pipe)
+        pipe.execute()
+        return updated_record
 
     def create_many(self, records: List[Dict]) -> Dict:
-        return [self.upsert(record) for record in records]
+        pipe = self.redis.pipeline()
+        created_records = [self.upsert(rec, pipe=pipe) for rec in records]
+        pipe.execute()
+        return created_records
 
     def update_many(self, _ids: List, data: Dict = None) -> Dict:
-        return [self.upsert(record) for record in records]
+        pipe = self.redis.pipeline()
+        updated_records = [self.upsert(rec, pipe=pipe) for rec in records]
+        pipe.execute()
+        return updated_records
 
     def delete(self, _id) -> None:
-        if self.records.delete(_id):
+        pipe = self.redis.pipeline()
+        if self.records.delete(_id, pipe=pipe):
             for index in self.indexes.values():
-                index.delete(_id)
+                index.delete(_id, pipe=pipe)
+        pipe.execute()
 
     def delete_many(self, _ids: List) -> None:
-        if self.records.delete_many(_ids):
-            for index in self.indexes:
-                index.delete_many(_ids)
+        pipe = self.redis.pipeline()
+        if self.records.delete_many(_ids, pipe=pipe):
+            self.revs.delete_many(_ids)
+            for index in self.indexes.values():
+                index.delete_many(_ids, pipe=pipe)
+        pipe.execute()
+
+    def delete_all(self):
+        if self.count():
+            self.delete_many(self.records.keys())
 
     def query(self, predicate: 'Predicate', **kwargs):
+        if predicate is None:
+            _ids = self.records.keys()
+        else:
+            _ids = self.query_ids(predicate)
+
         records = []
 
-        if predicate is None:
-            for _id, record_json in self.record.items():
-                record = JsonEncoder.decode(record_json)
-                record['_id'] = _id.decode()
-                records.append(record)
-        else:
-            ids = self.query_ids(predicate)
-            for _id in ids:
-                record = JsonEncoder.decode(self.records[_id])
-                record['_id'] = _id.decode()
+        if _ids:
+            _id_field = self.biz_type.schema.fields['_id']
+            json_records = self.records.get_many(_ids)
+            rev_strs = self.revs.get_many(_ids)
+            for json_record, rev_str in zip(json_records, rev_strs):
+                record = JsonEncoder.decode(json_record)
+                record['_rev'] = int(rev_str.decode())
                 records.append(record)
 
         return records
 
     def query_ids(self, predicate, pipeline=None):
         # TODO: use a redis pipeline object
+
         if isinstance(predicate, ConditionalPredicate):
             index = self.indexes.get(predicate.field.name)
             if index is None:

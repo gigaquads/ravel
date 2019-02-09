@@ -19,6 +19,7 @@ from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,
+    OP_CODE,
 )
 
 from .base import Dao
@@ -36,7 +37,7 @@ class PythonDao(Dao):
         self.id_counter = 1
         self.rev_counter = Counter()
         self.records = {}
-        self.ignored_indexes = {}
+        self.ignored_indexes = set()
 
     def bind(self, biz_type):
         super().bind(biz_type)
@@ -53,18 +54,7 @@ class PythonDao(Dao):
             return len(self.records)
 
     def fetch(self, _id, fields=None) -> Dict:
-        with self.lock:
-            record = deepcopy(self.records.get(_id))
-            if record is not None:
-                if fields:
-                    fields = set(fields)
-                    record_keys = set(record.keys())
-                    missing_keys = fields - record_keys
-                    for k in record_keys - fields:
-                        del record[k]
-                    if missing_keys:
-                        record.update({k: None for k in missing_keys})
-            return record
+        return self.fetch_many([_id], fields=fields)[_id]
 
     def fetch_many(self, _ids: List, fields=None) -> Dict:
         with self.lock:
@@ -72,8 +62,8 @@ class PythonDao(Dao):
             fields = set(fields or [])
             for _id in _ids:
                 record = deepcopy(self.records.get(_id))
+                records[_id] = record
                 if record is not None:
-                    records[_id] = record
                     if fields:
                         record_keys = set(record.keys())
                         missing_keys = fields - record_keys
@@ -111,7 +101,7 @@ class PythonDao(Dao):
                 record['_id'] = self.create_id(record)
                 result = self.create(record)
                 results.append(result)
-            return results
+        return results
 
     def update(self, _id=None, data: Dict = None) -> Dict:
         with self.lock:
@@ -147,11 +137,15 @@ class PythonDao(Dao):
             return record
 
     def delete_many(self, _ids: List, clear_rev=True) -> List:
+        _ids = list(_ids) if not isinstance(_ids, (list, tuple, set)) else _ids
         with self.lock:
             return {
                 _id: self.delete(_id, clear_rev=clear_rev)
                 for _id in _ids
             }
+
+    def delete_all(self):
+        return self.delete_many(self.records.keys())
 
     def query(
         self,

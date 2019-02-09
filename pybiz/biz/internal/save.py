@@ -25,41 +25,22 @@ class Saver(object):
 
 class BreadthFirstSaver(Saver):
     def save_one(self, bizobj) -> 'BizObject':
-        # upsert bizobj.data into DAO, removing _rev,
-        # as this is to be set by the DAO only.
-        if bizobj._id is None:
-            record = bizobj.data.copy()
-            record.pop('_rev', None)
-            bizobj.insert_defaults(record)
-            saved_record = bizobj.dao.create(record)
-        else:
-            record = {k: bizobj[k] for k in bizobj.dirty}
-            record.pop('_rev', None)
-            saved_record = bizobj.dao.update(bizobj._id, record)
-
-        # merge DAO return record into this instance's data
-        if saved_record:
-            bizobj.data.update(saved_record)
-
-        # recursively save related data
-        for k, v in bizobj.related.items():
-            rel = bizobj.relationships[k]
-            if v:
-                continue
-            if rel.many:
-                v.biz_type.save_many(v.data)
-            elif v.dirty:
-                v.save()
-
-        return bizobj.clean()
+        return self.save_many([bizobj])[0]
 
     def save_many(self, bizobjs: List['BizObject']) -> 'BizList':
         to_create, to_update = self._aggregate(bizobjs)
 
         for biz_type, biz_objs in to_create.items():
-            self.biz_type.create_many(biz_objs)
+            if len(biz_objs) == 1:
+                biz_type.create(biz_objs[0])
+            else:
+                biz_type.create_many(biz_objs)
+
         for biz_type, biz_objs in to_update.items():
-            self.biz_type.update_many(biz_objs)
+            if len(biz_objs) == 1:
+                biz_type.update(biz_objs[0])
+            else:
+                biz_type.update_many(biz_objs)
 
         return self.biz_type.BizList(bizobjs)
 

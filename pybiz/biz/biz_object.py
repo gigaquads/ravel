@@ -174,28 +174,6 @@ class BizObject(metaclass=BizObjectMeta):
             for _id, record in cls.get_dao().fetch_all().items()
         }
 
-    @classmethod
-    def delete_many(cls, bizobjs) -> None:
-        bizobj_ids = []
-        for obj in bizobjs:
-            obj.mark(obj.data.keys())
-            bizobj_ids.append(obj._id)
-            obj._id = None
-        cls.get_dao().delete_many(bizobj_ids)
-
-    @classmethod
-    def insert_defaults(cls, record: Dict) -> None:
-        """
-        This method is used internally and externally to insert field defaults
-        into the `record` dict param.
-        """
-        for k, default in cls.defaults.items():
-            if k not in record:
-                if callable(default):
-                    record[k] = default()
-                else:
-                    record[k] = deepcopy(default)
-
     def delete(self) -> 'BizObject':
         """
         Call delete on this object's dao and therefore mark all fields as dirty
@@ -207,6 +185,25 @@ class BizObject(metaclass=BizObjectMeta):
         return self
 
     @classmethod
+    def delete_many(cls, bizobjs) -> None:
+        bizobj_ids = []
+        for obj in bizobjs:
+            obj.mark(obj.data.keys())
+            bizobj_ids.append(obj._id)
+            obj._id = None
+        cls.get_dao().delete_many(bizobj_ids)
+
+    @classmethod
+    def delete_all(cls) -> None:
+        cls.get_dao().delete_all()
+
+    def save(self, method: SaveMethod = None) -> 'BizObject':
+        method = SaveMethod(method or SaveMethod.breadth_first)
+        if method == SaveMethod.breadth_first:
+            saver = BreadthFirstSaver(self.__class__)
+        return saver.save_one(self)
+
+    @classmethod
     def save_many(
         cls,
         bizobjs: List['BizObject'],
@@ -215,8 +212,23 @@ class BizObject(metaclass=BizObjectMeta):
         method = SaveMethod(method or SaveMethod.breadth_first)
         if method == SaveMethod.breadth_first:
             saver = BreadthFirstSaver(cls)
-
         return saver.save_many(bizobjs)
+
+    @classmethod
+    def create(cls, bizobj: 'BizObject') -> 'BizList':
+        prepared_record = bizobj._data.copy()
+        prepared_record.pop('_rev', None)
+        created_record = cls.get_dao().create(prepared_record)
+        bizobj._data.update(created_record)
+        return bizobj.clean()
+
+    @classmethod
+    def update(cls, bizobj: 'BizObject') -> 'BizList':
+        prepared_record = bizobj._data.copy()
+        prepared_record.pop('_rev', None)
+        updated_record = cls.get_dao().update(bizobj._id, prepared_record)
+        bizobj._data.update(updated_record)
+        return bizobj.clean()
 
     @classmethod
     def create_many(cls, bizobjs: List['BizObject']) -> 'BizList':
@@ -253,13 +265,18 @@ class BizObject(metaclass=BizObjectMeta):
 
         return cls.BizList(bizobjs)
 
-    def save(self, method: SaveMethod = None) -> 'BizObject':
-        method = SaveMethod(method or SaveMethod.breadth_first)
-
-        if method == SaveMethod.breadth_first:
-            saver = BreadthFirstSaver(self.__class__)
-
-        return saver.save_one(self)
+    @classmethod
+    def insert_defaults(cls, record: Dict) -> None:
+        """
+        This method is used internally and externally to insert field defaults
+        into the `record` dict param.
+        """
+        for k, default in cls.defaults.items():
+            if k not in record:
+                if callable(default):
+                    record[k] = default()
+                else:
+                    record[k] = deepcopy(default)
 
     @property
     def dao(self) -> 'Dao':

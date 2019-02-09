@@ -177,7 +177,7 @@ class SqlalchemyDao(Dao):
         cls.local.metadata = sa.MetaData()
         cls.local.metadata.bind = sa.create_engine(
             name_or_url=url or cls.env.SQLALCHEMY_URL,
-            echo=False#bool(echo or cls.env.SQLALCHEMY_ECHO),
+            echo=bool(echo or cls.env.SQLALCHEMY_ECHO),
         )
 
     def bind(self, biz_type: Type['BizObject']):
@@ -355,13 +355,13 @@ class SqlalchemyDao(Dao):
             update_stmt = update_stmt.return_defaults()
             result = self.conn.execute(update_stmt)
             return dict(data, **(result.returned_defaults or {}))
-            # TODO: ensure _rev comes back too in defaults
         else:
             self.conn.execute(update_stmt)
             return self.fetch(_id)
 
-    def update_many(self, _ids: List, data: List[Dict] = None) -> None:
+    def update_many(self, _ids: List, data: Dict = None) -> None:
         assert data
+
         prepared_ids = [self.adapt_id(_id) for _id in _ids]
         prepared_data = [
             self.adapt_record(record, serialize=True)
@@ -376,23 +376,30 @@ class SqlalchemyDao(Dao):
                 .where(self.table.c._id == bindparam('_id'))
                 .values(**values)
         )
-
         self.conn.execute(update_stmt, prepared_data)
 
         if self.supports_returning:
             # TODO: use implicit returning if possible
-            pass
+            return self.fetch_many(_ids, as_list=True)
         else:
             return self.fetch_many(_ids, as_list=True)
 
     def delete(self, _id) -> None:
-        # TODO: prepare ID
-        delete_stmt = self.table.delete().where(self.table.c._id == _id)
+        prepared_id = self.adapt_id(_id)
+        delete_stmt = self.table.delete().where(
+            self.table.c._id == prepared_id
+        )
         self.conn.execute(delete_stmt)
 
     def delete_many(self, _ids: list) -> None:
-        # TODO: prepare IDs
-        delete_stmt = self.table.delete().where(self.table.c._id.in_(_ids))
+        prepared_ids = [self.adapt_id(_id) for _id in _ids]
+        delete_stmt = self.table.delete().where(
+            self.table.c._id.in_(prepared_ids)
+        )
+        self.conn.execute(delete_stmt)
+
+    def delete_all(self):
+        delete_stmt = self.table.delete()
         self.conn.execute(delete_stmt)
 
     @property
@@ -405,10 +412,15 @@ class SqlalchemyDao(Dao):
 
     @property
     def supports_returning(self):
+        if not self.is_bootstrapped():
+            return False
         return self.local.metadata.bind.dialect.implicit_returning
 
     @classmethod
     def create_tables(cls):
+        if not cls.is_bootstrapped():
+            return
+
         meta = cls.get_metadata()
         engine = cls.get_engine()
 
