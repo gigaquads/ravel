@@ -113,7 +113,7 @@ class PythonDao(Dao):
                 self.delete(old_record['_id'], clear_rev=False)
 
             merged_record = DictUtils.merge(old_record, data)
-            merged_record['_rev'] += 1
+            merged_record['_rev'] = old_rev + 1
 
             record = self.create(merged_record)
             return record
@@ -131,9 +131,10 @@ class PythonDao(Dao):
             self.records.pop(_id, None)
             if clear_rev:
                 self.rev_counter.pop(_id, None)
-            for k, v in record.items():
-                if k not in self.ignored_indexes:
-                    self.indexes[k][v].remove(_id)
+            if record:
+                for k, v in record.items():
+                    if k not in self.ignored_indexes:
+                        self.indexes[k][v].remove(_id)
             return record
 
     def delete_many(self, _ids: List, clear_rev=True) -> List:

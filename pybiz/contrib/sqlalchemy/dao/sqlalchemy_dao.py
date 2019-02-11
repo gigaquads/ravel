@@ -36,8 +36,8 @@ class SqlalchemyDao(Dao):
         )
     )
 
-    def __init__(self, adapters: List[Field.TypeAdapter] = None):
-        super().__init__()
+    def __init__(self, adapters: List[Field.TypeAdapter] = None, history=False):
+        super().__init__(history=history)
         self._custom_adapters = adapters or []
         self._table = None
         self._builder = None

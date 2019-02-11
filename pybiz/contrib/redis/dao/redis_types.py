@@ -50,7 +50,7 @@ class HashSet(RedisObject):
 
     def delete(self, key, pipe=None) -> bool:
         redis = pipe if pipe is not None else self.redis
-        return bool(pipe.hdel(self.name, key))
+        return bool(redis.hdel(self.name, key))
 
     def delete_many(self, keys, pipe=None) -> int:
         if isinstance(keys, GeneratorType):
@@ -191,7 +191,7 @@ class StringIndex(RangeIndex):
         new_key = '{}{}{}'.format(value, self.DELIM, _id)
 
         if old_key is not None:
-            redis.zrem(old_key)
+            redis.zrem(self.name, old_key)
 
         # TODO: Do this in a pipeline
         redis.zadd(self.name, {new_key: 0.0})
