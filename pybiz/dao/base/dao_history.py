@@ -57,17 +57,6 @@ class DaoHistory(object):
     def append(self, event):
         self._events.append(event)
 
-    def replay(self, dao: 'Dao', reads=True, writes=True) -> List:
-        results = []
-        for event in self._events:
-            is_read = event.method in self.read_method_names
-            is_write = event.method in self.write_method_names
-            if (is_read and reads) or (is_write and writes):
-                func = getattr(dao, event.method)
-                result = func(*event.args, **event.kwargs)
-                results.append(result)
-        return results
-
     @property
     def is_recording(self):
         return self._is_recording

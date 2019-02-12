@@ -23,8 +23,7 @@ from .sqlalchemy_table_builder import SqlalchemyTableBuilder
 class SqlalchemyDao(Dao):
 
     local = threading.local()
-
-    local.metadata = None  # set by bootstrap
+    local.metadata = None
 
     json_encoder = JsonEncoder()
 
@@ -271,7 +270,7 @@ class SqlalchemyDao(Dao):
         columns = [sa.func.count(self.table.c._id)]
         query = (
             sa.select(columns)
-                .where(self.table.c._id == _id)
+                .where(self.table.c._id == self.adapt_id(_id))
         )
         result = self.conn.execute(query)
         return bool(result.scalar())

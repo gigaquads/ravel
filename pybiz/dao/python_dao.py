@@ -79,19 +79,12 @@ class PythonDao(Dao):
 
     def create(self, record: Dict = None) -> Dict:
         with self.lock:
-            _id = self.create_id(record)
-            record['_id'] = _id
-            if not self.ignore_rev:
-                record['_rev'] = self.rev_counter[_id]
-                self.rev_counter[_id] += 1
-                self.records[_id] = record
-            else:
-                self.records[_id] = record
-            for k, v in record.items():
-                if k not in self.ignored_indexes:
-                    if v not in self.indexes[k]:
-                        self.indexes[k][v] = set()
-                    self.indexes[k][v].add(_id)
+            record['_id'] = _id = self.create_id(record)
+            record['_rev'] = self.rev_counter[_id]
+            self.rev_counter[_id] += 1
+            self.records[_id] = record
+            self._update_indexes(_id, record)
+
         return deepcopy(record)
 
     def create_many(self, records: List[Dict] = None) -> List[Dict]:
@@ -132,9 +125,8 @@ class PythonDao(Dao):
             if clear_rev:
                 self.rev_counter.pop(_id, None)
             if record:
-                for k, v in record.items():
-                    if k not in self.ignored_indexes:
-                        self.indexes[k][v].remove(_id)
+                self._delete_from_indexes(_id, record)
+
             return record
 
     def delete_many(self, _ids: List, clear_rev=True) -> List:
@@ -246,3 +238,15 @@ class PythonDao(Dao):
                     )
 
         return results
+
+    def _update_indexes(self, _id, record):
+        for k, v in record.items():
+            if k not in self.ignored_indexes:
+                if v not in self.indexes[k]:
+                    self.indexes[k][v] = set()
+                self.indexes[k][v].add(_id)
+
+    def _delete_from_indexes(self, _id, record):
+        for k, v in record.items():
+            if k not in self.ignored_indexes:
+                self.indexes[k][v].remove(_id)

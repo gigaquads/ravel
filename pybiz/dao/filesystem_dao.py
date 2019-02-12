@@ -20,13 +20,14 @@ from .python_dao import PythonDao
 
 
 class FilesystemDao(Dao):
-
     def __init__(
         self,
         root: Text,
         ftype: Text = None,
         extensions: Set[Text] = None,
     ):
+        super().__init__()
+
         # convert the ftype string arg into a File class ref
         if not ftype:
             self.ftype = Yaml
@@ -86,30 +87,25 @@ class FilesystemDao(Dao):
 
     def fetch_many(self, _ids: List, fields: List = None) -> Dict:
         if not _ids:
-            _ids = set()
-            for ext in self.extensions:
-                for fname in glob.glob(f'{self.paths.data}/*.{ext}'):
-                    base = fname.split('.')[0]
-                    _ids.add(os.path.basename(base))
+            _ids = self._fetch_all_ids()
+
+        fields = fields if isinstance(fields, set) else set(fields or [])
+        if not fields:
+            fields = set(self.biz_type.schema.fields.keys())
+        fields |= {'_id', '_rev'}
 
         records = {}
-        fields = fields if isinstance(fields, set) else set(fields or [])
-        only_mtime = fields - {'_id'} == {'_rev'}
 
-        if not only_mtime:
-            for _id in _ids:
-                fpath = self.mkpath(_id)
-                record = self.ftype.from_file(fpath) or {}
+        for _id in _ids:
+            fpath = self.mkpath(_id)
+            record = self.ftype.from_file(fpath)
+            if record:
                 record.setdefault('_id', _id)
-                record['_rev'] = int(os.path.getmtime(fpath))
-                records[_id] = record
-        else:
-            for _id in _ids:
-                fpath = self.mkpath(_id)
-                records[_id] = {
-                    '_id': _id,
-                    '_rev': int(os.path.getmtime(fpath))
-                }
+                record['_rev'] = record.setdefault('_rev', 0)
+                records[_id] = {k: record[k] for k in fields}
+            else:
+                records['_id'] = None
+
         return records
 
     def fetch_all(self, fields: Set[Text] = None) -> Dict:
@@ -124,15 +120,21 @@ class FilesystemDao(Dao):
 
         fpath = self.mkpath(_id)
         base_record = self.ftype.from_file(fpath)
-
         if base_record:
+            # this is an upsert
             record = DictUtils.merge(base_record, data)
-            self.ftype.to_file(file_path=fpath, data=record)
         else:
-            self.ftype.to_file(file_path=fpath, data=data)
             record = data
 
-        record['_rev'] = int(os.path.getmtime(fpath))
+        if '_id' not in record:
+            record['_id'] = _id
+
+        if '_rev' not in record:
+            record['_rev'] = 0
+        else:
+            record['_rev'] += 1
+
+        self.ftype.to_file(file_path=fpath, data=record)
         return record
 
     def update_many(self, _ids: List, updates: List = None) -> Dict:
@@ -142,11 +144,16 @@ class FilesystemDao(Dao):
         }
 
     def delete(self, _id) -> None:
-        os.unlink(_id)
+        fpath = self.mkpath(_id)
+        os.unlink(fpath)
 
     def delete_many(self, _ids: List) -> None:
         for _id in _ids:
             self.delete(_id)
+
+    def delete_all(self):
+        _ids = self._fetch_all_ids()
+        self.delete_many(_ids)
 
     def query(self, predicate: 'Predicate', **kwargs):
         return []  # not implemented
@@ -154,3 +161,11 @@ class FilesystemDao(Dao):
     def mkpath(self, fname: Text) -> Text:
         fname = self.ftype.format_file_name(fname)
         return os.path.join(self.paths.data, fname)
+
+    def _fetch_all_ids(self):
+        _ids = set()
+        for ext in self.extensions:
+            for fname in glob.glob(f'{self.paths.data}/*.{ext}'):
+                base = fname.split('.')[0]
+                _ids.add(os.path.basename(base))
+        return _ids
