@@ -35,17 +35,6 @@ class SqlalchemyDao(Dao):
         )
     )
 
-    def __init__(self, adapters: List[Field.TypeAdapter] = None, history=False):
-        super().__init__(history=history)
-        self._custom_adapters = adapters or []
-        self._table = None
-        self._builder = None
-        self._adapters = None
-
-    @property
-    def adapters(self):
-        return self._adapters
-
     @classmethod
     def get_default_adapters(cls, dialect: Dialect) -> List[Field.TypeAdapter]:
         adapters = [
@@ -146,6 +135,17 @@ class SqlalchemyDao(Dao):
         )
         return adapters
 
+    def __init__(self, adapters: List[Field.TypeAdapter] = None):
+        super().__init__()
+        self._custom_adapters = adapters or []
+        self._table = None
+        self._builder = None
+        self._adapters = None
+
+    @property
+    def adapters(self):
+        return self._adapters
+
     def adapt_record(self, record: Dict, serialize=True) -> Dict:
         cb_name = 'on_encode' if serialize else 'on_decode'
         prepared_record = {}
@@ -172,10 +172,11 @@ class SqlalchemyDao(Dao):
 
     @classmethod
     def on_bootstrap(cls, url=None, dialect=None, echo=False):
+        url = url or self._url or cls.env.SQLALCHEMY_URL
         cls.dialect = dialect or cls.env.SQLALCHEMY_DIALECT
         cls.local.metadata = sa.MetaData()
         cls.local.metadata.bind = sa.create_engine(
-            name_or_url=url or cls.env.SQLALCHEMY_URL,
+            name_or_url=url,
             echo=bool(echo or cls.env.SQLALCHEMY_ECHO),
         )
 

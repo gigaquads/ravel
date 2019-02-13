@@ -108,7 +108,7 @@ class Registry(object):
             # of this method. instead, only execute custom on_boostrap logic,
             # and make it the developer's responsiblity to make on_bootstrap
             # idempotent.
-            self.on_bootstrap()
+            self.on_bootstrap(*args, **kwargs)
             return self
 
         # merge additional namespace data into namespace accumulator

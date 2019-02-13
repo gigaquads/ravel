@@ -64,11 +64,8 @@ class CacheDao(Dao):
         self.executor = None
 
     def bind(self, biz_type):
-        """
-        if self.prefetch:
-            records = self.persistence.fetch_cache(None, data=True, rev=True)
-            self.cache.create_many(records=(r.data for r in records.values()))
-        """
+        # we have to bootstrap here lazily because we don't know the FE or BE
+        # Dao types until runtime.
         if not self.fe.is_bootstrapped():
             self.fe.bootstrap()
         if not self.be.is_bootstrapped():

@@ -14,7 +14,7 @@ from BTrees.OOBTree import BTree
 
 from appyratus.utils import DictUtils
 
-from pybiz.schema import fields
+from pybiz.schema import Schema, fields
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -42,7 +42,7 @@ class PythonDao(Dao):
     def bind(self, biz_type):
         super().bind(biz_type)
         for k, v in biz_type.schema.fields.items():
-            if isinstance(v, fields.Dict):
+            if isinstance(v, (fields.Dict, fields.Nested, Schema)):
                 self.ignored_indexes.add(k)
 
     def exists(self, _id) -> bool:

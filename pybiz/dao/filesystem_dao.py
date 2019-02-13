@@ -12,6 +12,7 @@ from appyratus.utils import (
     StringUtils,
 )
 from appyratus.files import BaseFile, Yaml
+from appyratus.env import Environment
 
 from pybiz.util import import_object
 
@@ -20,9 +21,12 @@ from .python_dao import PythonDao
 
 
 class FilesystemDao(Dao):
+
+    env = Environment()
+    paths = DictAccessor({'root': None})
+
     def __init__(
         self,
-        root: Text,
         ftype: Text = None,
         extensions: Set[Text] = None,
     ):
@@ -36,9 +40,6 @@ class FilesystemDao(Dao):
 
         assert issubclass(self.ftype, BaseFile)
 
-        # self.paths is where we store named file paths
-        self.paths = DictAccessor({'root': root})
-
         # set of recognized (case-normalized) file extensions
         self.extensions = {
             ext.lower() for ext in (
@@ -47,6 +48,12 @@ class FilesystemDao(Dao):
         }
         if extensions:
             self.extensions.update(extensions)
+
+    @classmethod
+    def on_bootstrap(cls, ftype: Text = None, root: Text = None):
+        cls.ftype = import_object(ftype) if ftype else Yaml
+        cls.paths.root = root or cls.paths.root
+        assert cls.paths.root
 
     def bind(self, biz_type):
         """

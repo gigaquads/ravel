@@ -7,6 +7,8 @@ from collections import defaultdict
 from typing import Dict, List, Type, Set, Text, Tuple
 from abc import ABCMeta, abstractmethod
 
+from appyratus.env import Environment
+
 from .dao_history import DaoHistory, DaoEvent
 
 
@@ -29,6 +31,9 @@ class DaoMeta(ABCMeta):
 
 
 class Dao(object, metaclass=DaoMeta):
+
+    env = Environment()
+
     def __init__(self, history=False, *args, **kwargs):
         self._history = DaoHistory(dao=self)
         self._is_bound = False
@@ -84,7 +89,7 @@ class Dao(object, metaclass=DaoMeta):
         a connectio pool, for example.
         """
         cls._registry = registry
-        cls.on_bootstrap()
+        cls.on_bootstrap(**kwargs)
 
         # TODO: put this into a method
         if not hasattr(DaoMeta._local, 'is_bootstrapped'):

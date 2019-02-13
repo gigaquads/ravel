@@ -23,9 +23,14 @@ from .redis_types import RedisClient, HashSet, StringIndex, NumericIndex
 
 
 class RedisDao(Dao):
+
+    redis = None
+    host = 'localhost'
+    port = 6379
+    db = 0
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.redis = None
         self.encoder = JsonEncoder()
         self.field_2_index_type = {
             fields.String: StringIndex,
@@ -37,9 +42,15 @@ class RedisDao(Dao):
             fields.Bool: NumericIndex,
         }
 
+    @classmethod
+    def on_bootstrap(cls, host=None, port=None, db=None):
+        cls.host = host or cls.env.REDIS_HOST or cls.host
+        cls.port = port or cls.env.REDIS_PORT or cls.port
+        cls.db = db if db is not None else (cls.env.REDIS_DB or cls.db)
+        cls.redis = RedisClient(host=cls.host, port=cls.port, db=cls.db)
+
     def bind(self, biz_type: Type['BizObject']):
         super().bind(biz_type)
-        self.redis = RedisClient()
         self.type_name = StringUtils.snake(biz_type.__name__).lower()
         self.records = HashSet(self.redis, self.type_name)
         self.revs = HashSet(self.redis, f'{self.type_name}_revisions')
@@ -111,6 +122,7 @@ class RedisDao(Dao):
         return self.fetch_many(list(self.records.keys()), fields=fields)
 
     def upsert(self, record: Dict, pipe=None) -> Dict:
+        is_creating = record.get('_id') is None
         _id = self.create_id(record)
 
         # prepare the record for upsert
@@ -125,7 +137,11 @@ class RedisDao(Dao):
             self.indexes[k].upsert(_id, v)
 
         # add rev to record AFTER insert to avoid storing _rev in records hset
-        upserted_record['_rev'] = self.revs.increment(_id)
+        if is_creating:
+            upserted_record['_rev'] = 0
+        else:
+            upserted_record['_rev'] = self.revs.increment(_id)
+
         return upserted_record
 
     def create(self, data: Dict) -> Dict:
