@@ -3,7 +3,7 @@ import inspect
 from typing import List, Type, Dict, Tuple, Text
 from collections import deque
 
-from appyratus.utils import DictAccessor, DictUtils
+from appyratus.utils import DictObject, DictUtils
 from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
@@ -76,7 +76,7 @@ class Registry(object):
         return self._decorators
 
     @property
-    def types(self) -> DictAccessor:
+    def types(self) -> DictObject:
         return self._manifest.types
 
     @property
@@ -104,11 +104,6 @@ class Registry(object):
         from pybiz import BizObject
 
         if self.is_bootstrapped:
-            # if already bootstrapped, don't re-trigger all the base behavior
-            # of this method. instead, only execute custom on_boostrap logic,
-            # and make it the developer's responsiblity to make on_bootstrap
-            # idempotent.
-            self.on_bootstrap(*args, **kwargs)
             return self
 
         # merge additional namespace data into namespace accumulator
@@ -118,12 +113,12 @@ class Registry(object):
         self._manifest = manifest or Manifest()
         self._manifest.load().process(namespace=self._namespace)
 
+        # bootstrap the middlware
         for mware in self.middleware:
             mware.bootstrap(registry=self)
 
         # bootstrap the data access layer (DAL)
         binder = DaoBinder.get_instance()
-
         for binding in binder.bindings:
             strap = self.manifest.bootstraps.get(binding.dao_type_name)
             if strap is not None:
@@ -131,9 +126,10 @@ class Registry(object):
             else:
                 binding.dao_type.bootstrap()
 
+        # bind associates each BizObject class with Dao object.
         binder.bind()
 
-        # execute developer-provided custom logic
+        # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
 
         self._is_bootstrapped = True

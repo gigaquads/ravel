@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime
 
 from appyratus.utils import (
-    DictAccessor,
+    DictObject,
     DictUtils,
     StringUtils,
 )
@@ -23,7 +23,7 @@ from .python_dao import PythonDao
 class FilesystemDao(Dao):
 
     env = Environment()
-    paths = DictAccessor({'root': None})
+    paths = DictObject({'root': None})
 
     def __init__(
         self,

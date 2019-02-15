@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from venusian import Scanner
 from appyratus.memoize import memoized_property
-from appyratus.utils import DictUtils, DictAccessor
+from appyratus.utils import DictUtils, DictObject
 from appyratus.files import Yaml, Json
 from appyratus.env import Environment
 
@@ -39,7 +39,7 @@ class Manifest(object):
         self.bindings = []
         self.bootstraps = {}
         self.env = env or Environment()
-        self.types = DictAccessor({
+        self.types = DictObject({
             'dao': {'PythonDao': PythonDao},
             'biz': {},
         })

@@ -8,6 +8,7 @@ import time
 import re
 import pickle
 import codecs
+import multiprocessing as mp
 
 import grpc
 
@@ -29,6 +30,13 @@ from pybiz.api.registry import Registry
 from .grpc_registry_proxy import GrpcRegistryProxy
 from .grpc_client import GrpcClient
 
+DEFAULT_HOST = '127.0.0.1'
+DEFAULT_PORT = '50051'
+DEFAULT_IS_SECURE = False
+REGISTRY_PROTO_FILE = 'registry.proto'
+PB2_MODULE_PATH_FSTR = '{}.grpc.registry_pb2'
+PB2_GRPC_MODULE_PATH_FSTR = '{}.grpc.registry_pb2_grpc'
+
 
 class GrpcRegistry(Registry):
     """
@@ -37,112 +45,110 @@ class GrpcRegistry(Registry):
 
     def __init__(self, middleware=None):
         super().__init__(middleware=middleware)
-        self._json_encoder = JsonEncoder()
-        self._grpc_server = None
-        self._grpc_servicer = None
-        self._grpc_server_addr = None
-        self._grpc_client_addr = None
-        self._grpc_secure_channel = None
-        self._protobuf_filepath = None
-
-    def bootstrap(
-        self,
-        manifest_filepath: Text,
-        build_grpc=False,
-        grpc_options: dict = None
-    ):
-        self.manifest.load(path=manifest_filepath)
-
-        pkg_path = self.manifest.package
-        pkg = import_module(pkg_path)
-        pkg_dir = os.path.dirname(pkg.__file__)
-        pb2_mod_path = '{}.grpc.registry_pb2'.format(pkg_path)
-        pb2_grpc_mod_path = '{}.grpc.registry_pb2_grpc'.format(pkg_path)
-        grpc_build_dir = os.path.join(pkg_dir, 'grpc')
-
-        # a manifest could provide grpc options, but they could also come from
-        # kwargs.  in this case the manifest will load first, and any data
-        # specified in the `grpc_options` kwarg will take preference
-        manifest_grpc_options = self.manifest.data.get(
-            'grpc_options', {}
-        ) if hasattr(self.manifest, 'data') else {}
-        grpc_options = grpc_options or {}
-        grpc_options = DictUtils.merge(manifest_grpc_options, grpc_options)
-
-        client_host = grpc_options.get('client_host', '127.0.0.1')
-        server_host = grpc_options.get('server_host', '127.0.0.1')
-        port = str(grpc_options.get('port', '50051'))
-        secure_channel = grpc_options.get('secure_channel', False)
-
-        self._grpc_server_addr = '{}:{}'.format(server_host, port)
-        self._grpc_client_addr = '{}:{}'.format(client_host, port)
-        self._grpc_secure_channel = secure_channel
-        self._protobuf_filepath = os.path.join(
-            grpc_build_dir, 'registry.proto'
-        )
-
-        os.makedirs(os.path.join(grpc_build_dir), exist_ok=True)
-        sys.path.append(grpc_build_dir)
-
-        def on_error(name):
-            if issubclass(sys.exc_info()[0], ImportError):
-                traceback.print_exc()
-
-        self.manifest.process(on_error=on_error)
-
-        def touch(filepath):
-            with open(os.path.join(filepath), 'a'):
-                pass
-
-        if build_grpc:
-            sys.path.append(grpc_build_dir)
-            touch(os.path.join(grpc_build_dir, '__init__.py'))
-            self.grpc_build(dest=grpc_build_dir)
-
-        self.pb2 = import_module(pb2_mod_path, pkg_path)
-        self.pb2_grpc = import_module(pb2_grpc_mod_path, pkg_path)
-        self._is_bootstrapped = True
-
-    @property
-    def proxy_type(self):
-        return GrpcRegistryProxy
+        self.grpc = DictObject()
+        self.grpc.options = DictObject()
+        self.grpc.pb2 = None
+        self.grpc.pb2_grpc = None
+        self.grpc.server = None
+        self.grpc.servicer = None
 
     @memoized_property
     def client(self) -> GrpcClient:
         return GrpcClient(self)
 
     @property
-    def server_addr(self):
-        return self._grpc_server_addr
+    def proxy_type(self):
+        return GrpcRegistryProxy
 
-    @property
-    def client_addr(self):
-        return self._grpc_client_addr
+    def on_bootstrap(self, rebuild=False, options: Dict = None):
+        grpc = self.grpc
 
-    @property
-    def secure_channel(self):
-        return self._grpc_secure_channel
+        # get the python package containing this Registry
+        pkg_path = self.manifest.package
+        pkg = import_module(self.manifest.package)
+
+        # compute some file and module paths
+        grpc.pkg_dir = os.path.dirname(pkg.__file__)
+        grpc.build_dir = os.path.join(pkg_dir, 'grpc')
+        grpc.proto_file = os.path.join(grpc.build_dir, REGISTRY_PROTO_FILE)
+
+        # compute grpc options dict from options kwarg and manifest data
+        kwarg_options = options or {}
+        manifest_options = self.manifest.data.get('grpc', {})
+        computed_options = DictUtils.merge(kwarg_options, manifest_options)
+
+        grpc.data.options = DictObject(computed_options)
+        grpc.options.data.setdefault('client_host', DEFAULT_HOST)
+        grpc.options.data.setdefault('server_host', DEFAULT_HOST)
+        grpc.options.data.setdefault('secure_channel', DEFAULT_IS_SECURE)
+        grpc.options.data.setdefault('port', DEFAULT_PORT)
+
+        grpc.options.server_address = (
+            f'{grpc.options.server_host}:{grpc.options.port}'
+        )
+        grpc.options.client_address = (
+            f'{grpc.options.client_host}:{grpc.options.port}'
+        )
+
+        # create the build directory and add it to PYTHONPATH
+        os.makedirs(os.path.join(grpc.build_dir), exist_ok=True)
+        sys.path.append(grpc.build_dir)
+
+        # build dotted paths to the auto-generated pb2, pb2_grpc modules
+        pb2_mod_path = PB2_MODULE_PATH_FSTR.format(pkg_path)
+        pb2_grpc_mod_path = PB2_GRPC_MODULE_PATH_FSTR.format(pkg_path)
+
+        # try to import the pb2 module just to see if it exists
+        try:
+            import_module(pb2_mod_path, pkg_path)
+            pb2_module_dne = False  # dne: does not exist
+        except Exception:
+            pb2_module_dne = True
+            traceback.print_exc()
+
+        # build the pb2 and pb2_grpc modules
+        if rebuild or pb2_module_dne:
+            self.build()
+
+        # now import the dynamically-generated pb2 modules
+        self.grpc.pb2 = import_module(pb2_mod_path, pkg_path)
+        self.grpc.pb2_grpc = import_module(pb2_grpc_mod_path, pkg_path)
+
+        # build a lookup table of protobuf response Message types
+        self.grpc.response_types = {
+            proxy: getattr(
+                self.grpc.pb2, f'{StringUtils.camel(proxy.name)}Response'
+            )
+            for proxy in self.proxies.values()
+        }
 
     def on_decorate(self, proxy):
         pass
 
     def on_request(self, proxy, request, *args, **kwargs):
         """
-        Extract command line arguments and bind them to the arguments expected
-        by the registered function's signature.
+        Take the attributes on the incoming protobuf Message object and
+        map them to the args and kwargs expected by the proxy target.
         """
-        # TODO: Implement verbosity levels
-        print('>>> Calling "{}" RPC function...'.format(proxy.name))
-        arguments = {
+        print(f'>>> Calling "{proxy.name}" RPC function...')
+
+        # get field data to process into args and kwargs
+        field_data = {
             k: getattr(request, k, None)
             for k in proxy.request_schema.fields
         }
+
+        # process field_data into args and kwargs
         args, kwargs = FuncUtils.partition_arguments(
             proxy.signature, arguments
         )
         return (args, kwargs)
 
     def on_response(self, proxy, result, *raw_args, **raw_kwargs):
+        """
+        Map the return dict from the proxy to the expected outgoing protobuf
+        response Message object.
+        """
         def recurseively_bind(target, data):
             if data is None:
                 return None
@@ -152,15 +158,13 @@ class GrpcRegistry(Registry):
                 else:
                     try:
                         setattr(target, k, v)
-                    except Exception as exc:
-                        print('Unable to bind "{}", type mismatch'.format(k))
-                        raise exc
+                    except Exception:
+                        print(f'Unable to bind "{k}", type mismatch')
+                        raise
             return target
 
         # bind the returned dict values to the response protobuf message
-        response_type = getattr(
-            self.pb2, '{}Response'.format(StringUtils.camel(proxy.name))
-        )
+        response_type = self.grpc.response_types[proxy]
         resp = response_type()
 
         def to_dict(field, value, context=None):
@@ -196,121 +200,119 @@ class GrpcRegistry(Registry):
                     setattr(resp, k, v)
         return resp
 
-    def start(self, initializer=None, grace=2):
+    def on_start(self):
         """
         Start the RPC client or server.
         """
-        if self._is_port_in_use():
-            print(
-                '>>> {} already in use. '
-                'Exiting...'.format(self._grpc_server_addr)
+        if _is_port_in_use(self.grpc.options.server_address):
+            exit(
+                f'>>> {self.grpc.options.server_address} already in use! '
+                f'Exiting...'
             )
-            exit(-1)
 
-        executor = ThreadPoolExecutor(
-            max_workers=None,    # TODO: put this value in manifest
-        # XXX TypeError: __init__() got an unexpected keyword argument 'initializer'
-        #initializer=initializer,
+        # the grpc server runs in a thread pool
+        self.grpc.executor = ThreadPoolExecutor(
+            max_workers=mp.cpu_count() + 1,
+            initializer=self.initializer,
         )
-
         # build the grpc server
-        self._grpc_server = grpc.server(executor)
-        self._grpc_server.add_insecure_port(self.server_addr)
+        self.grpc.server = grpc.server(self.grpc.executor)
+        self.grpc.server.add_insecure_port(self.grpc.options.server_address)
 
         # build the grpc servicer and connect with server
-        self._grpc_servicer = self._grpc_servicer_factory()
-        self._grpc_servicer.add_to_grpc_server(
-            self._grpc_servicer, self._grpc_server
+        self.grpc.servicer = self._grpc_servicer_factory()
+        self.grpc.servicer.add_togrpc.server(
+            self.grpc.servicer, self.grpc.server
         )
 
         # start the server. note that it is non-blocking.
-        self._grpc_server.start()
+        self.grpc.server.start()
 
-        # enter spin lock
+        # now suspend the main thread while the grpc server runs
+        # in the ThreadPoolExecutor.
         print('>>> gRPC server is running. Press ctrl+c to stop.')
-        print('>>> Listening on {}...'.format(self._grpc_server_addr))
+        print(f'>>> Listening on {self.grpc.options.server_address}...')
+
         try:
             while True:
-                time.sleep(32)
+                time.sleep(9999)
         except KeyboardInterrupt:
             print()
-            if self._grpc_server is not None:
+            if self.grpc.server is not None:
                 print('>>> Stopping grpc server...')
-                self._grpc_server.stop(grace=grace)
+                self.grpc.server.stop(grace=5)
             print('>>> Groodbye!')
 
-    def _is_port_in_use(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            host, port_str = self._grpc_client_addr.split(':')
-            sock.bind((host, int(port_str)))
-            return False
-        except OSError as err:
-            if err.errno == 48:
-                return True
-            else:
-                raise err
-        finally:
-            sock.close()
+    def build(self):
+        _touch_file(os.path.join(self.grpc.build_dir, '__init__.py'))
+        self._grpc_generate_proto_file()
+        self._grpc_compile_pb2_modules()
 
     def _grpc_servicer_factory(self):
+        """
+        Import the abstract base Servicer class from the autogenerated pb2_grpc
+        module and derive a new subclass that inherits this Registry's proxy
+        objects as its interface implementation.
+        """
         servicer_type_name = 'GrpcRegistryServicer'
         abstract_type = None
 
-        for k, v in inspect.getmembers(self.pb2_grpc):
+        # get a reference to the grpc abstract base Servicer  class
+        for k, v in inspect.getmembers(self.grpc.pb2_grpc):
             if k == servicer_type_name:
                 abstract_type = v
                 break
-
         if abstract_type is None:
             raise Exception('could not find grpc Servicer class')
 
-        methods = dict(self.proxies)
-        servicer_type = type(servicer_type_name, (abstract_type, ), methods)
-        servicer = servicer_type()
-        servicer.add_to_grpc_server = (
-            self.pb2_grpc.add_GrpcRegistryServicer_to_server
+        # create dynamic Servicer subclass
+        servicer = type(
+            servicer_type_name, (abstract_type, ), self.proxies.copy()
+        )()
+
+        # register the Servicer with the server
+        servicer.add_togrpc.server = (
+            self.grpc.pb2_grpc.add_GrpcRegistryServicer_to_server
         )
+
         return servicer
 
-    def grpc_build(self, dest):
-        self._grpc_generate_proto_file(dest)
-        self._grpc_compile_proto_file(dest)
-
-    def _grpc_generate_proto_file(self, dest):
+    def _grpc_generate_proto_file(self):
         """
         Iterate over function proxies, using request and response schemas to
         generate protobuf message and service types.
         """
-        chunks = ['syntax = "proto3";']
+        lines = ['syntax = "proto3";']
+
         func_decls = []
         for proxy in self.proxies.values():
-            chunks.extend(proxy.generate_protobuf_message_types())
+            lines.extend(proxy.generate_protobuf_message_types())
             func_decls.append(proxy.generate_protobuf_function_declaration())
 
-        chunks.append('service GrpcRegistry {')
+
+        lines.append('service GrpcRegistry {')
+
         for decl in func_decls:
-            chunks.append('  ' + decl)
-        chunks.append('}\n')
+            lines.append('  ' + decl)
 
-        source = '\n'.join(chunks)
+        lines.append('}\n')
 
-        if self._protobuf_filepath:
-            with open(self._protobuf_filepath, 'w') as fout:
+        source = '\n'.join(lines)
+
+        if self.grpc.proto_file:
+            with open(self.grpc.proto_file, 'w') as fout:
                 fout.write(source)
 
         return source
 
-    def _grpc_compile_proto_file(self, dest):
+    def _grpc_compile_pb2_modules(self):
         """
-        Compile the protobuf file resulting from .
+        Compile the grpc .proto file, generating pb2 and pb2_grpc modules in the
+        build directory. These modules contain abstract base classes required
+        by the grpc server and client.
         """
-        include_dir = os.path.realpath(
-            os.path.dirname(self._protobuf_filepath)
-        )
-        proto_file = os.path.basename(self._protobuf_filepath)
-
-        cmd = re.sub(
+        # build the shell command to run....
+        protoc_command = re.sub(
             r'\s+', ' ', '''
             python3 -m grpc_tools.protoc
                 -I {include_dir}
@@ -318,14 +320,41 @@ class GrpcRegistry(Registry):
                 --grpc_python_out={build_dir}
                 {proto_file}
         '''.format(
-                include_dir=include_dir or '.',
-                build_dir=dest,
-                proto_file=proto_file
+                include_dir=os.path.realpath(
+                    os.path.dirname(self.grpc.proto_file)
+                ) or '.',
+                build_dir=self.grpc.build_dir,
+                proto_file=os.path.basename(self.grpc.proto_file),
             ).strip()
         )
-
-        print(cmd)
-
-        output = subprocess.getoutput(cmd)
+        print(protoc_command)
+        output = subprocess.getoutput(protoc_command)
         if output:
             print(output)
+
+
+def _touch_file(filepath):
+    """
+    Ensure a file exists at the given file path, creating one if does not
+    exist.
+    """
+    with open(os.path.join(filepath), 'a'):
+        pass
+
+
+def _is_port_in_use(addr):
+    """
+    Utility method for determining if the server address is already in use.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        host, port_str = addr.split(':')
+        sock.bind((host, int(port_str)))
+        return False
+    except OSError as err:
+        if err.errno == 48:
+            return True
+        else:
+            raise err
+    finally:
+        sock.close()

@@ -12,15 +12,16 @@ from appyratus.schema import fields
 class GrpcClient(object):
     def __init__(self, registry: 'GrpcRegistry'):
         assert registry.is_bootstrapped
+        self._address = registry.grpc.options.client_address
         self._registry = registry
 
-        print('Connecting to {}'.format(registry.client_addr))
-        if registry.secure_channel:
+        print('Connecting to {}'.format(self._address))
+        if registry.grpc.options.secure_channel:
             self._channel = grpc.secure_channel(
-                registry.client_addr, grpc.ssl_channel_credentials()
+                self._address, grpc.ssl_channel_credentials()
             )
         else:
-            self._channel = grpc.insecure_channel(registry.client_addr)
+            self._channel = grpc.insecure_channel(self._address)
 
         self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(self._channel)
         self._funcs = {
@@ -32,7 +33,7 @@ class GrpcClient(object):
 
     def _build_func(self, proxy):
         key = StringUtils.camel(proxy.name)
-        request_type = getattr(self._registry.pb2, '{}Request'.format(key))
+        request_type = getattr(self._registry.grpc.pb2, f'{key}Request')
         send_request = getattr(self._grpc_stub, proxy.name)
 
         def func(**kwargs):
