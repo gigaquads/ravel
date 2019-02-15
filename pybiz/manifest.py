@@ -69,7 +69,7 @@ class Manifest(object):
 
         self.package = self.data.get('package')
 
-        for binding_data in self.data['bindings']:
+        for binding_data in (self.data.get('bindings') or []):
             biz = binding_data['biz']
             dao = binding_data.get('dao', 'PythonDao')
             params = binding_data.get('parameters', {})
@@ -137,8 +137,12 @@ class Manifest(object):
         """
         if on_error is None:
             def on_error(name):
-                if issubclass(sys.exc_info()[0], ImportError):
-                    traceback.print_exc()
+                import sys
+
+                print(
+                    f'Venusian skipping {name} because of '
+                    f'{sys.exc_info()[0].__name__}'
+                )
 
         pkg_path = self.package
         if pkg_path:

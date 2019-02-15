@@ -28,7 +28,7 @@ class MessageGenerator(object):
             fields.Uuid: ScalarFieldAdapter('string'),
             fields.Bool: ScalarFieldAdapter('bool'),
             fields.Float: ScalarFieldAdapter('double'),
-            fields.Int: ScalarFieldAdapter('sint64'),
+            fields.Int: ScalarFieldAdapter('uint64'),
             fields.DateTime: ScalarFieldAdapter('uint64'),
             fields.Dict: ScalarFieldAdapter('bytes'),
             fields.List: ArrayFieldAdapter(),
@@ -74,6 +74,9 @@ class MessageGenerator(object):
         field_no2field = {}
         prepared_data = []
         field_decls = []
+
+        if not hasattr(schema_type, 'fields'):
+            import ipdb; ipdb.set_trace()
 
         for f in schema_type.fields.values():
             # compute the "field number"

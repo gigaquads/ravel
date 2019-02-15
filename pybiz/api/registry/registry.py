@@ -86,12 +86,6 @@ class Registry(object):
     def register(self, proxy):
         self.proxies[proxy.name] = proxy
 
-    def on_bootstrap(self, *args, **kwargs):
-        pass
-
-    def on_start(self):
-        pass
-
     def bootstrap(
         self,
         manifest: Manifest = None,
@@ -155,6 +149,9 @@ class Registry(object):
             'registry': {p.dump() for p in self.proxies.values()}
         }
 
+    def on_bootstrap(self, *args, **kwargs):
+        pass
+
     def on_decorate(self, proxy: 'RegistryProxy'):
         """
         We come here whenever a function is decorated by this registry. Here we
@@ -177,3 +174,6 @@ class Registry(object):
         executed.
         """
         return result
+
+    def on_start(self):
+        pass

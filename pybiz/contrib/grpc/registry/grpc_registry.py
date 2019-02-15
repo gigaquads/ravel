@@ -20,7 +20,7 @@ from google.protobuf.message import Message
 
 from appyratus.schema import fields
 from appyratus.memoize import memoized_property
-from appyratus.utils import StringUtils, FuncUtils, DictUtils
+from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 from appyratus.json import JsonEncoder
 
 from pybiz.util import is_bizobj
@@ -28,7 +28,7 @@ from pybiz.json import JsonEncoder
 from pybiz.api.registry import Registry
 
 from .grpc_registry_proxy import GrpcRegistryProxy
-from .grpc_client import GrpcClient
+from ..grpc_client import GrpcClient
 
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = '50051'
@@ -43,7 +43,7 @@ class GrpcRegistry(Registry):
     Grpc server and client interface.
     """
 
-    def __init__(self, middleware=None):
+    def __init__(self, middleware=None, initializer=None):
         super().__init__(middleware=middleware)
         self.grpc = DictObject()
         self.grpc.options = DictObject()
@@ -51,6 +51,7 @@ class GrpcRegistry(Registry):
         self.grpc.pb2_grpc = None
         self.grpc.server = None
         self.grpc.servicer = None
+        self.initializer = initializer
 
     @memoized_property
     def client(self) -> GrpcClient:
@@ -69,7 +70,7 @@ class GrpcRegistry(Registry):
 
         # compute some file and module paths
         grpc.pkg_dir = os.path.dirname(pkg.__file__)
-        grpc.build_dir = os.path.join(pkg_dir, 'grpc')
+        grpc.build_dir = os.path.join(grpc.pkg_dir, 'grpc')
         grpc.proto_file = os.path.join(grpc.build_dir, REGISTRY_PROTO_FILE)
 
         # compute grpc options dict from options kwarg and manifest data
@@ -77,7 +78,7 @@ class GrpcRegistry(Registry):
         manifest_options = self.manifest.data.get('grpc', {})
         computed_options = DictUtils.merge(kwarg_options, manifest_options)
 
-        grpc.data.options = DictObject(computed_options)
+        grpc.options = DictObject(computed_options)
         grpc.options.data.setdefault('client_host', DEFAULT_HOST)
         grpc.options.data.setdefault('server_host', DEFAULT_HOST)
         grpc.options.data.setdefault('secure_channel', DEFAULT_IS_SECURE)
@@ -104,11 +105,11 @@ class GrpcRegistry(Registry):
             pb2_module_dne = False  # dne: does not exist
         except Exception:
             pb2_module_dne = True
-            traceback.print_exc()
+            #traceback.print_exc()
 
         # build the pb2 and pb2_grpc modules
         if rebuild or pb2_module_dne:
-            self.build()
+            self._build_pb2_modules()
 
         # now import the dynamically-generated pb2 modules
         self.grpc.pb2 = import_module(pb2_mod_path, pkg_path)
@@ -133,14 +134,14 @@ class GrpcRegistry(Registry):
         print(f'>>> Calling "{proxy.name}" RPC function...')
 
         # get field data to process into args and kwargs
-        field_data = {
+        all_arguments = {
             k: getattr(request, k, None)
             for k in proxy.request_schema.fields
         }
 
         # process field_data into args and kwargs
         args, kwargs = FuncUtils.partition_arguments(
-            proxy.signature, arguments
+            proxy.signature, all_arguments
         )
         return (args, kwargs)
 
@@ -149,6 +150,33 @@ class GrpcRegistry(Registry):
         Map the return dict from the proxy to the expected outgoing protobuf
         response Message object.
         """
+        def bind_message(message, source: Dict):
+            if source is None:
+                return None
+            for k, v in source.items():
+                if isinstance(getattr(message, k), Message):
+                    sub_message = getattr(message, k)
+                    assert isinstance(v, dict)
+                    bind_message(sub_message, v)
+                elif isinstance(v, dict):
+                    v_bytes = codecs.encode(pickle.dumps(v), 'base64')
+                    setattr(message, k, v_bytes)
+                elif isinstance(v, (list, tuple, set)):
+                    list_field = getattr(message, k)
+                    list_field.extend(v)
+                else:
+                    setattr(message, k, v)
+            return message
+
+        response_type = self.grpc.response_types[proxy]
+        response = response_type()
+
+        if result:
+            data, errors = proxy.response_schema.process(result, strict=True)
+            response = bind_message(response, data)
+
+        return response
+        '''
         def recurseively_bind(target, data):
             if data is None:
                 return None
@@ -199,6 +227,7 @@ class GrpcRegistry(Registry):
                 else:
                     setattr(resp, k, v)
         return resp
+        '''
 
     def on_start(self):
         """
@@ -221,7 +250,7 @@ class GrpcRegistry(Registry):
 
         # build the grpc servicer and connect with server
         self.grpc.servicer = self._grpc_servicer_factory()
-        self.grpc.servicer.add_togrpc.server(
+        self.grpc.servicer.add_to_grpc_server(
             self.grpc.servicer, self.grpc.server
         )
 
@@ -242,11 +271,6 @@ class GrpcRegistry(Registry):
                 print('>>> Stopping grpc server...')
                 self.grpc.server.stop(grace=5)
             print('>>> Groodbye!')
-
-    def build(self):
-        _touch_file(os.path.join(self.grpc.build_dir, '__init__.py'))
-        self._grpc_generate_proto_file()
-        self._grpc_compile_pb2_modules()
 
     def _grpc_servicer_factory(self):
         """
@@ -271,11 +295,16 @@ class GrpcRegistry(Registry):
         )()
 
         # register the Servicer with the server
-        servicer.add_togrpc.server = (
+        servicer.add_to_grpc_server = (
             self.grpc.pb2_grpc.add_GrpcRegistryServicer_to_server
         )
 
         return servicer
+
+    def _build_pb2_modules(self):
+        _touch_file(os.path.join(self.grpc.build_dir, '__init__.py'))
+        self._grpc_generate_proto_file()
+        self._grpc_compile_pb2_modules()
 
     def _grpc_generate_proto_file(self):
         """
@@ -327,10 +356,10 @@ class GrpcRegistry(Registry):
                 proto_file=os.path.basename(self.grpc.proto_file),
             ).strip()
         )
-        print(protoc_command)
-        output = subprocess.getoutput(protoc_command)
-        if output:
-            print(output)
+        print(protoc_command + '\n')
+        err_msg = subprocess.getoutput(protoc_command)
+        if err_msg:
+            exit(err_msg)
 
 
 def _touch_file(filepath):
