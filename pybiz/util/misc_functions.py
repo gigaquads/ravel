@@ -5,11 +5,12 @@ from copy import deepcopy
 
 from pybiz.constants import IS_BIZOBJ_ANNOTATION, IS_BIZLIST_ANNOTATION
 
+
 _dict_keys = {}.keys().__class__
 _dict_values = {}.values().__class__
 
 
-def is_bizobj(obj) -> bool:
+def is_bizobj(obj):
     """
     Return True if obj is an instance of BizObject.
     """
@@ -21,6 +22,7 @@ def is_bizlist(obj) -> bool:
     Return True if obj is an instance of BizObject.
     """
     return getattr(obj, IS_BIZLIST_ANNOTATION, False) if obj else False
+
 
 def is_sequence(obj) -> bool:
     """

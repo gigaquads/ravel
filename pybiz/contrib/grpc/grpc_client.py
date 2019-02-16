@@ -25,7 +25,8 @@ class GrpcClient(object):
 
         self._grpc_stub = registry.pb2_grpc.GrpcRegistryStub(self._channel)
         self._funcs = {
-            k: self._build_func(p) for k, p in registry.proxies.items()
+            k: self._build_func(p)
+            for k, p in registry.proxies.items()
         }
 
     def __getattr__(self, func_name: Text):
@@ -36,26 +37,29 @@ class GrpcClient(object):
         request_type = getattr(self._registry.grpc.pb2, f'{key}Request')
         send_request = getattr(self._grpc_stub, proxy.name)
 
-        def func(**kwargs):
-            # prepare and send the request
-            req = request_type(**kwargs)
-            resp = send_request(req)
-            # translate the native proto response message to a plain dict
+        def extract_schema_data(data, data_fields):
             result = {}
-            for field_name, field in proxy.response_schema.fields.items():
-                value = getattr(resp, field_name, None)
+            for field_name, field in data_fields.items():
+                value = getattr(data, field_name, None)
                 if value is None:
                     result[field_name] = None
                 elif isinstance(field, fields.Dict):
                     decoded_value = codecs.decode(value, 'base64')
                     result[field_name] = pickle.loads(decoded_value)
-                # the following should be enabled and expanded when this function becomes recursive
-                #elif isinstance(field, Schema):
-                #elif isinstance(field, fields.Nested)
-                #    field.nested.schema
+                elif isinstance(field, fields.List):
+                    nested_fields = field.nested.fields
+                    result[field_name] = [extract_schema_data(v, nested_fields) for v in value]
                 else:
                     result[field_name] = value
             # return the response dict
+            return result
+
+        def func(**kwargs):
+            # prepare and send the request
+            req = request_type(**kwargs)
+            resp = send_request(req)
+            # translate the native proto response message to a plain dict
+            result = extract_schema_data(resp, proxy.response_schema.fields)
             return result
 
         return func
