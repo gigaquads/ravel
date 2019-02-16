@@ -5,7 +5,7 @@ from appyratus.utils import DictUtils
 from pybiz.util import is_bizobj, is_sequence
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
 
-from .biz_list import BizList
+from ..biz_list import BizList
 
 
 class QuerySpecification(tuple):

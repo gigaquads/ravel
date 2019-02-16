@@ -9,6 +9,7 @@ from typing import List, Dict, Text, Type, Set, Tuple
 
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
+from sqlalchemy.sql import bindparam
 
 from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
 from pybiz.schema import fields, Field
@@ -22,8 +23,7 @@ from .sqlalchemy_table_builder import SqlalchemyTableBuilder
 class SqlalchemyDao(Dao):
 
     local = threading.local()
-
-    local.metadata = None  # set by bootstrap
+    local.metadata = None
 
     json_encoder = JsonEncoder()
 
@@ -34,17 +34,6 @@ class SqlalchemyDao(Dao):
             fields.String(), Dialect.values(), default=Dialect.sqlite
         )
     )
-
-    def __init__(self, adapters: List[Field.TypeAdapter] = None):
-        super().__init__()
-        self._custom_adapters = adapters or []
-        self._table = None
-        self._builder = None
-        self._adapters = None
-
-    @property
-    def adapters(self):
-        return self._adapters
 
     @classmethod
     def get_default_adapters(cls, dialect: Dialect) -> List[Field.TypeAdapter]:
@@ -146,6 +135,17 @@ class SqlalchemyDao(Dao):
         )
         return adapters
 
+    def __init__(self, adapters: List[Field.TypeAdapter] = None):
+        super().__init__()
+        self._custom_adapters = adapters or []
+        self._table = None
+        self._builder = None
+        self._adapters = None
+
+    @property
+    def adapters(self):
+        return self._adapters
+
     def adapt_record(self, record: Dict, serialize=True) -> Dict:
         cb_name = 'on_encode' if serialize else 'on_decode'
         prepared_record = {}
@@ -172,10 +172,11 @@ class SqlalchemyDao(Dao):
 
     @classmethod
     def on_bootstrap(cls, url=None, dialect=None, echo=False):
+        url = url or self._url or cls.env.SQLALCHEMY_URL
         cls.dialect = dialect or cls.env.SQLALCHEMY_DIALECT
         cls.local.metadata = sa.MetaData()
         cls.local.metadata.bind = sa.create_engine(
-            name_or_url=url or cls.env.SQLALCHEMY_URL,
+            name_or_url=url,
             echo=bool(echo or cls.env.SQLALCHEMY_ECHO),
         )
 
@@ -270,7 +271,7 @@ class SqlalchemyDao(Dao):
         columns = [sa.func.count(self.table.c._id)]
         query = (
             sa.select(columns)
-                .where(self.table.c._id == _id)
+                .where(self.table.c._id == self.adapt_id(_id))
         )
         result = self.conn.execute(query)
         return bool(result.scalar())
@@ -284,7 +285,7 @@ class SqlalchemyDao(Dao):
         records = self.fetch_many(_ids=[_id], fields=fields)
         return records[_id] if records else None
 
-    def fetch_many(self, _ids: List, fields=None) -> Dict:
+    def fetch_many(self, _ids: List, fields=None, as_list=False) -> Dict:
         prepared_ids = [self.adapt_id(_id, serialize=True) for _id in _ids]
         fields = set(fields or self.biz_type.schema.fields.keys())
         fields.update(['_id', '_rev'])
@@ -293,7 +294,7 @@ class SqlalchemyDao(Dao):
         if prepared_ids:
             select_stmt = select_stmt.where(self.table.c._id.in_(prepared_ids))
         cursor = self.conn.execute(select_stmt)
-        records = {}
+        records = {} if not as_list else []
 
         while True:
             page = cursor.fetchmany(512)
@@ -302,7 +303,10 @@ class SqlalchemyDao(Dao):
                     raw_record = dict(row.items())
                     record = self.adapt_record(raw_record, serialize=False)
                     _id = self.adapt_id(row._id, serialize=False)
-                    records[_id] = record
+                    if as_list:
+                        records.append(record)
+                    else:
+                        records[_id] = record
             else:
                 break
 
@@ -331,7 +335,12 @@ class SqlalchemyDao(Dao):
             prepared_records.append(prepared_record)
 
         self.conn.execute(self.table.insert(), prepared_records)
-        # TODO: return something
+        if self.supports_returning:
+            # TODO: use implicit returning if possible
+            pass
+        else:
+            return self.fetch_many(
+                (rec['_id'] for rec in records), as_list=True)
 
     def update(self, _id, data: Dict) -> Dict:
         prepared_id = self.adapt_id(_id)
@@ -346,35 +355,51 @@ class SqlalchemyDao(Dao):
             update_stmt = update_stmt.return_defaults()
             result = self.conn.execute(update_stmt)
             return dict(data, **(result.returned_defaults or {}))
-            # TODO: ensure _rev comes back too in defaults
         else:
             self.conn.execute(update_stmt)
             return self.fetch(_id)
 
     def update_many(self, _ids: List, data: Dict = None) -> None:
         assert data
+
         prepared_ids = [self.adapt_id(_id) for _id in _ids]
         prepared_data = [
             self.adapt_record(record, serialize=True)
             for record in data
         ]
+        values = {
+            k: bindparam(k) for k in prepared_data[0].keys()
+        }
         update_stmt = (
             self.table
                 .update()
-                .values(**prepared_data)
-                .where(self.table.c._id.in_(prepared_ids))
-            )
-        self.conn.execute(update_stmt)
-        # TODO: return updated
+                .where(self.table.c._id == bindparam('_id'))
+                .values(**values)
+        )
+        self.conn.execute(update_stmt, prepared_data)
+
+        if self.supports_returning:
+            # TODO: use implicit returning if possible
+            return self.fetch_many(_ids, as_list=True)
+        else:
+            return self.fetch_many(_ids, as_list=True)
 
     def delete(self, _id) -> None:
-        # TODO: prepare ID
-        delete_stmt = self.table.delete().where(self.table.c._id == _id)
+        prepared_id = self.adapt_id(_id)
+        delete_stmt = self.table.delete().where(
+            self.table.c._id == prepared_id
+        )
         self.conn.execute(delete_stmt)
 
     def delete_many(self, _ids: list) -> None:
-        # TODO: prepare IDs
-        delete_stmt = self.table.delete().where(self.table.c._id.in_(_ids))
+        prepared_ids = [self.adapt_id(_id) for _id in _ids]
+        delete_stmt = self.table.delete().where(
+            self.table.c._id.in_(prepared_ids)
+        )
+        self.conn.execute(delete_stmt)
+
+    def delete_all(self):
+        delete_stmt = self.table.delete()
         self.conn.execute(delete_stmt)
 
     @property
@@ -387,10 +412,15 @@ class SqlalchemyDao(Dao):
 
     @property
     def supports_returning(self):
+        if not self.is_bootstrapped():
+            return False
         return self.local.metadata.bind.dialect.implicit_returning
 
     @classmethod
     def create_tables(cls):
+        if not cls.is_bootstrapped():
+            return
+
         meta = cls.get_metadata()
         engine = cls.get_engine()
 

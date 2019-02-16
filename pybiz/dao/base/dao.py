@@ -1,13 +1,22 @@
-import os
 import uuid
 
 import venusian
 
+from threading import local
+from collections import defaultdict
 from typing import Dict, List, Type, Set, Text, Tuple
 from abc import ABCMeta, abstractmethod
 
+from appyratus.env import Environment
+
+from .dao_history import DaoHistory, DaoEvent
+
 
 class DaoMeta(ABCMeta):
+
+    _local = local()
+    _local.is_bootstrapped = defaultdict(bool)
+
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
@@ -16,13 +25,20 @@ class DaoMeta(ABCMeta):
 
         venusian.attach(cls, callback, category='dao')
 
+        # wrap each DAO interface method in a decorator that appends
+        # to the instance's DaoHistory when set.
+        DaoHistory.decorate(dao_type=cls)
+
 
 class Dao(object, metaclass=DaoMeta):
-    def __init__(self, *args, **kwargs):
+
+    env = Environment()
+
+    def __init__(self, history=False, *args, **kwargs):
+        self._history = DaoHistory(dao=self)
         self._is_bound = False
         self._biz_type = None
         self._registry = None
-        self.ignore_rev = False  # XXX: hacky, for CacheDao to work
 
     def __repr__(self):
         if self.is_bound:
@@ -47,6 +63,21 @@ class Dao(object, metaclass=DaoMeta):
     def registry(self):
         return self._registry
 
+    @property
+    def history(self):
+        return self._history
+
+    def play(self, history: DaoHistory, reads=True, writes=True) -> List:
+        results = []
+        for event in history:
+            is_read = event.method in DaoHistory.read_method_names
+            is_write = event.method in DaoHistory.write_method_names
+            if (is_read and reads) or (is_write and writes):
+                func = getattr(self, event.method)
+                result = func(*event.args, **event.kwargs)
+                results.append(result)
+        return results
+
     def bind(self, biz_type: Type['BizObject']):
         self._biz_type = biz_type
         self._is_bound = True
@@ -58,11 +89,21 @@ class Dao(object, metaclass=DaoMeta):
         a connectio pool, for example.
         """
         cls._registry = registry
-        cls.on_bootstrap()
+        cls.on_bootstrap(**kwargs)
+
+        # TODO: put this into a method
+        if not hasattr(DaoMeta._local, 'is_bootstrapped'):
+            DaoMeta._local.is_bootstrapped = defaultdict(bool)
+
+        DaoMeta._local.is_bootstrapped[cls.__name__] = True
 
     @classmethod
     def on_bootstrap(cls, **kwargs):
         pass
+
+    @classmethod
+    def is_bootstrapped(cls):
+        return cls._local.is_bootstrapped[cls.__name__]
 
     def create_id(self, record: Dict) -> object:
         """
@@ -125,7 +166,7 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def create_many(self, records: List[Dict]) -> None:
+    def create_many(self, records: List[Dict]) -> List[Dict]:
         """
         Create a new record.  It is the responsibility of the Dao class to
         generate the _id.
@@ -138,7 +179,7 @@ class Dao(object, metaclass=DaoMeta):
         """
 
     @abstractmethod
-    def update_many(self, _ids: List, data: List[Dict] = None) -> None:
+    def update_many(self, _ids: List, data: List[Dict] = None) -> List[Dict]:
         """
         Update multiple records. If a single data dict is passed in, then try to
         apply the same update to all records; otherwise, if a list of data dicts
@@ -156,4 +197,10 @@ class Dao(object, metaclass=DaoMeta):
     def delete_many(self, _ids: List) -> None:
         """
         Delete multiple records.
+        """
+
+    @abstractmethod
+    def delete_all(self) -> None:
+        """
+        Delete all records.
         """

@@ -28,10 +28,11 @@ class MessageGenerator(object):
             fields.Uuid: ScalarFieldAdapter('string'),
             fields.Bool: ScalarFieldAdapter('bool'),
             fields.Float: ScalarFieldAdapter('double'),
-            fields.Int: ScalarFieldAdapter('sint64'),
+            fields.Int: ScalarFieldAdapter('uint64'),
             fields.DateTime: ScalarFieldAdapter('uint64'),
             fields.Dict: ScalarFieldAdapter('bytes'),
             fields.List: ArrayFieldAdapter(),
+            fields.Set: ArrayFieldAdapter(),
             # XXX redundant to List?  does not exist in schema.fields
             #fields.Array: ArrayFieldAdapter(),
             # XXX do we add?  does not exist in schema.fields

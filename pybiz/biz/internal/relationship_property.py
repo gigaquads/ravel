@@ -9,9 +9,9 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from .relationship import Relationship, MockBizObject
 from .query import QuerySpecification
-from .biz_list import BizList
+from ..relationship import Relationship
+from ..biz_list import BizList
 
 
 class RelationshipProperty(property):

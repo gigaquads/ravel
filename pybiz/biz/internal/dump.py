@@ -8,7 +8,7 @@ from appyratus.utils import StringUtils, DictUtils
 from pybiz.util import is_bizobj, is_sequence
 
 
-class Dump(object):
+class Dumper(object):
     def __call__(self, target: 'BizObject', fields: Dict = None) -> Dict:
         # normaize the incoming `fields` data structure to a nested dict
         if isinstance(fields, dict):
@@ -34,7 +34,7 @@ class Dump(object):
         raise NotImplementedError('override in subclass')
 
 
-class DumpNested(Dump):
+class NestingDumper(Dumper):
     def on_dump(
         self,
         target: 'BizObject',
@@ -106,10 +106,10 @@ class DumpNested(Dump):
         return record
 
 
-class DumpSideLoaded(Dump):
+class SideLoadingDumper(Dumper):
     def on_dump(
         self,
         target: 'BizObject',
         fields: Dict = None,
     ):
-        raise NotImplementedError()
+        raise NotImplementedError('todo')

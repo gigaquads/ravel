@@ -84,9 +84,7 @@ class BizList(object):
         return cls(self.data, self.relationship, self.owner)
 
     def save(self, *args, **kwargs):
-        for bizobj in self.data:
-            bizobj.save(*args, **kwargs)
-        return self
+        return self.biz_type.save_many(self.data, *args, **kwargs)
 
     def delete(self):
         return self.biz_type.delete_many(

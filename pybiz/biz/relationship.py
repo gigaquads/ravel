@@ -11,7 +11,7 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from .query import QuerySpecification
+from .internal.query import QuerySpecification
 # TODO: rename "host" to source_type
 
 class Relationship(object):

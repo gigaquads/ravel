@@ -1,24 +1,49 @@
+import os
+import multiprocessing as mp
+
 from typing import Text, Type, List, Set, Dict, Tuple
 from copy import deepcopy
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 from appyratus.enum import EnumValueStr
 
 from pybiz.util import remove_keys
 
-from .base import Dao
+from .base import Dao, DaoEvent
 
 
 class CacheMode(EnumValueStr):
 
     @staticmethod
     def values():
-        return {'writethru', 'readonly'}
+        return {
+            'writethru',
+            'writeback',
+            'readonly',
+        }
 
+
+class CacheDaoExecutor(ThreadPoolExecutor):
+    def __init__(self, dao: 'CacheDao'):
+        super().__init__(max_workers=1, initializer=self.initializer)
+        self.dao = dao
+
+    def initializer(self):
+        self.dao.be.bootstrap(self.dao.be.registry)
+        self.dao.be.bind(self.dao.be.biz_type)
+
+    def enqueue(self, method: Text, args=None, kwargs=None):
+        def task(dao, event):
+            dao.play([event])
+
+
+        event = DaoEvent(method=method, args=args, kwargs=kwargs)
+        return self.submit(task, dao=self.dao.be, event=event)
 
 
 class CacheDao(Dao):
-    
+
     Mode = CacheMode
 
     def __init__(
@@ -26,7 +51,7 @@ class CacheDao(Dao):
         backend: Dao,
         frontend: Dao = None,
         prefetch=False,
-        mode='writethru'
+        mode=CacheMode.writethru,
     ):
         from pybiz.dao.python_dao import PythonDao
 
@@ -34,22 +59,28 @@ class CacheDao(Dao):
 
         self.be = backend
         self.fe = frontend or PythonDao()
-        self.fe.ignore_rev = True
-
         self.prefetch = prefetch
         self.mode = mode
+        self.executor = None
 
     def bind(self, biz_type):
+        # we have to bootstrap here lazily because we don't know the FE or BE
+        # Dao types until runtime.
+        if not self.fe.is_bootstrapped():
+            self.fe.bootstrap()
+        if not self.be.is_bootstrapped():
+            self.fe.bootstrap()
+
         super().bind(biz_type)
-        """
-        if self.prefetch:
-            records = self.persistence.fetch_cache(None, data=True, rev=True)
-            self.cache.create_many(records=(r.data for r in records.values()))
-        """
+
         self.be.bind(biz_type)
         self.fe.bind(biz_type)
+
         if self.prefetch:
             self.fetch_all()
+
+        if self.mode == CacheMode.writeback:
+            self.executor = CacheDaoExecutor(self)
 
     def create_id(self, record):
         raise NotImplementedError()
@@ -91,7 +122,7 @@ class CacheDao(Dao):
         # performing batch insert and update
         records_to_update = []
         records_to_create = []
-        for _id, be_rec in be_records.items():
+        for     _id, be_rec in be_records.items():
             if _id in ids_missing:
                 records_to_create.append(be_rec)
             elif _id in ids_to_update:
@@ -144,8 +175,8 @@ class CacheDao(Dao):
     def exists(self, _id) -> bool:
         """
         Return True if the record with the given _id exists.
-        return self.persistence.exists(_id)
         """
+        return self.be.exists(_id)
 
     def create(self, data: Dict) -> Dict:
         """
@@ -153,8 +184,18 @@ class CacheDao(Dao):
         contained in the data dict nor provided as the _id argument, it is the
         responsibility of the Dao class to generate the _id.
         """
-        be_record = self.be.create(data)
-        fe_record = self.fe.create(be_record)
+        fe_record = self.fe.create(data)
+
+        # remove _rev from a copy of fe_record so that the BE dao doesn't
+        # increment it from what was set by the FE dao.
+        fe_record_no_rev = fe_record.copy()
+        del fe_record_no_rev['_rev']
+
+        if self.mode == CacheMode.writethru:
+            self.be.create(fe_record_no_rev)
+        if self.mode == CacheMode.writeback:
+            self.executor.enqueue('create', args=(fe_record_no_rev, ))
+
         return fe_record
 
     def create_many(self, records: List[Dict]) -> None:
@@ -162,12 +203,19 @@ class CacheDao(Dao):
         Create a new record.  It is the responsibility of the Dao class to
         generate the _id.
         """
-        if self.mode == CaheMode.writethru:
-            be_records = self.be.create_many(records)
-        else:
-            be_records = records
+        fe_records = self.fe.create_many(records)
 
-        fe_records = self.cache.create(be_records.values())
+        fe_records_no_rev = []
+        for rec in fe_records.values():
+            rec = rec.copy()
+            del rec['_rev']
+            fe_records_no_rev.append(rec)
+
+        if self.mode == CaheMode.writethru:
+            be_records = self.be.create_many(fe_records_no_rev)
+        elif self.mode == CacheMode.writeback:
+            self.executor.enqueue('create_many', args=(fe_records_no_rev, ))
+
         return fe_records
 
     def update(self, _id, record: Dict) -> Dict:
@@ -175,43 +223,57 @@ class CacheDao(Dao):
         Update a record with the data passed in.
         record = self.persistence.update(_id, data)
         """
-        if self.mode == CacheMode.writethru:
-            be_record = self.be.update(_id, record)
-        else:
-            be_record = record
+        record.setdefault('_id', _id)
 
-        # upsert into FE
-        if self.fe.exists(_id):
-            fe_record = self.fe.update(_id, be_record)
-        else:
-            fe_record = self.fe.create(be_record)
+        if not self.fe.exists(_id):
+            return self.create(record)
+
+        fe_record = self.fe.update(_id, record)
+        fe_record_no_rev = fe_record.copy()
+        del fe_record_no_rev['_rev']
+
+        if self.mode == CacheMode.writethru:
+            self.be.update(_id, fe_record_no_rev)
+        elif self.mode == CacheMode.writeback:
+            self.executor.enqueue('update', args=(_id, fe_record_no_rev, ))
 
         return fe_record
 
-    def update_many(self, _ids: List, data: List[Dict] = None) -> None:
+    def update_many(self, _ids: List, data: Dict = None) -> None:
         """
         Update multiple records. If a single data dict is passed in, then try to
         apply the same update to all records; otherwise, if a list of data dicts
         is passed in, try to zip the _ids with the data dicts and apply each
         unique update or each group of identical updates individually.
         """
-        #records = self.be.update_many(_ids, records)
-        # TODO: upsert in FE
+        fe_records = self.fe.update_many(records)
+
+        if self.mode == CaheMode.writethru:
+            be_records = self.be.update_many(_ids, records)
+        elif self.mode == CacheMode.writeback:
+            self.executor.enqueue(
+                'create_many', args=(_ids, ), kwargs={'data': data}
+            )
+        return fe_records
 
     def delete(self, _id) -> None:
         """
         Delete a single record.
         """
+        self.fe.delete(_id)
+
         if self.mode == CacheMode.writethru:
             self.be.delete(_id)
-
-        self.fe.delete(_id)
+        elif self.mode == CacheMode.writeback:
+            self.executor.enqueue('delete', args=(_id, ))
 
     def delete_many(self, _ids: List) -> None:
         """
         Delete multiple records.
         """
+        self.fe.delete_many(_ids)
+
         if self.mode == CacheMode.writethru:
             self.be.delete_many(_ids)
-
-        self.fe.delete_many(_ids)
+        elif self.mode == CacheMode.writeback:
+            self.executor.enqueue('delete_many', args=(_ids, ))
