@@ -8,6 +8,7 @@ from pybiz.predicate import (
     BooleanPredicate,
     OP_CODE,
 )
+from pybiz.biz.relationship import MockBizObject
 
 from .query import QuerySpecification
 from ..relationship import Relationship
