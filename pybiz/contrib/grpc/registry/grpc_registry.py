@@ -2,6 +2,7 @@ import os
 import sys
 import socket
 import inspect
+import shutil
 import subprocess
 import traceback
 import time
@@ -92,7 +93,6 @@ class GrpcRegistry(Registry):
         )
 
         # create the build directory and add it to PYTHONPATH
-        os.makedirs(os.path.join(grpc.build_dir), exist_ok=True)
         sys.path.append(grpc.build_dir)
 
         # build dotted paths to the auto-generated pb2, pb2_grpc modules
@@ -302,7 +302,16 @@ class GrpcRegistry(Registry):
         return servicer
 
     def _build_pb2_modules(self):
-        _touch_file(os.path.join(self.grpc.build_dir, '__init__.py'))
+        # recreate the build directory
+        if os.path.isdir(self.grpc.build_dir):
+            shutil.rmtree(self.grpc.build_dir)
+        os.makedirs(os.path.join(self.grpc.build_dir), exist_ok=True)
+
+        # touch the __init__.py file
+        with open(os.path.join(self.grpc.build_dir, '__init__.py'), 'a'):
+            pass
+
+        # generate the .proto file and generate grpc python modules from it
         self._grpc_generate_proto_file()
         self._grpc_compile_pb2_modules()
 

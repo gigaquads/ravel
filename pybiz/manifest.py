@@ -139,6 +139,7 @@ class Manifest(object):
             def on_error(name):
                 import sys
 
+                traceback.print_exc()
                 print(
                     f'Venusian skipping {name} because of '
                     f'{sys.exc_info()[0].__name__}'

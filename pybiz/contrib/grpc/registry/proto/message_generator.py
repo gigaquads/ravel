@@ -32,6 +32,7 @@ class MessageGenerator(object):
             fields.DateTime: ScalarFieldAdapter('uint64'),
             fields.Dict: ScalarFieldAdapter('bytes'),
             fields.List: ArrayFieldAdapter(),
+            fields.Set: ArrayFieldAdapter(),
             # XXX redundant to List?  does not exist in schema.fields
             #fields.Array: ArrayFieldAdapter(),
             # XXX do we add?  does not exist in schema.fields
@@ -74,9 +75,6 @@ class MessageGenerator(object):
         field_no2field = {}
         prepared_data = []
         field_decls = []
-
-        if not hasattr(schema_type, 'fields'):
-            import ipdb; ipdb.set_trace()
 
         for f in schema_type.fields.values():
             # compute the "field number"

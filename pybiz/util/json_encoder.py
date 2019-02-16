@@ -1,6 +1,6 @@
 from appyratus.json import JsonEncoder as BaseJsonEncoder
 
-from .misc import is_bizobj, is_bizlist
+from .misc_functions import is_bizobj, is_bizlist
 
 
 class JsonEncoder(BaseJsonEncoder):
