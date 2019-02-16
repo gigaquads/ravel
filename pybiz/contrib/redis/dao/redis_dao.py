@@ -49,8 +49,7 @@ class RedisDao(Dao):
         cls.db = db if db is not None else (cls.env.REDIS_DB or cls.db)
         cls.redis = RedisClient(host=cls.host, port=cls.port, db=cls.db)
 
-    def bind(self, biz_type: Type['BizObject']):
-        super().bind(biz_type)
+    def on_bind(self, biz_type: Type['BizObject'], **kwargs):
         self.type_name = StringUtils.snake(biz_type.__name__).lower()
         self.records = HashSet(self.redis, self.type_name)
         self.revs = HashSet(self.redis, f'{self.type_name}_revisions')

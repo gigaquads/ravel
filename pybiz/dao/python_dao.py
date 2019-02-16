@@ -8,7 +8,7 @@ from copy import deepcopy
 from collections import defaultdict, Counter
 from threading import RLock
 from functools import reduce
-from typing import Text, Dict, List, Set, Tuple
+from typing import Text, Dict, List, Set, Tuple, Type
 
 from BTrees.OOBTree import BTree
 
@@ -39,8 +39,7 @@ class PythonDao(Dao):
         self.records = {}
         self.ignored_indexes = set()
 
-    def bind(self, biz_type):
-        super().bind(biz_type)
+    def on_bind(self, biz_type: Type['BizObject'], **kwargs):
         for k, v in biz_type.schema.fields.items():
             if isinstance(v, (fields.Dict, fields.Nested, Schema)):
                 self.ignored_indexes.add(k)

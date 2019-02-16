@@ -78,9 +78,10 @@ class Dao(object, metaclass=DaoMeta):
                 results.append(result)
         return results
 
-    def bind(self, biz_type: Type['BizObject']):
+    def bind(self, biz_type: Type['BizObject'], **kwargs):
         self._biz_type = biz_type
         self._is_bound = True
+        self.on_bind(biz_type, **kwargs)
 
     @classmethod
     def bootstrap(cls, registry: 'Registry' = None, **kwargs):
@@ -99,6 +100,9 @@ class Dao(object, metaclass=DaoMeta):
 
     @classmethod
     def on_bootstrap(cls, **kwargs):
+        pass
+
+    def on_bind(cls, biz_type: Type['BizObject'], **kwargs):
         pass
 
     @classmethod

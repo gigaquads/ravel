@@ -28,7 +28,7 @@ class FilesystemDao(Dao):
     def __init__(
         self,
         ftype: Text = None,
-        extensions: Set[Text] = None,
+        extensions: Set[Text] = None,  # TODO: change into a single one
     ):
         super().__init__()
 
@@ -55,11 +55,13 @@ class FilesystemDao(Dao):
         cls.paths.root = root or cls.paths.root
         assert cls.paths.root
 
-    def bind(self, biz_type):
+    def on_bind(self, biz_type, ftype: Text = None):
         """
         Ensure the data dir exists for this BizObject type.
         """
-        super().bind(biz_type)
+        if ftype is not None and not isinstance(ftype, BaseFile):
+            self.ftype = import_object(ftype)
+
         self.paths.data = os.path.join(
             self.paths.root, StringUtils.snake(biz_type.__name__)
         )

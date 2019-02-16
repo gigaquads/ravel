@@ -180,8 +180,7 @@ class SqlalchemyDao(Dao):
             echo=bool(echo or cls.env.SQLALCHEMY_ECHO),
         )
 
-    def bind(self, biz_type: Type['BizObject']):
-        super().bind(biz_type)
+    def on_bind(self, biz_type: Type['BizObject'], **kwargs):
         field_type_2_adapter = {
             adapter.field_type: adapter for adapter in
             self.get_default_adapters(self.dialect) + self._custom_adapters

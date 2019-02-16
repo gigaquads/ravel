@@ -165,10 +165,8 @@ class CacheDao(Dao):
         be_records = self.be.query(predicate=predicate, **kwargs)
 
         # do batch FE operations
-        self.fe.create_many(be_records)
-
         # merge BE records into FE records to return
-        fe_records.extend(be_records)
+        fe_records.extend(self.fe.create_many(be_records))
 
         return fe_records
 
