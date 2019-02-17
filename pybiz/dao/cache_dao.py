@@ -63,18 +63,17 @@ class CacheDao(Dao):
         self.mode = mode
         self.executor = None
 
-    def bind(self, biz_type):
-        # we have to bootstrap here lazily because we don't know the FE or BE
-        # Dao types until runtime.
-        if not self.fe.is_bootstrapped():
-            self.fe.bootstrap()
-        if not self.be.is_bootstrapped():
-            self.fe.bootstrap()
+    def on_bind(
+        self,
+        biz_type: Type['BizObject'],
+        frontend: Dict = None,
+        backend: Dict = None,
+    ):
+        self.fe = import_module(frontend['dao'])
+        self.be = import_module(backend['dao'])
 
-        super().bind(biz_type)
-
-        self.be.bind(biz_type)
-        self.fe.bind(biz_type)
+        self.be.bind(biz_type, **backend['params'])
+        self.fe.bind(biz_type, **frontend['params'])
 
         if self.prefetch:
             self.fetch_all()
