@@ -8,9 +8,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from appyratus.enum import EnumValueStr
 
-from pybiz.util import remove_keys
+from pybiz.util import remove_keys, import_object
 
 from .base import Dao, DaoEvent
+from .dao_binder import DaoBinder
 
 
 class CacheMode(EnumValueStr):
@@ -44,42 +45,75 @@ class CacheDaoExecutor(ThreadPoolExecutor):
 
 class CacheDao(Dao):
 
-    Mode = CacheMode
+    prefetch = False
+    mode = CacheMode.writethru
+    fe = None
+    be = None
 
-    def __init__(
-        self,
-        backend: Dao,
-        frontend: Dao = None,
-        prefetch=False,
-        mode=CacheMode.writethru,
-    ):
-        from pybiz.dao.python_dao import PythonDao
-
+    def __init__(self):
         super().__init__()
-
-        self.be = backend
-        self.fe = frontend or PythonDao()
-        self.prefetch = prefetch
-        self.mode = mode
         self.executor = None
+
+    @classmethod
+    def on_bootstrap(cls, prefetch=False, mode=None):
+        from .python_dao import PythonDao
+
+        cls.prefetch = prefetch if prefetch is not None else cls.prefetch
+        cls.mode = mode or cls.mode
+        cls.fe = PythonDao()
 
     def on_bind(
         self,
         biz_type: Type['BizObject'],
+        prefetch=False,
+        mode: CacheMode = None,
         frontend: Dict = None,
         backend: Dict = None,
     ):
-        self.fe = import_module(frontend['dao'])
-        self.be = import_module(backend['dao'])
+        self.prefetch = prefetch if prefetch is not None else self.prefetch
+        self.mode = mode or self.mode
 
-        self.be.bind(biz_type, **backend['params'])
-        self.fe.bind(biz_type, **frontend['params'])
+        self.fe = self._setup_inner_dao(
+            biz_type,
+            frontend['dao'],
+            frontend.get('bootstrap', {}),
+            frontend.get('bind', {}),
+        )
+        self.be = self._setup_inner_dao(
+            biz_type,
+            backend['dao'],
+            backend.get('bootstrap', {}),
+            backend.get('bind', {}),
+        )
 
         if self.prefetch:
             self.fetch_all()
 
         if self.mode == CacheMode.writeback:
             self.executor = CacheDaoExecutor(self)
+
+    @staticmethod
+    def _setup_inner_dao(
+        biz_type: Type['BizType'],
+        dao_type_name: Text,
+        bootstrap_params: Dict = None,
+        bind_params: Dict = None
+    ):
+        binder = DaoBinder.get_instance()
+
+        if not binder.is_registered(dao_type_name):
+            dao_type = import_object(dao_type_name)
+            dao = dao_type()
+        else:
+            dao = binder.get_dao_instance(dao_type_name)
+
+        if not dao.is_bootstrapped():
+            dao.bootstrap(**(bootstrap_params or {}))
+
+        if not dao.is_bound:
+            dao.bind(biz_type, **(bind_params or {}))
+
+        return dao
 
     def create_id(self, record):
         raise NotImplementedError()
@@ -105,10 +139,14 @@ class CacheDao(Dao):
         ids_fe = set(fe_records.keys())                 # ids in FE
         ids_missing = ids - ids_fe                      # ids not in FE
         ids_to_delete = ids_fe - be_revs.keys()         # ids to delete in FE
-        ids_to_update = {                               # ids to update in FE
-            _id for _id, fe_rec in fe_records.items()
-            if be_revs.get(_id, {}).get('_rev', 0) > fe_rec.get('_rev', 0)
-        }
+        ids_to_update = set()                           # ids to update in FE
+
+        for _id, fe_rec in fe_records.items():
+            if fe_rec is None:
+                ids_missing.add(_id)
+            elif be_revs.get(_id, {}).get('_rev', 0) > fe_rec.get('_rev', 0):
+                ids_to_update.add(_id)
+
 
         # records in BE ONLY
         ids_to_fetch_from_be = ids_missing | ids_to_update

@@ -36,7 +36,9 @@ class BizObjectMeta(ABCMeta):
         cls.relationships = cls.build_relationships()
         cls.build_relationship_properties(cls.relationships)
         cls.build_field_properties(cls.schema, cls.relationships)
-        cls.register_dao()
+
+        if name != 'BizObject':
+            cls.register_dao()
 
         cls.BizList = BizList.type_factory(cls)
 

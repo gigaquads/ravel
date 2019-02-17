@@ -214,31 +214,36 @@ class BizObject(metaclass=BizObjectMeta):
             saver = BreadthFirstSaver(cls)
         return saver.save_many(bizobjs)
 
-    @classmethod
-    def create(cls, bizobj: 'BizObject') -> 'BizList':
-        prepared_record = bizobj._data.copy()
+    def create(self) -> 'BizObject':
+        prepared_record = self._data.copy()
         prepared_record.pop('_rev', None)
-        created_record = cls.get_dao().create(prepared_record)
-        bizobj._data.update(created_record)
-        return bizobj.clean()
+        created_record = self.get_dao().create(prepared_record)
+        self._data.update(created_record)
+        return self.clean()
 
-    @classmethod
-    def update(cls, bizobj: 'BizObject') -> 'BizList':
-        prepared_record = bizobj._data.copy()
+    def update(self, bizobj: 'BizObject') -> 'BizObject':
+        prepared_record = self.dirty_data
         prepared_record.pop('_rev', None)
-        updated_record = cls.get_dao().update(bizobj._id, prepared_record)
-        bizobj._data.update(updated_record)
-        return bizobj.clean()
+        updated_record = self.get_dao().update(self._id, prepared_record)
+        self._data.update(updated_record)
+        return self.clean()
 
     @classmethod
     def create_many(cls, bizobjs: List['BizObject']) -> 'BizList':
+        """
+        Call `dao.create_method` on input `BizObject` list and return them in
+        the form of a BizList.
+        """
         records = []
+
         for bizobj in bizobjs:
-            record = bizobj._data
-            cls.insert_defaults(record)
+            record = bizobj._data.copy()
+            record.pop('_rev', None)
             records.append(record)
+            cls.insert_defaults(record)
 
         created_records = cls.get_dao().create_many(records)
+
         for bizobj, record in zip(bizobjs, created_records):
             bizobj._data.update(record)
             bizobj.clean()
@@ -247,18 +252,46 @@ class BizObject(metaclass=BizObjectMeta):
 
     @classmethod
     def update_many(cls, bizobjs: List['BizObject']) -> 'BizList':
+        """
+        Call the Dao's update_many method on the list of BizObjects. Multiple
+        Dao calls may be made. As a preprocessing step, the input bizobj list
+        is partitioned into groups, according to which subset of fields are
+        dirty.
+
+        For example, consider this list of bizobjs,
+
+        ```python
+        bizobjs = [
+            user1,     # dirty == {'email'}
+            user2,     # dirty == {'email', 'name'}
+            user3,     # dirty == {'email'}
+        ]
+        ```
+
+        Calling update on this list will result in two paritions:
+        ```python
+        assert part1 == {user1, user3}
+        assert part2 == {user2}
+        ```
+
+        A spearate call to `dao.update_many` will be made for each partition.
+        """
         partitions = defaultdict(list)
 
         for bizobj in bizobjs:
-            record = bizobj._data
             partitions[tuple(bizobj.dirty)].append(bizobj)
 
         for bizobj_partition in partitions.values():
             records, _ids = [], []
+
             for bizobj in bizobj_partition:
-                records.append(bizobj._data)
+                record = bizobj.dirty_data
+                record.pop('_rev', None)
+                records.append(record)
                 _ids.append(bizobj._id)
+
             updated_records = cls.get_dao().update_many(_ids, records)
+
             for bizobj, record in zip(bizobj_partition, updated_records):
                 bizobj._data.update(record)
                 bizobj.clean()
@@ -285,6 +318,11 @@ class BizObject(metaclass=BizObjectMeta):
     @property
     def data(self) -> 'DirtyDict':
         return self._data
+
+    @property
+    def dirty_data(self) -> Dict:
+        dirty_keys = self.dirty
+        return {k: self._data[k] for k in dirty_keys}
 
     @property
     def related(self) -> Dict:

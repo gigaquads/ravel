@@ -34,8 +34,8 @@ class ReplRegistry(Registry):
             @repl()
             def reset_fixtures():
                 fixtures = {
-                    'foo': Foo.create().save(),
-                    'bar': Bar.create().save()
+                    'foo': Foo().save(),
+                    'bar': Bar().save()
                 }
                 repl.namespace.update(fixtures)
                 return fixtures

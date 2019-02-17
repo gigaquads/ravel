@@ -32,13 +32,13 @@ class BreadthFirstSaver(Saver):
 
         for biz_type, biz_objs in to_create.items():
             if len(biz_objs) == 1:
-                biz_type.create(biz_objs[0])
+                biz_objs[0].create()
             else:
                 biz_type.create_many(biz_objs)
 
         for biz_type, biz_objs in to_update.items():
             if len(biz_objs) == 1:
-                biz_type.update(biz_objs[0])
+                biz_objs[0].update()
             else:
                 biz_type.update_many(biz_objs)
 

@@ -8,7 +8,7 @@ class DaoBinding(object):
     def __init__(self, biz_type, dao_instance, dao_bind_kwargs=None):
         self.biz_type = biz_type
         self.dao_instance = dao_instance
-        self.dao_bind_kwargs = dao_bind_kwargs if dao_bind_kwargs is not None else {}
+        self.dao_bind_kwargs = dao_bind_kwargs or {}
         self._is_bound = False
 
     def __repr__(self):
@@ -84,15 +84,25 @@ class DaoBinder(object):
         return self._dao_types[dao_type_name]
 
     def get_dao_instance(self, biz_type: Type['BizObject'], bind=True) -> Dao:
-        binding = self._bindings.get(biz_type.__name__)
+        if isinstance(biz_type, str):
+            binding = self._bindings.get(biz_type)
+        else:
+            binding = self._bindings.get(biz_type.__name__)
         if binding is None:
-            raise Exception(f'{biz_type} has no registered Dao binding')
+            print(f'{biz_type} has no registered Dao binding. Skipping...')
+            return
         if bind and (not binding.is_bound):
             binding.bind()
         return binding.dao_instance
 
     def is_registered(self, biz_type: Type['BizObject']) -> bool:
-        return biz_type.__name__ in self._bindings
+        if isinstance(biz_type, str):
+            return biz_type in self._bindings
+        else:
+            return biz_type.__name__ in self._bindings
 
     def is_bound(self, biz_type: Type['BizObject']) -> bool:
-        return self._bindings[biz_type.__name__].is_bound
+        if isinstance(biz_type, str):
+            return self._bindings[biz_type].is_bound
+        else:
+            return self._bindings[biz_type.__name__].is_bound

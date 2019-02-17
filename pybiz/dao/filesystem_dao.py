@@ -168,7 +168,6 @@ class FilesystemDao(Dao):
         self.delete_many(_ids)
 
     def query(self, predicate: 'Predicate', **kwargs):
-        import ipdb; ipdb.set_trace(); print('=' * 100)
         return []  # not implemented
 
     def mkpath(self, fname: Text) -> Text:
@@ -178,7 +177,8 @@ class FilesystemDao(Dao):
     def _fetch_all_ids(self):
         _ids = set()
         for ext in self.extensions:
-            for fname in glob.glob(f'{self.paths.records}/*.{ext}'):
-                base = fname.split('.')[0]
-                _ids.add(os.path.basename(base))
+            for fpath in glob.glob(f'{self.paths.records}/*.{ext}'):
+                fname = fpath.split('/')[-1]
+                basename = os.path.splitext(fname)[0]
+                _ids.add(basename)
         return _ids

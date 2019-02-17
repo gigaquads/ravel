@@ -172,7 +172,8 @@ class Manifest(object):
             if override or (not binder.is_registered(biz_type)):
                 binder.register(
                     biz_type=biz_type,
-                    dao_instance=dao_type(**binding.params)
+                    dao_instance=dao_type(),
+                    dao_bind_kwargs=binding.params,
                 )
 
     @staticmethod
