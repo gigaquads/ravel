@@ -6,13 +6,13 @@ from typing import Text, List, Set, Dict, Tuple
 from collections import defaultdict
 from datetime import datetime
 
+from appyratus.env import Environment
+from appyratus.files import BaseFile, Yaml
 from appyratus.utils import (
     DictObject,
     DictUtils,
     StringUtils,
 )
-from appyratus.files import BaseFile, Yaml
-from appyratus.env import Environment
 
 from pybiz.util import import_object
 
@@ -23,7 +23,8 @@ from .python_dao import PythonDao
 class FilesystemDao(Dao):
 
     env = Environment()
-    paths = DictObject({'root': None})
+    root = None
+    paths = None
 
     def __init__(
         self,
@@ -31,6 +32,7 @@ class FilesystemDao(Dao):
         extensions: Set[Text] = None,  # TODO: change into a single one
     ):
         super().__init__()
+        self.paths = DictObject({})
 
         # convert the ftype string arg into a File class ref
         if not ftype:
@@ -52,20 +54,21 @@ class FilesystemDao(Dao):
     @classmethod
     def on_bootstrap(cls, ftype: Text = None, root: Text = None):
         cls.ftype = import_object(ftype) if ftype else Yaml
-        cls.paths.root = root or cls.paths.root
-        assert cls.paths.root
+        cls.root = root or cls.root
+        assert cls.root
 
-    def on_bind(self, biz_type, ftype: Text = None):
+    def on_bind(self, biz_type, root: Text = None, ftype: BaseFile = None):
         """
         Ensure the data dir exists for this BizObject type.
         """
-        if ftype is not None and not isinstance(ftype, BaseFile):
+        if isinstance(ftype, str):
             self.ftype = import_object(ftype)
 
-        self.paths.data = os.path.join(
+        self.paths.root = root or self.root
+        self.paths.records = os.path.join(
             self.paths.root, StringUtils.snake(biz_type.__name__)
         )
-        os.makedirs(self.paths.data, exist_ok=True)
+        os.makedirs(self.paths.records, exist_ok=True)
 
     def create_id(self, record):
         return record.get('_id', uuid.uuid4().hex)
@@ -86,7 +89,7 @@ class FilesystemDao(Dao):
     def count(self) -> int:
         running_count = 0
         for ext in self.extensions:
-            fnames = glob.glob(f'{self.paths.data}/*.{ext}')
+            fnames = glob.glob(f'{self.paths.records}/*.{ext}')
             running_count += len(fnames)
         return running_count
 
@@ -111,7 +114,7 @@ class FilesystemDao(Dao):
             if record:
                 record.setdefault('_id', _id)
                 record['_rev'] = record.setdefault('_rev', 0)
-                records[_id] = {k: record[k] for k in fields}
+                records[_id] = {k: record.get(k) for k in fields}
             else:
                 records['_id'] = None
 
@@ -165,16 +168,17 @@ class FilesystemDao(Dao):
         self.delete_many(_ids)
 
     def query(self, predicate: 'Predicate', **kwargs):
+        import ipdb; ipdb.set_trace(); print('=' * 100)
         return []  # not implemented
 
     def mkpath(self, fname: Text) -> Text:
         fname = self.ftype.format_file_name(fname)
-        return os.path.join(self.paths.data, fname)
+        return os.path.join(self.paths.records, fname)
 
     def _fetch_all_ids(self):
         _ids = set()
         for ext in self.extensions:
-            for fname in glob.glob(f'{self.paths.data}/*.{ext}'):
+            for fname in glob.glob(f'{self.paths.records}/*.{ext}'):
                 base = fname.split('.')[0]
                 _ids.add(os.path.basename(base))
         return _ids

@@ -6,7 +6,8 @@ from appyratus.cli import CliProgram, PositionalArg
 class RegistryRouter(CliProgram):
     """
     # Registry Router
-    Program convenience for routing to different registries
+    Program convenience for routing commands to multiple
+    registries through a single command-line interface
     """
 
     def args(self):
@@ -16,7 +17,7 @@ class RegistryRouter(CliProgram):
         argument being the registry that the CLI request will be
         routed to
         """
-        return [PositionalArg(name='registry')]
+        return [PositionalArg(name='registry', usage='the registry to utilize')]
 
     def perform(self, program):
         """
