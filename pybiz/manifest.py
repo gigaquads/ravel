@@ -145,10 +145,10 @@ class Manifest(object):
             def on_error(name):
                 import sys
 
-                traceback.print_exc()
+                exc = sys.exc_info()[0]
+                msg = traceback.format_exc().strip().split('\n')[-1]
                 print(
-                    f'Venusian skipping {name} because of '
-                    f'{sys.exc_info()[0].__name__}'
+                    f'Venusian ignoring {name}\n -> {msg}'
                 )
 
         pkg_path = self.package

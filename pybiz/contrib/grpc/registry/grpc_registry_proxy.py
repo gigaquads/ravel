@@ -15,7 +15,8 @@ class GrpcRegistryProxy(RegistryProxy):
             if isinstance(kwarg, dict):
                 return Schema.factory(type_name, kwarg)()
             else:
-                return kwarg
+                # an empty schema
+                return Schema.factory(type_name, {})()
 
         super().__init__(func, decorator)
 
@@ -35,18 +36,20 @@ class GrpcRegistryProxy(RegistryProxy):
         return super().__call__(*(raw_args[:1]), **raw_kwargs)
 
     def generate_protobuf_message_types(self) -> List[Text]:
-        return [
-            self.msg_gen.emit(self.request_schema),
-            self.msg_gen.emit(self.response_schema),
-        ]
+        message_type_source_blocks = []
+        if self.request_schema is not None:
+            block = self.msg_gen.emit(self.request_schema)
+            message_type_source_blocks.append(block)
+        if self.response_schema is not None:
+            block = self.msg_gen.emit(self.response_schema)
+            message_type_source_blocks.append(block)
+        return message_type_source_blocks
 
     def generate_protobuf_function_declaration(self) -> Text:
+        req_msg_type = self._msg_name_prefix + 'Request'
+        resp_msg_type = self._msg_name_prefix + 'Response'
         return (
-            'rpc {func_name}({req_msg_type}) '
-            'returns ({resp_msg_type})'
-            ' {{}}'.format(
-                func_name=self.name,
-                req_msg_type=self._msg_name_prefix + 'Request',
-                resp_msg_type=self._msg_name_prefix + 'Response',
-            )
+            f'rpc {self.name}({req_msg_type}) '
+            f'returns ({resp_msg_type})'
+            f' {{}}'
         )

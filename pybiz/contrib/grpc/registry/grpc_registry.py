@@ -109,6 +109,7 @@ class GrpcRegistry(Registry):
         # build the pb2 and pb2_grpc modules
         if rebuild or pb2_module_dne:
             self._build_pb2_modules()
+            time.sleep(0.25)
 
         # now import the dynamically-generated pb2 modules
         self.grpc.pb2 = import_module(pb2_mod_path, pkg_path)
@@ -162,7 +163,17 @@ class GrpcRegistry(Registry):
                     setattr(message, k, v_bytes)
                 elif isinstance(v, (list, tuple, set)):
                     list_field = getattr(message, k)
-                    list_field.extend(v)
+                    sub_message_type_name = (
+                        '{}Schema'.format(k.title().replace('_', ''))
+                    )
+                    sub_message = getattr(message, sub_message_type_name, None)
+                    if sub_message:
+                        list_field.extend(
+                            bind_message(sub_message(), v_i)
+                            for v_i in v
+                        )
+                    else:
+                        list_field.extend(v)
                 else:
                     setattr(message, k, v)
             return message

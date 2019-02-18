@@ -40,7 +40,16 @@ class ArrayFieldAdapter(FieldAdapter):
             nested_field_type = field.nested.__class__.__name__
         else:
             adapter = self.msg_gen.get_adapter(field.nested)
-            nested_field_type = adapter.type_name
+            try:
+                if isinstance(adapter, SchemaFieldAdapter):
+                    nested_field_type = field.nested.__class__.__name__
+                elif isinstance(adapter, NestedFieldAdapter):
+                    nested_field_type = field.nested.schema_type.__name__
+                else:
+                    nested_field_type = adapter.type_name
+            except:
+                import ipdb; ipdb.set_trace()
+
         return super().emit(
             field_type=nested_field_type,
             field_no=field_no,
