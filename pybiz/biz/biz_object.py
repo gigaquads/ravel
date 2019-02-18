@@ -424,7 +424,7 @@ class BizObject(metaclass=BizObjectMeta):
         """
         return (key in self.data or key in self.related)
 
-    def dump(self, fields=None, style='nested') -> Dict:
+    def dump(self, fields=None, raw=False, style='nested') -> Dict:
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
@@ -436,5 +436,5 @@ class BizObject(metaclass=BizObjectMeta):
         else:
             return None
 
-        result = dump(target=self, fields=fields)
+        result = dump(target=self, fields=fields, raw=raw)
         return result

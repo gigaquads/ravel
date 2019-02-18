@@ -12,7 +12,7 @@ from pybiz.dao.base import Dao
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
-from pybiz.schema import Schema, fields, Field, Int
+from pybiz.schema import Schema, fields, String, Field, Int
 from pybiz.util import import_object
 
 from .biz_list import BizList
@@ -105,7 +105,7 @@ class BizObjectMeta(ABCMeta):
 
         # bless each bizobj with a mandatory _id field.
         if '_id' not in fields:
-            fields['_id'] = Field(nullable=True)
+            fields['_id'] = String(nullable=True)
         if '_rev' not in fields:
             fields['_rev'] = Int(nullable=True)
 

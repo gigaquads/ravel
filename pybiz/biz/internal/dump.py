@@ -9,7 +9,7 @@ from pybiz.util import is_bizobj, is_sequence
 
 
 class Dumper(object):
-    def __call__(self, target: 'BizObject', fields: Dict = None) -> Dict:
+    def __call__(self, target: 'BizObject', fields: Dict = None, raw=False) -> Dict:
         # normaize the incoming `fields` data structure to a nested dict
         if isinstance(fields, dict):
             fields = DictUtils.unflatten_keys(fields)
@@ -24,12 +24,13 @@ class Dumper(object):
                 'uncoregnized fields argument type'
             )
 
-        return self.on_dump(target, fields=fields)
+        return self.on_dump(target, fields=fields, raw=raw)
 
     def on_dump(
         self,
         target: 'BizObject',
         fields: Dict = None,
+        raw=False,
     ) -> Dict:
         raise NotImplementedError('override in subclass')
 
@@ -39,6 +40,7 @@ class NestingDumper(Dumper):
         self,
         target: 'BizObject',
         fields: Dict = None,
+        raw=False,
     ):
         """
         Dump the target BizObject as a nested dictionary. For example, imagine
@@ -65,10 +67,16 @@ class NestingDumper(Dumper):
         ```
         """
         # `record` is the return values
-        record = {
-            'id': target._id,
-            'rev': target._rev,
-        }
+        if not raw:
+            record = {
+                'id': target._id,
+                'rev': target._rev,
+            }
+        else:
+            record = {
+                '_id': target._id,
+                '_rev': target._rev,
+            }
 
         pybiz_field_names = {'_id', '_rev'}
 
@@ -111,5 +119,6 @@ class SideLoadingDumper(Dumper):
         self,
         target: 'BizObject',
         fields: Dict = None,
+        raw=False,
     ):
         raise NotImplementedError('todo')

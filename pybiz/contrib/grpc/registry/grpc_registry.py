@@ -24,7 +24,7 @@ from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 from appyratus.json import JsonEncoder
 
-from pybiz.util import is_bizobj, JsonEncoder
+from pybiz.util import is_bizobj, is_bizlist, JsonEncoder
 from pybiz.api.registry import Registry
 
 from .grpc_registry_proxy import GrpcRegistryProxy
@@ -150,94 +150,18 @@ class GrpcRegistry(Registry):
         Map the return dict from the proxy to the expected outgoing protobuf
         response Message object.
         """
-        def bind_message(message, source: Dict):
-            if source is None:
-                return None
-            for k, v in source.items():
-                if isinstance(getattr(message, k), Message):
-                    sub_message = getattr(message, k)
-                    assert isinstance(v, dict)
-                    bind_message(sub_message, v)
-                elif isinstance(v, dict):
-                    v_bytes = codecs.encode(pickle.dumps(v), 'base64')
-                    setattr(message, k, v_bytes)
-                elif isinstance(v, (list, tuple, set)):
-                    list_field = getattr(message, k)
-                    sub_message_type_name = (
-                        '{}Schema'.format(k.title().replace('_', ''))
-                    )
-                    sub_message = getattr(message, sub_message_type_name, None)
-                    if sub_message:
-                        list_field.extend(
-                            bind_message(sub_message(), v_i)
-                            for v_i in v
-                        )
-                    else:
-                        list_field.extend(v)
-                else:
-                    setattr(message, k, v)
-            return message
-
         response_type = self.grpc.response_types[proxy]
         response = response_type()
 
         if result:
-            data, errors = proxy.response_schema.process(result, strict=True)
-            response = bind_message(response, data)
+            schema = proxy.response_schema
+            dumped_result = _dump_result_obj(result)
+            response_data, errors = schema.process(dumped_result, strict=True)
+            response = _bind_message(response, response_data)
+            if errors:
+                print(f'>>> response validation errors: {errors}')
 
         return response
-        '''
-        def recurseively_bind(target, data):
-            if data is None:
-                return None
-            for k, v in data.items():
-                if isinstance(v, Message):
-                    recurseively_bind(getattr(target, k), v)
-                else:
-                    try:
-                        setattr(target, k, v)
-                    except Exception:
-                        print(f'Unable to bind "{k}", type mismatch')
-                        raise
-            return target
-
-        # bind the returned dict values to the response protobuf message
-        response_type = self.grpc.response_types[proxy]
-        resp = response_type()
-
-        def to_dict(field, value, context=None):
-            if is_bizobj(value):
-                return value.dump()
-            elif isinstance(field, fields.List):
-                return [r.dump() if is_bizobj(r) else r for r in value]
-            else:
-                return value
-
-        if result:
-            dumped_result, dumped_error = proxy.response_schema.process(
-                result, strict=True, pre_process=to_dict
-            )
-            for k, v in dumped_result.items():
-                field = proxy.response_schema.fields[k]
-                if isinstance(field, fields.Dict):
-                    v_bytes = codecs.encode(pickle.dumps(v), 'base64')
-                    setattr(resp, k, v_bytes)
-                elif isinstance(field, fields.List):
-                    nested_resp_type = getattr(
-                        resp, field.nested.__class__.__name__
-                    )
-                    getattr(resp, k).extend(
-                        [
-                            recurseively_bind(nested_resp_type(), _v)
-                            for _v in v
-                        ]
-                    )
-                elif isinstance(getattr(resp, k), Message):
-                    recurseively_bind(getattr(resp, k), v)
-                else:
-                    setattr(resp, k, v)
-        return resp
-        '''
 
     def on_start(self):
         """
@@ -406,3 +330,43 @@ def _is_port_in_use(addr):
             raise err
     finally:
         sock.close()
+
+
+def _bind_message(message, source: Dict):
+    if source is None:
+        return None
+    for k, v in source.items():
+        if isinstance(getattr(message, k), Message):
+            sub_message = getattr(message, k)
+            assert isinstance(v, dict)
+            _bind_message(sub_message, v)
+        elif isinstance(v, dict):
+            v_bytes = codecs.encode(pickle.dumps(v), 'base64')
+            setattr(message, k, v_bytes)
+        elif isinstance(v, (list, tuple, set)):
+            list_field = getattr(message, k)
+            sub_message_type_name = (
+                '{}Schema'.format(k.title().replace('_', ''))
+            )
+            sub_message = getattr(message, sub_message_type_name, None)
+            if sub_message:
+                list_field.extend(
+                    _bind_message(sub_message(), v_i)
+                    for v_i in v
+                )
+            else:
+                list_field.extend(v)
+        else:
+            setattr(message, k, v)
+    return message
+
+
+def _dump_result_obj(obj):
+    if is_bizobj(obj) or is_bizlist(obj):
+        return obj.dump(raw=True)
+    elif isinstance(obj, (list, set, tuple)):
+        return [_dump_result_obj(x) for x in obj]
+    elif isinstance(obj, dict):
+        return {k: _dump_result_obj(v) for k, v in obj.items()}
+    else:
+        return obj
