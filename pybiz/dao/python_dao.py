@@ -114,7 +114,7 @@ class PythonDao(Dao):
         with self.lock:
             return [
                 self.update(_id=_id, data=values)
-                for _id, values in zip(_id, data)
+                for _id, values in zip(_ids, data)
             ]
 
     def delete(self, _id, clear_rev=True) -> Dict:
