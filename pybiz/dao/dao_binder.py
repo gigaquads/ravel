@@ -43,6 +43,7 @@ class DaoBinder(object):
 
     def __init__(self):
         self._bindings = {}
+        self._named_dao_types = {}
 
     @classmethod
     def get_instance(cls):
@@ -63,14 +64,25 @@ class DaoBinder(object):
     def register(
         self,
         biz_type: Type['BizObject'],
-        dao_instance: Dao,
+        dao_type: Type[Dao],
         dao_bind_kwargs: Dict = None,
     ):
-        self._bindings[biz_type.__name__] = DaoBinding(
+        biz_type_name = biz_type.__name__
+        dao_type_name = dao_type.__name__
+
+        if dao_type_name not in self._named_dao_types:
+            dao_type = type(dao_type_name, (dao_type, ), {})
+            self._named_dao_types[dao_type_name] = dao_type
+
+        dao_instance = dao_type()
+        biz_type.binder = self
+
+        self._bindings[biz_type_name] = binding = DaoBinding(
             biz_type=biz_type,
             dao_instance=dao_instance,
             dao_bind_kwargs=dao_bind_kwargs,
         )
+        return binding
 
     def bind(self, biz_types: Set[Type['BizObject']] = None):
         if not biz_types:
@@ -78,21 +90,27 @@ class DaoBinder(object):
         elif not is_sequence(biz_types):
             biz_types = [biz_types]
         for biz_type in biz_types:
+            biz_type.binder = self  # this is used in BizObject.get_dao()
             self.get_dao_instance(biz_type)
 
     def get_dao_type_by_name(dao_type_name: Text) -> Type[Dao]:
-        return self._dao_types[dao_type_name]
+        return self._named_dao_types[dao_type_name]
 
     def get_dao_instance(self, biz_type: Type['BizObject'], bind=True) -> Dao:
         if isinstance(biz_type, str):
             binding = self._bindings.get(biz_type)
         else:
             binding = self._bindings.get(biz_type.__name__)
+
         if binding is None:
-            print(f'{biz_type} has no registered Dao binding. Skipping...')
-            return
+            # lazily register a new binding
+            base_dao_type = biz_type.__dao__()
+            binding = self.register(biz_type, base_dao_type)
+
+        # call bind only if it already hasn't been called
         if bind and (not binding.is_bound):
             binding.bind()
+
         return binding.dao_instance
 
     def is_registered(self, biz_type: Type['BizObject']) -> bool:

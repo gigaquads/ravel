@@ -19,6 +19,7 @@ class BizObject(metaclass=BizObjectMeta):
 
     schema = None
     relationships = {}
+    binder = DaoBinder.get_instance()
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -31,15 +32,14 @@ class BizObject(metaclass=BizObjectMeta):
         """
         Declare the DAO type/instance used by this BizObject class.
         """
-        return PythonDao()
+        return PythonDao
 
     @classmethod
     def get_dao(cls) -> 'Dao':
         """
         Get the global Dao reference associated with this class.
         """
-        binder = DaoBinder.get_instance()
-        return binder.get_dao_instance(cls, bind=True)
+        return cls.binder.get_dao_instance(cls, bind=True)
 
     def __init__(self, data=None, **more_data):
         self._data = DirtyDict()
