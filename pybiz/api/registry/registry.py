@@ -17,6 +17,7 @@ from .registry_proxy import RegistryProxy
 
 class Registry(object):
     def __init__(self, middleware: List['RegistryMiddleware'] = None):
+        self._dao_binder = DaoBinder()
         self._decorators = []
         self._proxies = {}
         self._manifest = None
@@ -64,6 +65,10 @@ class Registry(object):
         return self._manifest
 
     @property
+    def binder(self):
+        return self._dao_binder
+
+    @property
     def middleware(self) -> List['RegistryMiddleware']:
         return self._middleware
 
@@ -104,16 +109,15 @@ class Registry(object):
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
         # create, load, and process the manifest
-        self._manifest = manifest or Manifest()
-        self._manifest.load().process(namespace=self._namespace)
+        self._manifest = (manifest or Manifest()).load()
+        self._manifest.process(namespace=self._namespace, binder=self.binder)
 
         # bootstrap the middlware
         for mware in self.middleware:
             mware.bootstrap(registry=self)
 
         # bootstrap the data access layer (DAL)
-        binder = DaoBinder.get_instance()
-        for binding in binder.bindings:
+        for binding in self.binder.bindings:
             strap = self.manifest.bootstraps.get(binding.dao_type_name)
             if strap is not None:
                 binding.dao_type.bootstrap(**strap.params)
@@ -121,7 +125,7 @@ class Registry(object):
                 binding.dao_type.bootstrap()
 
         # bind associates each BizObject class with Dao object.
-        binder.bind()
+        self.binder.bind()
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)

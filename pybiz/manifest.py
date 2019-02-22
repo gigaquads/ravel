@@ -89,13 +89,19 @@ class Manifest(object):
 
         return self
 
-    def process(self, namespace: Dict = None, override=True, on_error=None):
+    def process(
+        self,
+        namespace: Dict = None,
+        binder: 'DaoBinder' = None,
+        override=True,
+        on_error=None,
+    ):
         """
         Interpret the manifest file data, bootstrapping the layers of the
         framework.
         """
         self._discover_pybiz_types(namespace, override, on_error)
-        self._bind_dao_to_biz_types(override)
+        self._register_dao_types(binder=binder, override=override)
         return self
 
     def _discover_pybiz_types(self, namespace: Dict, override: bool, on_error):
@@ -108,6 +114,34 @@ class Manifest(object):
 
         # load BizObject and Dao classes from dotted path strings in bindings
         self._scan_dotted_paths(override)
+
+        # the following ensures that each manifest gets distinct dao classes
+        # so that processing multiple manifests in a single application
+        # does not trample a singular Dao class namespace while bootstrapping.
+        for k, v in self.types.dao.items():
+            self.types.dao[k] = type(v.__name__, (v, ), {})
+
+    def _register_dao_types(self, binder: 'DaoBinder' = None, override=True):
+        """
+        Associate each BizObject class with a corresponding Dao class.
+        """
+        from pybiz.biz import BizObject
+        from pybiz.dao import DaoBinder
+
+        binder = binder or DaoBinder.get_instance()
+        visited_biz_types = set()
+
+        for binding_spec in self.bindings:
+            biz_type = self.types.biz.get(binding_spec.biz)
+            dao_type = self.types.dao[binding_spec.dao]
+            visited_biz_types.add(biz_type)
+            if override or (not binder.is_registered(biz_type)):
+                binding = binder.register(
+                    biz_type=biz_type,
+                    dao_type=dao_type,
+                    dao_bind_kwargs=binding_spec.params,
+                )
+                self.types.dao[dao_type.__name__] = binding.dao_type
 
     def _scan_dotted_paths(self, override: bool):
         for binding in self.bindings:
@@ -155,26 +189,6 @@ class Manifest(object):
         if pkg_path:
             pkg = importlib.import_module(pkg_path)
             self.scanner.scan(pkg, onerror=on_error)
-
-    def _bind_dao_to_biz_types(self, override=True):
-        """
-        Associate each BizObject class with a corresponding Dao class. Also bind
-        Schema classes to their respective BizObject classes.
-        """
-        from pybiz.biz import BizObject
-        from pybiz.dao import DaoBinder
-
-        binder = DaoBinder.get_instance()
-
-        for binding in self.bindings:
-            biz_type = self.types.biz.get(binding.biz)
-            dao_type = self.types.dao[binding.dao]
-            if override or (not binder.is_registered(biz_type)):
-                binder.register(
-                    biz_type=biz_type,
-                    dao_instance=dao_type(),
-                    dao_bind_kwargs=binding.params,
-                )
 
     @staticmethod
     def _expand_environment_vars(env, data):
