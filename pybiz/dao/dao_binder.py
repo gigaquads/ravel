@@ -17,8 +17,9 @@ class DaoBinding(object):
             f'bound={self.is_bound})>'
         )
 
-    def bind(self):
+    def bind(self, binder):
         self.dao_instance.bind(self.biz_type, **self.dao_bind_kwargs)
+        self.biz_type.bind(binder)
         self._is_bound = True
 
     @property
@@ -108,9 +109,6 @@ class DaoBinder(object):
             biz_type.binder = self  # this is used in BizObject.get_dao()
             self.get_dao_instance(biz_type)
 
-    def get_dao_type(self, dao_type_name: Text) -> Type[Dao]:
-        return self._named_dao_types.get(dao_type_name)
-
     def get_dao_instance(self, biz_type: Type['BizObject'], bind=True) -> Dao:
         if isinstance(biz_type, str):
             binding = self._bindings.get(biz_type)
@@ -123,10 +121,13 @@ class DaoBinder(object):
             binding = self.register(biz_type, base_dao_type)
 
         # call bind only if it already hasn't been called
-        if bind and (not binding.is_bound):
-            binding.bind()
+        if bind or not binding.is_bound:
+            binding.bind(binder=self)
 
         return binding.dao_instance
+
+    def get_dao_type(self, dao_type_name: Text) -> Type[Dao]:
+        return self._named_dao_types.get(dao_type_name)
 
     def is_registered(self, biz_type: Type['BizObject']) -> bool:
         if isinstance(biz_type, str):

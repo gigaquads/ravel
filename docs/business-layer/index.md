@@ -287,6 +287,7 @@ user.dump({'name', 'friends.*'}, lazy=True)
 In some cases, it might be useful to declare the `Dao` or `Schema` object used by a business object at runtime. Normally, this is determined by a program manifest file (See: Configuration).
 
 ### DAO Override
+#### XXX: DEPRECATED
 In case your `Dao` class requires complex runtime initialization, you can override the `__dao__` method on your `BizObject` class. It must return either a `Dao` class or an instance thereof. This will override the corresponding binding declared in your manifest, provided you have one.
 
 ```python

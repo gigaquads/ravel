@@ -90,18 +90,21 @@ class CacheDao(Dao):
         if self.mode == CacheMode.writeback:
             self.executor = CacheDaoExecutor(self)
 
+    @property
+    def binder(self):
+        if self.registry and self.registry.is_bootstrapped:
+            binder = self.registry.manifest.binder
+        else:
+            binder = DaoBinder.get_instance()
+        return binder
+
     def _setup_inner_dao(
         self,
         biz_type: Type['BizType'],
         dao_type_name: Text,
         bind_params: Dict = None
     ):
-        if self.registry and self.registry.is_bootstrapped:
-            binder = self.registry.manifest.binder
-        else:
-            binder = DaoBinder.get_instance()
-
-        dao_type = binder.get_dao_type(dao_type_name)
+        dao_type = self.binder.get_dao_type(dao_type_name)
         if dao_type is None:
             raise Exception(f'{dao_type} not registered')
         dao = dao_type()

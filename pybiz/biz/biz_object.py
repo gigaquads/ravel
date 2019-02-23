@@ -20,6 +20,7 @@ class BizObject(metaclass=BizObjectMeta):
     schema = None
     relationships = {}
     binder = DaoBinder.get_instance()
+    is_bootstrapped = False
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -39,7 +40,7 @@ class BizObject(metaclass=BizObjectMeta):
         """
         Get the global Dao reference associated with this class.
         """
-        return cls.binder.get_dao_instance(cls, bind=True)
+        return cls.binder.get_dao_instance(cls)
 
     def __init__(self, data=None, **more_data):
         self._data = DirtyDict()
@@ -80,6 +81,30 @@ class BizObject(metaclass=BizObjectMeta):
         name = self.__class__.__name__
         dirty = '*' if self._data.dirty else ''
         return f'<{name}({id_str}){dirty}>'
+
+    @classmethod
+    def bootstrap(cls, **kwargs):
+        cls.on_bootstrap()
+        cls.is_bootstrapped = True
+
+    @classmethod
+    def on_bootstrap(cls, **kwargs):
+        pass
+
+    @classmethod
+    def bind(cls, binder: 'DaoBinder'):
+        cls.binder = binder
+        cls.on_bind()
+
+    @classmethod
+    def on_bind(cls):
+        pass
+
+    @classmethod
+    def is_bound(cls):
+        if cls.binder is not None:
+            return cls.binder.is_bound(cls)
+        return False
 
     @classmethod
     def exists(cls, _id=None) -> bool:

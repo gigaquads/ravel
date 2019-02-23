@@ -103,13 +103,12 @@ class Registry(object):
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
         # create, load, and process the manifest
+        # bootstrap the biz and data access layers, and
+        # bind each BizObject class with its Dao object.
         self._manifest = (manifest or Manifest()).load()
         self._manifest.process(namespace=self._namespace)
-
-        # bootstrap the data access layer (DAL), and
-        # bind each BizObject class with its Dao object.
-        self.manifest.bootstrap()
-        self.manifest.bind()
+        self._manifest.bootstrap()
+        self._manifest.bind()
 
         # bootstrap the middlware
         for mware in self.middleware:
