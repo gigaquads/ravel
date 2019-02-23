@@ -67,21 +67,21 @@ class CacheDao(Dao):
         biz_type: Type['BizObject'],
         prefetch=False,
         mode: CacheMode = None,
-        frontend: Dict = None,
-        backend: Dict = None,
+        front: Dict = None,
+        back: Dict = None,
     ):
         self.prefetch = prefetch if prefetch is not None else self.prefetch
         self.mode = mode or self.mode
 
         self.fe = self._setup_inner_dao(
             biz_type,
-            frontend['dao'],
-            frontend.get('params', {}),
+            front['dao'],
+            front.get('params', {}),
         )
         self.be = self._setup_inner_dao(
             biz_type,
-            backend['dao'],
-            backend.get('params', {}),
+            back['dao'],
+            back.get('params', {}),
         )
 
         if self.prefetch:
@@ -101,14 +101,11 @@ class CacheDao(Dao):
         else:
             binder = DaoBinder.get_instance()
 
-        if dao_type_name not in binder.dao_types:
-            dao_type = import_object(dao_type_name)
-            binder.register(None, dao_type, bind_params)
-        else:
-            dao_type = binder.get_dao_type(dao_type_name)
-
+        dao_type = binder.get_dao_type(dao_type_name)
+        if dao_type is None:
+            raise Exception(f'{dao_type} not registered')
         dao = dao_type()
-        
+
         if not dao.is_bound:
             dao.bind(biz_type, **(bind_params or {}))
 
