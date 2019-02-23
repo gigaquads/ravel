@@ -8,7 +8,6 @@ from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
 from pybiz.util import JsonEncoder
-from pybiz.dao.dao_binder import DaoBinder
 from pybiz.api.middleware import ArgumentLoaderMiddleware
 
 from .registry_decorator import RegistryDecorator
@@ -17,7 +16,6 @@ from .registry_proxy import RegistryProxy
 
 class Registry(object):
     def __init__(self, middleware: List['RegistryMiddleware'] = None):
-        self._dao_binder = DaoBinder()
         self._decorators = []
         self._proxies = {}
         self._manifest = None
@@ -65,10 +63,6 @@ class Registry(object):
         return self._manifest
 
     @property
-    def binder(self):
-        return self._dao_binder
-
-    @property
     def middleware(self) -> List['RegistryMiddleware']:
         return self._middleware
 
@@ -110,22 +104,16 @@ class Registry(object):
 
         # create, load, and process the manifest
         self._manifest = (manifest or Manifest()).load()
-        self._manifest.process(namespace=self._namespace, binder=self.binder)
+        self._manifest.process(namespace=self._namespace)
+
+        # bootstrap the data access layer (DAL), and
+        # bind each BizObject class with its Dao object.
+        self.manifest.bootstrap()
+        self.manifest.bind()
 
         # bootstrap the middlware
         for mware in self.middleware:
             mware.bootstrap(registry=self)
-
-        # bootstrap the data access layer (DAL)
-        for binding in self.binder.bindings:
-            strap = self.manifest.bootstraps.get(binding.dao_type_name)
-            if strap is not None:
-                binding.dao_type.bootstrap(**strap.params)
-            else:
-                binding.dao_type.bootstrap()
-
-        # bind associates each BizObject class with Dao object.
-        self.binder.bind()
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)

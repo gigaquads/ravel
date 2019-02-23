@@ -12,7 +12,10 @@ class DaoBinding(object):
         self._is_bound = False
 
     def __repr__(self):
-        return f'<DaoBinding({self.biz_type_name}, {self.dao_type_name})>'
+        return (
+            f'<DaoBinding({self.biz_type_name}, {self.dao_type_name}, '
+            f'bound={self.is_bound})>'
+        )
 
     def bind(self):
         self.dao_instance.bind(self.biz_type, **self.dao_bind_kwargs)
@@ -44,6 +47,7 @@ class DaoBinder(object):
     def __init__(self):
         self._bindings = {}
         self._named_dao_types = {}
+        self._named_biz_types = {}
 
     @classmethod
     def get_instance(cls):
@@ -58,8 +62,16 @@ class DaoBinder(object):
         return singleton
 
     @property
-    def bindings(self):
+    def bindings(self) -> List['DaoBinding']:
         return list(self._bindings.values())
+
+    @property
+    def biz_types(self) -> Dict[Text, 'BizObject']:
+        return self._named_biz_types
+
+    @property
+    def dao_types(self) -> Dict[Text, 'Dao']:
+        return self._named_dao_types
 
     def register(
         self,
@@ -67,22 +79,25 @@ class DaoBinder(object):
         dao_type: Type[Dao],
         dao_bind_kwargs: Dict = None,
     ):
-        biz_type_name = biz_type.__name__
         dao_type_name = dao_type.__name__
-
         if dao_type_name not in self._named_dao_types:
             dao_type = type(dao_type_name, (dao_type, ), {})
             self._named_dao_types[dao_type_name] = dao_type
 
         dao_instance = dao_type()
-        biz_type.binder = self
 
-        self._bindings[biz_type_name] = binding = DaoBinding(
-            biz_type=biz_type,
-            dao_instance=dao_instance,
-            dao_bind_kwargs=dao_bind_kwargs,
-        )
-        return binding
+        if biz_type is not None:
+            biz_type_name = biz_type.__name__
+            biz_type.binder = self
+            self._named_biz_types[biz_type_name] = biz_type
+            self._bindings[biz_type_name] = binding = DaoBinding(
+                biz_type=biz_type,
+                dao_instance=dao_instance,
+                dao_bind_kwargs=dao_bind_kwargs,
+            )
+            return binding
+
+        return None
 
     def bind(self, biz_types: Set[Type['BizObject']] = None):
         if not biz_types:
@@ -93,8 +108,8 @@ class DaoBinder(object):
             biz_type.binder = self  # this is used in BizObject.get_dao()
             self.get_dao_instance(biz_type)
 
-    def get_dao_type_by_name(dao_type_name: Text) -> Type[Dao]:
-        return self._named_dao_types[dao_type_name]
+    def get_dao_type(self, dao_type_name: Text) -> Type[Dao]:
+        return self._named_dao_types.get(dao_type_name)
 
     def get_dao_instance(self, biz_type: Type['BizObject'], bind=True) -> Dao:
         if isinstance(biz_type, str):

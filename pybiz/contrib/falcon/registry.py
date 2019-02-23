@@ -13,7 +13,6 @@ from pybiz.api.web import WsgiServiceRegistry
 from pybiz.util import JsonEncoder
 
 from .resource import ResourceManager
-from .middleware import Middleware
 from .media import JsonHandler
 
 
