@@ -15,7 +15,6 @@ from .dao_binder import DaoBinder
 
 
 class CacheMode(EnumValueStr):
-
     @staticmethod
     def values():
         return {
@@ -37,7 +36,6 @@ class CacheDaoExecutor(ThreadPoolExecutor):
     def enqueue(self, method: Text, args=None, kwargs=None):
         def task(dao, event):
             dao.play([event])
-
 
         event = DaoEvent(method=method, args=args, kwargs=kwargs)
         return self.submit(task, dao=self.dao.be, event=event)
@@ -122,8 +120,9 @@ class CacheDao(Dao):
 
     def fetch_all(self, fields: Set[Text] = None) -> Dict:
         be_ids = {
-            rec['_id'] for rec in
-            self.be.fetch_all(fields={'_id'}).values()
+            rec['_id']
+            for rec in self.be.fetch_all(fields={'_id'}).values()
+            if rec is not None
         }
         return self.fetch_many(be_ids, fields=fields)
 
@@ -132,17 +131,16 @@ class CacheDao(Dao):
         be_revs = self.be.fetch_many(fe_records.keys(), fields={'_rev'})
 
         ids = set(_ids) if not isinstance(_ids, set) else _ids
-        ids_fe = set(fe_records.keys())                 # ids in FE
-        ids_missing = ids - ids_fe                      # ids not in FE
-        ids_to_delete = ids_fe - be_revs.keys()         # ids to delete in FE
-        ids_to_update = set()                           # ids to update in FE
+        ids_fe = set(fe_records.keys())    # ids in FE
+        ids_missing = ids - ids_fe    # ids not in FE
+        ids_to_delete = ids_fe - be_revs.keys()    # ids to delete in FE
+        ids_to_update = set()    # ids to update in FE
 
         for _id, fe_rec in fe_records.items():
             if fe_rec is None:
                 ids_missing.add(_id)
             elif be_revs.get(_id, {}).get('_rev', 0) > fe_rec.get('_rev', 0):
                 ids_to_update.add(_id)
-
 
         # records in BE ONLY
         ids_to_fetch_from_be = ids_missing | ids_to_update
@@ -155,7 +153,7 @@ class CacheDao(Dao):
         # performing batch insert and update
         records_to_update = []
         records_to_create = []
-        for     _id, be_rec in be_records.items():
+        for _id, be_rec in be_records.items():
             if _id in ids_missing:
                 records_to_create.append(be_rec)
             elif _id in ids_to_update:
@@ -168,8 +166,7 @@ class CacheDao(Dao):
             self.fe.create_many(records_to_create)
         if records_to_update:
             self.fe.update_many(
-                (rec['_id'] for rec in records_to_update),
-                records_to_update
+                (rec['_id'] for rec in records_to_update), records_to_update
             )
 
         # merge fresh BE records to return into FE records
@@ -266,7 +263,12 @@ class CacheDao(Dao):
         if self.mode == CacheMode.writethru:
             self.be.update(_id, fe_record_no_rev)
         elif self.mode == CacheMode.writeback:
-            self.executor.enqueue('update', args=(_id, fe_record_no_rev, ))
+            self.executor.enqueue(
+                'update', args=(
+                    _id,
+                    fe_record_no_rev,
+                )
+            )
 
         return fe_record
 
