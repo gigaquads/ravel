@@ -99,7 +99,7 @@ class CacheDao(Dao):
         else:
             binder = DaoBinder.get_instance()
 
-        dao_type = binder.get_dao_type(dao_type_name)
+        dao_type = binder.get_dao_type(dao_type_name.split('.')[-1])
         if dao_type is None:
             raise Exception(f'{dao_type} not registered')
         dao = dao_type()
