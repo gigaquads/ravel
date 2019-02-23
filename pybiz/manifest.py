@@ -17,6 +17,7 @@ from appyratus.env import Environment
 
 from pybiz.exc import ManifestError
 from pybiz.util import import_object
+from pybiz.dao import DaoBinder
 
 
 class Manifest(object):
@@ -31,6 +32,7 @@ class Manifest(object):
         path: Text = None,
         data: Dict = None,
         env: Environment = None,
+        binder: DaoBinder = None,
     ):
         from pybiz.dao import PythonDao
 
@@ -40,6 +42,7 @@ class Manifest(object):
         self.bindings = []
         self.bootstraps = {}
         self.env = env or Environment()
+        self.binder = binder or DaoBinder.get_instance()
         self.types = DictObject({
             'dao': {'PythonDao': PythonDao},
             'biz': {},
@@ -83,7 +86,11 @@ class Manifest(object):
         # TODO: rename to something that means parameters to bootstrap methods
         self.bootstraps = {}
         for record in self.data.get('bootstraps', []):
-            self.bootstraps[record['dao']] = Bootstrap(
+            if '.' in record['dao']:
+                dao_type_name = os.path.splitext(record['dao'])[-1][1:]
+            else:
+                dao_type_name = record['dao']
+            self.bootstraps[dao_type_name] = Bootstrap(
                 dao=record['dao'], params=record.get('params', {})
             )
 
@@ -92,7 +99,6 @@ class Manifest(object):
     def process(
         self,
         namespace: Dict = None,
-        binder: 'DaoBinder' = None,
         override=True,
         on_error=None,
     ):
@@ -101,13 +107,21 @@ class Manifest(object):
         framework.
         """
         self._discover_pybiz_types(namespace, override, on_error)
-        self._register_dao_types(binder=binder, override=override)
+        self._register_dao_types(override=override)
         return self
 
+    def bootstrap(self):
+        for type_name, dao_type in self.types.dao.items():
+            strap = self.bootstraps.get(type_name)
+            if strap is not None:
+                dao_type.bootstrap(**strap.params)
+
+    def bind(self):
+        self.binder.bind()
+
     def _discover_pybiz_types(self, namespace: Dict, override: bool, on_error):
-        if self.package:
-            # package name for venusian scan
-            self._scan_venusian(on_error=on_error)
+        # package name for venusian scan
+        self._scan_venusian(on_error=on_error)
         if namespace:
             # load BizObject and Dao classes from a namespace dict
             self._scan_namespace(namespace)
@@ -115,35 +129,34 @@ class Manifest(object):
         # load BizObject and Dao classes from dotted path strings in bindings
         self._scan_dotted_paths(override)
 
-        # the following ensures that each manifest gets distinct dao classes
-        # so that processing multiple manifests in a single application
-        # does not trample a singular Dao class namespace while bootstrapping.
-        for k, v in self.types.dao.items():
-            self.types.dao[k] = type(v.__name__, (v, ), {})
-
-    def _register_dao_types(self, binder: 'DaoBinder' = None, override=True):
+    def _register_dao_types(self, override=True):
         """
         Associate each BizObject class with a corresponding Dao class.
         """
         from pybiz.biz import BizObject
         from pybiz.dao import DaoBinder
 
-        binder = binder or DaoBinder.get_instance()
         visited_biz_types = set()
 
         for binding_spec in self.bindings:
             biz_type = self.types.biz.get(binding_spec.biz)
             dao_type = self.types.dao[binding_spec.dao]
             visited_biz_types.add(biz_type)
-            if override or (not binder.is_registered(biz_type)):
-                binding = binder.register(
+            if override or (not self.binder.is_registered(biz_type)):
+                binding = self.binder.register(
                     biz_type=biz_type,
                     dao_type=dao_type,
                     dao_bind_kwargs=binding_spec.params,
                 )
                 self.types.dao[dao_type.__name__] = binding.dao_type
 
+        for type_name, dao_type in self.types.dao.items():
+            if not self.binder.get_dao_type(type_name):
+                self.binder.register(None, dao_type)
+
     def _scan_dotted_paths(self, override: bool):
+        # gather Dao and BizObject types in "bindings" section
+        # into self.types.dao and self.types.biz
         for binding in self.bindings:
             if binding.biz_module and (
                 override or binding.biz not in self.types.biz
@@ -155,6 +168,16 @@ class Manifest(object):
             ):
                 dao_type = import_object(f'{binding.dao_module}.{binding.dao}')
                 self.types.dao[binding.dao] = dao_type
+
+        # gather Dao types in "bootstraps" section into self.types.dao
+        for dao_type_name, bootstrap in self.bootstraps.items():
+            if '.' in bootstrap.dao:
+                dao_type_path = bootstrap.dao
+                if dao_type_name not in self.types.dao:
+                    dao_type = import_object(dao_type_path)
+                    self.types.dao[dao_type_name] = dao_type
+            elif bootstrap.dao not in self.types.dao:
+                raise ManifestError(f'{bootstrap.dao} not found')
 
     def _scan_namespace(self, namespace: Dict):
         """
@@ -175,6 +198,9 @@ class Manifest(object):
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Api instance.
         """
+        import pybiz.dao
+        import pybiz.contrib
+
         if on_error is None:
             def on_error(name):
                 import sys
@@ -182,8 +208,11 @@ class Manifest(object):
                 exc = sys.exc_info()[0]
                 msg = traceback.format_exc().strip().split('\n')[-1]
                 print(
-                    f'Venusian ignoring {name}\n -> {msg}'
+                    f'(warning) Venusian ignoring {name}\n -> {msg}'
                 )
+
+        self.scanner.scan(pybiz.dao, onerror=on_error)
+        self.scanner.scan(pybiz.contrib, onerror=on_error)
 
         pkg_path = self.package
         if pkg_path:

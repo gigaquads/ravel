@@ -33,6 +33,7 @@ class RegistryProxy(RegistryObject):
         return (args, kwargs)
 
     def post_process(self, args, kwargs, raw_result):
+        # TODO: call middleware even if exception raised in target, passing on exception
         result = self._apply_registry_on_response(args, kwargs, raw_result)
         self._apply_middleware_post_request(args, kwargs, result)
         return result

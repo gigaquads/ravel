@@ -7,7 +7,7 @@ from graphql.parser import GraphQLParser
 from pybiz.util import is_bizobj, is_sequence
 
 
-class GraphQLNode(GraphQLNode):
+class GraphQLNode(object):
     def __init__(self, relationship, ast_field, parent):
         self.relationship = relationship
         self.parent = parent
@@ -141,4 +141,3 @@ class GraphQLEngine(object):
         elif isinstance(result, dict) or result is None:
             return result
         raise ValueError(str(result))
-

@@ -67,23 +67,21 @@ class CacheDao(Dao):
         biz_type: Type['BizObject'],
         prefetch=False,
         mode: CacheMode = None,
-        frontend: Dict = None,
-        backend: Dict = None,
+        front: Dict = None,
+        back: Dict = None,
     ):
         self.prefetch = prefetch if prefetch is not None else self.prefetch
         self.mode = mode or self.mode
 
         self.fe = self._setup_inner_dao(
             biz_type,
-            frontend['dao'],
-            frontend.get('bootstrap', {}),
-            frontend.get('bind', {}),
+            front['dao'],
+            front.get('params', {}),
         )
         self.be = self._setup_inner_dao(
             biz_type,
-            backend['dao'],
-            backend.get('bootstrap', {}),
-            backend.get('bind', {}),
+            back['dao'],
+            back.get('params', {}),
         )
 
         if self.prefetch:
@@ -92,23 +90,21 @@ class CacheDao(Dao):
         if self.mode == CacheMode.writeback:
             self.executor = CacheDaoExecutor(self)
 
-    @staticmethod
     def _setup_inner_dao(
+        self,
         biz_type: Type['BizType'],
         dao_type_name: Text,
-        bootstrap_params: Dict = None,
         bind_params: Dict = None
     ):
-        binder = DaoBinder.get_instance()
-
-        if not binder.is_registered(dao_type_name):
-            dao_type = import_object(dao_type_name)
-            dao = dao_type()
+        if self.registry and self.registry.is_bootstrapped:
+            binder = self.registry.manifest.binder
         else:
-            dao = binder.get_dao_instance(dao_type_name)
+            binder = DaoBinder.get_instance()
 
-        if not dao.is_bootstrapped():
-            dao.bootstrap(**(bootstrap_params or {}))
+        dao_type = binder.get_dao_type(dao_type_name)
+        if dao_type is None:
+            raise Exception(f'{dao_type} not registered')
+        dao = dao_type()
 
         if not dao.is_bound:
             dao.bind(biz_type, **(bind_params or {}))
