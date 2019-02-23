@@ -20,6 +20,7 @@ class BizObject(metaclass=BizObjectMeta):
     schema = None
     relationships = {}
     binder = DaoBinder.get_instance()
+    registry = None
     is_bootstrapped = False
 
     @classmethod
@@ -83,8 +84,9 @@ class BizObject(metaclass=BizObjectMeta):
         return f'<{name}({id_str}){dirty}>'
 
     @classmethod
-    def bootstrap(cls, **kwargs):
+    def bootstrap(cls, registry: 'Registry' = None, **kwargs):
         cls.on_bootstrap()
+        cls.registry = registry
         cls.is_bootstrapped = True
 
     @classmethod

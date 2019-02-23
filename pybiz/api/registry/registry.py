@@ -107,7 +107,7 @@ class Registry(object):
         # bind each BizObject class with its Dao object.
         self._manifest = (manifest or Manifest()).load()
         self._manifest.process(namespace=self._namespace)
-        self._manifest.bootstrap()
+        self._manifest.bootstrap(registry=self)
         self._manifest.bind()
 
         # bootstrap the middlware

@@ -109,7 +109,7 @@ class DaoBinder(object):
             biz_type.binder = self  # this is used in BizObject.get_dao()
             self.get_dao_instance(biz_type)
 
-    def get_dao_instance(self, biz_type: Type['BizObject'], bind=True) -> Dao:
+    def get_dao_instance(self, biz_type: Type['BizObject'], bind=False) -> Dao:
         if isinstance(biz_type, str):
             binding = self._bindings.get(biz_type)
         else:

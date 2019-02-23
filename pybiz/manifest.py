@@ -125,14 +125,14 @@ class Manifest(object):
         self._register_dao_types()
         return self
 
-    def bootstrap(self):
+    def bootstrap(self, registry: 'Registry' = None):
         for biz_type in self.types.biz.values():
             if not biz_type.is_bootstrapped:
-                biz_type.bootstrap()
+                biz_type.bootstrap(registry=registry)
         for type_name, dao_type in self.types.dao.items():
             strap = self.bootstraps.get(type_name)
             if strap is not None:
-                dao_type.bootstrap(**strap.params)
+                dao_type.bootstrap(registry=registry, **strap.params)
 
     def bind(self):
         self.binder.bind()
@@ -146,6 +146,13 @@ class Manifest(object):
 
         # load BizObject and Dao classes from dotted path strings in bindings
         self._scan_dotted_paths()
+
+        # store stubbed subclasses of each BizObject type detected so that
+        # any other manifest existing within the same process has its own
+        # copies and hence does not trample these classes when bootstrap and
+        # other lifecycle methods are called on them.
+        for k, v in self.types.biz.items():
+            self.types.biz[k] = type(k, (v, ), {})
 
     def _register_dao_types(self):
         """
@@ -168,6 +175,7 @@ class Manifest(object):
         for type_name, dao_type in self.types.dao.items():
             if not self.binder.get_dao_type(type_name):
                 self.binder.register(None, dao_type)
+                self.types.dao[type_name] = self.binder.get_dao_type(type_name)
 
     def _scan_dotted_paths(self):
         # gather Dao and BizObject types in "bindings" section

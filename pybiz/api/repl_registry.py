@@ -68,9 +68,10 @@ class ReplRegistry(Registry):
         local_ns = {}
         local_ns['repl'] = self
 
-        local_ns.update(self.types.biz)
-        local_ns.update(dict(self.proxies))
         local_ns.update(self._namespace)
+        local_ns.update(dict(self.proxies))
+        local_ns.update(self.types.biz)
+        local_ns.update(self.types.dao)
 
         # enter an ipython shell
         self.shell.mainloop(local_ns=local_ns)
