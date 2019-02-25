@@ -248,7 +248,7 @@ class BizObject(metaclass=BizObjectMeta):
         self._data.update(created_record)
         return self.clean()
 
-    def update(self, bizobj: 'BizObject') -> 'BizObject':
+    def update(self) -> 'BizObject':
         prepared_record = self.dirty_data
         prepared_record.pop('_rev', None)
         updated_record = self.get_dao().update(self._id, prepared_record)
