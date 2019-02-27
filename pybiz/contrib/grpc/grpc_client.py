@@ -75,14 +75,18 @@ class GrpcClient(object):
             elif isinstance(field, fields.Set):
                 if isinstance(field.nested, Schema):
                     result[field_name] = {
-                        self._extract_fields(v, field.nested) for v in value
+                        self._extract_fields(v, field.nested)
+                        for v in value
                     }
                 elif isinstance(field.nested, fields.Dict):
                     result[field_name] = {
-                        pickle.loads(codecs.decode(v, 'base64')) for v in value
+                        pickle.loads(codecs.decode(v, 'base64'))
+                        for v in value
                     }
                 else:
                     result[field_name] = set(value)
+            elif isinstance(field, Schema):
+                result[field_name] = self._extract_fields(value, field)
             else:
                 result[field_name] = value
         return result
