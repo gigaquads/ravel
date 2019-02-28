@@ -1,4 +1,4 @@
-from typing import Text, Type, Tuple
+from typing import Text, Type, Tuple, Dict
 
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
@@ -99,9 +99,21 @@ class Relationship(object):
         """
         Execute a chain of queries to fetch the target Relationship data.
         """
+        # XXX: improve this somehow
+        # dynamically add biz object classes to namespace of predicate funcs
+        # so that we don't have to structure our modules oddly to avoid cyclic
+        # imports for BizObjects.
+        if owner.registry is not None:
+            for predicate_func in self._join:
+                predicate_func.__globals__.update(owner.registry.types.biz)
+
+        predicate = self._join[-1](MockBizObject())
+        target = self._resolve_target(predicate)
+
         specification = QuerySpecification.prepare(
             specification, self.target
         )
+
         # build up the sequence of field name sets to query
         if not self._query_fields:
             for idx, func in enumerate(self._join[1:]):
@@ -142,8 +154,12 @@ class Relationship(object):
                 for item in spec.order_by:
                     spec.fields.add(item.key)
 
-            # do it! `obj` is a BizList
-            obj = target_type.query(predicate=predicate, specification=spec)
+            # obj is always a BizList
+            obj = target_type.query(
+                predicate=predicate, specification=spec
+            )
+
+        if obj is not owner:
             obj.relationship = self
             obj.owner = owner
 
