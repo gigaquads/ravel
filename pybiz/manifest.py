@@ -147,13 +147,6 @@ class Manifest(object):
         # load BizObject and Dao classes from dotted path strings in bindings
         self._scan_dotted_paths()
 
-        # store stubbed subclasses of each BizObject type detected so that
-        # any other manifest existing within the same process has its own
-        # copies and hence does not trample these classes when bootstrap and
-        # other lifecycle methods are called on them.
-        for k, v in self.types.biz.items():
-            self.types.biz[k] = type(k, (v, ), {})
-
     def _register_dao_types(self):
         """
         Associate each BizObject class with a corresponding Dao class.
