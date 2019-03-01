@@ -109,11 +109,14 @@ class BizObject(metaclass=BizObjectMeta):
         return False
 
     @classmethod
-    def exists(cls, _id=None) -> bool:
+    def exists(cls, obj=None) -> bool:
         """
         Does a simple check if a BizObject exists by id.
         """
-        return cls.get_dao().exists(_id=_id)
+        _id = obj._id if is_bizobj(obj) else obj
+        if _id is not None:
+            return cls.get_dao().exists(_id=_id)
+        return False
 
     @classmethod
     def query(
@@ -367,9 +370,6 @@ class BizObject(metaclass=BizObjectMeta):
         if not is_sequence(keys):
             keys = {keys}
         self._data.mark_dirty({k for k in keys if k in self.schema.fields})
-        for k in keys:
-            if k in self.related:
-                del self.related[k]
         return self
 
     def copy(self, deep=False) -> 'BizObject':

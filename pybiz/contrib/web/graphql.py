@@ -46,7 +46,7 @@ class GraphQLNode(object):
 
     @property
     def biz_type(self):
-        return self.relationship.host
+        return self.relationship.biz_type
 
     def execute(self, func):
         """

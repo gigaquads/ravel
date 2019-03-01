@@ -27,11 +27,23 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
             super().__init__(biz_type.__name__)
             self.biz_type = biz_type
 
-        def load(self, proxy, _id, args, kwargs):
-            return self.biz_type.get(_id)
+        def load(self, proxy, val, args, kwargs):
+            if isinstance(val, dict):
+                return self.biz_type(val)
+            else:
+                _id = val
+                return self.biz_type.get(_id)
 
-        def load_many(self, proxy, _ids, args, kwargs):
-            return self.biz_type.get_many(_ids)
+        def load_many(self, proxy, vals, args, kwargs):
+            if not vals:
+                return vals
+            if isinstance(vals[0], dict):
+                return self.biz_type.BizList(
+                    [self.biz_type(v) for v in vals]
+                )
+            else:
+                _ids = vals
+                return self.biz_type.get_many(_ids)
 
     def __init__(self):
         super().__init__()
@@ -39,6 +51,7 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
 
     def on_bootstrap(self):
         for biz_type in self.registry.types.biz.values():
+            loader = ArgumentLoaderMiddleware.BizObjectLoader(biz_type)
             self._load_funcs[LOAD_ONE, loader.type_name] = loader.load
             self._load_funcs[LOAD_MANY, loader.type_name] = loader.load_many
 
@@ -57,6 +70,8 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
 
             # get loader function
             load = self._get_loader_func_for_param(param)
+            if load is None:
+                continue
 
             if idx < len(new_args) and not is_bizobj(new_args[idx]):
                 # bind to a positional argument
@@ -70,7 +85,7 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
             return (tuple(new_args), kwargs)
 
     def _get_loader_func_for_param(self, param):
-        key = self._get_loader_func(param.annotation)
+        key = self._parse_type_annotation(param.annotation)
         return self._load_funcs.get(key)
 
     def _parse_type_annotation(self, obj):
