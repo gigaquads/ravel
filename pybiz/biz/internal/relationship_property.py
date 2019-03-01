@@ -46,18 +46,18 @@ class RelationshipProperty(property):
                     # fetch all fields
                     related_obj = rel.query(self)
                     setattr(self, key, related_obj)
-                    if rel.on_insert is not None:
+                    if rel.on_add is not None:
                         if rel.many:
                             for bizobj in related_obj:
-                                rel.on_insert(self, bizobj)
+                                rel.on_add(self, bizobj)
                         else:
-                            rel.on_insert(self, related_obj)
+                            rel.on_add(self, related_obj)
 
             default = self.BizList([], rel, self) if rel.many else None
             value = self._related.get(key, default)
 
-            if rel.on_get is not None:
-                rel.on_get(self, value)
+            for cb_func in rel.on_get:
+                cb_func(self, value)
 
             return value
 
@@ -92,14 +92,13 @@ class RelationshipProperty(property):
                     'relationship "{}" cannot be a BizObject because '
                     'relationship.many is False'.format(key)
                 )
-
             self._related[key] = value
 
-            if (not rel.many) and rel.join:
+            if (not rel.many) and rel.conditions:
                 RelationshipProperty.set_foreign_keys(self, value, rel)
 
-            if rel.on_set is not None:
-                rel.on_set(self, value)
+            for cb_func in rel.on_set:
+                cb_func(self, value)
 
         def fdel(self):
             """
@@ -107,11 +106,9 @@ class RelationshipProperty(property):
             dump() results. You must assign None if you want to None to appear.
             """
             value = self._related[key]
-
             del self._related[key]
-
-            if rel.on_del is not None:
-                rel.on_del(self, value)
+            for cb_func in rel.on_del:
+                cb_func(self, value)
 
         return cls(relationship, fget=fget, fset=fset, fdel=fdel)
 
@@ -119,12 +116,12 @@ class RelationshipProperty(property):
     def set_foreign_keys(bizobj, related_bizobj, rel):
         """
         When setting a relationship, we might be able to set any fields declared
-        on the host bizobj based on the contents of the Relationship's join
+        on the host bizobj based on the contents of the Relationship's query
         predicates. For example, a node might have a parent_id field, which we
         would want to set when doing somehing like child.parent = parent (we
         would want child.parent_id = parent._id to be performed automatically).
         """
-        pred = rel.join[0](MockBizObject())
+        pred = rel.conditions[0](MockBizObject())
         if isinstance(pred, ConditionalPredicate):
             if pred.op == OP_CODE.EQ:
                 attr_name = pred.value

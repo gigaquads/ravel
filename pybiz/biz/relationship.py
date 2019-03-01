@@ -32,58 +32,49 @@ class Relationship(object):
 
     def __init__(
         self,
-        join,
+        conditions,
+        on_set=None,
+        on_get=None,
+        on_del=None,
+        on_add=None,
         many=False,
         ordering=None,
         private=False,
         lazy=True,
-        on_set=None,
-        on_get=None,
-        on_del=None,
-        on_insert=None,
     ):
+        def normalize_to_tuple(obj):
+            if obj is not None:
+                if isinstance(obj, (list, tuple)):
+                    return tuple(obj)
+                return (obj, )
+            return tuple()
+
         self.many = many
         self.private = private
         self.lazy = lazy
-        self.on_set = on_set
-        self.on_get = on_get
-        self.on_del = on_del
-        self.on_insert = on_insert
 
-        # ensure self.ordering is a tuple
-        if ordering:
-            if callable(ordering):
-                self.ordering = ordering
-            elif isinstance(ordering, (tuple, list)):
-                self.ordering = tuple(ordering)
-            else:
-                self.ordering = (ordering, )
-        else:
-            self.ordering = tuple()
-
-        # ensure `join` is a tuple of callables that return predicates
-        if callable(join):
-            self._join = (join, )
-        elif isinstance(join, (list, tuple)):
-            self._join = tuple(join)
-
-        assert isinstance(self._join, tuple)
+        self.conditions = normalize_to_tuple(conditions)
+        self.on_set = normalize_to_tuple(on_set)
+        self.on_get = normalize_to_tuple(on_get)
+        self.on_del = normalize_to_tuple(on_del)
+        self.on_add = normalize_to_tuple(on_add)
+        self.ordering = normalize_to_tuple(ordering)
 
         # set in self.bind. Host is the BizObject class that hosts tis
         # relationship, and `name` is the relationship attribute on said class.
-        self._host = None
+        self._biz_type = None
         self._name = None
 
         # `_query_fields` is a sequence of field name sets to be used as the
-        # `fields` argument to each join predicate after the first, assuming
-        # this is multi-join relationship.
+        # `fields` argument to each query predicate after the first, assuming
+        # this is multi-query relationship.
         self._query_fields = []
 
     def __repr__(self):
         return '<{}({})>'.format(
             self.__class__.__name__,
             ', '.join([
-                (self._host.__name__ + '.' if self._host else '')
+                (self.biz_type.__name__ + '.' if self.biz_type else '')
                     + self._name or '',
                 'many={}'.format(self.many),
                 'private={}'.format(self.private),
@@ -99,15 +90,15 @@ class Relationship(object):
         """
         Execute a chain of queries to fetch the target Relationship data.
         """
-        # XXX: improve this somehow
+        # TODO: do this just once on registry bootstrap instead
         # dynamically add biz object classes to namespace of predicate funcs
         # so that we don't have to structure our modules oddly to avoid cyclic
         # imports for BizObjects.
         if owner.registry is not None:
-            for predicate_func in self._join:
+            for predicate_func in self.conditions:
                 predicate_func.__globals__.update(owner.registry.types.biz)
 
-        predicate = self._join[-1](MockBizObject())
+        predicate = self.conditions[-1](MockBizObject())
         target = self._resolve_target(predicate)
 
         specification = QuerySpecification.prepare(
@@ -116,17 +107,17 @@ class Relationship(object):
 
         # build up the sequence of field name sets to query
         if not self._query_fields:
-            for idx, func in enumerate(self._join[1:]):
+            for idx, func in enumerate(self.conditions[1:]):
                 mock = MockBizObject()
                 func(mock)
                 self._query_fields.append(set(mock.keys()))
 
-        # execute the sequence of "join" queries...
+        # execute the sequence of queries
         obj = owner
-        for idx, func in enumerate(self._join):
+        for idx, func in enumerate(self.conditions):
             if not obj:
                 if self.many:
-                    return self.host.BizList([], self, owner)
+                    return self.biz_type.BizList([], self, owner)
                 else:
                     return None
 
@@ -140,7 +131,7 @@ class Relationship(object):
             target_type = self._resolve_target(predicate)
 
             # get the field name set to use in this query
-            if func is not self._join[-1]:
+            if func is not self.conditions[-1]:
                 field_names = self._query_fields[idx]
                 spec = QuerySpecification(fields=field_names)
             else:
@@ -161,7 +152,7 @@ class Relationship(object):
 
         if obj is not owner:
             obj.relationship = self
-            obj.owner = owner
+            obj.bizobj = owner
 
         # set relationship's default order by on spec
         if obj and self.ordering and (not spec.order_by):
@@ -172,12 +163,12 @@ class Relationship(object):
 
         # return one or more depending on self.many
         if self.many:
-            return obj if obj else self.host.BizList([], self, owner)
+            return obj if obj else self.biz_type.BizList([], self, owner)
         else:
             return obj[0] if obj else None
 
-    def bind(self, host: Type['BizObject'], name: Text):
-        self._host = host
+    def bind(self, biz_type: Type['BizObject'], name: Text):
+        self.biz_type = biz_type
         self._name = name
 
     @property
@@ -186,17 +177,12 @@ class Relationship(object):
 
     @property
     def join(self) -> Tuple:
-        return self._join
-
-    @property
-    def host(self) -> Type['BizObject']:
-        # rename to source_type
-        return self._host
+        return self.conditions
 
     @memoized_property
     def target(self) -> Type['BizObject']:
         # TODO: rename to target_type
-        predicate = self._join[-1](MockBizObject())
+        predicate = self.conditions[-1](MockBizObject())
         return self._resolve_target(predicate)
 
     @staticmethod
@@ -207,7 +193,7 @@ class Relationship(object):
             # we assume is the type of BizObject being queried in this
             # iteration.
             raise ValueError(
-                'ambiguous target BizObject in self.join'
+                'ambiguous target BizObject in self.conditions'
             )
         if not predicate.targets:
             raise ValueError(

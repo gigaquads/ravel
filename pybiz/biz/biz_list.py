@@ -35,11 +35,11 @@ class BizList(object):
         self,
         data: List['BizObject'],
         relationship: 'Relationship' = None,
-        owner: 'BizObject' = None,
+        bizobj: 'BizObject' = None,
     ):
         self.relationship = relationship
         self.data = data or []
-        self.owner = owner
+        self.bizobj = bizobj
 
     def __getitem__(self, idx: int) -> 'BizObject':
         return self.data[idx]
@@ -81,7 +81,7 @@ class BizList(object):
 
     def copy(self):
         cls = self.__class__
-        return cls(self.data, self.relationship, self.owner)
+        return cls(self.data, self.relationship, self.bizobj)
 
     def save(self, *args, **kwargs):
         return self.biz_type.save_many(self.data, *args, **kwargs)
@@ -98,20 +98,21 @@ class BizList(object):
 
     def append(self, bizobj):
         self.data.append(bizobj)
-        self._perform_on_insert([bizobj])
+        self._perform_on_add([bizobj])
         return self
 
     def extend(self, bizobjs):
         self.data.extend(bizobjs)
-        self._perform_on_insert(bizobjs)
+        self._perform_on_add(bizobjs)
         return self
 
     def insert(self, index, bizobj):
         self.data.insert(index, bizobj)
-        self._perform_on_insert([bizobj])
+        self._perform_on_add([bizobj])
         return self
 
-    def _perform_on_insert(self, bizobjs):
-        if self.relationship and self.relationship.on_insert:
+    def _perform_on_add(self, bizobjs):
+        if self.relationship and self.relationship.on_add:
             for bizobj in bizobjs:
-                self.relationship.on_insert(self.owner, bizobj)
+                for cb_func in self.relationship.on_add:
+                    cb_func(self.bizobj, bizobj)
