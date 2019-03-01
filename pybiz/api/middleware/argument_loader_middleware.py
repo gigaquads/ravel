@@ -82,7 +82,7 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
                 val = kwargs[k]
                 kwargs[k] = load(proxy, val, args, kwargs)
 
-            return (tuple(new_args), kwargs)
+        return (tuple(new_args), kwargs)
 
     def _get_loader_func_for_param(self, param):
         key = self._parse_type_annotation(param.annotation)
@@ -92,9 +92,9 @@ class ArgumentLoaderMiddleware(RegistryMiddleware):
         key = None
 
         if isinstance(obj, str):
-            key = (LOAD_ONE, obj)
+            key = (LOAD_ONE, obj.split('.')[-1])
         elif isinstance(obj, type):
-            key = (LOAD_ONE, obj.__name__)
+            key = (LOAD_ONE, obj.__name__.split('.')[-1])
         elif isinstance(obj, ForwardRef):
             key = (LOAD_ONE, obj.__forward_arg__)
         elif (
