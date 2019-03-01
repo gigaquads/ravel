@@ -105,7 +105,16 @@ class Registry(object):
         # create, load, and process the manifest
         # bootstrap the biz and data access layers, and
         # bind each BizObject class with its Dao object.
-        self._manifest = (manifest or Manifest()).load()
+        if manifest is None:
+            self.manifest = Manifest()
+        elif isinstance(manifest, str):
+            self._manifest = Manifest(path=manifest)
+        elif isinstance(manifest, dict):
+            self._manifest = Manifest(data=manifest)
+        else:
+            self._manifest = manifest
+
+        self._manifest.load()
         self._manifest.process(namespace=self._namespace)
         self._manifest.bootstrap(registry=self)
         self._manifest.bind()
