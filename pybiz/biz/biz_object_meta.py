@@ -25,6 +25,8 @@ class BizObjectMeta(ABCMeta):
     def __new__(cls, name, bases, dict_):
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
         cls.add_is_bizobj_annotation(new_class)
+        if '__abstract__' not in dict_:
+            cls.__abstract__ = False
         return new_class
 
     def __init__(cls, name, bases, dict_):

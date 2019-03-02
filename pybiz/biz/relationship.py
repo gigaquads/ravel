@@ -41,6 +41,7 @@ class Relationship(object):
         ordering=None,
         private=False,
         lazy=True,
+        readonly=False,
     ):
         def normalize_to_tuple(obj):
             if obj is not None:
@@ -52,6 +53,7 @@ class Relationship(object):
         self.many = many
         self.private = private
         self.lazy = lazy
+        self.readonly = readonly
 
         self.conditions = normalize_to_tuple(conditions)
         self.on_set = normalize_to_tuple(on_set)

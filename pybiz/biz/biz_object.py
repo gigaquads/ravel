@@ -22,6 +22,7 @@ class BizObject(metaclass=BizObjectMeta):
     binder = DaoBinder.get_instance()
     registry = None
     is_bootstrapped = False
+    is_abstract = False
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -35,6 +36,16 @@ class BizObject(metaclass=BizObjectMeta):
         Declare the DAO type/instance used by this BizObject class.
         """
         return PythonDao
+
+    @classmethod
+    def __abstract__(cls):
+        """
+        This determines the value of cls.is_abstract for each BizObject class
+        on which it is declared but is *not* inherited by subclasses thereof.
+        This is to ensure that all subclasses are not abstract as a result of
+        its parent being abstract.
+        """
+        return False
 
     @classmethod
     def get_dao(cls) -> 'Dao':

@@ -9,6 +9,7 @@ from pybiz.predicate import (
     OP_CODE,
 )
 from pybiz.biz.relationship import MockBizObject
+from pybiz.exc import RelationshipError
 
 from .query import QuerySpecification
 from ..relationship import Relationship
@@ -68,6 +69,9 @@ class RelationshipProperty(property):
             """
             rel = self.relationships[key]
 
+            if rel.readonly:
+                raise RelationshipError(f'{rel} is read-only')
+
             if value is None and rel.many:
                 value = rel.target.BizList([], rel, self)
             elif is_sequence(value):
@@ -105,6 +109,9 @@ class RelationshipProperty(property):
             Remove the related BizObject or list. The field will appeear in
             dump() results. You must assign None if you want to None to appear.
             """
+            if rel.readonly:
+                raise RelationshipError(f'{rel} is read-only')
+
             value = self._related[key]
             del self._related[key]
             for cb_func in rel.on_del:

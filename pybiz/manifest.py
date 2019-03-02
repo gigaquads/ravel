@@ -127,7 +127,7 @@ class Manifest(object):
 
     def bootstrap(self, registry: 'Registry' = None):
         for biz_type in self.types.biz.values():
-            if not biz_type.is_bootstrapped:
+            if not (biz_type.is_abstract or biz_type.is_bootstrapped):
                 biz_type.bootstrap(registry=registry)
         for type_name, dao_type in self.types.dao.items():
             strap = self.bootstraps.get(type_name)
