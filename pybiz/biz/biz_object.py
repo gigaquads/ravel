@@ -38,16 +38,6 @@ class BizObject(metaclass=BizObjectMeta):
         return PythonDao
 
     @classmethod
-    def __abstract__(cls):
-        """
-        This determines the value of cls.is_abstract for each BizObject class
-        on which it is declared but is *not* inherited by subclasses thereof.
-        This is to ensure that all subclasses are not abstract as a result of
-        its parent being abstract.
-        """
-        return False
-
-    @classmethod
     def get_dao(cls) -> 'Dao':
         """
         Get the global Dao reference associated with this class.
@@ -476,3 +466,6 @@ class BizObject(metaclass=BizObjectMeta):
 
         result = dump(target=self, fields=fields, raw=raw)
         return result
+
+class AbstractBizObject(BizObject):
+    is_abstract = True

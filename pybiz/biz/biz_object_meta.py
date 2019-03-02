@@ -13,7 +13,7 @@ from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from pybiz.schema import Schema, fields, String, Field, Int
-from pybiz.util import import_object
+from pybiz.util import import_object, is_bizobj
 
 from .biz_list import BizList
 from .relationship import Relationship
@@ -23,10 +23,31 @@ from .internal.field_property import FieldProperty
 
 class BizObjectMeta(ABCMeta):
     def __new__(cls, name, bases, dict_):
+        # prepare the relationships dict
+        relationships = {}
+        for k, v in list(dict_.items()):
+            if isinstance(v, Relationship):
+                relationships[k] = v
+                del dict_[k]
+        for base in bases:
+            if is_bizobj(base):
+                inherited_relationships = getattr(base, 'relationships', {})
+            else:
+                inherited_relationships = {
+                    k: v for k, v in inspect.getmembers(
+                        base, predicate=lambda v: isinstance(v, Relationship)
+                    )
+                }
+            for k, v in inherited_relationships.items():
+                relationships[k] = copy.deepcopy(v)
+
+        # inject relationships dict into class namespace
+        dict_['relationships'] = relationships
+        dict_['is_abstract'] = dict_.get('is_abstract', False)
+        dict_[IS_BIZOBJ_ANNOTATION] = True
+
+        # now make the new class with the modified dict_
         new_class = ABCMeta.__new__(cls, name, bases, dict_)
-        cls.add_is_bizobj_annotation(new_class)
-        if '__abstract__' not in dict_:
-            cls.__abstract__ = False
         return new_class
 
     def __init__(cls, name, bases, dict_):
@@ -35,7 +56,7 @@ class BizObjectMeta(ABCMeta):
         schema_type = cls.build_schema_type(name)
 
         cls.schema = schema_type()
-        cls.relationships = cls.build_relationships()
+        cls.bind_relationships()
         cls.build_relationship_properties(cls.relationships)
         cls.build_field_properties(cls.schema, cls.relationships)
 
@@ -110,41 +131,9 @@ class BizObjectMeta(ABCMeta):
         # and construct the Schema class object:
         return Schema.factory('{}Schema'.format(name), fields)
 
-    def add_is_bizobj_annotation(new_class):
-        """
-        Set this attribute in order to be able to use duck typing to check
-        isinstance of BizObjects.
-        """
-        setattr(new_class, IS_BIZOBJ_ANNOTATION, True)
-
-    def build_relationships(cls):
-        # aggregate all relationships delcared on the bizobj
-        # class into a single "relationships" dict.
-        direct_relationships = {}
-        inherited_relationships = {}
-
-        is_not_method = lambda x: not inspect.ismethod(x)
-        for k, rel in inspect.getmembers(cls, predicate=is_not_method):
-            is_relationship = isinstance(rel, Relationship)
-            if not is_relationship:
-                is_super_relationship = k in cls.relationships
-                if is_super_relationship:
-                    super_rel = cls.relationships[k]
-                    rel = copy.deepcopy(super_rel)
-                    rel.bind(cls, k)
-                    inherited_relationships[k] = rel
-            else:
-                direct_relationships[k] = rel
-                rel.bind(cls, k)
-
-        # clear the Relationships delcared on this subclass
-        # from the class name space, to be replaced dynamically
-        # with properties later on.
-        for k in direct_relationships:
-            delattr(cls, k)
-
-        inherited_relationships.update(direct_relationships)
-        return inherited_relationships
+    def bind_relationships(cls):
+        for k, rel in cls.relationships.items():
+            rel.bind(cls, k)
 
     def build_field_properties(cls, schema, relationships):
         """

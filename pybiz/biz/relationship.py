@@ -77,7 +77,7 @@ class Relationship(object):
             self.__class__.__name__,
             ', '.join([
                 (self.biz_type.__name__ + '.' if self.biz_type else '')
-                    + self._name or '',
+                    + str(self._name) or '',
                 'many={}'.format(self.many),
                 'private={}'.format(self.private),
                 'lazy={}'.format(self.lazy),
@@ -170,7 +170,7 @@ class Relationship(object):
             return obj[0] if obj else None
 
     def bind(self, biz_type: Type['BizObject'], name: Text):
-        self.biz_type = biz_type
+        self._biz_type = biz_type
         self._name = name
 
     @property
@@ -180,6 +180,10 @@ class Relationship(object):
     @property
     def join(self) -> Tuple:
         return self.conditions
+
+    @property
+    def biz_type(self) -> Type['BizObject']:
+        return self._biz_type
 
     @memoized_property
     def target(self) -> Type['BizObject']:
