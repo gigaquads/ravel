@@ -47,12 +47,12 @@ class RelationshipProperty(property):
                     # fetch all fields
                     related_obj = rel.query(self)
                     setattr(self, key, related_obj)
-                    if rel.on_add is not None:
+                    for cb_func in rel.on_add:
                         if rel.many:
                             for bizobj in related_obj:
-                                rel.on_add(self, bizobj)
+                                cb_func(self, bizobj)
                         else:
-                            rel.on_add(self, related_obj)
+                            cb_func(self, related_obj)
 
             default = self.BizList([], rel, self) if rel.many else None
             value = self._related.get(key, default)
@@ -98,9 +98,6 @@ class RelationshipProperty(property):
                 )
             self._related[key] = value
 
-            if (not rel.many) and rel.conditions:
-                RelationshipProperty.set_foreign_keys(self, value, rel)
-
             for cb_func in rel.on_set:
                 cb_func(self, value)
 
@@ -118,20 +115,3 @@ class RelationshipProperty(property):
                 cb_func(self, value)
 
         return cls(relationship, fget=fget, fset=fset, fdel=fdel)
-
-    @staticmethod
-    def set_foreign_keys(bizobj, related_bizobj, rel):
-        """
-        When setting a relationship, we might be able to set any fields declared
-        on the host bizobj based on the contents of the Relationship's query
-        predicates. For example, a node might have a parent_id field, which we
-        would want to set when doing somehing like child.parent = parent (we
-        would want child.parent_id = parent._id to be performed automatically).
-        """
-        pred = rel.conditions[0](MockBizObject())
-        if isinstance(pred, ConditionalPredicate):
-            if pred.op == OP_CODE.EQ:
-                attr_name = pred.value
-                related_attr_name = pred.field.name
-                related_value = getattr(related_bizobj, related_attr_name, None)
-                setattr(bizobj, attr_name, related_value)

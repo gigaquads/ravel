@@ -7,7 +7,7 @@ from .registry_object import RegistryObject
 
 class RegistryProxy(RegistryObject):
     def __init__(self, func, decorator: 'RegistryDecorator'):
-        super(). __init__()
+        super().__init__()
         self.func = func
         self.decorator = decorator
         self.target = self.resolve(func)
@@ -29,7 +29,7 @@ class RegistryProxy(RegistryObject):
     def pre_process(self, raw_args, raw_kwargs):
         self._apply_middleware_pre_request(raw_args, raw_kwargs)
         args, kwargs = self._apply_registry_on_request(raw_args, raw_kwargs)
-        self._apply_middleware_on_request(args, kwargs)
+        args, kwargs = self._apply_middleware_on_request(args, kwargs)
         return (args, kwargs)
 
     def post_process(self, args, kwargs, raw_result):
@@ -49,9 +49,15 @@ class RegistryProxy(RegistryObject):
     def _apply_middleware_on_request(self, prepared_args, prepared_kwargs):
         for m in self.registry.middleware:
             if isinstance(self.registry, m.registry_types):
-                m.on_request(self, prepared_args, prepared_kwargs)
+                result = m.on_request(self, prepared_args, prepared_kwargs)
+                if result:
+                    # on request can mutate arguments
+                    prepared_args, prepared_kwargs = result
+        return prepared_args, prepared_kwargs
 
-    def _apply_middleware_post_request(self, prepared_args, prepared_kwargs, result):
+    def _apply_middleware_post_request(
+        self, prepared_args, prepared_kwargs, result
+    ):
         for m in self.registry.middleware:
             if isinstance(self.registry, m.registry_types):
                 m.post_request(self, prepared_args, prepared_kwargs, result)
@@ -60,7 +66,9 @@ class RegistryProxy(RegistryObject):
         result = self.registry.on_request(self, *raw_args, **raw_kwargs)
         return result if result else (raw_args, raw_kwargs)
 
-    def _apply_registry_on_response(self, prepared_args, prepared_kwargs, result):
+    def _apply_registry_on_response(
+        self, prepared_args, prepared_kwargs, result
+    ):
         return self.decorator.registry.on_response(
             self, result, *prepared_args, **prepared_kwargs
         )
@@ -101,7 +109,7 @@ class RegistryProxy(RegistryObject):
             if param.kind in recognized_param_kinds:
                 type_name = None
                 if param.annotation != Parameter.empty:
-                    if isinstance(param.annotation. str):
+                    if isinstance(param.annotation.str):
                         type_name = param.annotation
                     elif isinstance(param.annotation, type):
                         type_name = param.annotation.__name__
