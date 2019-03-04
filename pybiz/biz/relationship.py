@@ -122,11 +122,7 @@ class Relationship(object):
     def on_bootstrap(self):
         pass
 
-    def bootstrap(
-        self,
-        biz_type: Type['BizObject'],
-        registry: 'Registry' = None,
-    ):
+    def bootstrap(self, registry: 'Registry' = None):
         self._registry = registry
 
         # this injects all BizObject class names into the condition functions'

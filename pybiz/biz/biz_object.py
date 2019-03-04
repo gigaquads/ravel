@@ -88,7 +88,7 @@ class BizObject(metaclass=BizObjectMeta):
     def bootstrap(cls, registry: 'Registry' = None, **kwargs):
         cls.registry = registry
         for rel in cls.relationships.values():
-            rel.bootstrap(cls, registry)
+            rel.bootstrap(registry)
         cls.on_bootstrap()
         cls.is_bootstrapped = True
 

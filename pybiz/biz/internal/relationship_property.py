@@ -42,6 +42,9 @@ class RelationshipProperty(property):
             """
             Return the related BizObject instance or list.
             """
+            if not rel.is_bootstrapped:
+                rel.bootstrap(registry=self.registry)
+
             if key not in self._related:
                 if rel.lazy:
                     # fetch all fields
@@ -71,6 +74,9 @@ class RelationshipProperty(property):
 
             if rel.readonly:
                 raise RelationshipError(f'{rel} is read-only')
+
+            if not rel.is_bootstrapped:
+                rel.bootstrap(registry=self.registry)
 
             if value is None and rel.many:
                 value = rel.target.BizList([], rel, self)
