@@ -21,7 +21,7 @@ class BizList(object):
                 fget=lambda self: [bizobj[attr_name] for bizobj in self.data]
             )
 
-        for field_name in biz_type.schema.fields:
+        for field_name in biz_type.Schema.fields:
             prop = build_property(field_name)
             setattr(derived_type, field_name, prop)
 

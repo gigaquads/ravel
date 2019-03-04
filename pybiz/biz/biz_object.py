@@ -1,5 +1,7 @@
 import uuid
 
+import venusian
+
 from copy import deepcopy, copy
 from typing import List, Dict, Text, Type, Tuple, Set
 from collections import defaultdict
@@ -9,20 +11,44 @@ from pybiz.dao.python_dao import PythonDao
 from pybiz.util import is_bizobj, is_sequence, repr_biz_id
 from pybiz.dirty import DirtyDict
 
-from .biz_object_meta import BizObjectMeta
+from .internal.biz_object_type_builder import BizObjectTypeBuilder
 from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
 from .internal.query import Query, QueryUtils
 
 
+class BizObjectMeta(type):
+    def __new__(cls, name, bases, ns):
+        builder = BizObjectTypeBuilder.get_instance()
+        prepared_ns = builder.prepare_class_attributes(name, bases, ns)
+        return type.__new__(cls, name, bases, prepared_ns)
+
+    def __init__(biz_type, name, bases, ns):
+        type.__init__(biz_type, name, bases, ns)
+        venusian.attach(
+            biz_type,
+            lambda scanner, name, biz_type: (
+                scanner.biz_types.setdefault(name, biz_type)
+            ),
+            category='biz'
+        )
+        builder = BizObjectTypeBuilder.get_instance()
+        builder.initialize_class_attributes(name, biz_type)
+
+
 class BizObject(metaclass=BizObjectMeta):
+
+    Schema = None
+    BizList = None
 
     schema = None
     relationships = {}
-    binder = DaoBinder.get_instance()
-    registry = None
+
     is_bootstrapped = False
     is_abstract = False
+
+    binder = DaoBinder.get_instance()  # TODO: Make into property
+    registry = None
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
