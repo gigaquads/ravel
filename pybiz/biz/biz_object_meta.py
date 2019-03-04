@@ -43,6 +43,7 @@ class BizObjectMeta(ABCMeta):
 
         # inject relationships dict into class namespace
         dict_['relationships'] = relationships
+        dict_['is_bootstrapped'] = False
         dict_['is_abstract'] = dict_.get('is_abstract', False)
         dict_[IS_BIZOBJ_ANNOTATION] = True
 
@@ -133,7 +134,7 @@ class BizObjectMeta(ABCMeta):
 
     def bind_relationships(cls):
         for k, rel in cls.relationships.items():
-            rel.bind(cls, k)
+            rel.associate(cls, k)
 
     def build_field_properties(cls, schema, relationships):
         """
