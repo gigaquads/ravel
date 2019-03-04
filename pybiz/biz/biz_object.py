@@ -22,6 +22,7 @@ class BizObject(metaclass=BizObjectMeta):
     binder = DaoBinder.get_instance()
     registry = None
     is_bootstrapped = False
+    is_abstract = False
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -85,8 +86,10 @@ class BizObject(metaclass=BizObjectMeta):
 
     @classmethod
     def bootstrap(cls, registry: 'Registry' = None, **kwargs):
-        cls.on_bootstrap()
         cls.registry = registry
+        for rel in cls.relationships.values():
+            rel.bootstrap(registry)
+        cls.on_bootstrap()
         cls.is_bootstrapped = True
 
     @classmethod
@@ -247,6 +250,7 @@ class BizObject(metaclass=BizObjectMeta):
     def create(self) -> 'BizObject':
         prepared_record = self._data.copy()
         prepared_record.pop('_rev', None)
+        self.insert_defaults(prepared_record)
         created_record = self.get_dao().create(prepared_record)
         self._data.update(created_record)
         return self.clean()
@@ -465,3 +469,6 @@ class BizObject(metaclass=BizObjectMeta):
 
         result = dump(target=self, fields=fields, raw=raw)
         return result
+
+class AbstractBizObject(BizObject):
+    is_abstract = True

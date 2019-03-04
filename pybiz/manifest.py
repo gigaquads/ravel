@@ -126,13 +126,13 @@ class Manifest(object):
         return self
 
     def bootstrap(self, registry: 'Registry' = None):
-        for biz_type in self.types.biz.values():
-            if not biz_type.is_bootstrapped:
-                biz_type.bootstrap(registry=registry)
         for type_name, dao_type in self.types.dao.items():
             strap = self.bootstraps.get(type_name)
             if strap is not None:
                 dao_type.bootstrap(registry=registry, **strap.params)
+        for biz_type in self.types.biz.values():
+            if not (biz_type.is_abstract or biz_type.is_bootstrapped):
+                biz_type.bootstrap(registry=registry)
 
     def bind(self):
         self.binder.bind()

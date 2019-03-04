@@ -9,6 +9,7 @@ from pybiz.predicate import (
     OP_CODE,
 )
 from pybiz.biz.relationship import MockBizObject
+from pybiz.exc import RelationshipError
 
 from .query import QuerySpecification
 from ..relationship import Relationship
@@ -41,6 +42,9 @@ class RelationshipProperty(property):
             """
             Return the related BizObject instance or list.
             """
+            if not rel.is_bootstrapped:
+                rel.bootstrap(registry=self.registry)
+
             if key not in self._related:
                 if rel.lazy:
                     # fetch all fields
@@ -67,6 +71,12 @@ class RelationshipProperty(property):
             assigned to a Relationship with many == False and vice versa.
             """
             rel = self.relationships[key]
+
+            if rel.readonly:
+                raise RelationshipError(f'{rel} is read-only')
+
+            if not rel.is_bootstrapped:
+                rel.bootstrap(registry=self.registry)
 
             if value is None and rel.many:
                 value = rel.target.BizList([], rel, self)
@@ -102,6 +112,9 @@ class RelationshipProperty(property):
             Remove the related BizObject or list. The field will appeear in
             dump() results. You must assign None if you want to None to appear.
             """
+            if rel.readonly:
+                raise RelationshipError(f'{rel} is read-only')
+
             value = self._related[key]
             del self._related[key]
             for cb_func in rel.on_del:

@@ -106,8 +106,9 @@ class DaoBinder(object):
         elif not is_sequence(biz_types):
             biz_types = [biz_types]
         for biz_type in biz_types:
-            biz_type.binder = self  # this is used in BizObject.get_dao()
-            self.get_dao_instance(biz_type)
+            if not biz_type.is_abstract:
+                biz_type.binder = self  # this is used in BizObject.get_dao()
+                self.get_dao_instance(biz_type)
 
     def get_dao_instance(self, biz_type: Type['BizObject'], bind=False) -> Dao:
         if isinstance(biz_type, str):
