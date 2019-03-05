@@ -97,26 +97,24 @@ class BizList(object):
         return [bizobj.dump(*args, **kwargs) for bizobj in self.data]
 
     def append(self, bizobj):
-        self.data.append(bizobj)
         self._perform_on_add([bizobj])
+        self.data.append(bizobj)
         return self
 
     def extend(self, bizobjs):
-        self.data.extend(bizobjs)
         self._perform_on_add(bizobjs)
+        self.data.extend(bizobjs)
         return self
 
     def insert(self, index, bizobj):
-        self.data.insert(index, bizobj)
         self._perform_on_add([bizobj])
+        self.data.insert(index, bizobj)
         return self
 
     def _perform_on_add(self, bizobjs):
-        if not self.relationship.on_add:
-            raise RelationshipError(
-                f'{self.relationship} must define an on_add callback'
-            )
         if self.relationship and self.relationship.on_add:
+            if self.relationship.readonly:
+                raise RelationshipError(f'{self.relationship} is read-only')
             for bizobj in bizobjs:
                 for cb_func in self.relationship.on_add:
                     cb_func(self.bizobj, bizobj)

@@ -69,10 +69,8 @@ class RelationshipProperty(property):
             """
             rel = self.relationships[key]
 
-            if not rel.on_set:
-                raise RelationshipError(
-                    f'{rel} must define an on_set callback'
-                )
+            if rel.readonly:
+                raise RelationshipError(f'{rel} is read-only')
 
             if value is None and rel.many:
                 value = rel.target.BizList([], rel, self)

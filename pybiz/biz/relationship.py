@@ -1,4 +1,5 @@
-from typing import Text, Type, Tuple, Dict
+from copy import copy
+from typing import Text, Type, Tuple, Dict, Set
 
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
@@ -156,32 +157,54 @@ class Relationship(object):
 
         self._is_bootstrapped = True
 
-    def query(self, caller: 'BizObject'):
+    def query(
+        self,
+        caller: 'BizObject',
+        fields: Set[Text] = None,
+        limit: int = None,
+        offset: int = None,
+        ordering: Tuple = None,
+        kwargs: Dict = None,
+    ):
         """
         Execute a chain of queries to fetch the target Relationship data.
         """
-        # execute the sequence of queries
+        # perform first n-1 queries
         target = caller
-
-        for idx, func in enumerate(self.conditions):
-            predicate = func(target)
+        for idx, build_predicate in enumerate(self.conditions[:-1]):
+            predicate = build_predicate(target)
             target_type = self._target_type_sequence[idx]
             spec = self._query_spec_sequence[idx]
             target = target_type.query(predicate=predicate, specification=spec)
             if not target:
                 if self.many:
-                    return self.biz_type.BizList([], self, owner)
+                    return self.biz_type.BizList([], self, caller)
                 else:
                     return None
 
-        target.relationship = self
-        target.bizobj = caller
+        # do final query outside for-loop so we can customize it
+        predicate = self.conditions[-1](target, **(kwargs or {}))
+        target_type = self._target_type_sequence[-1]
+        spec = copy(self._query_spec_sequence[-1])
+
+        if fields:
+            spec.fields = fields
+        if limit is not None:
+            spec.limit = max(1, limit) if limit is not None else None
+        if offset is not None:
+            spec.offset = max(0, offset) if offset is not None else None
+        if ordering:
+            spec.order_by = normalize_to_tuple(ordering)
+
+        result = target_type.query(predicate=predicate, specification=spec)
+        result.relationship = self
+        result.bizobj = caller   # TODO: rename bizobj back to owner
 
         # return one or more depending on self.many
         if self.many:
-            return target if target else self.biz_type.BizList([], self, owner)
+            return result if result else self.biz_type.BizList([], self, caller)
         else:
-            return target[0] if target else None
+            return result[0] if result else None
 
     def associate(self, biz_type: Type['BizObject'], name: Text):
         """
