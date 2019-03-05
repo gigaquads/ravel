@@ -34,7 +34,7 @@ class RegistryRouter(CliProgram):
         # Perform routing
         Route to the registry provided in the CLI's first argument
         """
-        registry_name = self._cli_args.registry
+        registry_name = self.cli_args.registry
         del sys.argv[1]
         if not hasattr(self, registry_name):
             raise Exception('Unknown registry "{}"'.format(registry_name))
