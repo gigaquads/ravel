@@ -18,13 +18,17 @@ from .internal.query import Query, QueryUtils
 
 
 class BizObjectMeta(type):
+    builder = BizObjectTypeBuilder.get_instance()
+
     def __new__(cls, name, bases, ns):
-        builder = BizObjectTypeBuilder.get_instance()
-        prepared_ns = builder.prepare_class_attributes(name, bases, ns)
-        return type.__new__(cls, name, bases, prepared_ns)
+        return type.__new__(
+            cls, name, bases,
+            BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
+        )
 
     def __init__(biz_type, name, bases, ns):
         type.__init__(biz_type, name, bases, ns)
+        BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
         venusian.attach(
             biz_type,
             lambda scanner, name, biz_type: (
@@ -32,8 +36,6 @@ class BizObjectMeta(type):
             ),
             category='biz'
         )
-        builder = BizObjectTypeBuilder.get_instance()
-        builder.initialize_class_attributes(name, biz_type)
 
 
 class BizObject(metaclass=BizObjectMeta):
@@ -111,7 +113,7 @@ class BizObject(metaclass=BizObjectMeta):
         return f'<{name}({id_str}){dirty}>'
 
     @classmethod
-    def bootstrap(cls, registry: 'Registry' = None, **kwargs):
+    def bootstrap(cls, registry: 'Registry', **kwargs):
         cls.registry = registry
         for rel in cls.relationships.values():
             rel.bootstrap(registry)

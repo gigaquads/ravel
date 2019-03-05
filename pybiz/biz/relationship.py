@@ -122,15 +122,14 @@ class Relationship(object):
     def on_bootstrap(self):
         pass
 
-    def bootstrap(self, registry: 'Registry' = None):
+    def bootstrap(self, registry: 'Registry'):
         self._registry = registry
 
         # this injects all BizObject class names into the condition functions'
         # lexical scopes. This mechanism helps avoid cyclic import dependencies
         # for the sake of defining relationships in BizObjects.
-        if registry is not None:
-            for func in self.conditions:
-                func.__globals__.update(registry.manifest.types.biz)
+        for func in self.conditions:
+            func.__globals__.update(registry.manifest.types.biz)
 
         # resolve the BizObject classes to query in each condition and
         # prepare their QuerySpecifications.

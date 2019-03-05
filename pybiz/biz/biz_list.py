@@ -3,8 +3,8 @@ from uuid import UUID
 
 from pybiz.util import repr_biz_id
 from pybiz.constants import IS_BIZLIST_ANNOTATION
+from pybiz.exc import RelationshipError
 
-# TODO: implement dirty interface for bizlists
 
 class BizList(object):
 
@@ -112,6 +112,10 @@ class BizList(object):
         return self
 
     def _perform_on_add(self, bizobjs):
+        if not self.relationship.on_add:
+            raise RelationshipError(
+                f'{self.relationship} must define an on_add callback'
+            )
         if self.relationship and self.relationship.on_add:
             for bizobj in bizobjs:
                 for cb_func in self.relationship.on_add:
