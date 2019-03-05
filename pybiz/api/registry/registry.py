@@ -106,7 +106,7 @@ class Registry(object):
         # bootstrap the biz and data access layers, and
         # bind each BizObject class with its Dao object.
         if manifest is None:
-            self.manifest = Manifest()
+            self._manifest = Manifest()
         elif isinstance(manifest, str):
             self._manifest = Manifest(path=manifest)
         elif isinstance(manifest, dict):
