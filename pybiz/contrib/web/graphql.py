@@ -14,10 +14,17 @@ class GraphQLEngine(object):
         self._parser = GraphQLParser()
         self._document_type = document_type
 
-    def query(self, spec: QuerySpecification) -> BizObject:
+    def query(self, spec: QuerySpecification, dump=False) -> BizObject:
         spec = self.parse(spec) if isinstance(spec, str) else spec
         document = self._document_type()
-        return self.load(document, spec)
+        self.load(document, spec)
+        if dump:
+            dumped = document.dump()
+            del dumped['id']
+            del dumped['rev']
+            return dumped
+        else:
+            return document
 
     def parse(self, query: Text) -> QuerySpecification:
         def process_ast_node(ast_root, biz_type):
