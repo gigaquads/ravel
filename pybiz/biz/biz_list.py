@@ -1,4 +1,4 @@
-from typing import Type, List
+from typing import Type, List, Set, Tuple, Text
 from uuid import UUID
 
 from pybiz.util import repr_biz_id
@@ -91,6 +91,18 @@ class BizList(object):
             bizobj._id for bizobj in self.data
             if bizobj.data.get('_id')
         )
+        return self
+
+    def load(self, fields: Set[Text] = None):
+        if not fields:
+            fields = set(self.biz_type.schema.fields.keys())
+        elif isinstance(fields, str):
+            fields = {fields}
+        _ids = [obj._id for obj in self if obj._id is not None]
+        results = self.biz_type.get_many(_ids, fields)
+        for stale, fresh in zip(self, results):
+            if stale._id is not None:
+                stale.merge(fresh)
         return self
 
     def dump(self, *args, **kwargs):

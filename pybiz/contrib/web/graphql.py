@@ -4,39 +4,20 @@ from typing import Dict, Set, Text, List, Type
 
 from graphql.parser import GraphQLParser
 
-from pybiz.util import is_bizobj, is_sequence
+from pybiz.util import is_bizobj, is_bizlist, is_sequence
 from pybiz.biz.internal.query import QuerySpecification
 from pybiz.biz import BizObject
 
 
-class GraphQLQueryEngine(object):
+class GraphQLEngine(object):
     def __init__(self, document_type: Type[BizObject]):
         self._parser = GraphQLParser()
         self._document_type = document_type
 
-    def execute(self, spec: QuerySpecification) -> BizObject:
-        def load(target: BizObject, spec):
-            for k, rel_spec in spec.relationships.items():
-                rel = target.relationships[k]
-                target.related[k] = rel.query(
-                    target,
-                    fields=rel_spec.fields,
-                    limit=rel_spec.limit,
-                    offset=rel_spec.offset,
-                    kwargs=rel_spec.kwargs,
-                )
-                load(target.related[k], rel_spec)
-
-            if target._id is not None:
-                target.load(spec.fields)
-
-            return target
-
-        if isinstance(spec, str):
-            spec = self.parse(spec)
-
+    def query(self, spec: QuerySpecification) -> BizObject:
+        spec = self.parse(spec) if isinstance(spec, str) else spec
         document = self._document_type()
-        return load(document, spec)
+        return self.load(document, spec)
 
     def parse(self, query: Text) -> QuerySpecification:
         def process_ast_node(ast_root, biz_type):
@@ -65,3 +46,23 @@ class GraphQLQueryEngine(object):
 
         ast_root = self._parser.parse(query).definitions[0]
         return process_ast_node(ast_root, self._document_type)
+
+    def load(self, target: BizObject, spec):
+        for k, rel_spec in spec.relationships.items():
+            rel = target.relationships[k]
+            target.related[k] = rel.query(
+                target,
+                fields=rel_spec.fields,
+                limit=rel_spec.limit,
+                offset=rel_spec.offset,
+                kwargs=rel_spec.kwargs,
+            )
+            self.load(target.related[k], rel_spec)
+
+        if is_bizobj(target):
+            if target._id is not None:
+                target.load(spec.fields)
+        elif is_bizlist(target):
+            target.load(spec.fields)
+
+        return target

@@ -498,5 +498,6 @@ class BizObject(metaclass=BizObjectMeta):
         result = dump(target=self, fields=fields, raw=raw)
         return result
 
+
 class AbstractBizObject(BizObject):
     is_abstract = True

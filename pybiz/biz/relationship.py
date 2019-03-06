@@ -1,6 +1,10 @@
+import inspect
+
 from copy import copy
 from typing import Text, Type, Tuple, Dict, Set
+from inspect import Parameter
 
+from mock import MagicMock
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
@@ -13,7 +17,7 @@ from pybiz.predicate import (
 )
 
 from .internal.query import QuerySpecification
-# TODO: rename "host" to source_type
+
 
 class Relationship(object):
     """
@@ -70,8 +74,7 @@ class Relationship(object):
         self._biz_type = None
         self._name = None
 
-        self._query_spec_sequence = []
-        self._target_type_sequence = []
+        self._condition_metadata = []
         self._is_bootstrapped = False
         self._registry = None
 
@@ -106,11 +109,11 @@ class Relationship(object):
 
     @property
     def target(self) -> Type['BizObject']:
-        return self._target_type_sequence[-1]
+        return self._condition_metadata[-1]['target_type']
 
     @property
     def spec(self) -> 'QuerySpecification':
-        return self._query_spec_sequence[-1]
+        return self._meta[-1]['spec']
 
     @property
     def is_bootstrapped(self):
@@ -135,13 +138,27 @@ class Relationship(object):
         # resolve the BizObject classes to query in each condition and
         # prepare their QuerySpecifications.
         for idx, func in enumerate(self.conditions):
+            sig = inspect.signature(func)
             mock = MockBizObject()
-            predicate = func(mock)
+            mock_kwargs = {
+                k: MagicMock() for i, k in enumerate(sig.parameters) if i > 0
+            }
+            predicate = func(mock, **mock_kwargs)
             target_type = resolve_target(predicate)
-            self._target_type_sequence.append(target_type)
-            if idx > 0:
-                spec = QuerySpecification(fields=mock.keys())
-                self._query_spec_sequence.append(spec)
+            spec = QuerySpecification(fields=mock.keys()) if idx > 0 else None
+            self._condition_metadata.append({
+                'signature': sig,
+                'has_var_kwargs': any([
+                    p for p in sig.parameters.values()
+                    if p.kind == Parameter.VAR_KEYWORD
+                ]),
+                'arg_names': {
+                    p.name for idx, p in enumerate(sig.parameters.values())
+                    if (p.kind == Parameter.POSITIONAL_OR_KEYWORD) and (idx > 0)
+                },
+                'target_type': target_type,
+                'spec': spec,
+            })
 
         # build the spec used for the final target_type.query call
         final_spec = QuerySpecification.prepare(self._fields, self.target)
@@ -150,11 +167,9 @@ class Relationship(object):
         final_spec.order_by = self._order_by
         for item in final_spec.order_by:
             final_spec.fields.add(item().key)
-
-        self._query_spec_sequence.append(final_spec)
+        self._condition_metadata[0]['spec'] = final_spec
 
         self.on_bootstrap()
-
         self._is_bootstrapped = True
 
     def query(
@@ -171,10 +186,9 @@ class Relationship(object):
         """
         # perform first n-1 queries
         target = caller
-        for idx, build_predicate in enumerate(self.conditions[:-1]):
-            predicate = build_predicate(target)
-            target_type = self._target_type_sequence[idx]
-            spec = self._query_spec_sequence[idx]
+        all_kwargs = kwargs or {}
+        for idx, func in enumerate(self.conditions[:-1]):
+            predicate = self._build_predicate(idx, func, target, all_kwargs)
             target = target_type.query(predicate=predicate, specification=spec)
             if not target:
                 if self.many:
@@ -182,11 +196,15 @@ class Relationship(object):
                 else:
                     return None
 
-        # do final query outside for-loop so we can customize it
-        predicate = self.conditions[-1](target, **(kwargs or {}))
-        target_type = self._target_type_sequence[-1]
-        spec = copy(self._query_spec_sequence[-1])
+        # do final query outside for-loop so we can customize the spec below
+        idx = -1
+        cond = self.conditions[idx]
+        meta = self._condition_metadata[idx]
+        predicate = self._build_predicate(idx, cond, target, all_kwargs)
+        target_type = meta['target_type']
+        spec = copy(meta['spec'])
 
+        # customize the spec
         if fields:
             spec.fields = fields
         if limit is not None:
@@ -196,15 +214,33 @@ class Relationship(object):
         if ordering:
             spec.order_by = normalize_to_tuple(ordering)
 
+        # perform final query and associate the
+        # resulting bizlist with the caller
         result = target_type.query(predicate=predicate, specification=spec)
         result.relationship = self
         result.bizobj = caller   # TODO: rename bizobj back to owner
 
-        # return one or more depending on self.many
+        # return one or more, depending on the value of self.many
         if self.many:
-            return result if result else self.biz_type.BizList([], self, caller)
+            if result:
+                return result
+            else:
+                return self.biz_type.BizList([], self, caller)
         else:
             return result[0] if result else None
+
+    def _build_predicate(self, idx, func, target, all_kwargs):
+        meta = self._condition_metadata[idx]
+        target_type = meta['target_type']
+        spec = meta['spec']
+        kwargs = {}
+        if all_kwargs:
+            if meta['arg_names']:
+                kwargs = {k: all_kwargs.get(k) for k in meta['arg_names']}
+            elif meta['has_var_kwargs']:
+                kwargs = all_kwargs
+        predicate = func(target, **kwargs)
+        return predicate
 
     def associate(self, biz_type: Type['BizObject'], name: Text):
         """
