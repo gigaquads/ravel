@@ -48,12 +48,10 @@ class CliRegistry(Registry):
         return CliCommand
 
     def on_bootstrap(self, cli_args=None):
+        """
+        Collect subparsers and build cli program
+        """
         self._cli_args = cli_args
-
-    def on_start(self):
-        """
-        Build and run the CliProgram.
-        """
         subparsers = [
             c.subparser for c in self.proxies.values() if c.subparser
         ]
@@ -62,6 +60,11 @@ class CliRegistry(Registry):
             cli_args=self._cli_args,
             **self._cli_program_kwargs
         )
+
+    def on_start(self):
+        """
+        Run the CliProgram.
+        """
         SysUtils.safe_main(self._cli_program.run, debug_level=2)
 
     def on_request(self, proxy, *args, **kwargs):
