@@ -48,18 +48,23 @@ class CliRegistry(Registry):
         return CliCommand
 
     def on_bootstrap(self, cli_args=None):
+        """
+        Collect subparsers and build cli program
+        """
         self._cli_args = cli_args
-
-    def on_start(self):
-        """
-        Build and run the CliProgram.
-        """
         subparsers = [
             c.subparser for c in self.proxies.values() if c.subparser
         ]
         self._cli_program = CliProgram(
-            subparsers=subparsers, **self._cli_program_kwargs, cli_args=self._cli_args
+            subparsers=subparsers,
+            cli_args=self._cli_args,
+            **self._cli_program_kwargs
         )
+
+    def on_start(self):
+        """
+        Run the CliProgram.
+        """
         SysUtils.safe_main(self._cli_program.run, debug_level=2)
 
     def on_request(self, proxy, *args, **kwargs):
@@ -69,7 +74,7 @@ class CliRegistry(Registry):
         """
         args, kwargs = [], {}
         for k, param in proxy.signature.parameters.items():
-            value = getattr(self._cli_program._cli_args, k, None)
+            value = getattr(self._cli_program.cli_args, k, None)
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
                     args.append(value)

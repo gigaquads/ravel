@@ -82,6 +82,9 @@ class Manifest(object):
             # merge contents of file with data dict arg
             self.data = DictUtils.merge(file_data, self.data)
 
+        if not self.data:
+            self.data = {}
+
         # replace env $var names with values from env
         self._expand_environment_vars(self.env, self.data)
 
