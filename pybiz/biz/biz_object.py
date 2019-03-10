@@ -1,5 +1,7 @@
 import uuid
 
+import venusian
+
 from copy import deepcopy, copy
 from typing import List, Dict, Text, Type, Tuple, Set
 from collections import defaultdict
@@ -9,19 +11,46 @@ from pybiz.dao.python_dao import PythonDao
 from pybiz.util import is_bizobj, is_sequence, repr_biz_id
 from pybiz.dirty import DirtyDict
 
-from .biz_object_meta import BizObjectMeta
+from .internal.biz_object_type_builder import BizObjectTypeBuilder
 from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
 from .internal.query import Query, QueryUtils
 
 
+class BizObjectMeta(type):
+    builder = BizObjectTypeBuilder.get_instance()
+
+    def __new__(cls, name, bases, ns):
+        return type.__new__(
+            cls, name, bases,
+            BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
+        )
+
+    def __init__(biz_type, name, bases, ns):
+        type.__init__(biz_type, name, bases, ns)
+        BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
+        venusian.attach(
+            biz_type,
+            lambda scanner, name, biz_type: (
+                scanner.biz_types.setdefault(name, biz_type)
+            ),
+            category='biz'
+        )
+
+
 class BizObject(metaclass=BizObjectMeta):
+
+    Schema = None
+    BizList = None
 
     schema = None
     relationships = {}
-    binder = DaoBinder.get_instance()
-    registry = None
+
     is_bootstrapped = False
+    is_abstract = False
+
+    binder = DaoBinder.get_instance()  # TODO: Make into property
+    registry = None
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -84,9 +113,11 @@ class BizObject(metaclass=BizObjectMeta):
         return f'<{name}({id_str}){dirty}>'
 
     @classmethod
-    def bootstrap(cls, registry: 'Registry' = None, **kwargs):
-        cls.on_bootstrap()
+    def bootstrap(cls, registry: 'Registry', **kwargs):
         cls.registry = registry
+        for rel in cls.relationships.values():
+            rel.bootstrap(registry)
+        cls.on_bootstrap()
         cls.is_bootstrapped = True
 
     @classmethod
@@ -247,6 +278,7 @@ class BizObject(metaclass=BizObjectMeta):
     def create(self) -> 'BizObject':
         prepared_record = self._data.copy()
         prepared_record.pop('_rev', None)
+        self.insert_defaults(prepared_record)
         created_record = self.get_dao().create(prepared_record)
         self._data.update(created_record)
         return self.clean()
@@ -465,3 +497,7 @@ class BizObject(metaclass=BizObjectMeta):
 
         result = dump(target=self, fields=fields, raw=raw)
         return result
+
+
+class AbstractBizObject(BizObject):
+    is_abstract = True

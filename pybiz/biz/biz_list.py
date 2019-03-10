@@ -1,10 +1,10 @@
-from typing import Type, List
+from typing import Type, List, Set, Tuple, Text
 from uuid import UUID
 
 from pybiz.util import repr_biz_id
 from pybiz.constants import IS_BIZLIST_ANNOTATION
+from pybiz.exc import RelationshipError
 
-# TODO: implement dirty interface for bizlists
 
 class BizList(object):
 
@@ -21,7 +21,7 @@ class BizList(object):
                 fget=lambda self: [bizobj[attr_name] for bizobj in self.data]
             )
 
-        for field_name in biz_type.schema.fields:
+        for field_name in biz_type.Schema.fields:
             prop = build_property(field_name)
             setattr(derived_type, field_name, prop)
 
@@ -93,26 +93,40 @@ class BizList(object):
         )
         return self
 
+    def load(self, fields: Set[Text] = None):
+        if not fields:
+            fields = set(self.biz_type.schema.fields.keys())
+        elif isinstance(fields, str):
+            fields = {fields}
+        _ids = [obj._id for obj in self if obj._id is not None]
+        results = self.biz_type.get_many(_ids, fields)
+        for stale, fresh in zip(self, results):
+            if stale._id is not None:
+                stale.merge(fresh)
+        return self
+
     def dump(self, *args, **kwargs):
         return [bizobj.dump(*args, **kwargs) for bizobj in self.data]
 
     def append(self, bizobj):
-        self.data.append(bizobj)
         self._perform_on_add([bizobj])
+        self.data.append(bizobj)
         return self
 
     def extend(self, bizobjs):
-        self.data.extend(bizobjs)
         self._perform_on_add(bizobjs)
+        self.data.extend(bizobjs)
         return self
 
     def insert(self, index, bizobj):
-        self.data.insert(index, bizobj)
         self._perform_on_add([bizobj])
+        self.data.insert(index, bizobj)
         return self
 
     def _perform_on_add(self, bizobjs):
         if self.relationship and self.relationship.on_add:
+            if self.relationship.readonly:
+                raise RelationshipError(f'{self.relationship} is read-only')
             for bizobj in bizobjs:
                 for cb_func in self.relationship.on_add:
                     cb_func(self.bizobj, bizobj)

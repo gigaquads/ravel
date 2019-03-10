@@ -8,7 +8,7 @@ from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from ..biz_list import BizList
 
 
-class QuerySpecification(tuple):
+class QuerySpecification(object):
     """
     A `QuerySpecification` is a named tuple, containing a specification of which
     fields we are selecting from a target `BizObject`, along with the fields
@@ -25,42 +25,44 @@ class QuerySpecification(tuple):
         'order_by': 4,
     }
 
-    def __new__(
-        cls,
+    def __init__(
+        self,
         fields: Set[Text] = None,
         relationships: Dict[Text, 'QuerySpecification'] = None,
-        limit: int  =None,
+        limit: int = None,
         offset: int = None,
         order_by: Tuple = None,
+        kwargs: Dict = None,
     ):
         # set epxected default values for items in the tuple.
         # always work on a copy of the input `fields` set.
-        fields = set(fields or set())
+        self.fields = set(fields) if fields else set()
+        self.relationships = {} if relationships else {}
+        self.limit = min(1, limit) if limit is not None else None
+        self.offset = max(0, offset) if offset is not None else None
+        self.order_by = tuple(order_by) if order_by else tuple()
+        self.kwargs = kwargs or {}
 
-        if relationships is None:
-            relationships = {}
+        self._tuplized_attrs = (
+            self.fields,
+            self.relationships,
+            self.limit,
+            self.offset,
+            self.order_by,
+            self.kwargs,
+        )
 
-        if limit is not None:
-            limit = min(1, limit)
-
-        if offset is not None:
-            offset = max(0, offset)
-
-        order_by = tuple(order_by or tuple())
-
-        return tuple.__new__(cls, (
-            fields,
-            relationships,
-            limit,
-            offset,
-            order_by,
-        ))
-
-    def __getattr__(self, name):
+    def __getitem__(self, index):
         """
         Access tuple element by name.
         """
-        return self[self.name2index[name]]
+        return self._tuplized_attrs[index]
+
+    def __len__(self):
+        return len(self._tuplized_attrs)
+
+    def __iter__(self):
+        return iter(self._tuplized_attrs)
 
     @staticmethod
     def prepare(
@@ -160,7 +162,14 @@ class Query(object):
             return None
         for k, child_spec in spec.relationships.items():
             rel = bizobj.relationships[k]
-            v = rel.query(bizobj, child_spec)
+            v = rel.query(
+                bizobj,
+                fields=child_spec.fields,
+                limit=child_spec.limit,
+                offset=child_spec.offset,
+                ordering=child_spec.ordering,
+                kwargs=child_spec.kwargs,
+            )
             setattr(bizobj, k, v)
             if rel.many:
                 assert isinstance(v, BizList)
@@ -237,7 +246,7 @@ class QueryUtils(object):
         if bizobj is not None:
             for k, (related_fields, nested_children) in children.items():
                 rel = bizobj.relationships[k]
-                related = rel.query(bizobj, related_fields)
+                related = rel.query(bizobj, fields=related_fields)
                 setattr(bizobj, k, related)
                 if not related:
                     continue
