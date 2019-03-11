@@ -1,3 +1,4 @@
 from .base import RegistryMiddleware
 from .http_session_middleware import HttpSessionMiddleware
 from .argument_loader_middleware import ArgumentLoaderMiddleware
+from .auth_callback_middleware import AuthCallbackMiddleware

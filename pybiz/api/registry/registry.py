@@ -74,6 +74,10 @@ class Registry(object):
     def decorators(self) -> List[RegistryDecorator]:
         return self._decorators
 
+    @memoized_property
+    def api(self):
+        return DictObject(self.proxies)
+
     @property
     def types(self) -> DictObject:
         return self._manifest.types

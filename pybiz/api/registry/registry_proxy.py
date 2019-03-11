@@ -20,6 +20,9 @@ class RegistryProxy(RegistryObject):
             target_name=self.name,
         )
 
+    def __getattr__(self, attr):
+        return getattr(self.func, attr, None)
+
     def __call__(self, *raw_args, **raw_kwargs):
         args, kwargs = self.pre_process(raw_args, raw_kwargs)
         raw_result = self.target(*args, **kwargs)
@@ -72,9 +75,6 @@ class RegistryProxy(RegistryObject):
         return self.decorator.registry.on_response(
             self, result, *prepared_args, **prepared_kwargs
         )
-
-    def __getattr__(self, attr):
-        return getattr(self.func, attr)
 
     @property
     def registry(self) -> 'Registry':

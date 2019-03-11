@@ -125,7 +125,7 @@ class Manifest(object):
         self._register_dao_types()
         return self
 
-    def bootstrap(self, registry: 'Registry' = None):
+    def bootstrap(self, registry: 'Registry'):
         for type_name, dao_type in self.types.dao.items():
             strap = self.bootstraps.get(type_name)
             if strap is not None:
@@ -133,6 +133,12 @@ class Manifest(object):
         for biz_type in self.types.biz.values():
             if not (biz_type.is_abstract or biz_type.is_bootstrapped):
                 biz_type.bootstrap(registry=registry)
+
+        # inject all proxy target callables into each other's global namespace
+        # to avoid having to import them across modules.
+        targets = {p.name: p.target for p in registry.proxies.values()}
+        for proxy in registry.proxies.values():
+            proxy.target.__globals__.update(targets)
 
     def bind(self):
         self.binder.bind()
@@ -154,6 +160,13 @@ class Manifest(object):
         # register each binding declared in the manifest with the DaoBinder
         for info in self.bindings:
             biz_type = self.types.biz.get(info.biz)
+            if biz_type is None:
+                import ipdb; ipdb.set_trace()
+                
+                raise ManifestError(
+                    f'cannot register {info.biz} with DaoBinder because '
+                    f'the class was not found while processing the manifest'
+                )
             dao_type = self.types.dao[info.dao]
             if not self.binder.is_registered(biz_type):
                 binding = self.binder.register(
