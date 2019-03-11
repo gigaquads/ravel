@@ -1,5 +1,10 @@
-from typing import Text, Type, Tuple, Dict
+import inspect
 
+from copy import copy
+from typing import Text, Type, Tuple, Dict, Set
+from inspect import Parameter
+
+from mock import MagicMock
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
@@ -12,20 +17,22 @@ from pybiz.predicate import (
 )
 
 from .internal.query import QuerySpecification
-# TODO: rename "host" to source_type
+
 
 class Relationship(object):
     """
-    Instances of `Relationship` are declared as `BizObject` class attributes and
-    are used to endow said classes with the ability to load and dump
-    other `BizObject` objects and lists of objects recursively. For example,
+    `Relationship` objects are declared as `BizObject` class attributes and
+    endow them with the ability to load and dump other `BizObject` objects and
+    lists of objects recursively. For example,
 
     ```python3
     class Account(BizObject):
 
         # list of users at the account
         members = Relationship(
-            lambda account: (User.account_id == account._id)
+            conditions=(
+                lambda self: (User, User.account_id == self._id)
+            ), many=True
         )
     ```
     """
@@ -46,13 +53,6 @@ class Relationship(object):
         lazy=True,
         readonly=False,
     ):
-        def normalize_to_tuple(obj):
-            if obj is not None:
-                if isinstance(obj, (list, tuple)):
-                    return tuple(obj)
-                return (obj, )
-            return tuple()
-
         self.many = many
         self.private = private
         self.lazy = lazy
@@ -69,25 +69,25 @@ class Relationship(object):
         self._biz_type = None
         self._name = None
 
-        self._query_spec_sequence = []
-        self._target_type_sequence = []
+        self.metadata = []
         self._is_bootstrapped = False
         self._registry = None
 
-        self._order_by = normalize_to_tuple(ordering)
+        self._ordering = normalize_to_tuple(ordering)
         self._limit = max(1, limit) if limit is not None else None
         self._offset = max(0, offset) if offset is not None else None
         self._fields = fields
 
     def __repr__(self):
-        return '<{}({})>'.format(
-            self.__class__.__name__,
-            ', '.join([
+        return '<{rel_name}({attrs})>'.format(
+            rel_name=self.__class__.__name__,
+            attrs=', '.join([
                 (self.biz_type.__name__ + '.' if self.biz_type else '')
                     + str(self._name) or '',
                 'many={}'.format(self.many),
                 'private={}'.format(self.private),
                 'lazy={}'.format(self.lazy),
+                'readonly={}'.format(self.readonly),
             ])
         )
 
@@ -105,11 +105,11 @@ class Relationship(object):
 
     @property
     def target(self) -> Type['BizObject']:
-        return self._target_type_sequence[-1]
+        return self.metadata[-1]['target_type']
 
     @property
     def spec(self) -> 'QuerySpecification':
-        return self._query_spec_sequence[-1]
+        return self._meta[-1]['spec']
 
     @property
     def is_bootstrapped(self):
@@ -122,67 +122,125 @@ class Relationship(object):
     def on_bootstrap(self):
         pass
 
-    def bootstrap(self, registry: 'Registry' = None):
+    def bootstrap(self, registry: 'Registry'):
         self._registry = registry
 
         # this injects all BizObject class names into the condition functions'
         # lexical scopes. This mechanism helps avoid cyclic import dependencies
         # for the sake of defining relationships in BizObjects.
-        if registry is not None:
-            for func in self.conditions:
-                func.__globals__.update(registry.manifest.types.biz)
+        for func in self.conditions:
+            func.__globals__.update(registry.manifest.types.biz)
+        for func in self._ordering:
+            func.__globals__.update(registry.manifest.types.biz)
 
         # resolve the BizObject classes to query in each condition and
         # prepare their QuerySpecifications.
         for idx, func in enumerate(self.conditions):
-            mock = MockBizObject()
-            predicate = func(mock)
-            target_type = resolve_target(predicate)
-            self._target_type_sequence.append(target_type)
-            if idx > 0:
-                spec = QuerySpecification(fields=mock.keys())
-                self._query_spec_sequence.append(spec)
+            sig = inspect.signature(func)
 
-        # build the spec used for the final target_type.query call
-        final_spec = QuerySpecification.prepare(self._fields, self.target)
-        final_spec.limit = self._limit
-        final_spec.offset = self._offset
-        final_spec.order_by = self._order_by
-        for item in final_spec.order_by:
-            final_spec.fields.add(item().key)
+            # extract the target BizObject type for the join
+            mock_self = MagicMock()
+            mock_kwargs = {
+                k: MagicMock()
+                for i, k in enumerate(sig.parameters) if i > 0
+            }
+            if 'cls' in sig.parameters and 'self' in sig.parameters:
+                biz_type = self.biz_type
+                takes_target_type = True
+                if len(sig.parameters) > 2:
+                    target_type = func(biz_type, mock_self, **mock_kwargs)[0]
+                else:
+                    target_type = func(biz_type, mock_self)[0]
+            else:
+                takes_target_type = False
+                if len(sig.parameters) > 1:
+                    target_type = func(mock_self, **mock_kwargs)[0]
+                else:
+                    target_type = func(mock_self)[0]
 
-        self._query_spec_sequence.append(final_spec)
+            if func is self.conditions[0]:
+                spec = QuerySpecification.prepare([], target_type)
+                spec.limit = self._limit
+                spec.offset = self._offset
+                spec.order_by = tuple(f(target_type) for f in self._ordering)
+                for x in spec.order_by:
+                    spec.fields.add(x.key)
+            else:
+                spec = QuerySpecification.prepare([], target_type)
+
+            self.metadata.append({
+                'base_spec': spec,
+                'target_type': target_type,
+                'takes_target_type': takes_target_type,
+                'kwarg_names': {
+                    p.name for i, p in enumerate(sig.parameters.values())
+                    if (p.kind == Parameter.POSITIONAL_OR_KEYWORD)
+                        and (i > (0 if not takes_target_type else 1))
+                },
+            })
 
         self.on_bootstrap()
-
         self._is_bootstrapped = True
 
-    def query(self, caller: 'BizObject'):
-        """
-        Execute a chain of queries to fetch the target Relationship data.
-        """
-        # execute the sequence of queries
+    def query(
+        self,
+        caller: 'BizObject',
+        fields: Set[Text] = None,
+        limit: int = None,
+        offset: int = None,
+        ordering: Tuple = None,
+        kwargs: Dict = None,
+    ):
         target = caller
+        kwargs = kwargs or {}
 
-        for idx, func in enumerate(self.conditions):
-            predicate = func(target)
-            target_type = self._target_type_sequence[idx]
-            spec = self._query_spec_sequence[idx]
-            target = target_type.query(predicate=predicate, specification=spec)
-            if not target:
+        for func, meta in zip(self.conditions, self.metadata):
+            target_type = meta['target_type']
+            kwarg_names = meta['kwarg_names']
+            spec = meta['base_spec']
+
+            if kwargs and kwarg_names:
+                func_kwargs = {k: kwargs.get(k) for k in kwarg_names}
+            else:
+                func_kwargs = kwargs
+
+            if func is self.conditions[-1]:
+                spec = copy(spec)
+                if fields:
+                    spec.fields.update(fields)
+                if limit is not None:
+                    spec.limit = max(1, limit)
+                if offset is not None:
+                    spec.offset = max(0, offset)
+                if ordering:
+                    spec.order_by = tuple(
+                        func(target_type) for func in
+                        normalize_to_tuple(ordering)
+                    )
+
+            if meta['takes_target_type']:
+                predicate = func(target_type, target, **func_kwargs)[1]
+            else:
+                predicate = func(target, **func_kwargs)[1]
+            if predicate:
+                result = target_type.query(predicate, specification=spec)
+            else:
+                result = None
+
+            if not result:
                 if self.many:
-                    return self.biz_type.BizList([], self, owner)
+                    return caller.BizList([], self, caller)
                 else:
                     return None
+            else:
+                target = result
 
-        target.relationship = self
-        target.bizobj = caller
-
-        # return one or more depending on self.many
         if self.many:
-            return target if target else self.biz_type.BizList([], self, owner)
+            result.relationship = self
+            result.bizobj = caller   # TODO: rename bizobj back to owner
+            return result
         else:
-            return target[0] if target else None
+            return result[0]
 
     def associate(self, biz_type: Type['BizObject'], name: Text):
         """
@@ -192,57 +250,15 @@ class Relationship(object):
         self._biz_type = biz_type
         self._name = name
 
-
-class MockBizObject(object):
-    """
-    Used internally by `Relationship` in order to be able to execute and inspect
-    `Predicate` objects before they are executed by real queries. See:
-    `Relationship.query`.
-    """
-
-    def __init__(self):
-        # 'attrs' is the set of attr names that the program attempted to access
-        # on this instance:
-        self.attrs = set()
-
-        # `inner` is used as a dummy iterator element to be used when the
-        # program tries to access contained elements, as if this instance were a
-        # list.
-        self.inner = None
-
-    def __getattr__(self, key):
-        self.attrs.add(key)
-        return key
-
-    def __getitem__(self, key):
-        return getattr(self, key)
-
-    def __iter__(self):
-        if self.inner is None:
-            self.inner = MockBizObject()
-        return iter([self.inner])
-
-    def __contains__(self, value):
-        return True
-
-    def keys(self):
-        keys = set(self.attrs)
-        if self.inner:
-            keys |= self.inner.keys()
-        return keys
+    def set_internally(self, owner: 'BizObject', related):
+        owner.related[self.name] = related
+        for cb_func in self.on_set:
+            cb_func(owner, related)
 
 
-def resolve_target(predicate):
-    if len(predicate.targets) > 1:
-        # each root-level join predicate should contain exactly one
-        # BizObject class in its `targets` set because this is the class
-        # we assume is the type of BizObject being queried in this
-        # iteration.
-        raise ValueError(
-            'ambiguous target BizObject in self.conditions'
-        )
-    if not predicate.targets:
-        raise ValueError(
-            'no target BizObject could be resolved'
-        )
-    return predicate.targets[0]
+def normalize_to_tuple(obj):
+    if obj is not None:
+        if isinstance(obj, (list, tuple)):
+            return tuple(obj)
+        return (obj, )
+    return tuple()
