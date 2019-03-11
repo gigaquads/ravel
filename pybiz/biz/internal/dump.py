@@ -16,7 +16,7 @@ class Dumper(object):
         elif (not fields) or is_sequence(fields):
             fields = DictUtils.unflatten_keys({
                 k: None for k in (
-                    fields or (target.data.keys() | target.related.keys())
+                    fields or (target.raw.keys() | target.related.keys())
                 )
             })
         else:
@@ -78,6 +78,8 @@ class NestingDumper(Dumper):
                 '_rev': target._rev,
             }
 
+        # fields to ignore while dumping, excpecting custom handling
+        # in following logic
         pybiz_field_names = {'_id', '_rev'}
 
         # add each specified field data to the return record
@@ -90,7 +92,7 @@ class NestingDumper(Dumper):
                 # k corresponds to a field data element
                 if not field.meta.get('private', False):
                     # only dump "public" fields
-                    v = target.data[k]
+                    v = target.raw[k]
                     if is_sequence(v):
                         v = copy.deepcopy(v)
                     record[k] = v

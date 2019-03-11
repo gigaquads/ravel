@@ -73,7 +73,7 @@ class Relationship(object):
         self._is_bootstrapped = False
         self._registry = None
 
-        self._order_by = normalize_to_tuple(ordering)
+        self._ordering = normalize_to_tuple(ordering)
         self._limit = max(1, limit) if limit is not None else None
         self._offset = max(0, offset) if offset is not None else None
         self._fields = fields
@@ -130,37 +130,52 @@ class Relationship(object):
         # for the sake of defining relationships in BizObjects.
         for func in self.conditions:
             func.__globals__.update(registry.manifest.types.biz)
+        for func in self._ordering:
+            func.__globals__.update(registry.manifest.types.biz)
 
         # resolve the BizObject classes to query in each condition and
         # prepare their QuerySpecifications.
         for idx, func in enumerate(self.conditions):
             sig = inspect.signature(func)
 
-            mock_target = MagicMock()
+            # extract the target BizObject type for the join
+            mock_self = MagicMock()
             mock_kwargs = {
                 k: MagicMock()
                 for i, k in enumerate(sig.parameters) if i > 0
             }
-
-            target_type, predicate = func(mock_target, **mock_kwargs)
+            if 'cls' in sig.parameters and 'self' in sig.parameters:
+                biz_type = self.biz_type
+                takes_target_type = True
+                if len(sig.parameters) > 2:
+                    target_type = func(biz_type, mock_self, **mock_kwargs)[0]
+                else:
+                    target_type = func(biz_type, mock_self)[0]
+            else:
+                takes_target_type = False
+                if len(sig.parameters) > 1:
+                    target_type = func(mock_self, **mock_kwargs)[0]
+                else:
+                    target_type = func(mock_self)[0]
 
             if func is self.conditions[0]:
-                spec = QuerySpecification.prepare(self._fields, target_type)
+                spec = QuerySpecification.prepare([], target_type)
                 spec.limit = self._limit
                 spec.offset = self._offset
-                spec.order_by = self._order_by
-                for order_by_func in spec.order_by:
-                    order_by_obj = order_by_func()
-                    spec.fields.add(order_by_obj.key)
+                spec.order_by = tuple(f(target_type) for f in self._ordering)
+                for x in spec.order_by:
+                    spec.fields.add(x.key)
             else:
-                spec = QuerySpecification.prepare(None, target_type)
+                spec = QuerySpecification.prepare([], target_type)
 
             self.metadata.append({
                 'base_spec': spec,
                 'target_type': target_type,
+                'takes_target_type': takes_target_type,
                 'kwarg_names': {
                     p.name for i, p in enumerate(sig.parameters.values())
-                    if (p.kind == Parameter.POSITIONAL_OR_KEYWORD) and (i > 0)
+                    if (p.kind == Parameter.POSITIONAL_OR_KEYWORD)
+                        and (i > (0 if not takes_target_type else 1))
                 },
             })
 
@@ -192,15 +207,21 @@ class Relationship(object):
             if func is self.conditions[-1]:
                 spec = copy(spec)
                 if fields:
-                    spec.fields = fields
+                    spec.fields.update(fields)
                 if limit is not None:
                     spec.limit = max(1, limit)
                 if offset is not None:
                     spec.offset = max(0, offset)
                 if ordering:
-                    spec.order_by = normalize_to_tuple(ordering)
+                    spec.order_by = tuple(
+                        func(target_type) for func in
+                        normalize_to_tuple(ordering)
+                    )
 
-            predicate = func(target, **func_kwargs)[1]
+            if meta['takes_target_type']:
+                predicate = func(target_type, target, **func_kwargs)[1]
+            else:
+                predicate = func(target, **func_kwargs)[1]
             if predicate:
                 result = target_type.query(predicate, specification=spec)
             else:
@@ -217,8 +238,9 @@ class Relationship(object):
         if self.many:
             result.relationship = self
             result.bizobj = caller   # TODO: rename bizobj back to owner
-
-        return result
+            return result
+        else:
+            return result[0]
 
     def associate(self, biz_type: Type['BizObject'], name: Text):
         """
@@ -227,6 +249,11 @@ class Relationship(object):
         """
         self._biz_type = biz_type
         self._name = name
+
+    def set_internally(self, owner: 'BizObject', related):
+        owner.related[self.name] = related
+        for cb_func in self.on_set:
+            cb_func(owner, related)
 
 
 def normalize_to_tuple(obj):

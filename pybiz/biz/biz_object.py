@@ -169,7 +169,10 @@ class BizObject(metaclass=BizObjectMeta):
         3. Set of dotted paths, like `{'foo', 'bar.baz'}`
         """
         query = Query(cls, predicate, specification)
+
         if order_by:
+            if not isinstance(order_by, (tuple, list)):
+                order_by = (order_by, )
             query.spec.order_by = order_by
 
         results = query.execute()
@@ -185,6 +188,8 @@ class BizObject(metaclass=BizObjectMeta):
             raise Exception(err)  # TODO: raise validation error
 
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
+        fields.update({'_id', '_rev'})
+
         record = cls.get_dao().fetch(_id=_id, fields=fields)
         if record is not None:
             bizobj = cls(record)
@@ -208,6 +213,7 @@ class BizObject(metaclass=BizObjectMeta):
         # separate field names into those corresponding to this BizObjects
         # class and those of the related BizObject classes.
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
+        fields.update({'_id', '_rev'})
 
         # fetch data from the dao
         records = cls.get_dao().fetch_many(_ids=processed_ids, fields=fields)
@@ -241,7 +247,7 @@ class BizObject(metaclass=BizObjectMeta):
         and delete its _id so that save now triggers Dao.create.
         """
         self.dao.delete(_id=self._id)
-        self.mark(self.data.keys())
+        self.mark(self._data.keys())
         self._id = None
         return self
 
@@ -249,7 +255,7 @@ class BizObject(metaclass=BizObjectMeta):
     def delete_many(cls, bizobjs) -> None:
         bizobj_ids = []
         for obj in bizobjs:
-            obj.mark(obj.data.keys())
+            obj.mark(obj._data.keys())
             bizobj_ids.append(obj._id)
             obj._id = None
         cls.get_dao().delete_many(bizobj_ids)
@@ -283,7 +289,10 @@ class BizObject(metaclass=BizObjectMeta):
         self._data.update(created_record)
         return self.clean()
 
-    def update(self) -> 'BizObject':
+    def update(self, data: Dict = None, **more_data) -> 'BizObject':
+        data = dict(data or {}, **more_data)
+        if data:
+            self.merge(data)
         prepared_record = self.dirty_data
         prepared_record.pop('_rev', None)
         updated_record = self.get_dao().update(self._id, prepared_record)
@@ -313,7 +322,12 @@ class BizObject(metaclass=BizObjectMeta):
         return cls.BizList(bizobjs)
 
     @classmethod
-    def update_many(cls, bizobjs: List['BizObject']) -> 'BizList':
+    def update_many(
+        cls,
+        bizobjs: List['BizObject'],
+        data: Dict = None,
+        **more_data
+    ) -> 'BizList':
         """
         Call the Dao's update_many method on the list of BizObjects. Multiple
         Dao calls may be made. As a preprocessing step, the input bizobj list
@@ -338,9 +352,18 @@ class BizObject(metaclass=BizObjectMeta):
 
         A spearate call to `dao.update_many` will be made for each partition.
         """
+        # common_values are values that should be updated
+        # across all objects.
+        common_values = dict(data or {}, **more_data)
+
+        # in the procedure below, we partition all incoming BizObjects
+        # into groups, grouped by the set of fields being updated. In this way,
+        # we issue an update_many statement for each partition in the DAL.
         partitions = defaultdict(list)
 
         for bizobj in bizobjs:
+            if common_values:
+                bizobj.merge(common_values)
             partitions[tuple(bizobj.dirty)].append(bizobj)
 
         for bizobj_partition in partitions.values():
@@ -378,7 +401,7 @@ class BizObject(metaclass=BizObjectMeta):
         return self.get_dao()
 
     @property
-    def data(self) -> 'DirtyDict':
+    def raw(self) -> 'DirtyDict':
         return self._data
 
     @property
@@ -411,7 +434,7 @@ class BizObject(metaclass=BizObjectMeta):
         Args:
         - `deep`: If set, deep copy related BizObjects.
         """
-        clone = self.__class__(deepcopy(self.data))
+        clone = self.__class__(deepcopy(self._data))
 
         # select the copy method to use for relationship-loaded data
         copy_related_value = deepcopy if deep else copy
@@ -425,63 +448,74 @@ class BizObject(metaclass=BizObjectMeta):
 
         return clone.clean()
 
-    def merge(self, obj, process=True, mark=True) -> 'BizObject':
+    def merge(self, obj=None, **more_data) -> 'BizObject':
         """
         Merge another dict or BizObject's data dict into the data dict of this
         BizObject. Not called "update" because that would be confused as the
-        name of the CRUD method. "Update" int the CRUD sense is performed by
-        the save method.
+        name of the CRUD method.
         """
-        # create a deep copy of the data so as other BizObjects that also
-        # merge in or possess this data don't mutate the data stored here.
+        if not (obj or more_data):
+            return self
+
         if is_bizobj(obj):
-            self._data.update(obj._data)
-            self._related.update(obj._related)
             dirty_keys = obj._data.keys()
-        else:
+            for k, v in obj._data.items():
+                setattr(self, k, v)
+            for k, v in obj._related.items():
+                rel = self.relationships[k]
+                rel.set_internally(self, v)
+        elif isinstance(obj, dict):
             dirty_keys = obj.keys()
             for k, v in obj.items():
-                setattr(self, k, v)
+                rel = self.relationships.get(k)
+                if rel:
+                    rel.set_internally(self, v)
+                else:
+                    setattr(self, k, v)
 
-        if process:
-            # run the new data dict through the schema
-            processed_data, error = self.schema.process(self._data)
-            if error:
-                # TODO: raise custom exception
-                raise Exception(str(error))
-
-            previous_dirty = set(self.dirty)
-            self._data = DirtyDict(processed_data)
-            self.clean()
-        else:
-            previous_dirty = set()
-
-        # clear cached dump data because we now have different data :)
-        # and mark all new keys as dirty.
-        if mark:
-            self.mark(dirty_keys | previous_dirty)
+        if more_data:
+            for k, v in more_data.items():
+                rel = self.relationships.get(k)
+                if rel:
+                    rel.set_internally(self, v)
+                else:
+                    setattr(self, k, v)
 
         return self
 
-    def load(self, fields=None) -> 'BizObject':
+    def load(self, keys=None) -> 'BizObject':
         """
         Assuming _id is not None, this will load the rest of the BizObject's
-        data.
+        data. By default, relationship data is not loaded unless explicitly
+        requested.
         """
-        if isinstance(fields, str):
-            fields = {fields}
-        fresh = self.get(_id=self._id, fields=fields)
-        self.merge(fresh, mark=False)
+        if isinstance(keys, str):
+            keys = {keys}
+        fresh = self.get(_id=self._id, fields=keys)
+        self.merge(fresh)
+        self.clean(keys)
         return self
 
-    def has(self, key) -> bool:
+    def unload(self, keys: Set[Text]) -> 'BizObject':
         """
-        This tells you if any data has been loaded into the given field or
-        relationship. Better to use this than to do "if user.friends" unless you
-        intend for the "friends" Relationship to execute its query as a
-        side-effect.
+        Remove the given keys from field data and/or relationship data.
         """
-        return (key in self.data or key in self.related)
+        keys = {keys} if isinstance(keys, str) else keys
+        for k in keys:
+            if k in self._data:
+                del self._data[k]
+            elif k in self._related:
+                del self._related[k]
+
+    def is_loaded(self, keys: Set[Text]) -> bool:
+        """
+        Are all given field and/or relationship values loaded?
+        """
+        keys = {keys} if isinstance(keys, str) else keys
+        for k in keys:
+            if not (k in self._data or k in self._related):
+                return False
+        return True
 
     def dump(self, fields=None, raw=False, style='nested') -> Dict:
         """
