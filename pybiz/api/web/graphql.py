@@ -12,18 +12,19 @@ from pybiz.biz import BizObject
 class GraphQLEngine(object):
     def __init__(self, document_type: Type[BizObject]):
         self._parser = GraphQLParser()
-        self._document_type = document_type
+        self._root_type = document_type
 
-    def query(self, query: Text) -> BizObject:
+    def query(self, query: Text, context: Dict = None) -> BizObject:
         """
         Execute a GraphQL query by recursively loading the relationships
         declared on an instance of the `document_type` BizObject.
         """
+        context = dict(context or {}, authorized=set())
         spec = self.parse(query) if isinstance(query, str) else query
-        document = self._load_relationships(self._document_type(), spec)
-        return document
+        result = self._load_relationships(self._root_type(), spec, context)
+        return result
 
-    def mutate(self, query: Text) -> BizObject:
+    def mutate(self, query: Text, context: Dict = None) -> BizObject:
         raise NotImplementedError('not yet supported')
 
     def parse(self, query: Text) -> QuerySpecification:
@@ -31,12 +32,25 @@ class GraphQLEngine(object):
         Parse a GraphQL query string to a corresponding QuerySpecification.
         """
         root = self._parser.parse(query).definitions[0]
-        return self._build_spec_from_node(root, self._document_type)
+        return self._build_spec_from_node(root, self._root_type)
 
-    def _load_relationships(self, target: BizObject, spec):
+    def _load_relationships(self, target: BizObject, spec, context: Dict):
+        # load BizObject fields values
+        if target:
+            self._authorize(target, context)
+
+        if is_bizobj(target) and target._id is not None:
+            target.load(spec.fields)
+        elif is_bizlist(target):
+            for obj in target:
+                if obj._id is not None:
+                    obj.load(spec.fields)
+        else:
+            raise ValueError('unrecognized target type')
+
         # perform depth-first load of target BizObject's relationships
         for k, rel_spec in spec.relationships.items():
-            self._load_relationships(target.related[k], rel_spec)
+            self._load_relationships(target.related[k], rel_spec, context)
             target.related[k] = target.relationships[k].query(
                 target,
                 fields=rel_spec.fields,
@@ -44,14 +58,22 @@ class GraphQLEngine(object):
                 offset=rel_spec.offset,
                 kwargs=rel_spec.kwargs,
             )
-        # load BizObject fields values
-        if is_bizobj(target):
-            if target._id is not None:
-                target.load(spec.fields)
-        elif is_bizlist(target):
-            target.load(spec.fields)
-
         return target
+
+    def _authorize(self, target, context):
+        objects_to_authorize = []
+        if is_bizobj(target):
+                objects_to_authorize.append(target)
+        elif is_bizlist(target):
+            objects_to_authorize.extend(target)
+            for obj in target:
+                if isinstance(obj, GraphQLObject):
+                    obj.graphql_authorize(spec, context)
+        for obj in objects_to_authorize:
+            if isinstance(target, GraphQLObject):
+                if obj._id not in context['authorized']:
+                    obj.graphql_authorize(spec, context)
+                    context['authorized'].add(obj._id)
 
     def _build_spec_from_node(self, root, biz_type):
         node_kwargs = {
@@ -76,3 +98,8 @@ class GraphQLEngine(object):
                 spec.relationships[rel_name] = rel_spec
 
         return spec
+
+
+class GraphQLObject(object):
+    def graphql_authorize(self, spec: QuerySpecification, context: Dict):
+        pass
