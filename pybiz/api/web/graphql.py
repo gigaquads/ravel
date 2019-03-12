@@ -35,22 +35,22 @@ class GraphQLEngine(object):
         return self._build_spec_from_node(root, self._root_type)
 
     def _load_relationships(self, target: BizObject, spec, context: Dict):
-        # load BizObject fields values
         if target:
-            self._authorize(target, context)
+            is_authorized = self._authorize(target, context)
+            if not is_authorized:
+                raise Exception('not authorized')
 
-        if is_bizobj(target) and target._id is not None:
-            target.load(spec.fields)
+        # load BizObject fields values
+        if is_bizobj(target):
+            if target._id is not None:
+                target.load(spec.fields)
         elif is_bizlist(target):
             for obj in target:
                 if obj._id is not None:
                     obj.load(spec.fields)
-        else:
-            raise ValueError('unrecognized target type')
 
         # perform depth-first load of target BizObject's relationships
         for k, rel_spec in spec.relationships.items():
-            self._load_relationships(target.related[k], rel_spec, context)
             target.related[k] = target.relationships[k].query(
                 target,
                 fields=rel_spec.fields,
@@ -58,22 +58,26 @@ class GraphQLEngine(object):
                 offset=rel_spec.offset,
                 kwargs=rel_spec.kwargs,
             )
+            self._load_relationships(target.related[k], rel_spec, context)
         return target
 
     def _authorize(self, target, context):
         objects_to_authorize = []
+
         if is_bizobj(target):
                 objects_to_authorize.append(target)
         elif is_bizlist(target):
             objects_to_authorize.extend(target)
-            for obj in target:
-                if isinstance(obj, GraphQLObject):
-                    obj.graphql_authorize(spec, context)
+
         for obj in objects_to_authorize:
             if isinstance(target, GraphQLObject):
                 if obj._id not in context['authorized']:
-                    obj.graphql_authorize(spec, context)
-                    context['authorized'].add(obj._id)
+                    is_authorizd = obj.graphql_authorize(spec, context)
+                    if is_authorizd:
+                        context['authorized'].add(obj._id)
+                    else:
+                        return False
+        return True
 
     def _build_spec_from_node(self, root, biz_type):
         node_kwargs = {
@@ -101,5 +105,5 @@ class GraphQLEngine(object):
 
 
 class GraphQLObject(object):
-    def graphql_authorize(self, spec: QuerySpecification, context: Dict):
-        pass
+    def graphql_authorize(self, spec: QuerySpecification, ctx: Dict) -> bool:
+        return True
