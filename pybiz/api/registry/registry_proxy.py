@@ -30,7 +30,7 @@ class RegistryProxy(object):
     def pre_process(self, raw_args, raw_kwargs):
         self._apply_middleware_pre_request(raw_args, raw_kwargs)
         args, kwargs = self._apply_registry_on_request(raw_args, raw_kwargs)
-        self._apply_middleware_on_request(args, kwargs)
+        args, kwargs = self._apply_middleware_on_request(args, kwargs)
         return (args, kwargs)
 
     def post_process(self, args, kwargs, raw_result):
@@ -45,6 +45,7 @@ class RegistryProxy(object):
                 m.pre_request(self, raw_args, raw_kwargs)
 
     def _apply_middleware_on_request(self, prepared_args, prepared_kwargs):
+        prepared_args = list(prepared_args)
         for m in self.registry.middleware:
             if isinstance(self.registry, m.registry_types):
                 m.on_request(self, prepared_args, prepared_kwargs)
