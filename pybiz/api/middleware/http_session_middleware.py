@@ -23,5 +23,3 @@ class HttpSessionMiddleware(RegistryMiddleware):
             cookie_value = request.cookies.get(self._cookie)
             if cookie_value is not None:
                 raw_kwargs[session] = self._query(cookie_value)
-
-        return (raw_args, raw_kwargs)

@@ -35,6 +35,8 @@ def repr_biz_id(bizobj: 'BizObject') -> Text:
     """
     Return a string version of a BizObject ID.
     """
+    if bizobj is None:
+        return 'None'
     _id = bizobj['_id']
     if _id is None:
         return '?'

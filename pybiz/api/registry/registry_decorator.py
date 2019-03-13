@@ -1,7 +1,4 @@
-from .registry_object import RegistryObject
-
-
-class RegistryDecorator(RegistryObject):
+class RegistryDecorator(object):
     def __init__(self, registry: 'Registry', *args, **kwargs):
         super().__init__()
         self.registry = registry

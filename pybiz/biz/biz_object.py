@@ -283,8 +283,11 @@ class BizObject(metaclass=BizObjectMeta):
 
     def create(self) -> 'BizObject':
         prepared_record = self._data.copy()
-        prepared_record.pop('_rev', None)
         self.insert_defaults(prepared_record)
+        prepared_record.pop('_rev', None)
+        prepared_record, errors = self.schema.process(prepared_record)
+        if errors:
+            raise Exception(f'could not create object: {errors}')
         created_record = self.get_dao().create(prepared_record)
         self._data.update(created_record)
         return self.clean()
@@ -294,7 +297,11 @@ class BizObject(metaclass=BizObjectMeta):
         if data:
             self.merge(data)
         prepared_record = self.dirty_data
+        prepared_record, errors = self.schema.process(prepared_record)
+        if errors:
+            raise Exception(f'could not update object: {errors}')
         prepared_record.pop('_rev', None)
+        prepared_record.pop('_id', None)
         updated_record = self.get_dao().update(self._id, prepared_record)
         self._data.update(updated_record)
         return self.clean()
@@ -309,7 +316,10 @@ class BizObject(metaclass=BizObjectMeta):
 
         for bizobj in bizobjs:
             record = bizobj._data.copy()
+            record, errors = self.schema.process(record)
             record.pop('_rev', None)
+            if errors:
+                raise Exception(f'could not update object: {errors}')
             records.append(record)
             cls.insert_defaults(record)
 
@@ -371,6 +381,9 @@ class BizObject(metaclass=BizObjectMeta):
 
             for bizobj in bizobj_partition:
                 record = bizobj.dirty_data
+                record, errors = self.schema.process(record)
+                if errors:
+                    raise Exception(f'could not update object: {errors}')
                 record.pop('_rev', None)
                 records.append(record)
                 _ids.append(bizobj._id)
