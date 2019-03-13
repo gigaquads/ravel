@@ -64,7 +64,10 @@ class BizList(object):
         id_parts = []
         for bizobj in self._bizobj_arr:
             id_str = repr_biz_id(bizobj)
-            dirty_flag = '*' if bizobj.dirty else ''
+            if bizobj is not None:
+                dirty_flag = '*' if bizobj.dirty else ''
+            else:
+                dirty_flag = ''
             id_parts.append(f'{id_str}{dirty_flag}')
         ids = ', '.join(id_parts)
         return (
@@ -93,7 +96,7 @@ class BizList(object):
     def create(self):
         self.biz_type.create_many(self._bizobj_arr)
         return self
-        
+
     def update(self, data: Dict = None, **more_data):
         self.biz_type.update_many(self, data=data, **more_data)
         return self

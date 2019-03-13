@@ -43,7 +43,6 @@ class RegistryMiddleware(object):
         In pre_request, args and kwargs are in the raw form before being
         processed by registry.on_request.
         """
-        return (args, kwargs)
 
     def on_request(self, proxy: 'RegistryProxy', args: Tuple, kwargs: Dict):
         """
