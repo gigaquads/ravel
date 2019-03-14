@@ -3,8 +3,6 @@ import requests
 
 from collections import defaultdict
 
-from pybiz.exc import ApiError
-
 from ..registry import Registry, RegistryProxy, RegistryDecorator
 
 
