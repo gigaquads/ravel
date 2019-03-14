@@ -66,58 +66,46 @@ class ConsoleLogger(Logger):
         super().__init__(
             name,
             level=level,
-            fstr='%(levelname)s (%(name)s) @ %(message)s',
+            fstr='[%(asctime)s] [%(levelname)s:%(name)s] -- %(message)s',
         )
 
     def debug(self, message, **values):
         if self._style == 'json':
-            log_message = self._format_json_log_record('DEBUG', message, values)
+            log_message = self._format_json('DEBUG', message, values)
         elif self._style == 'yaml':
-            log_message = self._format_yaml_log_record('DEBUG', message, values)
+            log_message = self._format_yaml('DEBUG', message, values)
+        else:
+            raise ValueError(f'unrcognized log style: {self.style}')
         self._py_logger.debug(log_message)
 
-    def _format_json_log_record(self, level, message, values):
-        record = {
-            'message': message,
-        }
-        if values:
-            record['values'] = values
+    def _format_json(self, level, message, values):
+        safe_record = self._create_safe_record(values)
+        json_str = json.dumps(safe_record, indent=2, sort_keys=True)
+        json_str = '\n'.join('  ' + s for s in json_str.split('\n'))
+        return '"' + message + '"\n\n' + json_str + '\n'
 
-        message = self.json.encode(record)
-        safe_record = self.json.decode(message)
-
-        message = json.dumps(safe_record, indent=2, sort_keys=True)
-        message = (
-            '[{0:%Y-%m-%d %H:%M:%S}]\n'.format(TimeUtils.utc_now())
-            + message
+    def _format_yaml(self, level, message, values):
+        safe_record = self._create_safe_record(values)
+        yaml_str = yaml.dump(
+            safe_record,
+            default_flow_style=False,
+            default_style=''
         )
-        return message
+        yaml_str = '\n'.join('  ' + s for s in yaml_str.split('\n'))
+        return '"' + message + '"\n\n' + yaml_str
 
-    def _format_yaml_log_record(self, level, message, values):
-        record = {
-            'message': message,
-        }
+    def _create_safe_record(self, values):
         if values:
-            record['metadata'] = values
-
-        message = self.json.encode(record)
-        safe_record = self.json.decode(message)
-
-        message = '{}\n{}'.format(
-            '{0:%Y-%m-%d %H:%M:%S}'.format(TimeUtils.utc_now()),
-            yaml.dump(
-                safe_record,
-                explicit_start=True,
-                default_flow_style=False,
-                default_style=''
-            )
-        )
-        return message
+            json_str = self.json.encode(values)
+            return self.json.decode(json_str)
+        else:
+            return {}
 
 
 if __name__ == '__main__':
-    log = ConsoleLogger(__name__, style='yaml')
-    log.debug(
-        message='hello, world!',
-        user={'id': 'a1fb78', 'email': 'foo@bar.baz'}
-    )
+    for style in ['json', 'yaml']:
+        log = ConsoleLogger(__name__, style=style)
+        log.debug(
+            message='user tried to hack us',
+            user={'id': 'a1fb78', 'email': 'foo@bar.baz'}
+        )
