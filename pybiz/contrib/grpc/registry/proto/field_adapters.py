@@ -17,7 +17,7 @@ class FieldAdapter(object):
             repeated=' repeated' if is_repeated else '',
             field_type=field_type,
             field_name=field_name,
-            field_no=' = {}'.format(field_no) if field_no < 16 else '',
+            field_no=f' = {field_no}',
         )
 
 
@@ -48,7 +48,7 @@ class ArrayFieldAdapter(FieldAdapter):
                 else:
                     nested_field_type = adapter.type_name
             except:
-                import ipdb; ipdb.set_trace()
+                raise Exception('Unable to establish nested field type')
 
         return super().emit(
             field_type=nested_field_type,
