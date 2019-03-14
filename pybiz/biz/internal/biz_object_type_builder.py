@@ -27,9 +27,16 @@ class BizObjectTypeBuilder(object):
 
     def prepare_class_attributes(self, name, bases, ns):
         ns['relationships'] = self._build_relationships(bases, ns)
-        ns[IS_ABSTRACT_ANNOTATION] = ns.get('is_abstract', False)
         ns[IS_BIZOBJ_ANNOTATION] = True
         ns[IS_BOOTSTRAPPED] = False
+
+        if '__abstract__' in ns:
+            static_method = ns.pop('__abstract__')
+            is_abstract = static_method.__func__
+            ns[IS_ABSTRACT_ANNOTATION] = is_abstract()
+        else:
+            ns[IS_ABSTRACT_ANNOTATION] = False
+
         return ns
 
     def initialize_class_attributes(self, name, biz_type):

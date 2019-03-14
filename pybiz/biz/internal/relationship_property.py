@@ -44,14 +44,8 @@ class RelationshipProperty(property):
             if key not in self._related:
                 if rel.lazy:
                     # fetch all fields
-                    related_obj = rel.query(self)
-                    setattr(self, key, related_obj)
-                    for cb_func in rel.on_add:
-                        if rel.many:
-                            for bizobj in related_obj:
-                                cb_func(self, bizobj)
-                        else:
-                            cb_func(self, related_obj)
+                    value = rel.query(self)
+                    rel.set_internally(self, value)
 
             default = self.BizList([], rel, self) if rel.many else None
             value = self._related.get(key, default)
@@ -95,8 +89,8 @@ class RelationshipProperty(property):
                     'relationship "{}" cannot be a BizObject because '
                     'relationship.many is False'.format(key)
                 )
-            self._related[key] = value
 
+            self._related[key] = value
             for cb_func in rel.on_set:
                 cb_func(self, value)
 
@@ -105,12 +99,9 @@ class RelationshipProperty(property):
             Remove the related BizObject or list. The field will appeear in
             dump() results. You must assign None if you want to None to appear.
             """
-            if rel.readonly:
-                raise RelationshipError(f'{rel} is read-only')
-
-            value = self._related[key]
-            del self._related[key]
-            for cb_func in rel.on_del:
-                cb_func(self, value)
+            if key in self._related:
+                value = self._related.pop(key)
+                for cb_func in rel.on_del:
+                    cb_func(self, value)
 
         return cls(relationship, fget=fget, fset=fset, fdel=fdel)

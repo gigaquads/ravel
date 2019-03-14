@@ -108,7 +108,12 @@ class FieldProperty(property):
                 return None
 
         def fset(self, value):
-            if key in self.schema.fields:
+            field = self.schema.fields.get(key)
+            if field is not None:
+                if not (value is None and field.nullable):
+                    value, error = field.process(value)
+                    if error:
+                        raise ValueError(f'error setting {key}: {error}')
                 self._data[key] = value
             else:
                 raise AttributeError(key)

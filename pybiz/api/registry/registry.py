@@ -1,17 +1,16 @@
 import inspect
 
-from typing import List, Type, Dict, Tuple, Text
+from typing import List, Dict, Text, Tuple, Set, Type
 from collections import deque
 
 from appyratus.utils import DictObject, DictUtils
-from appyratus.memoize import memoized_property
 
 from pybiz.manifest import Manifest
 from pybiz.util import JsonEncoder
-from pybiz.api.middleware import ArgumentLoaderMiddleware
 
 from .registry_decorator import RegistryDecorator
 from .registry_proxy import RegistryProxy
+from .registry_argument_loader import RegistryArgumentLoader
 
 
 class Registry(object):
@@ -23,6 +22,7 @@ class Registry(object):
         self._is_started = False
         self._json_encoder = JsonEncoder()
         self._namespace = {}
+        self._arg_loader = None
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.registry_types)
@@ -73,6 +73,10 @@ class Registry(object):
     @property
     def decorators(self) -> List[RegistryDecorator]:
         return self._decorators
+
+    @property
+    def argument_loader(self):
+        return self._arg_loader
 
     @property
     def types(self) -> DictObject:
@@ -127,6 +131,7 @@ class Registry(object):
         self.on_bootstrap(*args, **kwargs)
 
         self._is_bootstrapped = True
+        self._arg_loader = RegistryArgumentLoader(self)
         return self
 
     def start(self, *args, **kwargs):

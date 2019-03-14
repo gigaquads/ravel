@@ -247,7 +247,7 @@ class QueryUtils(object):
             for k, (related_fields, nested_children) in children.items():
                 rel = bizobj.relationships[k]
                 related = rel.query(bizobj, fields=related_fields)
-                setattr(bizobj, k, related)
+                rel.set_internally(bizobj, related)
                 if not related:
                     continue
                 if is_bizobj(related):

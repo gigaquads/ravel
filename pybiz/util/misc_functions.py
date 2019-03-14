@@ -5,7 +5,6 @@ from copy import deepcopy
 
 from pybiz.constants import IS_BIZOBJ_ANNOTATION, IS_BIZLIST_ANNOTATION
 
-
 _dict_keys = {}.keys().__class__
 _dict_values = {}.values().__class__
 
@@ -35,6 +34,8 @@ def repr_biz_id(bizobj: 'BizObject') -> Text:
     """
     Return a string version of a BizObject ID.
     """
+    if bizobj is None:
+        return 'None'
     _id = bizobj['_id']
     if _id is None:
         return '?'
@@ -75,9 +76,10 @@ def remove_keys(
     """
     records_out = []
     for record in records:
-        if not in_place:
-            record = deepcopy(record)
-        for k in keys:
-            record.pop(k, None)
+        if record is not None:
+            if not in_place:
+                record = deepcopy(record)
+            for k in keys:
+                record.pop(k, None)
         records_out.append(record)
     return records_out

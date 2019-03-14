@@ -1,4 +1,4 @@
-from typing import Type, List, Set, Tuple, Text
+from typing import Type, List, Set, Tuple, Text, Dict
 from uuid import UUID
 
 from pybiz.util import repr_biz_id
@@ -18,7 +18,14 @@ class BizList(object):
 
         def build_property(attr_name):
             return property(
-                fget=lambda self: [bizobj[attr_name] for bizobj in self.data]
+                fget=lambda self: [
+                    getattr(bizobj, attr_name, None)
+                    for bizobj in self._bizobj_arr
+                ],
+                fset=lambda self, value: [
+                    setattr(bizobj, attr_name, value)
+                    for bizobj in self._bizobj_arr
+                ]
             )
 
         for field_name in biz_type.Schema.fields:
@@ -33,31 +40,34 @@ class BizList(object):
 
     def __init__(
         self,
-        data: List['BizObject'],
+        objects: List['BizObject'],
         relationship: 'Relationship' = None,
         bizobj: 'BizObject' = None,
     ):
         self.relationship = relationship
-        self.data = data or []
+        self._bizobj_arr = list(objects)
         self.bizobj = bizobj
 
     def __getitem__(self, idx: int) -> 'BizObject':
-        return self.data[idx]
+        return self._bizobj_arr[idx]
 
     def __len__(self):
-        return len(self.data)
+        return len(self._bizobj_arr)
 
     def __bool__(self):
-        return bool(self.data)
+        return bool(self._bizobj_arr)
 
     def __iter__(self):
-        return iter(self.data)
+        return iter(self._bizobj_arr)
 
     def __repr__(self):
         id_parts = []
-        for bizobj in self.data:
+        for bizobj in self._bizobj_arr:
             id_str = repr_biz_id(bizobj)
-            dirty_flag = '*' if bizobj.dirty else ''
+            if bizobj is not None:
+                dirty_flag = '*' if bizobj.dirty else ''
+            else:
+                dirty_flag = ''
             id_parts.append(f'{id_str}{dirty_flag}')
         ids = ', '.join(id_parts)
         return (
@@ -71,25 +81,46 @@ class BizList(object):
         """
         clone = self.copy()
         if isinstance(other, (list, tuple)):
-            clone.data += other
+            clone._bizobj_arr += other
         elif isinstance(other, BizList):
             assert self.relationship is other.relationship
-            clone.data += other.data
+            clone._bizobj_arr += other._bizobj_arr
         else:
             raise ValueError(str(other))
         return clone
 
     def copy(self):
         cls = self.__class__
-        return cls(self.data, self.relationship, self.bizobj)
+        return cls(self._bizobj_arr, self.relationship, self.bizobj)
+
+    def create(self):
+        self.biz_type.create_many(self._bizobj_arr)
+        return self
+
+    def update(self, data: Dict = None, **more_data):
+        self.biz_type.update_many(self, data=data, **more_data)
+        return self
+
+    def merge(self, obj=None, **more_data):
+        for obj in self._bizobj_arr:
+            obj.merge(obj, **more_data)
+        return self
+
+    def mark(self, keys=None):
+        for bizobj in self._bizobj_arr:
+            bizobj.mark(keys=keys)
+
+    def clean(self, keys=None):
+        for bizobj in self._bizobj_arr:
+            bizobj.clean(keys=keys)
 
     def save(self, *args, **kwargs):
-        return self.biz_type.save_many(self.data, *args, **kwargs)
+        return self.biz_type.save_many(self._bizobj_arr, *args, **kwargs)
 
     def delete(self):
         return self.biz_type.delete_many(
-            bizobj._id for bizobj in self.data
-            if bizobj.data.get('_id')
+            bizobj._id for bizobj in self._bizobj_arr
+            if bizobj._bizobj_arr.get('_id')
         )
         return self
 
@@ -103,24 +134,25 @@ class BizList(object):
         for stale, fresh in zip(self, results):
             if stale._id is not None:
                 stale.merge(fresh)
+                stale.clean(fresh.raw.keys())
         return self
 
     def dump(self, *args, **kwargs):
-        return [bizobj.dump(*args, **kwargs) for bizobj in self.data]
+        return [bizobj.dump(*args, **kwargs) for bizobj in self._bizobj_arr]
 
     def append(self, bizobj):
         self._perform_on_add([bizobj])
-        self.data.append(bizobj)
+        self._bizobj_arr.append(bizobj)
         return self
 
     def extend(self, bizobjs):
         self._perform_on_add(bizobjs)
-        self.data.extend(bizobjs)
+        self._bizobj_arr.extend(bizobjs)
         return self
 
     def insert(self, index, bizobj):
         self._perform_on_add([bizobj])
-        self.data.insert(index, bizobj)
+        self._bizobj_arr.insert(index, bizobj)
         return self
 
     def _perform_on_add(self, bizobjs):

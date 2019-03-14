@@ -2,10 +2,8 @@ import inspect
 
 from typing import Dict, Text
 
-from .registry_object import RegistryObject
 
-
-class RegistryProxy(RegistryObject):
+class RegistryProxy(object):
     def __init__(self, func, decorator: 'RegistryDecorator'):
         super().__init__()
         self.func = func
@@ -19,6 +17,9 @@ class RegistryProxy(RegistryObject):
             proxy_type=self.__class__.__name__,
             target_name=self.name,
         )
+
+    def __getattr__(self, attr):
+        return getattr(self.func, attr, None)
 
     def __call__(self, *raw_args, **raw_kwargs):
         args, kwargs = self.pre_process(raw_args, raw_kwargs)
@@ -41,19 +42,14 @@ class RegistryProxy(RegistryObject):
     def _apply_middleware_pre_request(self, raw_args, raw_kwargs):
         for m in self.registry.middleware:
             if isinstance(self.registry, m.registry_types):
-                result = m.pre_request(self, raw_args, raw_kwargs)
-                if result:
-                    # pre_request can mutate arguments
-                    raw_args, raw_kwargs = result
+                m.pre_request(self, raw_args, raw_kwargs)
 
     def _apply_middleware_on_request(self, prepared_args, prepared_kwargs):
+        prepared_args = list(prepared_args)
         for m in self.registry.middleware:
             if isinstance(self.registry, m.registry_types):
-                result = m.on_request(self, prepared_args, prepared_kwargs)
-                if result:
-                    # on request can mutate arguments
-                    prepared_args, prepared_kwargs = result
-        return prepared_args, prepared_kwargs
+                m.on_request(self, prepared_args, prepared_kwargs)
+        return (prepared_args, prepared_kwargs)
 
     def _apply_middleware_post_request(
         self, prepared_args, prepared_kwargs, result
@@ -64,7 +60,9 @@ class RegistryProxy(RegistryObject):
 
     def _apply_registry_on_request(self, raw_args, raw_kwargs):
         result = self.registry.on_request(self, *raw_args, **raw_kwargs)
-        return result if result else (raw_args, raw_kwargs)
+        args, kwargs = result if result else (raw_args, raw_kwargs)
+        args, kwargs = self.registry.argument_loader.load(self, args, kwargs)
+        return (args, kwargs)
 
     def _apply_registry_on_response(
         self, prepared_args, prepared_kwargs, result
@@ -72,9 +70,6 @@ class RegistryProxy(RegistryObject):
         return self.decorator.registry.on_response(
             self, result, *prepared_args, **prepared_kwargs
         )
-
-    def __getattr__(self, attr):
-        return getattr(self.func, attr)
 
     @property
     def registry(self) -> 'Registry':

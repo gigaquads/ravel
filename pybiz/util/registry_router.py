@@ -60,7 +60,10 @@ class RegistryRouter(CliProgram):
         First by registries dictionary (provided when initialized)
         And if not there, then an attribute on this your router class
         """
-        registry_dict = self._registries.get(name)
+        if not self._registries:
+            registry_dict = {}
+        else:
+            registry_dict = self._registries.get(name)
         registry_attr = getattr(self, name, None)
         if registry_dict:
             return registry_dict
