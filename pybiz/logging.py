@@ -66,7 +66,7 @@ class ConsoleLogger(Logger):
         super().__init__(
             name,
             level=level,
-            fstr='[%(asctime)s] [%(levelname)s:%(name)s] -- %(message)s',
+            fstr='[%(levelname)s, %(name)s, %(asctime)s]\n ↪ %(message)s',
         )
 
     def debug(self, message, **values):
@@ -82,7 +82,7 @@ class ConsoleLogger(Logger):
         safe_record = self._create_safe_record(values)
         json_str = json.dumps(safe_record, indent=2, sort_keys=True)
         json_str = '\n'.join('  ' + s for s in json_str.split('\n'))
-        return '"' + message + '"\n\n' + json_str + '\n'
+        return '[' + message + ']\n\n' + json_str + '\n'
 
     def _format_yaml(self, level, message, values):
         safe_record = self._create_safe_record(values)
@@ -92,7 +92,7 @@ class ConsoleLogger(Logger):
             default_style=''
         )
         yaml_str = '\n'.join('  ' + s for s in yaml_str.split('\n'))
-        return '"' + message + '"\n\n' + yaml_str
+        return '[' + message + ']\n\n' + yaml_str
 
     def _create_safe_record(self, values):
         if values:
