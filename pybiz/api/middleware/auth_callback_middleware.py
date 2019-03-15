@@ -1,4 +1,4 @@
-from typing import Dict, Set, Tuple, Type
+from typing import Dict, Set, Tuple, Type, Text
 
 from pybiz.exc import NotAuthorizedError
 
@@ -6,13 +6,30 @@ from .base import RegistryMiddleware
 
 
 class AuthCallback(object):
-    def __call__(self, arguments: Dict) -> bool:
-        self.arguments = arguments
-        print('>>> CALLING', self)
-        return self.on_call()
+    def __call__(self, arguments: Dict, context: Dict = None) -> bool:
+        return self.on_authorization(arguments, context)
 
-    def on_call(self) -> bool:
+    def on_authorization(self, arguments: Dict = None, context: Dict) -> bool:
         raise NotImplemented('override in subclass')
+
+    def __and__(self, other):
+        return CompositeAuthCallback('&', self, other)
+
+    def __or__(self, other):
+        return CompositeAuthCallback('|', self, other)
+
+
+class CompositeAuthCallback(AuthCallback):
+    def __init__(self, op: Text, lhs: AuthCallback, rhs: AuthCallback):
+        pass
+
+    def on_authorization(self, arguments: Dict = None, context:  Dict = None):
+        if op == '&':
+            return self.lhs(context) and self.rhs(context)
+        elif op == '|':
+            return self.lhs(context) or self.rhs(context)
+        else:
+            raise ValueError('op not recognized')
 
 
 class AuthCallbackMiddleware(RegistryMiddleware):
@@ -26,14 +43,13 @@ class AuthCallbackMiddleware(RegistryMiddleware):
         )
         arguments.update(kwargs)
         callables = proxy.auth
-        if callables is None:
-            return
         if not callables:
             return
         if not isinstance(callables, list):
             callables = [callables]
-        for c in callables:
-            print(c, arguments)
-            is_authorized = c(arguments)
+        context = dict()
+        for func in callables:
+            print(func, arguments, context)
+            is_authorized = func(arguments=arguments, context=context)
             if not is_authorized:
                 raise NotAuthorizedError()
