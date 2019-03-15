@@ -9,6 +9,9 @@ class RelationshipError(PybizError):
 class NotFound(Exception):
     pass
 
+class NotAuthorizedError(PybizError):
+    pass
+
 
 class ApiError(PybizError):
     pass

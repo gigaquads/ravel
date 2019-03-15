@@ -183,7 +183,8 @@ class CacheDao(Dao):
                 for be_rec in remove_keys(
                     be_records.values(), fields_to_remove, in_place=True
                 ):
-                    fe_records[be_rec['_id']] = be_rec
+                    if be_rec:
+                        fe_records[be_rec['_id']] = be_rec
             else:
                 fe_records.update(be_records)
 
