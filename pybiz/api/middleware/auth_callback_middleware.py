@@ -16,6 +16,7 @@ OP_CODE = Enum(
     NOT='~',
 )
 
+
 class ArgumentSpecification(object):
     """
     ArgumentSpecification determines which positional and keyword arguments a
@@ -24,7 +25,8 @@ class ArgumentSpecification(object):
     to the arguments declared by the corresponding AuthCallback.on_authorization
     method.
     """
-    def __init__(self, callback: AuthCallback):
+
+    def __init__(self, callback: 'AuthCallback'):
         self.callback = callback
         self.signature = inspect.signature(callback.on_authorization)
 
@@ -65,6 +67,7 @@ class AuthCallback(object):
     The context dict is shared by all AuthCallbacks composed in a
     CompositeAuthCallback boolean expression.
     """
+
     def __init__(self):
         self.spec = ArgumentSpecification(self)
 
@@ -77,6 +80,9 @@ class AuthCallback(object):
 
     def __or__(self, other):
         return CompositeAuthCallback(OP_CODE.OR, self, other)
+
+    def __invert__(self):
+        return CompositeAuthCallback(OP_CODE.NOT, self, {})
 
     def on_authorization(self, context: Dict, *args, **kwargs) -> bool:
         """
@@ -118,6 +124,7 @@ class CompositeAuthCallback(AuthCallback):
     subclass is used to form logical predicates involving multiple
     AuthCallbacks.
     """
+
     def __init__(self, op: Text, lhs: AuthCallback, rhs: AuthCallback):
         self._op = op
         self._lhs = lhs
@@ -131,7 +138,7 @@ class CompositeAuthCallback(AuthCallback):
         Compute the boolean value of one or more nested AuthCallback in a
         depth-first manner.
         """
-        is_authorized = False  # retval
+        is_authorized = False    # retval
 
         # compute LHS for both & and |.
         lhs_is_authorized = self._lhs(context, arguments)
@@ -144,6 +151,8 @@ class CompositeAuthCallback(AuthCallback):
         elif self._op == OP_CODE.OR:
             rhs_is_authorized = self._rhs(context, arguments)
             is_authorized = (lhs_is_authorized or rhs_is_authorized)
+        elif self._op == OP_CODE.NOT:
+            is_authorized = (not lhs_is_authorized)
         else:
             raise ValueError(f'op not recognized, "{self._op}"')
 
