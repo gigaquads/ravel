@@ -6,10 +6,12 @@ from .base import RegistryMiddleware
 
 
 class AuthCallback(object):
-    def __call__(self, arguments: Dict, context: Dict = None) -> bool:
+    def __call__(self, arguments: Dict = None, context: Dict = None) -> bool:
         return self.on_authorization(arguments, context)
 
-    def on_authorization(self, arguments: Dict = None, context: Dict) -> bool:
+    def on_authorization(
+        self, arguments: Dict = None, context: Dict = None
+    ) -> bool:
         raise NotImplemented('override in subclass')
 
     def __and__(self, other):
@@ -21,15 +23,17 @@ class AuthCallback(object):
 
 class CompositeAuthCallback(AuthCallback):
     def __init__(self, op: Text, lhs: AuthCallback, rhs: AuthCallback):
-        pass
+        self._op = op
+        self._lhs = lhs
+        self._rhs = rhs
 
-    def on_authorization(self, arguments: Dict = None, context:  Dict = None):
-        if op == '&':
-            return self.lhs(context) and self.rhs(context)
-        elif op == '|':
-            return self.lhs(context) or self.rhs(context)
+    def on_authorization(self, arguments: Dict = None, context: Dict = None):
+        if self._op == '&':
+            return self._lhs(arguments, context) and self._rhs(arguments, context)
+        elif self._op == '|':
+            return self._lhs(arguments, context) or self._rhs(arguments, context)
         else:
-            raise ValueError('op not recognized')
+            raise ValueError(f'op not recognized, "{self._op}"')
 
 
 class AuthCallbackMiddleware(RegistryMiddleware):
@@ -49,7 +53,6 @@ class AuthCallbackMiddleware(RegistryMiddleware):
             callables = [callables]
         context = dict()
         for func in callables:
-            print(func, arguments, context)
             is_authorized = func(arguments=arguments, context=context)
             if not is_authorized:
                 raise NotAuthorizedError()
