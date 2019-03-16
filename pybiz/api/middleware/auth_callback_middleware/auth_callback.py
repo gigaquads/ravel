@@ -1,76 +1,14 @@
-import inspect
-
-from inspect import Parameter
-from typing import Dict, Set, Tuple, Type, Text, List
+from typing import Dict, Text
 
 from appyratus.enum import Enum
-from pybiz.exc import NotAuthorizedError
-from pybiz.util import is_sequence
 
-from .base import RegistryMiddleware
+from .argument_specification import ArgumentSpecification
 
-# Op codes used by CompositeAuthCallback:
 OP_CODE = Enum(
     AND='&',
     OR='|',
     NOT='~',
 )
-
-
-class ArgumentSpecification(object):
-    """
-    ArgumentSpecification determines which positional and keyword arguments a
-    given AuthCallback needs. AuthCallbackMiddleware and CompositeAuthCallback
-    use this information to know which incoming proxy arguments should be bound
-    to the arguments declared by the corresponding AuthCallback.on_authorization
-    method.
-    """
-
-    def __init__(self, callback: 'AuthCallback'):
-        self.callback = callback
-        self.signature = inspect.signature(callback.on_authorization)
-
-        # determine which arguments expected by the callback's
-        # on_authorization method that are positional and which are keyword.
-        self.kwarg_keys = set()
-        self.arg_keys = []
-        self.arg_key_set = set()
-        for k, param in self.signature.parameters.items():
-            if k == 'context':
-                continue
-            if param.kind != Parameter.POSITIONAL_OR_KEYWORD:
-                break
-            if param.default is Parameter.empty:
-                self.arg_keys.append(k)
-                self.arg_key_set.add(k)
-            else:
-                self.kwarg_keys.add(k)
-
-        self.has_var_kwargs = False
-        if 'kwargs' in self.signature.parameters:
-            param = self.signature.parameters['kwargs']
-            self.has_var_kwargs = param.kind == Parameter.VAR_KEYWORD
-
-        self.has_var_args = False
-        if 'args' in self.signature.parameters:
-            param = self.signature.parameters['args']
-            self.has_var_args = param.kind == Parameter.VAR_POSITIONAL
-
-
-    def extract(self, arguments: Dict) -> Tuple[List, Dict]:
-        """
-        Partition arguments between a list of position arguments and a dict
-        of keyword arguments.
-        """
-        args = [arguments[k] for k in self.arg_keys]
-        if self.has_var_kwargs:
-            kwargs = {
-                k: v for k, v in arguments.items()
-                if k not in self.arg_key_set
-            }
-        else:
-            kwargs = {k: arguments[k] for k in self.kwarg_keys}
-        return (args, kwargs)
 
 
 class AuthCallback(object):
@@ -176,45 +114,3 @@ class CompositeAuthCallback(AuthCallback):
             raise ValueError(f'op not recognized, "{self._op}"')
 
         return is_authorized
-
-
-class AuthCallbackMiddleware(RegistryMiddleware):
-    """
-    Apply the AuthCallback(s) associated with a proxy, set via the `auth`
-    RegistryDecorator keyword argument, e.g., repl(auth=IsFoo()).
-    NotAuthorizedError is raised if not authorized.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def on_request(self, proxy: 'RegistryProxy', args: Tuple, kwargs: Dict):
-        """
-        In on_request, args and kwargs are in the form output by
-        registry.on_request.
-        """
-        callbacks = proxy.auth
-        if not callbacks:
-            return
-        arguments = self._compute_arguments_dict(proxy, args, kwargs)
-        context = dict()
-
-        # ensure callbacks is a sequence for following for-loop
-        if not is_sequence(callbacks):
-            callbacks = [callbacks]
-        # execute each AuthCallback, raising
-        # NotAuthorizedError as soon as possible
-        for authorize in callbacks:
-            is_authorized = authorize(context, arguments)
-            if not is_authorized:
-                raise NotAuthorizedError()
-
-    def _compute_arguments_dict(self, proxy, args, kwargs) -> Dict:
-        """
-        Merge all args and kwargs into a single Dict.
-        """
-        arguments = dict(
-            zip([k for k in proxy.signature.parameters][:len(args)], args)
-        )
-        arguments.update(kwargs)
-        return arguments
