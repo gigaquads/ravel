@@ -82,7 +82,7 @@ class AuthCallback(object):
         return CompositeAuthCallback(OP_CODE.OR, self, other)
 
     def __invert__(self):
-        return CompositeAuthCallback(OP_CODE.NOT, self, {})
+        return CompositeAuthCallback(OP_CODE.NOT, self, None)
 
     def on_authorization(self, context: Dict, *args, **kwargs) -> bool:
         """
