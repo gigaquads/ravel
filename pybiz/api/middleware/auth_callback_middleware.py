@@ -34,6 +34,7 @@ class ArgumentSpecification(object):
         # on_authorization method that are positional and which are keyword.
         self.kwarg_keys = set()
         self.arg_keys = []
+        self.arg_key_set = set()
         for k, param in self.signature.parameters.items():
             if k == 'context':
                 continue
@@ -41,8 +42,20 @@ class ArgumentSpecification(object):
                 break
             if param.default is Parameter.empty:
                 self.arg_keys.append(k)
+                self.arg_key_set.add(k)
             else:
                 self.kwarg_keys.add(k)
+
+        self.has_var_kwargs = False
+        if 'kwargs' in self.signature.parameters:
+            param = self.signature.parameters['kwargs']
+            self.has_var_kwargs = param.kind == Parameter.VAR_KEYWORD
+
+        self.has_var_args = False
+        if 'args' in self.signature.parameters:
+            param = self.signature.parameters['args']
+            self.has_var_args = param.kind == Parameter.VAR_POSITIONAL
+
 
     def extract(self, arguments: Dict) -> Tuple[List, Dict]:
         """
@@ -50,7 +63,13 @@ class ArgumentSpecification(object):
         of keyword arguments.
         """
         args = [arguments[k] for k in self.arg_keys]
-        kwargs = {k: arguments[k] for k in self.kwarg_keys}
+        if self.has_var_kwargs:
+            kwargs = {
+                k: v for k, v in arguments.items()
+                if k not in self.arg_key_set
+            }
+        else:
+            kwargs = {k: arguments[k] for k in self.kwarg_keys}
         return (args, kwargs)
 
 
