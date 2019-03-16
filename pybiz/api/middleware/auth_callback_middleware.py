@@ -33,14 +33,14 @@ class ArgumentSpecification(object):
         # determine which arguments expected by the callback's
         # on_authorization method that are positional and which are keyword.
         self.kwarg_keys = set()
-        self.arg_keys = set()
+        self.arg_keys = []
         for k, param in self.signature.parameters.items():
             if k == 'context':
                 continue
             if param.kind != Parameter.POSITIONAL_OR_KEYWORD:
                 break
             if param.default is Parameter.empty:
-                self.arg_keys.add(k)
+                self.arg_keys.append(k)
             else:
                 self.kwarg_keys.add(k)
 
