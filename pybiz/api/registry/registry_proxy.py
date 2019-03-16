@@ -18,8 +18,8 @@ class RegistryProxy(object):
             target_name=self.name,
         )
 
-    def __getattr__(self, attr):
-        return getattr(self.func, attr, None)
+    def __getattr__(self, decorator_kwarg: Text):
+        return self.decorator.kwargs.get(decorator_kwarg)
 
     def __call__(self, *raw_args, **raw_kwargs):
         args, kwargs = self.pre_process(raw_args, raw_kwargs)
