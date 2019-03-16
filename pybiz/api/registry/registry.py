@@ -17,6 +17,7 @@ class Registry(object):
     def __init__(self, middleware: List['RegistryMiddleware'] = None):
         self._decorators = []
         self._proxies = {}
+        self._api = DictObject(self._proxies)
         self._manifest = None
         self._is_bootstrapped = False
         self._is_started = False
@@ -83,11 +84,18 @@ class Registry(object):
         return self._manifest.types
 
     @property
+    def api(self) -> DictObject:
+        return self._api
+
+    @property
     def is_bootstrapped(self):
         return self._is_bootstrapped
 
     def register(self, proxy):
-        self.proxies[proxy.name] = proxy
+        if proxy.name not in self._proxies:
+            self._proxies[proxy.name] = proxy
+        else:
+            raise Exception(f'proxy "{proxy.name}" already registered')
 
     def bootstrap(
         self,
