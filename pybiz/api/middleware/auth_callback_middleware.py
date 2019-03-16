@@ -24,7 +24,7 @@ class ArgumentSpecification(object):
     to the arguments declared by the corresponding AuthCallback.on_authorization
     method.
     """
-    def __init__(self, callback: AuthCallback):
+    def __init__(self, callback: 'AuthCallback'):
         self.callback = callback
         self.signature = inspect.signature(callback.on_authorization)
 
