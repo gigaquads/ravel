@@ -43,7 +43,16 @@ class Hierarchy(BizObject):
         conditions=lambda cls, self: (cls, cls.parent_id == self._id),
         ordering=lambda cls: cls.position.asc,
         readonly=True,
-        many=True
+        many=True,
+    )
+
+    siblings = Relationship(
+        conditions=lambda cls, self: (
+            (cls, cls.parent_id == self.parent_id) & (cls._id != self._id)
+        ),
+        ordering=lambda cls: cls.position.asc,
+        readonly=True,
+        many=True,
     )
 
     previous = Relationship(

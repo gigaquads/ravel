@@ -315,6 +315,8 @@ class BizObject(metaclass=BizObjectMeta):
         records = []
 
         for bizobj in bizobjs:
+            if bizobj is None:
+                continue
             record = bizobj._data.copy()
             record, errors = self.schema.process(record)
             record.pop('_rev', None)
@@ -372,6 +374,8 @@ class BizObject(metaclass=BizObjectMeta):
         partitions = defaultdict(list)
 
         for bizobj in bizobjs:
+            if bizobj is None:
+                continue
             if common_values:
                 bizobj.merge(common_values)
             partitions[tuple(bizobj.dirty)].append(bizobj)
