@@ -116,7 +116,7 @@ class CompositeGuard(Guard):
             if rhs_exc is not None and lhs_exc is not None:
                 return CompositeGuardException(lhs_exc, rhs_exc)
         elif self._op == OP_CODE.NOT:
-            if lhs_exc is not None:
+            if lhs_exc is None:
                 return lhs_exc
         else:
             return ValueError(f'op not recognized, "{self._op}"')
