@@ -22,7 +22,7 @@ class GuardMiddleware(RegistryMiddleware):
         In on_request, args and kwargs are in the form output by
         registry.on_request.
         """
-        guards = proxy.auth
+        guards = proxy.guards
         if not guards:
             return
         arguments = self._compute_arguments_dict(proxy, args, kwargs)
@@ -33,10 +33,10 @@ class GuardMiddleware(RegistryMiddleware):
             guards = [guards]
         # execute each Guard, raising
         # NotAuthorizedError as soon as possible
-        for authorize in guards:
-            is_authorized = authorize(context, arguments)
-            if not is_authorized:
-                raise NotAuthorizedError()
+        for guard in guards:
+            exc = guard(context, arguments)
+            if exc is not None:
+                raise exc
 
     def _compute_arguments_dict(self, proxy, args, kwargs) -> Dict:
         """

@@ -2,6 +2,9 @@ from typing import Dict, Text
 
 from appyratus.enum import Enum
 
+from pybiz.exc import ApiError
+
+
 from .argument_specification import ArgumentSpecification
 
 OP_CODE = Enum(
@@ -28,7 +31,7 @@ class Guard(object):
     def __init__(self):
         self.spec = ArgumentSpecification(self)
 
-    def __call__(self, context: Dict, arguments: Dict) -> bool:
+    def __call__(self, context: Dict, arguments: Dict) -> Exception:
         args, kwargs = self.spec.extract(arguments)
         return self.on_authorization(context, *args, **kwargs)
 
@@ -98,19 +101,32 @@ class CompositeGuard(Guard):
         is_authorized = False    # retval
 
         # compute LHS for both & and |.
-        lhs_is_authorized = self._lhs(context, arguments)
+        lhs_exc = self._lhs(context, arguments)
 
         if self._op == OP_CODE.AND:
             # We only need to check RHS if LHS isn't already False.
-            if lhs_is_authorized:
-                rhs_is_authorized = self._rhs(context, arguments)
-                is_authorized = (lhs_is_authorized and rhs_is_authorized)
+            if lhs_exc is None:
+                rhs_exc = self._rhs(context, arguments)
+                if rhs_exc is not None:
+                    return rhs_exc
+            else:
+                return lhs_exc
         elif self._op == OP_CODE.OR:
-            rhs_is_authorized = self._rhs(context, arguments)
-            is_authorized = (lhs_is_authorized or rhs_is_authorized)
+            rhs_exc = self._rhs(context, arguments)
+            if rhs_exc is not None and lhs_exc is not None:
+                return CompositeGuardException(lhs_exc, rhs_exc)
         elif self._op == OP_CODE.NOT:
-            is_authorized = (not lhs_is_authorized)
+            if lhs_exc is None:
+                return lhs_exc
         else:
-            raise ValueError(f'op not recognized, "{self._op}"')
+            return ValueError(f'op not recognized, "{self._op}"')
 
-        return is_authorized
+        return None
+
+class CompositeGuardException(ApiError):
+    def __init__(self, lhs_exc, rhs_exc):
+        message = (
+            f'{lhs_exc.__class__.__name__}: {lhs_exc.message}\n'
+            f'{rhs_exc.__class__.__name__}: {rhs_exc.message}'
+        )
+        super().__init__(message)
