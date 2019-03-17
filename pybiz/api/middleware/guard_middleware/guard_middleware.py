@@ -4,12 +4,12 @@ from pybiz.exc import NotAuthorizedError
 from pybiz.util import is_sequence
 
 from ..base import RegistryMiddleware
-from .auth_callback import AuthCallback
+from .guard import Guard
 
 
-class AuthCallbackMiddleware(RegistryMiddleware):
+class GuardMiddleware(RegistryMiddleware):
     """
-    Apply the AuthCallback(s) associated with a proxy, set via the `auth`
+    Apply the Guard(s) associated with a proxy, set via the `auth`
     RegistryDecorator keyword argument, e.g., repl(auth=IsFoo()).
     NotAuthorizedError is raised if not authorized.
     """
@@ -22,18 +22,18 @@ class AuthCallbackMiddleware(RegistryMiddleware):
         In on_request, args and kwargs are in the form output by
         registry.on_request.
         """
-        callbacks = proxy.auth
-        if not callbacks:
+        guards = proxy.auth
+        if not guards:
             return
         arguments = self._compute_arguments_dict(proxy, args, kwargs)
         context = dict()
 
-        # ensure callbacks is a sequence for following for-loop
-        if not is_sequence(callbacks):
-            callbacks = [callbacks]
-        # execute each AuthCallback, raising
+        # ensure guards is a sequence for following for-loop
+        if not is_sequence(guards):
+            guards = [guards]
+        # execute each Guard, raising
         # NotAuthorizedError as soon as possible
-        for authorize in callbacks:
+        for authorize in guards:
             is_authorized = authorize(context, arguments)
             if not is_authorized:
                 raise NotAuthorizedError()

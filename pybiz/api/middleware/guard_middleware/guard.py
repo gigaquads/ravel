@@ -11,9 +11,9 @@ OP_CODE = Enum(
 )
 
 
-class AuthCallback(object):
+class Guard(object):
     """
-    Subclasses of AuthCallback must implement on_authorization, which determines
+    Subclasses of Guard must implement on_authorization, which determines
     whether a given request is authorized, by inspecting arguments passed into
     a corresponding RegistryProxy at runtime.
 
@@ -21,8 +21,8 @@ class AuthCallback(object):
     method are plucked from the incoming arguments dynamically (following the
     required `context` dict argument).
 
-    The context dict is shared by all AuthCallbacks composed in a
-    CompositeAuthCallback boolean expression.
+    The context dict is shared by all Guards composed in a
+    CompositeGuard boolean expression.
     """
 
     def __init__(self):
@@ -33,13 +33,13 @@ class AuthCallback(object):
         return self.on_authorization(context, *args, **kwargs)
 
     def __and__(self, other):
-        return CompositeAuthCallback(OP_CODE.AND, self, other)
+        return CompositeGuard(OP_CODE.AND, self, other)
 
     def __or__(self, other):
-        return CompositeAuthCallback(OP_CODE.OR, self, other)
+        return CompositeGuard(OP_CODE.OR, self, other)
 
     def __invert__(self):
-        return CompositeAuthCallback(OP_CODE.NOT, self, None)
+        return CompositeGuard(OP_CODE.NOT, self, None)
 
     def on_authorization(self, context: Dict, *args, **kwargs) -> bool:
         """
@@ -48,7 +48,7 @@ class AuthCallback(object):
         declare which arguments are required. For example,
 
         ```python
-        class UserOwnsPost(AuthCallback):
+        class UserOwnsPost(Guard):
             def on_authorization(context, user, post):
                 return user.owns(post)
         ```
@@ -62,7 +62,7 @@ class AuthCallback(object):
             post.delete()
         ```
 
-        It is possible to combine AuthCallbacks in boolean expressions, using
+        It is possible to combine Guards in boolean expressions, using
         '&' (AND), '|' (OR) and '~' (NOT), like
 
         ```python3
@@ -74,15 +74,15 @@ class AuthCallback(object):
         raise NotImplemented('override in subclass')
 
 
-class CompositeAuthCallback(AuthCallback):
+class CompositeGuard(Guard):
     """
-    A CompositeAuthCallback represents a boolean expression involving one or
-    more AuthCallback, which can themselves be other CompositeAuthCallback. This
+    A CompositeGuard represents a boolean expression involving one or
+    more Guard, which can themselves be other CompositeGuard. This
     subclass is used to form logical predicates involving multiple
-    AuthCallbacks.
+    Guards.
     """
 
-    def __init__(self, op: Text, lhs: AuthCallback, rhs: AuthCallback):
+    def __init__(self, op: Text, lhs: Guard, rhs: Guard):
         self._op = op
         self._lhs = lhs
         self._rhs = rhs
@@ -92,7 +92,7 @@ class CompositeAuthCallback(AuthCallback):
 
     def on_authorization(self, context: Dict, arguments: Dict):
         """
-        Compute the boolean value of one or more nested AuthCallback in a
+        Compute the boolean value of one or more nested Guard in a
         depth-first manner.
         """
         is_authorized = False    # retval

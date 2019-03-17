@@ -7,17 +7,17 @@ from typing import Dict, Tuple, List
 class ArgumentSpecification(object):
     """
     ArgumentSpecification determines which positional and keyword arguments a
-    given AuthCallback needs. AuthCallbackMiddleware and CompositeAuthCallback
+    given Guard needs. GuardMiddleware and CompositeGuard
     use this information to know which incoming proxy arguments should be bound
-    to the arguments declared by the corresponding AuthCallback.on_authorization
+    to the arguments declared by the corresponding Guard.on_authorization
     method.
     """
 
-    def __init__(self, callback: 'AuthCallback'):
-        self.callback = callback
-        self.signature = inspect.signature(callback.on_authorization)
+    def __init__(self, guard: 'Guard'):
+        self.guard = guard
+        self.signature = inspect.signature(guard.on_authorization)
 
-        # determine which arguments expected by the callback's
+        # determine which arguments expected by the guard's
         # on_authorization method that are positional and which are keyword.
         self.kwarg_keys = set()
         self.arg_keys = []
