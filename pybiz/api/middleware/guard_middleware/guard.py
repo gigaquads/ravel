@@ -114,19 +114,23 @@ class CompositeGuard(Guard):
         elif self._op == OP_CODE.OR:
             rhs_exc = self._rhs(context, arguments)
             if rhs_exc is not None and lhs_exc is not None:
-                return CompositeGuardException(lhs_exc, rhs_exc)
+                return CompositeGuardException.from_guards(lhs_exc, rhs_exc)
         elif self._op == OP_CODE.NOT:
             if lhs_exc is None:
-                return lhs_exc
+                return CompositeGuardException(
+                    f'~{self._lhs.__class__.__name__} failed'
+                )
         else:
             return ValueError(f'op not recognized, "{self._op}"')
 
         return None
 
 class CompositeGuardException(ApiError):
-    def __init__(self, lhs_exc, rhs_exc):
+
+    @classmethod
+    def from_guards(cls, lhs_exc, rhs_exc):
         message = (
             f'{lhs_exc.__class__.__name__}: {lhs_exc.message}\n'
             f'{rhs_exc.__class__.__name__}: {rhs_exc.message}'
         )
-        super().__init__(message)
+        return cls(message)
