@@ -44,6 +44,7 @@ class Relationship(object):
         on_get=None,
         on_del=None,
         on_add=None,
+        on_rem=None,
         many=False,
         ordering=None,
         fields=None,
@@ -63,6 +64,7 @@ class Relationship(object):
         self.on_get = normalize_to_tuple(on_get)
         self.on_del = normalize_to_tuple(on_del)
         self.on_add = normalize_to_tuple(on_add)
+        self.on_rem = normalize_to_tuple(on_rem)
 
         # set in self.bind. Host is the BizObject class that hosts tis
         # relationship, and `name` is the relationship attribute on said class.
