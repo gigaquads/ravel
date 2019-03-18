@@ -318,12 +318,12 @@ class BizObject(metaclass=BizObjectMeta):
             if bizobj is None:
                 continue
             record = bizobj._data.copy()
-            record, errors = self.schema.process(record)
+            cls.insert_defaults(record)
+            record, errors = cls.schema.process(record)
             record.pop('_rev', None)
             if errors:
                 raise Exception(f'could not update object: {errors}')
             records.append(record)
-            cls.insert_defaults(record)
 
         created_records = cls.get_dao().create_many(records)
 
@@ -385,10 +385,8 @@ class BizObject(metaclass=BizObjectMeta):
 
             for bizobj in bizobj_partition:
                 record = bizobj.dirty_data
-                record, errors = self.schema.process(record)
-                if errors:
-                    raise Exception(f'could not update object: {errors}')
                 record.pop('_rev', None)
+                record.pop('_id', None)
                 records.append(record)
                 _ids.append(bizobj._id)
 
