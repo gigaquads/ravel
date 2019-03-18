@@ -17,7 +17,8 @@ class Session(BizObject):
     def __abstract__():
         return True
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._user_type = self.user_type()
 
     @staticmethod
