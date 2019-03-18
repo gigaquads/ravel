@@ -4,7 +4,7 @@ from pybiz.exc import NotAuthorizedError
 from pybiz.util import is_sequence
 
 from ..base import RegistryMiddleware
-from .guard import Guard
+from .guard import Guard, GuardFailed
 
 
 class GuardMiddleware(RegistryMiddleware):
@@ -34,7 +34,9 @@ class GuardMiddleware(RegistryMiddleware):
         # execute each Guard, raising
         # NotAuthorizedError as soon as possible
         for guard in guards:
-            guard(context, arguments)
+            ok = guard(context, arguments)
+            if not ok:
+                raise GuardFailed(guard)
 
     def _compute_arguments_dict(self, proxy, args, kwargs) -> Dict:
         """

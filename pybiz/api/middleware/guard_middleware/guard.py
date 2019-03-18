@@ -130,7 +130,7 @@ class CompositeGuard(Guard):
                 raise GuardFailed(self._lhs)
         elif self._op == OP_CODE.OR:
             if not lhs_ok:
-                rhs_ok, rhs_exc = self._rhs(context, arguments)
+                rhs_ok = self._rhs(context, arguments)
                 if not rhs_ok:
                     raise GuardFailed(self)
         elif self._op == OP_CODE.NOT:
