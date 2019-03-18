@@ -210,6 +210,26 @@ class Hierarchy(BizObject):
         self.unload('children')
         self.children.update()
 
+    def apply(self, func, direction, args=None, kwargs=None, inclusive=True):
+        args = args or tuple()
+        kwargs = kwargs or {}
+        results = []
+        if inclusive:
+            result = func(self, *args, **kwargs)
+            results.append(result)
+        if direction < 0:
+            node = self.r.parent.query()
+            while node is not None:
+                result = func(node, *args, **kwargs)
+                results.append(result)
+                node = node.parent
+        else:
+            for node in self.r.children.query():
+                child_results = node.apply(func, direction, args, kwargs)
+                results.extend(child_results)
+        return results
+
+
 
 if __name__ == '__main__':
     from pybiz.api import ReplRegistry
