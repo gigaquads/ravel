@@ -34,9 +34,7 @@ class GuardMiddleware(RegistryMiddleware):
         # execute each Guard, raising
         # NotAuthorizedError as soon as possible
         for guard in guards:
-            exc = guard(context, arguments)
-            if exc is not None:
-                raise exc
+            guard(context, arguments)
 
     def _compute_arguments_dict(self, proxy, args, kwargs) -> Dict:
         """

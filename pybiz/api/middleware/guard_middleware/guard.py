@@ -16,11 +16,11 @@ OP_CODE = Enum(
 
 class Guard(object):
     """
-    Subclasses of Guard must implement on_authorization, which determines
+    Subclasses of Guard must implement guard, which determines
     whether a given request is authorized, by inspecting arguments passed into
     a corresponding RegistryProxy at runtime.
 
-    Positional and keyword argument names declared in the on_authorization
+    Positional and keyword argument names declared in the guard
     method are plucked from the incoming arguments dynamically (following the
     required `context` dict argument).
 
@@ -31,9 +31,12 @@ class Guard(object):
     def __init__(self):
         self.spec = ArgumentSpecification(self)
 
-    def __call__(self, context: Dict, arguments: Dict) -> Exception:
+    def __repr__(self):
+        return f'<Guard({self.display_string})>'
+
+    def __call__(self, context: Dict, arguments: Dict) -> bool:
         args, kwargs = self.spec.extract(arguments)
-        return self.on_authorization(context, *args, **kwargs)
+        return self.execute(context, *args, **kwargs)
 
     def __and__(self, other):
         return CompositeGuard(OP_CODE.AND, self, other)
@@ -44,7 +47,11 @@ class Guard(object):
     def __invert__(self):
         return CompositeGuard(OP_CODE.NOT, self, None)
 
-    def on_authorization(self, context: Dict, *args, **kwargs) -> bool:
+    @property
+    def display_string(self):
+        return f'{self.__class__.__name__}'
+
+    def execute(self, context: Dict, *args, **kwargs) -> bool:
         """
         Determine whether RegistryProxy request is authorized by performing any
         necessary authorization check here. Each subclass must explicitly
@@ -52,7 +59,7 @@ class Guard(object):
 
         ```python
         class UserOwnsPost(Guard):
-            def on_authorization(context, user, post):
+            def execute(context, user, post):
                 return user.owns(post)
         ```
 
@@ -86,14 +93,24 @@ class CompositeGuard(Guard):
     """
 
     def __init__(self, op: Text, lhs: Guard, rhs: Guard):
+        super().__init__()
         self._op = op
         self._lhs = lhs
         self._rhs = rhs
 
     def __call__(self, context: Dict, arguments: Dict) -> bool:
-        return self.on_authorization(context, arguments)
+        return self.execute(context, arguments)
 
-    def on_authorization(self, context: Dict, arguments: Dict):
+    @property
+    def display_string(self):
+        if self._op == OP_CODE.NOT:
+            return f'~{self._lhs.display_string}'
+        if self._op == OP_CODE.AND:
+            return f'({self._lhs.display_string} & {self._rhs.display_string})'
+        if self._op == OP_CODE.OR:
+            return f'({self._lhs.display_string} | {self._rhs.display_string})'
+
+    def execute(self, context: Dict, arguments: Dict):
         """
         Compute the boolean value of one or more nested Guard in a
         depth-first manner.
@@ -101,36 +118,29 @@ class CompositeGuard(Guard):
         is_authorized = False    # retval
 
         # compute LHS for both & and |.
-        lhs_exc = self._lhs(context, arguments)
+        lhs_ok = self._lhs(context, arguments)
 
         if self._op == OP_CODE.AND:
             # We only need to check RHS if LHS isn't already False.
-            if lhs_exc is None:
-                rhs_exc = self._rhs(context, arguments)
-                if rhs_exc is not None:
-                    return rhs_exc
+            if lhs_ok:
+                rhs_ok = self._rhs(context, arguments)
+                if not rhs_ok:
+                    raise GuardFailed(self._rhs)
             else:
-                return lhs_exc
+                raise GuardFailed(self._lhs)
         elif self._op == OP_CODE.OR:
-            rhs_exc = self._rhs(context, arguments)
-            if rhs_exc is not None and lhs_exc is not None:
-                return CompositeGuardException.from_guards(lhs_exc, rhs_exc)
+            if not lhs_ok:
+                rhs_ok, rhs_exc = self._rhs(context, arguments)
+                if not rhs_ok:
+                    raise GuardFailed(self)
         elif self._op == OP_CODE.NOT:
-            if lhs_exc is None:
-                return CompositeGuardException(
-                    f'~{self._lhs.__class__.__name__} failed'
-                )
-        else:
-            return ValueError(f'op not recognized, "{self._op}"')
+            if lhs_ok:
+                raise GuardFailed(self)
 
-        return None
+        return True
 
-class CompositeGuardException(ApiError):
 
-    @classmethod
-    def from_guards(cls, lhs_exc, rhs_exc):
-        message = (
-            f'{lhs_exc.__class__.__name__}: {lhs_exc.message}\n'
-            f'{rhs_exc.__class__.__name__}: {rhs_exc.message}'
-        )
-        return cls(message)
+class GuardFailed(ApiError):
+    def __init__(self, guard):
+        super().__init__(guard.display_string)
+        self.guard = guard

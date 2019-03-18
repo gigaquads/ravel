@@ -9,16 +9,16 @@ class ArgumentSpecification(object):
     ArgumentSpecification determines which positional and keyword arguments a
     given Guard needs. GuardMiddleware and CompositeGuard
     use this information to know which incoming proxy arguments should be bound
-    to the arguments declared by the corresponding Guard.on_authorization
+    to the arguments declared by the corresponding Guard.execute
     method.
     """
 
     def __init__(self, guard: 'Guard'):
         self.guard = guard
-        self.signature = inspect.signature(guard.on_authorization)
+        self.signature = inspect.signature(guard.execute)
 
         # determine which arguments expected by the guard's
-        # on_authorization method that are positional and which are keyword.
+        # execute method that are positional and which are keyword.
         self.kwarg_keys = set()
         self.arg_keys = []
         self.arg_key_set = set()
