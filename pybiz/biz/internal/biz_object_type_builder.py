@@ -3,6 +3,8 @@ import inspect
 
 from typing import Type, List, Dict, Tuple
 
+from appyratus.utils import DictObject
+
 from pybiz.schema import Schema, fields, String, Field, Int
 from pybiz.util import import_object, is_bizobj
 from pybiz.constants import (
@@ -48,6 +50,9 @@ class BizObjectTypeBuilder(object):
         self._bind_relationships(biz_type)
         self._build_relationship_properties(biz_type)
         self._build_field_properties(biz_type)
+
+        setattr(biz_type, 'r', DictObject(biz_type.relationships))
+        setattr(biz_type, 'f', DictObject(biz_type.schema.fields))
 
     def _build_schema_type(self, name, biz_type):
         # use the schema class override if defined
