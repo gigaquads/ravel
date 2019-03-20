@@ -83,14 +83,16 @@ class Relationship(object):
     def __repr__(self):
         return '<{rel_name}({attrs})>'.format(
             rel_name=self.__class__.__name__,
-            attrs=', '.join([
-                (self.biz_type.__name__ + '.' if self.biz_type else '')
-                    + str(self._name) or '',
-                'many={}'.format(self.many),
-                'private={}'.format(self.private),
-                'lazy={}'.format(self.lazy),
-                'readonly={}'.format(self.readonly),
-            ])
+            attrs=', '.join(
+                [
+                    (self.biz_type.__name__ + '.' if self.biz_type else '') +
+                    str(self._name) or '',
+                    'many={}'.format(self.many),
+                    'private={}'.format(self.private),
+                    'lazy={}'.format(self.lazy),
+                    'readonly={}'.format(self.readonly),
+                ]
+            )
         )
 
     @property
@@ -170,16 +172,19 @@ class Relationship(object):
             else:
                 spec = QuerySpecification.prepare([], target_type)
 
-            self.metadata.append({
-                'base_spec': spec,
-                'target_type': target_type,
-                'takes_target_type': takes_target_type,
-                'kwarg_names': {
-                    p.name for i, p in enumerate(sig.parameters.values())
-                    if (p.kind == Parameter.POSITIONAL_OR_KEYWORD)
-                        and (i > (0 if not takes_target_type else 1))
-                },
-            })
+            self.metadata.append(
+                {
+                    'base_spec': spec,
+                    'target_type': target_type,
+                    'takes_target_type': takes_target_type,
+                    'kwarg_names': {
+                        p.name
+                        for i, p in enumerate(sig.parameters.values())
+                        if (p.kind == Parameter.POSITIONAL_OR_KEYWORD) and
+                        (i > (0 if not takes_target_type else 1))
+                    },
+                }
+            )
 
         self.on_bootstrap()
         self._is_bootstrapped = True
@@ -216,8 +221,8 @@ class Relationship(object):
                     spec.offset = max(0, offset)
                 if ordering:
                     spec.order_by = tuple(
-                        func(target_type) for func in
-                        normalize_to_tuple(ordering)
+                        func(target_type)
+                        for func in normalize_to_tuple(ordering)
                     )
 
             if meta['takes_target_type']:
@@ -239,7 +244,7 @@ class Relationship(object):
 
         if self.many:
             result.relationship = self
-            result.bizobj = caller   # TODO: rename bizobj back to owner
+            result.bizobj = caller    # TODO: rename bizobj back to owner
             return result
         else:
             return result[0]
