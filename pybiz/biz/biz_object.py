@@ -297,11 +297,11 @@ class BizObject(metaclass=BizObjectMeta):
         if data:
             self.merge(data)
         prepared_record = self.dirty_data
+        prepared_record.pop('_rev', None)
+        prepared_record.pop('_id', None)
         prepared_record, errors = self.schema.process(prepared_record)
         if errors:
             raise Exception(f'could not update object: {errors}')
-        prepared_record.pop('_rev', None)
-        prepared_record.pop('_id', None)
         updated_record = self.get_dao().update(self._id, prepared_record)
         self._data.update(updated_record)
         return self.clean()

@@ -1,3 +1,3 @@
 from .user import User
 from .session import Session
-from .hierarchy import Hierarchy
+from .recursive_list import RecursiveList

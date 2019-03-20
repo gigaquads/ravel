@@ -5,11 +5,11 @@ from pybiz import BizObject, Relationship, fields
 
 # TODO: implement updates to depth in insert and unlink
 
-class Hierarchy(BizObject):
+class RecursiveList(BizObject):
     """
-    # Hierarchy
-    Each Hierarchy is essentially a linked list, where node that has a
-    String name. In addition, each node may have "child" Hierarchys, in which
+    # RecursiveList
+    Each RecursiveList is essentially a linked list, where node that has a
+    String name. In addition, each node may have "child" RecursiveLists, in which
     case it is called a "parent" . In other words, this is a recursive data
     structure.
 
@@ -24,9 +24,9 @@ class Hierarchy(BizObject):
     ```
 
     ## Fields
-    - `name`: String identifier for this Hierarchy
-    - `size`: The number of its children Hierarchys
-    - `position`: The positional index of this Hierarchy in its parent
+    - `name`: String identifier for this RecursiveList
+    - `size`: The number of its children RecursiveLists
+    - `position`: The positional index of this RecursiveList in its parent
     """
 
     size = fields.Int(nullable=False, default=0, required=True)
@@ -110,8 +110,8 @@ class Hierarchy(BizObject):
 
     def unlink(self):
         """
-        Disassociate this Hierarchy with its parent, adjusting the indexes
-        of all sibling Hierarchys that remain.
+        Disassociate this RecursiveList with its parent, adjusting the indexes
+        of all sibling RecursiveLists that remain.
         """
         if self.parent_id is None:
             return
@@ -134,11 +134,11 @@ class Hierarchy(BizObject):
         self.unload({'parent', 'previous', 'following'})
         dirty.update()
 
-    def insert_many(self, children: List['Hierarchy'], index: int, copy=False):
+    def insert_many(self, children: List['RecursiveList'], index: int, copy=False):
         """
-        Remove each child Hierarchy from whatever list it may already belong to
-        and insert it in this Hierarchy, adjusting the position of all sibling
-        Hierarchys downstream.
+        Remove each child RecursiveList from whatever list it may already belong to
+        and insert it in this RecursiveList, adjusting the position of all sibling
+        RecursiveLists downstream.
         """
         position = max(0, min(self.size, index))
         do_shift_sibling_positions = position < self.size
@@ -173,33 +173,33 @@ class Hierarchy(BizObject):
         self.unload('children')
         dirty.update()
 
-    def insert(self, child: 'Hierarchy', index: int, copy=False):
+    def insert(self, child: 'RecursiveList', index: int, copy=False):
         """
-        Insert a Hierarchy at the given index.
+        Insert a RecursiveList at the given index.
         """
         self.insert_many([child], index, copy=copy)
 
-    def unshift(self, child: 'Hierarchy', copy=False):
+    def unshift(self, child: 'RecursiveList', copy=False):
         """
-        Insert a child Hierarchy at the head of this Hierarchy's children.
+        Insert a child RecursiveList at the head of this RecursiveList's children.
         """
         self.insert_many([child], 0, copy=copy)
 
-    def unshift_many(self, children: List['Hierarchy'], copy=False):
+    def unshift_many(self, children: List['RecursiveList'], copy=False):
         """
-        Insert a list of Hierarchys at the head of this Hierarchy's children.
+        Insert a list of RecursiveLists at the head of this RecursiveList's children.
         """
         self.insert_many(children, 0, copy=copy)
 
-    def push(self, child: 'Hierarchy', copy=False):
+    def push(self, child: 'RecursiveList', copy=False):
         """
-        Insert a child Hierarchy at the tail of this Hierarchy's children.
+        Insert a child RecursiveList at the tail of this RecursiveList's children.
         """
         self.insert_many([child], self.size, copy=copy)
 
-    def push_many(self, children: List['Hierarchy'], copy=False):
+    def push_many(self, children: List['RecursiveList'], copy=False):
         """
-        Insert a list of Hierarchys at the tail of this Hierarchy's children.
+        Insert a list of RecursiveLists at the tail of this RecursiveList's children.
         """
         self.insert_many(children, self.size, copy=copy)
 
@@ -236,14 +236,14 @@ if __name__ == '__main__':
 
     repl = ReplRegistry()
 
-    class Hierarchy(Hierarchy):
+    class RecursiveList(RecursiveList):
         name = fields.String()
 
     @repl()
     def test_push():
-        parent = Hierarchy(name='parent', position=0).save()
+        parent = RecursiveList(name='parent', position=0).save()
         for i in range(3):
-            child = Hierarchy(name=f'child_{i}').create()
+            child = RecursiveList(name=f'child_{i}').create()
             parent.push(child)
 
         for s1, s2 in zip(parent.children, parent.children[1:]):
@@ -254,9 +254,9 @@ if __name__ == '__main__':
 
     @repl()
     def test_unshift():
-        parent = Hierarchy(name='parent', position=0).save()
+        parent = RecursiveList(name='parent', position=0).save()
         for i in range(3):
-            child = Hierarchy(name=f'child_{i}').create()
+            child = RecursiveList(name=f'child_{i}').create()
             parent.unshift(child)
 
         for s1, s2 in zip(parent.children, parent.children[1:]):
@@ -267,8 +267,8 @@ if __name__ == '__main__':
 
     @repl()
     def test_unlink():
-        parent = Hierarchy(name='parent', position=0).save()
-        child = Hierarchy(name='child').save()
+        parent = RecursiveList(name='parent', position=0).save()
+        child = RecursiveList(name='child').save()
 
         parent.unshift(child)
 
@@ -286,9 +286,9 @@ if __name__ == '__main__':
 
     @repl()
     def test_reverse():
-        parent = Hierarchy(name='parent', position=0).save()
+        parent = RecursiveList(name='parent', position=0).save()
         for i in range(3):
-            child = Hierarchy(name=f'child_{i}').create()
+            child = RecursiveList(name=f'child_{i}').create()
             parent.push(child)
 
         parent.reverse()
@@ -300,9 +300,9 @@ if __name__ == '__main__':
 
     @repl()
     def test_insert_many():
-        parent = Hierarchy(name='parent', position=0).save()
+        parent = RecursiveList(name='parent', position=0).save()
         children = [
-            Hierarchy(name=f'child_{i}').create() for i in range(1, 6)
+            RecursiveList(name=f'child_{i}').create() for i in range(1, 6)
         ]
         for child in children[:2]:
             parent.push(child)
