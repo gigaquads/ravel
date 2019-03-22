@@ -7,14 +7,15 @@ from pybiz.exc import RelationshipError
 
 
 class BizList(object):
-
     @classmethod
     def type_factory(cls, biz_type: Type['BizObject']):
         derived_name = f'{biz_type.__name__}BizList'
-        derived_type = type(derived_name, (cls, ), {
-            IS_BIZLIST_ANNOTATION: True,
-            'biz_type': biz_type,
-        })
+        derived_type = type(
+            derived_name, (cls, ), {
+                IS_BIZLIST_ANNOTATION: True,
+                'biz_type': biz_type,
+            }
+        )
 
         def build_property(attr_name):
             return property(
@@ -118,10 +119,8 @@ class BizList(object):
         return self.biz_type.save_many(self._bizobj_arr, *args, **kwargs)
 
     def delete(self):
-        return self.biz_type.delete_many(
-            bizobj._id for bizobj in self._bizobj_arr
-            if bizobj._bizobj_arr.get('_id')
-        )
+        ids = [bizobj for bizobj in self._bizobj_arr if bizobj._id]
+        return self.biz_type.delete_many(ids)
         return self
 
     def load(self, fields: Set[Text] = None):
@@ -154,6 +153,15 @@ class BizList(object):
         self._perform_on_add([bizobj])
         self._bizobj_arr.insert(index, bizobj)
         return self
+
+    def remove(self, bizobj):
+        if self.relationship and self.relationship.on_rem:
+            if self.relationship.readonly:
+                raise RelationshipError(f'{self.relationship} is read-only')
+            if bizobj:
+                for cb_func in self.relationship.on_rem:
+                    cb_func(self.bizobj, bizobj)
+            del self._bizobj_arr[self._id.index(bizobj._id)]
 
     def _perform_on_add(self, bizobjs):
         if self.relationship and self.relationship.on_add:
