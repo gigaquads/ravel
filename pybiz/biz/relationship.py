@@ -226,7 +226,7 @@ class Relationship(object):
                     )
 
             if meta['takes_target_type']:
-                predicate = func(target_type, target, **func_kwargs)[1]
+                predicate = func(self.biz_type, target, **func_kwargs)[1]
             else:
                 predicate = func(target, **func_kwargs)[1]
             if predicate:
