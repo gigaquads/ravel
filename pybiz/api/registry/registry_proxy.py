@@ -9,7 +9,7 @@ class RegistryProxy(object):
         self.func = func
         self.decorator = decorator
         self.target = self.resolve(func)
-        self.signature = inspect.signature(func)
+        self.signature = inspect.signature(self.target)
         self.is_async = False
 
     def __repr__(self):
