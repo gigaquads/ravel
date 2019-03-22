@@ -9,7 +9,9 @@ from .user import User
 class Session(BizObject):
     user_id = fields.Field(required=True, nullable=True, private=True)
     user = Relationship(
-        conditions=lambda self: (self._user_type, self.resolve_user()),
+        conditions=(
+            lambda cls, self: (cls.user_type(), self.build_user_predicate())
+        ),
         readonly=True,
     )
 
@@ -17,14 +19,11 @@ class Session(BizObject):
     def __abstract__():
         return True
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._user_type = self.user_type()
-
     @staticmethod
     def user_type() -> Type[User]:
         raise NotImplementedError('return a User subclass')
 
-    def resolve_user(self) -> Predicate:
+    def build_user_predicate(self) -> Predicate:
+        User = self.user_type()
         if self.user_id is not None:
-            return self._user_type._id == self.user_id
+            return User._id == self.user_id
