@@ -8,7 +8,7 @@ from mock import MagicMock
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
-from pybiz.util import is_bizobj
+from pybiz.util import is_bizobj, normalize_to_tuple
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -137,55 +137,27 @@ class Relationship(object):
         for func in self._ordering:
             func.__globals__.update(registry.manifest.types.biz)
 
-        # resolve the BizObject classes to query in each condition and
-        # prepare their QuerySpecifications.
+        # analyze each Relationship condition function and collect relevant
+        # metadata used in their incocation during self.query()
         for idx, func in enumerate(self.conditions):
-            sig = inspect.signature(func)
+            meta = ConditionMetadata(self, func).build()
+            self.metadata.append(meta)
+            # if limit, offset and other query specification arguments were
+            # provided to the Relationship ctor and there are multiple
+            # "condition" functions, then we need them to apply to the last
+            # condition function to execute in self.query(), since these
+            # parameters pertain to the target BizObject type, not to the
+            # intermediate ones..
+            if func is self.conditions[-1]:
+                meta.query_spec.limit = self._limit
+                meta.query_spec.offset = self._offset
+                meta.query_spec.order_by = tuple(
+                    f(meta.target_type) for f in self._ordering
+                )
+                for x in meta.query_spec.order_by:
+                    meta.query_spec.fields.add(x.key)
 
-            # extract the target BizObject type for the join
-            mock_self = MagicMock()
-            mock_kwargs = {
-                k: MagicMock()
-                for i, k in enumerate(sig.parameters) if i > 0
-            }
-            if 'cls' in sig.parameters and 'self' in sig.parameters:
-                biz_type = self.biz_type
-                takes_target_type = True
-                if len(sig.parameters) > 2:
-                    target_type = func(biz_type, mock_self, **mock_kwargs)[0]
-                else:
-                    target_type = func(biz_type, mock_self)[0]
-            else:
-                takes_target_type = False
-                if len(sig.parameters) > 1:
-                    target_type = func(mock_self, **mock_kwargs)[0]
-                else:
-                    target_type = func(mock_self)[0]
-
-            if func is self.conditions[0]:
-                spec = QuerySpecification.prepare([], target_type)
-                spec.limit = self._limit
-                spec.offset = self._offset
-                spec.order_by = tuple(f(target_type) for f in self._ordering)
-                for x in spec.order_by:
-                    spec.fields.add(x.key)
-            else:
-                spec = QuerySpecification.prepare([], target_type)
-
-            self.metadata.append(
-                {
-                    'base_spec': spec,
-                    'target_type': target_type,
-                    'takes_target_type': takes_target_type,
-                    'kwarg_names': {
-                        p.name
-                        for i, p in enumerate(sig.parameters.values())
-                        if (p.kind == Parameter.POSITIONAL_OR_KEYWORD) and
-                        (i > (0 if not takes_target_type else 1))
-                    },
-                }
-            )
-
+        # finally perform on_boostrap logic and mark as bootstrapped
         self.on_bootstrap()
         self._is_bootstrapped = True
 
@@ -202,17 +174,19 @@ class Relationship(object):
         kwargs = kwargs or {}
 
         for func, meta in zip(self.conditions, self.metadata):
-            target_type = meta['target_type']
-            kwarg_names = meta['kwarg_names']
-            spec = meta['base_spec']
-
-            if kwargs and kwarg_names:
-                func_kwargs = {k: kwargs.get(k) for k in kwarg_names}
+            # if this conditon func takes and keyword arguments, we need to
+            # extract them by name from the kwargs parameter passed into this
+            # method.
+            if kwargs and meta.kwarg_names:
+                func_kwargs = {k: kwargs.get(k) for k in meta.kwarg_names}
             else:
                 func_kwargs = kwargs
 
+            # if we're executing the final target condition function, we need to
+            # update the QuerySpecification with any parameters passed in here
+            # (like limit, offset, etc.)
             if func is self.conditions[-1]:
-                spec = copy(spec)
+                spec = copy(meta.query_spec)
                 if fields:
                     spec.fields.update(fields)
                 if limit is not None:
@@ -221,19 +195,30 @@ class Relationship(object):
                     spec.offset = max(0, offset)
                 if ordering:
                     spec.order_by = tuple(
-                        func(target_type)
+                        func(meta.target_type)
                         for func in normalize_to_tuple(ordering)
                     )
+            else:
+                spec = meta.query_spec
 
-            if meta['takes_target_type']:
-                predicate = func(self.biz_type, target, **func_kwargs)[1]
+            # since some condition function can take the host Relationship
+            # as an initial positional argument and some may not, we have to
+            # consider this here when invoking the function, which gives us
+            # the query predicate to use in the query below.
+            if meta.has_rel_argument:
+                predicate = func(self, target, **func_kwargs)[1]
             else:
                 predicate = func(target, **func_kwargs)[1]
+
+            # finally perform the query.
             if predicate:
-                result = target_type.query(predicate, specification=spec)
+                result = meta.target_type.query(predicate, specification=spec)
             else:
                 result = None
 
+            # if we get an empty query result, we should abort further querying
+            # and return an empty BizList if the relationship is "many" or null
+            # otherwise.
             if not result:
                 if self.many:
                     return caller.BizList([], self, caller)
@@ -242,6 +227,8 @@ class Relationship(object):
             else:
                 target = result
 
+        # we have a result, so we return it or only the first element if
+        # first=True.
         if self.many:
             result.relationship = self
             result.bizobj = caller    # TODO: rename bizobj back to owner
@@ -258,14 +245,66 @@ class Relationship(object):
         self._name = name
 
     def set_internally(self, owner: 'BizObject', related):
+        """
+        This is somewhat hacky. It is used to perform on_set callbacks in
+        otherwise readonly Relationships. This is necessary for relationships to
+        be lazy loaded, for instance. We want readonly to mean only that the
+        developer cannot explicitly assign to the relationship, not that the
+        internal mechanisms should not work.
+        """
         owner.related[self.name] = related
         for cb_func in self.on_set:
             cb_func(owner, related)
 
 
-def normalize_to_tuple(obj):
-    if obj is not None:
-        if isinstance(obj, (list, tuple)):
-            return tuple(obj)
-        return (obj, )
-    return tuple()
+class ConditionMetadata(object):
+    """
+    This data class stores information regarding each "condition" function used
+    in a Relationship. This data is used to decide what to do when executing the
+    function in Relationship.query.
+    """
+
+    def __init__(self, relationship, func):
+        self.func = func
+        self.relationship = relationship
+        self.signature = inspect.signature(func)
+        self.has_rel_argument = False
+        self.query_spec = None
+
+    def build(self):
+        self.num_positional_args = self._set_num_positional_args()
+        self.has_rel_argument = self._set_has_rel_argument()
+        self.kwarg_names = self._set_kwarg_names()
+        self.target_type = self._set_target_type()
+        self.query_spec = QuerySpecification.prepare([], self.target_type)
+        return self
+
+    def _set_target_type(self):
+        mock_self = MagicMock()
+        mock_kwargs = {k: MagicMock() for k in self.kwarg_names}
+        if self.has_rel_argument:
+            return self.func(self.relationship, mock_self, **mock_kwargs)[0]
+        else:
+            return self.func(mock_self, **mock_kwargs)[0]
+
+    def _set_kwarg_names(self):
+        param_names = list(self.signature.parameters.keys())
+        offset = 1 if not self.has_rel_argument else 2
+        return set(param_names[offset:])
+
+    def _set_num_positional_args(self):
+        return len([
+            p for p in self.signature.parameters.values()
+            if p.kind == Parameter.POSITIONAL_OR_KEYWORD
+        ])
+
+    def _set_has_rel_argument(self):
+        if self.num_positional_args == 1:
+            return False
+        elif self.num_positional_args == 2:
+            return True
+        else:
+            raise Exception(
+                'condition functions do not accept '
+                'custom positional arguments'
+            )
