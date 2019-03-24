@@ -511,6 +511,12 @@ class BizObject(metaclass=BizObjectMeta):
         self.clean(keys)
         return self
 
+    def reload(self, keys=None) -> 'BizObject':
+        if isinstance(keys, str):
+            keys = {keys}
+        keys = {k for k in keys if self.is_loaded(k)}
+        return self.load(keys)
+
     def unload(self, keys: Set[Text]) -> 'BizObject':
         """
         Remove the given keys from field data and/or relationship data.
