@@ -109,11 +109,11 @@ class Relationship(object):
 
     @property
     def target(self) -> Type['BizObject']:
-        return self.metadata[-1]['target_type']
+        return self.metadata[-1].target_type
 
     @property
     def spec(self) -> 'QuerySpecification':
-        return self._meta[-1]['spec']
+        return self._meta[-1].query_spec
 
     @property
     def is_bootstrapped(self):
