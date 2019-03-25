@@ -1,7 +1,11 @@
 import inspect
 import traceback
+import logging
 
 from typing import Dict, Text
+
+from pybiz.logging import ConsoleLoggerInterface
+from pybiz.constants import CONSOLE_LOG_LEVEL
 
 from ..exc import RegistryProxyError
 
@@ -14,6 +18,8 @@ class RegistryProxy(object):
     wrapped function. Proxies also run middleware.
     """
 
+    log = ConsoleLoggerInterface(__name__, level=CONSOLE_LOG_LEVEL)
+
     class Error(object):
         """
         An `Error` simply keeps a record of an Exception that occurs and the
@@ -25,6 +31,13 @@ class RegistryProxy(object):
             self.middleware = middleware
             self.trace = traceback.format_exc().split('\n')
             self.exc = exc
+
+        def to_dict(self):
+            return {
+                'middleware': str(middleware),
+                'exception': exc.__class__.__name__,
+                'trace': self.trace,
+            }
 
     def __init__(self, func, decorator: 'RegistryDecorator'):
         self.func = func
@@ -63,6 +76,10 @@ class RegistryProxy(object):
                     raw_result = self.target(*args, **kwargs)
                 except Exception as exc:
                     error = RegistryProxy.Error(exc, None)
+                    self.log.exception(
+                        message='{self}.target failed',
+                        data=error.to_dict()
+                    )
 
         # perform teardown, running middleware post_requests.
         result, errors = self.post_request(
@@ -108,7 +125,12 @@ class RegistryProxy(object):
                 if isinstance(self.registry, mmware.registry_types):
                     mware.pre_request(self, raw_args, raw_kwargs)
         except Exception as exc:
-            return RegistryProxy.Error(exc, mware)
+            error = RegistryProxy.Error(exc, mware)
+            self.log.exception(
+                message='{self}.pre_request failed',
+                data=error.to_dict()
+            )
+            return error
         return None
 
     def on_request(self, raw_args, raw_kwargs):
@@ -131,7 +153,12 @@ class RegistryProxy(object):
                     mware.on_request(self, args, kwargs)
             return (args, kwargs, None)
         except Exception as exc:
-            return (args, kwargs, RegistryProxy.Error(exc, mware))
+            error = RegistryProxy.Error(exc, mware)
+            self.log.exception(
+                message='{self}.pre_request failed',
+                data=error.to_dict()
+            )
+            return (args, kwargs, error)
 
     def post_request(
         self, raw_args, raw_kwargs, args, kwargs, raw_result, error
@@ -150,8 +177,12 @@ class RegistryProxy(object):
                 self, raw_result, *args, **kwargs
             )
         except Exception as exc:
-            errors.append(RegistryProxy.Error(exc, None))
             result = None
+            errors.append(RegistryProxy.Error(exc, None))
+            self.log.exception(
+                message=f'{self.registry}.on_response failed',
+                data=errors[-1].to_dict()
+            )
 
         # run middleware post-request logic
         for mware in self.registry.middleware:
@@ -165,6 +196,10 @@ class RegistryProxy(object):
                     )
                 except Exception as exc:
                     errors.append(PybizError(exc, mware))
+                    self.log.exception(
+                        message=f'{mware}.post_response failed',
+                        data=errors[-1].to_dict()
+                    )
             if mware is error.middleware:
                 # only process middleware up to the point where middleware
                 # failed in either pre_request or on_request.
@@ -206,7 +241,6 @@ class AsyncRegistryProxy(RegistryProxy):
             raise RegistryProxyError(errors)
 
         return result
-
 
     def __repr__(self):
         return f'<{self.__class__.__name__}(async {self.name})>'

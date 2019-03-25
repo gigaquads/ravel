@@ -38,17 +38,17 @@ class Guard(object):
         args, kwargs = self.spec.extract(arguments)
         return self.execute(context, *args, **kwargs)
 
-    def __and__(self, other):
+    def __and__(self, other) -> 'CompositeGuard':
         return CompositeGuard(OP_CODE.AND, self, other)
 
-    def __or__(self, other):
+    def __or__(self, other) -> 'CompositeGuard':
         return CompositeGuard(OP_CODE.OR, self, other)
 
-    def __invert__(self):
+    def __invert__(self) -> 'CompositeGuard':
         return CompositeGuard(OP_CODE.NOT, self, None)
 
     @property
-    def display_string(self):
+    def display_string(self) -> Text:
         return f'{self.__class__.__name__}'
 
     def execute(self, context: Dict, *args, **kwargs) -> bool:

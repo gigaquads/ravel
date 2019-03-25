@@ -1,4 +1,5 @@
 import inspect
+import logging
 
 from typing import List, Dict, Text, Tuple, Set, Type
 from collections import deque
@@ -7,6 +8,7 @@ from appyratus.utils import DictObject, DictUtils
 
 from pybiz.manifest import Manifest
 from pybiz.util import JsonEncoder
+from pybiz.logging import ConsoleLoggerInterface
 
 from ..exc import RegistryError
 from .registry_decorator import RegistryDecorator
@@ -15,6 +17,9 @@ from .registry_argument_loader import RegistryArgumentLoader
 
 
 class Registry(object):
+
+    log = ConsoleLoggerInterface(__name__)
+
     def __init__(self, middleware: List['RegistryMiddleware'] = None):
         self._decorators = []
         self._proxies = {}

@@ -9,9 +9,6 @@ class RegistryProxyError(PybizError):
     def __init__(self, errors=None, *args, **kwargs):
         super().__init__('error proxying request')
         self.errors = errors
-        print(errors)
-        for err in errors:
-            print('\n'.join(err.trace))
 
 
 class GuardFailed(PybizError):
