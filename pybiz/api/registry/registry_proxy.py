@@ -122,7 +122,7 @@ class RegistryProxy(object):
         called in self.__call__.
         """
         error = RegistryProxy.Error(exc)
-        console.exception(
+        console.error(
             message=f'{self}.target ({self.name}) failed',
             data=error.to_dict()
         )
@@ -175,8 +175,8 @@ class RegistryProxy(object):
                     mware.pre_request(self, raw_args, raw_kwargs)
         except Exception as exc:
             error = RegistryProxy.Error(exc, mware)
-            console.exception(
-                message='{self}.pre_request middleware failed',
+            console.error(
+                message=f'{mware.__class__.__name__}.pre_request failed',
                 data=error.to_dict()
             )
             return error
@@ -206,8 +206,8 @@ class RegistryProxy(object):
             return (args, kwargs, None)
         except Exception as exc:
             error = RegistryProxy.Error(exc, mware)
-            console.exception(
-                message='{self}.on_request middleware failed',
+            console.error(
+                message=f'{mware.__class__.__name__}.on_request failed',
                 data=error.to_dict()
             )
             return (args, kwargs, error)
@@ -231,7 +231,7 @@ class RegistryProxy(object):
         except Exception as exc:
             result = None
             errors.append(RegistryProxy.Error(exc))
-            console.exception(
+            console.error(
                 message=f'{self.registry}.on_response failed',
                 data=errors[-1].to_dict()
             )
@@ -248,8 +248,10 @@ class RegistryProxy(object):
                     )
                 except Exception as exc:
                     errors.append(PybizError(exc, mware))
-                    console.exception(
-                        message=f'{mware}.post_response middleware failed',
+                    console.error(
+                        message=(
+                            f'{mware.__class__.__name__}.post_request failed'
+                        ),
                         data=errors[-1].to_dict()
                     )
             if (error is not None) and (mware is error.middleware):
