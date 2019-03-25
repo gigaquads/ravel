@@ -80,12 +80,12 @@ class RegistryProxy(object):
         any errors exist at this, point an exception is finally raised.
         """
         args, kwargs, error = self.pre_call(raw_args, raw_kwargs)
+        raw_result = None
         if error is None:
             try:
                 # self.target is the wrapped function. we call it here!
                 raw_result = self.target(*args, **kwargs)
             except Exception as exc:
-                raw_result = None
                 error = self.handle_target_exception(exc)
         result = self.post_call(
             raw_args, raw_kwargs, args, kwargs, raw_result, error
@@ -182,7 +182,7 @@ class RegistryProxy(object):
             return error
         return None
 
-    def on_request(self, raw_args, raw_kwargs):
+    def on_request(self, raw_args, raw_kwargs) -> Tuple[Tuple, Dict, Error]:
         """
         Transforms raw positional and keyword arguments according to what the
         wrapped (target) function expects and then executes on_request
@@ -268,18 +268,17 @@ class AsyncRegistryProxy(RegistryProxy):
 
     async def __call__(self, *raw_args, **raw_kwargs):
         args, kwargs, error = self.pre_call(raw_args, raw_kwargs)
+        raw_result = None
         if error is None:
             try:
                 # self.target is the wrapped function. we call it here!
                 raw_result = await self.target(*args, **kwargs)
             except Exception as exc:
                 error = self.handle_target_exception(exc)
-                raw_result = None
         result = self.post_call(
             raw_args, raw_kwargs, args, kwargs, raw_result, error
         )
         return result
-
 
     def __repr__(self):
         return f'<{self.__class__.__name__}(async {self.name})>'
