@@ -8,7 +8,7 @@ from collections import defaultdict
 
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
-from pybiz.util import is_bizobj, is_sequence, repr_biz_id
+from pybiz.util import is_bizobj, is_sequence, repr_biz_id, get_console_logger
 from pybiz.dirty import DirtyDict
 
 from .internal.biz_object_type_builder import BizObjectTypeBuilder
@@ -16,8 +16,11 @@ from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
 from .internal.query import Query, QueryUtils
 
+console = get_console_logger(__name__)
+
 
 class BizObjectMeta(type):
+
     builder = BizObjectTypeBuilder.get_instance()
 
     def __new__(cls, name, bases, ns):
@@ -30,12 +33,13 @@ class BizObjectMeta(type):
         type.__init__(biz_type, name, bases, ns)
         BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
         venusian.attach(
-            biz_type,
-            lambda scanner, name, biz_type: (
-                scanner.biz_types.setdefault(name, biz_type)
-            ),
-            category='biz'
+            biz_type, BizObjectMeta.venusian_callback, category='biz'
         )
+
+    @staticmethod
+    def venusian_callback(scanner, name, biz_type):
+        console.info(f'venusian detected {biz_type.__name__}')
+        scanner.biz_types.setdefault(name, biz_type)
 
 
 class BizObject(metaclass=BizObjectMeta):
@@ -174,6 +178,18 @@ class BizObject(metaclass=BizObjectMeta):
             if not isinstance(order_by, (tuple, list)):
                 order_by = (order_by, )
             query.spec.order_by = order_by
+
+        console.debug(
+            message='executing query',
+            data={
+                'class': cls.__name__,
+                'predicate': predicate,
+                'fields': query.spec.fields,
+                'order_by': query.spec.order_by,
+                'limit': query.spec.limit,
+                'offset': query.spec.offset,
+            }
+        )
 
         results = query.execute()
         if first:
@@ -390,6 +406,13 @@ class BizObject(metaclass=BizObjectMeta):
                 records.append(record)
                 _ids.append(bizobj._id)
 
+            console.debug(
+                message='performing update_many',
+                data={
+                    'partition_size': len(_ids),
+                    'total_size': len(bizobjs),
+                }
+            )
             updated_records = cls.get_dao().update_many(_ids, records)
 
             for bizobj, record in zip(bizobj_partition, updated_records):
@@ -404,12 +427,24 @@ class BizObject(metaclass=BizObjectMeta):
         This method is used internally and externally to insert field defaults
         into the `record` dict param.
         """
+        generated_defaults = {}
         for k, default in cls.defaults.items():
             if k not in record:
                 if callable(default):
-                    record[k] = default()
+                    defval = default()
                 else:
-                    record[k] = deepcopy(default)
+                    defval = deepcopy(default)
+                record[k] = defval
+                generated_defaults[k] = defval
+
+        if generated_defaults:
+            console.debug(
+                message='generated default values',
+                data={
+                    'type': cls.__name__,
+                    'defaults': generated_defaults,
+                }
+            )
 
     @property
     def dao(self) -> 'Dao':
@@ -506,6 +541,11 @@ class BizObject(metaclass=BizObjectMeta):
         """
         if isinstance(keys, str):
             keys = {keys}
+        console.debug(message='loading', data={
+            'class': self.__class__.__name__,
+            'instance': self._id,
+            'keys': keys
+        })
         fresh = self.get(_id=self._id, fields=keys)
         self.merge(fresh)
         self.clean(keys)
@@ -522,11 +562,16 @@ class BizObject(metaclass=BizObjectMeta):
         Remove the given keys from field data and/or relationship data.
         """
         keys = {keys} if isinstance(keys, str) else keys
+        console.debug(message='unloading', data={
+            'class': self.__class__.__name__,
+            'instance': self._id,
+            'keys': keys
+        })
         for k in keys:
             if k in self._data:
-                del self._data[k]
+                self._data.pop(k, None)
             elif k in self._related:
-                del self._related[k]
+                self._related.pop(k, None)
 
     def is_loaded(self, keys: Set[Text]) -> bool:
         """
@@ -552,7 +597,3 @@ class BizObject(metaclass=BizObjectMeta):
 
         result = dump(target=self, fields=fields, raw=raw)
         return result
-
-
-class AbstractBizObject(BizObject):
-    is_abstract = True

@@ -1,4 +1,5 @@
 from typing import Dict, Tuple, Type, Text
+from inspect import Parameter
 
 from .base import RegistryMiddleware
 
