@@ -70,22 +70,21 @@ class ConsoleLoggerInterface(LoggerInterface):
         self._style = style or 'json'
 
     def process_message(self, level: Text, message: Text, data: Dict) -> Text:
-        when = TimeUtils.utc_now().strftime('%m/%d/%Y @ %H:%M:%S')
+        when = TimeUtils.utc_now().strftime('%m/%d/%Y @ %H:%M:%S:%f')
         level = level.upper()
 
         if data:
             data = self._json.decode(self._json.encode(data))
             if self._style == 'json':
-                return self._to_json(data)
+                dumped_data = self._to_json(data)
             elif self._style == 'yaml':
-                return self._to_yaml(data)
+                dumped_data = self._to_yaml(data)
             else:
                 raise ValueError(f'unrcognized log style: {self.style}')
-            dumped_data = self._dump_payload(data).strip()
         else:
             dumped_data = None
 
-        display_string = f'{when} - {level} - {self._name} "{message}"'
+        display_string = f'{when} - ({level}) - {self._name} >>> {message}'
         if dumped_data:
             display_string += f'\n\n{dumped_data}\n'
         return display_string
@@ -94,7 +93,8 @@ class ConsoleLoggerInterface(LoggerInterface):
         return json.dumps(data, indent=2, sort_keys=True)
 
     def _to_yaml(self, data):
-        return yaml.dump(data, default_flow_style=False, default_style='')
+        lines = yaml.dump(data, default_flow_style=False).split('\n')
+        return '\n'.join('  ' + line for line in lines)
 
 
 if __name__ == '__main__':

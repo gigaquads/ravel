@@ -2,7 +2,7 @@ import pybiz.biz.biz_object as biz_object
 
 from typing import Text, Type, Tuple
 
-from pybiz.util import is_sequence
+from pybiz.util import is_sequence, get_console_logger
 from pybiz.exc import RelationshipError
 from pybiz.predicate import (
     ConditionalPredicate,
@@ -13,6 +13,8 @@ from pybiz.predicate import (
 from .query import QuerySpecification
 from ..relationship import Relationship
 from ..biz_list import BizList
+
+console = get_console_logger(__name__)
 
 
 class RelationshipProperty(property):
@@ -44,6 +46,13 @@ class RelationshipProperty(property):
             if key not in self._related:
                 if rel.lazy:
                     # fetch all fields
+                    console.debug(
+                        message='lazy loading relationship',
+                        data={
+                            'object': str(self),
+                            'relationship': str(rel)
+                        }
+                    )
                     value = rel.query(self)
                     rel.set_internally(self, value)
 

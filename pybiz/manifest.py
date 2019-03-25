@@ -16,8 +16,10 @@ from appyratus.files import Yaml, Json
 from appyratus.env import Environment
 
 from pybiz.exc import ManifestError
-from pybiz.util import import_object
+from pybiz.util import import_object, get_console_logger
 from pybiz.dao import DaoBinder
+
+console = get_console_logger(__name__)
 
 
 class Manifest(object):
@@ -73,6 +75,10 @@ class Manifest(object):
 
         # try to load manifest file from a YAML or JSON file
         if self.path is not None:
+            console.debug(
+                message='loading manifest file',
+                data={'path': self.path}
+            )
             ext = os.path.splitext(self.path)[1].lstrip('.').lower()
             if ext in Yaml.extensions():
                 file_data = Yaml.load_file(self.path)
@@ -132,9 +138,15 @@ class Manifest(object):
         for type_name, dao_type in self.types.dao.items():
             strap = self.bootstraps.get(type_name)
             if strap is not None:
+                console.debug(
+                    f'bootstrapping Dao type: {dao_type.__name__}'
+                )
                 dao_type.bootstrap(registry=registry, **strap.params)
         for biz_type in self.types.biz.values():
             if not (biz_type.is_abstract or biz_type.is_bootstrapped):
+                console.debug(
+                    f'bootstrapping BizObject type: {biz_type.__name__}'
+                )
                 biz_type.bootstrap(registry=registry)
 
         # inject all proxy target callables into each other's global namespace
@@ -156,6 +168,9 @@ class Manifest(object):
         # load BizObject and Dao classes from dotted path strings in bindings
         self._scan_dotted_paths()
 
+        # remove base BizObject class from types dict
+        self.types.biz.pop('BizObject', None)
+
     def _register_dao_types(self):
         """
         Associate each BizObject class with a corresponding Dao class.
@@ -164,14 +179,15 @@ class Manifest(object):
         for info in self.bindings:
             biz_type = self.types.biz.get(info.biz)
             if biz_type is None:
-                import ipdb; ipdb.set_trace()
-                
                 raise ManifestError(
                     f'cannot register {info.biz} with DaoBinder because '
                     f'the class was not found while processing the manifest'
                 )
             dao_type = self.types.dao[info.dao]
             if not self.binder.is_registered(biz_type):
+                console.debug(
+                    f'registering {biz_type.__name__} with DaoBinder'
+                )
                 binding = self.binder.register(
                     biz_type=biz_type,
                     dao_type=dao_type,
@@ -216,10 +232,18 @@ class Manifest(object):
 
         for k, v in (namespace or {}).items():
             if isinstance(v, type):
-                if issubclass(v, BizObject):
+                if issubclass(v, BizObject) and v is not BizObject:
                     self.types.biz[k] = v
+                    console.debug(
+                        f'detected BizObject type in '
+                        f'namespace dict: {v.__name__}'
+                    )
                 elif issubclass(v, Dao):
                     self.types.dao[k] = v
+                    console.debug(
+                        f'detected Dao type in namespace '
+                        f'dict: {v.__name__}'
+                    )
 
     def _scan_venusian(self):
         """
@@ -230,12 +254,16 @@ class Manifest(object):
         import pybiz.contrib
 
         def on_error(name):
-            import sys
-            exc = sys.exc_info()[0]
-            msg = traceback.format_exc().strip().split('\n')[-1]
-            print(
-                f'(warning) Venusian ignoring {name}\n -> {msg}'
+            console = get_console_logger('pybiz.manifest')
+            exc_str = traceback.format_exc()
+            console.debug(
+                message=f'venusian scan failed for {name}',
+                data={
+                    'trace': exc_str.split('\n')
+                }
             )
+
+        console.debug('venusian scan initiated')
 
         self.scanner.scan(pybiz.dao, onerror=on_error)
         self.scanner.scan(pybiz.contrib, onerror=on_error)
