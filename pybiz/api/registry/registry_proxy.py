@@ -85,6 +85,7 @@ class RegistryProxy(object):
                 # self.target is the wrapped function. we call it here!
                 raw_result = self.target(*args, **kwargs)
             except Exception as exc:
+                raw_result = None
                 error = self.handle_target_exception(exc)
         result = self.post_call(
             raw_args, raw_kwargs, args, kwargs, raw_result, error

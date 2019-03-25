@@ -46,7 +46,7 @@ class RelationshipProperty(property):
             if key not in self._related:
                 if rel.lazy:
                     # fetch all fields
-                    log.debug(
+                    console.debug(
                         message='lazy loading relationship',
                         data={
                             'object': str(self),
