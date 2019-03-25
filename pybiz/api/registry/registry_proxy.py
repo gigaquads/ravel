@@ -34,8 +34,8 @@ class RegistryProxy(object):
 
         def to_dict(self):
             return {
-                'middleware': str(middleware),
-                'exception': exc.__class__.__name__,
+                'middleware': str(self.middleware),
+                'exception': self.exc.__class__.__name__,
                 'trace': self.trace,
             }
 
@@ -122,7 +122,7 @@ class RegistryProxy(object):
         # middleware pre-request logic
         try:
             for mware in self.registry.middleware:
-                if isinstance(self.registry, mmware.registry_types):
+                if isinstance(self.registry, mware.registry_types):
                     mware.pre_request(self, raw_args, raw_kwargs)
         except Exception as exc:
             error = RegistryProxy.Error(exc, mware)
@@ -191,7 +191,7 @@ class RegistryProxy(object):
                     mware.post_request(
                         self,
                         raw_args, raw_kwargs,
-                        prepared_args, prepared_kwargs,
+                        args, kwargs,
                         result
                     )
                 except Exception as exc:
