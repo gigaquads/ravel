@@ -38,19 +38,38 @@ class RegistryMiddleware(object):
 
         return (Registry, )
 
-    def pre_request(self, proxy: 'RegistryProxy', args: Tuple, kwargs: Dict):
+    def pre_request(
+        self,
+        proxy: 'RegistryProxy',
+        args: Tuple,
+        kwargs: Dict
+    ):
         """
         In pre_request, args and kwargs are in the raw form before being
         processed by registry.on_request.
         """
 
-    def on_request(self, proxy: 'RegistryProxy', args: Tuple, kwargs: Dict):
+    def on_request(
+        self,
+        proxy: 'RegistryProxy',
+        args: Tuple,
+        kwargs: Dict
+    ):
         """
         In on_request, args and kwargs are in the form output by
         registry.on_request.
         """
 
-    def post_request(self, proxy: 'RegistryObject', args: Tuple, kwargs: Dict, result):
+    def post_request(
+        self,
+        proxy: 'RegistryObject',
+        raw_args: Tuple,
+        raw_kwargs: Dict,
+        args: Tuple,
+        kwargs: Dict,
+        result,
+        exc: Exception = None
+    ):
         """
         In post_request, args and kwargs are in the form output by
         registry.on_request.

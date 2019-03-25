@@ -7,10 +7,12 @@ from typing import Type, Coroutine
 from .registry import Registry, AsyncRegistryProxy
 
 
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
+
 class AsyncServerRegistry(Registry):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         self.server = None
         self.loop = None
 

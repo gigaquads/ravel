@@ -83,3 +83,15 @@ def remove_keys(
                 record.pop(k, None)
         records_out.append(record)
     return records_out
+
+
+def normalize_to_tuple(obj):
+    """
+    If obj is a tuple, return it as-is; otherwise, return it in a tuple with it
+    as its single element.
+    """
+    if obj is not None:
+        if isinstance(obj, (list, tuple)):
+            return tuple(obj)
+        return (obj, )
+    return tuple()

@@ -10,7 +10,8 @@ class Session(BizObject):
     user_id = fields.Field(required=True, nullable=True, private=True)
     user = Relationship(
         conditions=(
-            lambda cls, self: (cls.user_type(), self.build_user_predicate())
+            lambda rel, self: (
+                rel.biz_type.user_type(), self.build_user_predicate())
         ),
         readonly=True,
     )

@@ -4,24 +4,26 @@ import json
 import logging
 import yaml
 
-from logging import Formatter, StreamHandler, DEBUG
+from logging import Formatter, StreamHandler, INFO
+from typing import Text, Dict
 
 from appyratus.utils import TimeUtils
 
 from pybiz.util.json_encoder import JsonEncoder
 
 
-class Logger(object):
-
-    json = JsonEncoder()
-
-    def __init__(self, name, level=None, fstr=None, handlers=None):
+class LoggerInterface(object):
+    def __init__(self, name, level=None, handlers=None):
         self._name = name
-        self._level = level or DEBUG
-        self._fstr = fstr
+        self._level = level or INFO
+        self._formatter = Formatter('%(message)s')
 
-        self._py_logger = logging.getLogger(self._name)
-        self._py_logger.setLevel(self._level)
+        self._logger = logging.getLogger(self._name)
+
+        if self._level:
+            self._logger.setLevel(self._level)
+        else:
+            self._level = self._logger.level
 
         if handlers:
             self._handlers = handlers
@@ -30,69 +32,69 @@ class Logger(object):
             stderr_handler.setLevel(self._level)
             self._handlers = [stderr_handler]
 
-        if self._fstr is None:
-            self._fstr = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-
-        self._formatter = Formatter(self._fstr)
-
         for handler in self._handlers:
             if not handler.formatter:
                 handler.setFormatter(self._formatter)
-            self._py_logger.addHandler(handler)
+            self._logger.addHandler(handler)
 
-    def debug(self, message=None):
-        self._py_logger.debug(message)
+    @property
+    def logger(self):
+        return self._logger
 
-    def info(self, message=None):
-        self._py_logger.info(message)
+    def process_message(self, level: Text, message: Text, data: Dict) -> Text:
+        return message
 
-    def warning(self, message=None):
-        self._py_logger.warning(message)
+    def debug(self, message=None, data: Dict = None):
+        self._logger.debug(self.process_message('debug', message, data))
 
-    def critical(self, message=None):
-        self._py_logger.critical(message)
+    def info(self, message=None, data: Dict = None):
+        self._logger.info(self.process_message('info', message, data))
 
-    def error(self, message=None):
-        self._py_logger.critical(message)
+    def warning(self, message=None, data: Dict = None):
+        self._logger.warning(self.process_message('warning', message, data))
 
-    def exception(self, message=None):
-        self._py_logger.exception(message)
+    def critical(self, message=None, data: Dict = None):
+        self._logger.critical(self.process_message('critical', message, data))
+
+    def error(self, message=None, data: Dict = None):
+        self._logger.critical(self.process_message('error', message, data))
+
+    def exception(self, message=None, data: Dict = None):
+        self._logger.exception(self.process_message('error', message, data))
 
 
-class ConsoleLogger(Logger):
-
+class ConsoleLoggerInterface(LoggerInterface):
     def __init__(self, name, level=None, style=None):
-        super().__init__(name, level=level, fstr='%(message)s')
+        super().__init__(name, level=level)
+        self._json = JsonEncoder()
         self._style = style or 'json'
 
-    def debug(self, message, **payload):
-        logger = self._name
-        level = 'DEBUG'
+    def process_message(self, level: Text, message: Text, data: Dict) -> Text:
         when = TimeUtils.utc_now().strftime('%m/%d/%Y @ %H:%M:%S')
-        payload = self._dump_payload(payload).strip()
-        display = (
-            f'{{{when}, {level}, {logger}, "{message}"}}\n\n{payload}\n'
-        )
-        self._py_logger.debug(display)
+        level = level.upper()
 
-    def _dump_payload(self, payload):
-        if payload:
-            payload = self.json.decode(self.json.encode(payload))
+        if data:
+            data = self._json.decode(self._json.encode(data))
             if self._style == 'json':
-                return self._to_json(payload)
+                return self._to_json(data)
             elif self._style == 'yaml':
-                return self._to_yaml(payload)
+                return self._to_yaml(data)
             else:
                 raise ValueError(f'unrcognized log style: {self.style}')
-        return None
+            dumped_data = self._dump_payload(data).strip()
+        else:
+            dumped_data = None
 
-    def _to_json(self, payload):
-        return json.dumps(payload, indent=2, sort_keys=True)
+        display_string = f'{when} - {level} - {self._name} "{message}"'
+        if dumped_data:
+            display_string += f'\n\n{dumped_data}\n'
+        return display_string
 
-    def _to_yaml(self, payload):
-        return yaml.dump(
-            payload, default_flow_style=False, default_style=''
-        )
+    def _to_json(self, data):
+        return json.dumps(data, indent=2, sort_keys=True)
+
+    def _to_yaml(self, data):
+        return yaml.dump(data, default_flow_style=False, default_style='')
 
 
 if __name__ == '__main__':
