@@ -32,7 +32,7 @@ class HttpSessionMiddleware(RegistryMiddleware):
             sess_param = proxy.signature.parameters.get('session')
             if sess_param is not None and sess_param.default != Parameter.empty:
                 session_id = self.get_session_id(request)
-                if cookie_value is not None:
+                if session_id is not None:
                     raw_kwargs[session] = self.get_session(session_id)
 
     def get_request(self, raw_args, raw_kwargs):
