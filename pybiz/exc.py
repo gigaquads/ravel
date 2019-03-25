@@ -1,19 +1,18 @@
 class PybizError(Exception):
-    pass
+    def __init__(self, message, data=None):
+        super().__init__(message)
+        self.data = data or {}
 
 
 class RelationshipError(PybizError):
     pass
 
 
-class NotFound(Exception):
+class NotFound(PybizError):
     pass
+
 
 class NotAuthorizedError(PybizError):
-    pass
-
-
-class ApiError(PybizError):
     pass
 
 

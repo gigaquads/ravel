@@ -8,6 +8,7 @@ from appyratus.utils import DictObject, DictUtils
 from pybiz.manifest import Manifest
 from pybiz.util import JsonEncoder
 
+from ..exc import RegistryError
 from .registry_decorator import RegistryDecorator
 from .registry_proxy import RegistryProxy
 from .registry_argument_loader import RegistryArgumentLoader
@@ -95,7 +96,10 @@ class Registry(object):
         if proxy.name not in self._proxies:
             self._proxies[proxy.name] = proxy
         else:
-            raise Exception(f'proxy "{proxy.name}" already registered')
+            raise RegistryError(
+                message='proxy already registered',
+                data={'proxy': str(proxy)}
+            )
 
     def bootstrap(
         self,

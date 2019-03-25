@@ -2,10 +2,10 @@ from typing import Dict, Text
 
 from appyratus.enum import Enum
 
-from pybiz.exc import ApiError
-
+from pybiz.api.exc import GuardFailed
 
 from .argument_specification import ArgumentSpecification
+
 
 OP_CODE = Enum(
     AND='&',
@@ -138,9 +138,3 @@ class CompositeGuard(Guard):
                 raise GuardFailed(self)
 
         return True
-
-
-class GuardFailed(ApiError):
-    def __init__(self, guard):
-        super().__init__(guard.display_string)
-        self.guard = guard
