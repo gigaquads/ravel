@@ -7,18 +7,17 @@ from collections import deque
 from appyratus.utils import DictObject, DictUtils
 
 from pybiz.manifest import Manifest
-from pybiz.util import JsonEncoder
-from pybiz.logging import ConsoleLoggerInterface
+from pybiz.util import JsonEncoder, get_console_logger
 
 from ..exc import RegistryError
 from .registry_decorator import RegistryDecorator
 from .registry_proxy import RegistryProxy
 from .registry_argument_loader import RegistryArgumentLoader
 
+console = get_console_logger(__name__)
+
 
 class Registry(object):
-
-    log = ConsoleLoggerInterface(__name__)
 
     def __init__(self, middleware: List['RegistryMiddleware'] = None):
         self._decorators = []
@@ -144,11 +143,14 @@ class Registry(object):
         for mware in self.middleware:
             mware.bootstrap(registry=self)
 
+        # init the arg loader, which is responsible for replacing arguments
+        # passed in as ID's with their respective BizObjects
+        self._arg_loader = RegistryArgumentLoader(self)
+
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
-
         self._is_bootstrapped = True
-        self._arg_loader = RegistryArgumentLoader(self)
+
         return self
 
     def start(self, *args, **kwargs):

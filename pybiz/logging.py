@@ -76,16 +76,16 @@ class ConsoleLoggerInterface(LoggerInterface):
         if data:
             data = self._json.decode(self._json.encode(data))
             if self._style == 'json':
-                return self._to_json(data)
+                dumped_data = self._to_json(data)
             elif self._style == 'yaml':
-                return self._to_yaml(data)
+                dumped_data = self._to_yaml(data)
             else:
                 raise ValueError(f'unrcognized log style: {self.style}')
-            dumped_data = self._dump_payload(data).strip()
+            dumped_data = dumped_data.strip()
         else:
             dumped_data = None
 
-        display_string = f'{when} - {level} - {self._name} "{message}"'
+        display_string = f'{when} - {level} - {self._name} - "{message}"'
         if dumped_data:
             display_string += f'\n\n{dumped_data}\n'
         return display_string

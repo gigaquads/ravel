@@ -1,12 +1,14 @@
 from typing import Text, Tuple, List, Type
 
-from pybiz.util import is_bizobj
+from pybiz.util import is_bizobj, get_console_logger
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,
     OP_CODE,
 )
+
+console = get_console_logger(__name__)
 
 
 class FieldProperty(property):
@@ -99,9 +101,18 @@ class FieldProperty(property):
             if (key not in self._data) and ('_id' in self._data):
                 field = self.schema.fields.get(key)
                 if field and field.meta.get('lazy', True):
-                    self.load(self.schema.fields.keys() - self._data.keys())
+                    unloaded_fields = list(
+                        self.schema.fields.keys() - self._data.keys()
+                    )
+                    console.debug(
+                        message=f'lazy loading fields',
+                        data={
+                            'object': str(self),
+                            'fields': unloaded_fields,
+                        }
+                    )
+                    self.load(unloaded_fields)
 
-            # set the
             if key in self._data:
                 return self._data[key]
             else:
