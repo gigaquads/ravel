@@ -252,7 +252,7 @@ class RegistryProxy(object):
                         message=f'{mware}.post_response middleware failed',
                         data=errors[-1].to_dict()
                     )
-            if mware is error.middleware:
+            if (error is not None) and (mware is error.middleware):
                 # only process middleware up to the point where middleware
                 # failed in either pre_request or on_request.
                 break
@@ -274,6 +274,7 @@ class AsyncRegistryProxy(RegistryProxy):
                 raw_result = await self.target(*args, **kwargs)
             except Exception as exc:
                 error = self.handle_target_exception(exc)
+                raw_result = None
         result = self.post_call(
             raw_args, raw_kwargs, args, kwargs, raw_result, error
         )
