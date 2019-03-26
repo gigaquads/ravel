@@ -154,6 +154,7 @@ class Registry(object):
 
         # bootstrap the middlware
         for mware in self.middleware:
+            console.debug(f'bootstrapping {mware}')
             mware.bootstrap(registry=self)
 
         # init the arg loader, which is responsible for replacing arguments
@@ -164,6 +165,8 @@ class Registry(object):
         self.on_bootstrap(*args, **kwargs)
         self._is_bootstrapped = True
 
+        console.debug(f'finished bootstrapping {self}')
+
         return self
 
     def start(self, *args, **kwargs):
@@ -171,6 +174,7 @@ class Registry(object):
         Enter the main loop in whatever program context your Registry is
         being used, like in a web framework or a REPL.
         """
+        console.debug(f'starting {self}')
         self._is_started = True
         return self.on_start()
 
