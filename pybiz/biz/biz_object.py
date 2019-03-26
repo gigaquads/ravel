@@ -11,6 +11,7 @@ from pybiz.dao.python_dao import PythonDao
 from pybiz.util import is_bizobj, is_sequence, repr_biz_id
 from pybiz.util.loggers import console
 from pybiz.dirty import DirtyDict
+from pybiz.exc import ValidationError, BizObjectError
 
 from .internal.biz_object_type_builder import BizObjectTypeBuilder
 from .internal.save import SaveMethod, BreadthFirstSaver
@@ -21,19 +22,50 @@ from .internal.query import Query, QueryUtils
 class BizObjectMeta(type):
 
     builder = BizObjectTypeBuilder.get_instance()
+    reserved_attrs = set()
 
     def __new__(cls, name, bases, ns):
         if name != 'BizObject':
             ns = BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
+        else:
+            BizObjectMeta.reserved_attrs = {
+                k for k in ns if not k.startswith('_')
+            } | {'_data', '_related', '_hash'}
         return type.__new__(cls, name, bases, ns)
 
     def __init__(biz_type, name, bases, ns):
         type.__init__(biz_type, name, bases, ns)
         if name != 'BizObject':
             BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
+
             venusian.attach(
                 biz_type, BizObjectMeta.venusian_callback, category='biz'
             )
+
+            field_name_conflicts = (
+                biz_type.schema.fields.keys() & BizObjectMeta.reserved_attrs
+            )
+            if field_name_conflicts:
+                raise BizObjectError(
+                    message=(
+                        'tried to define field(s) with '
+                        'reserved name: {}'.format(
+                            ', '.join(field_name_conflicts)
+                        )
+                    )
+                )
+            rel_name_conflicts = (
+                biz_type.relationships.keys() & BizObjectMeta.reserved_attrs
+            )
+            if rel_name_conflicts:
+                raise BizObjectError(
+                    message=(
+                        'tried to define relationship(s) with '
+                        'reserved names: {}'.format(
+                            ', '.join(rel_name_conflicts)
+                        )
+                    )
+                )
 
     @staticmethod
     def venusian_callback(scanner, name, biz_type):
@@ -302,7 +334,10 @@ class BizObject(metaclass=BizObjectMeta):
         prepared_record.pop('_rev', None)
         prepared_record, errors = self.schema.process(prepared_record)
         if errors:
-            raise Exception(f'could not create object: {errors}')
+            raise ValidationError(
+                message=f'could not create {self.__class__.__name__} object',
+                data=errors
+            )
         created_record = self.get_dao().create(prepared_record)
         self._data.update(created_record)
         return self.clean()
@@ -311,12 +346,19 @@ class BizObject(metaclass=BizObjectMeta):
         data = dict(data or {}, **more_data)
         if data:
             self.merge(data)
-        prepared_record = self.dirty_data
-        prepared_record.pop('_rev', None)
-        prepared_record.pop('_id', None)
+        raw_record = self.dirty_data
+        raw_record.pop('_rev', None)
+        raw_record.pop('_id', None)
         prepared_record, errors = self.schema.process(prepared_record)
+        # TODO: allow schema.process to take a subset of total keys
         if errors:
-            raise Exception(f'could not update object: {errors}')
+            raise ValidationError(
+                message=f'could not update {self.__class__.__name__} object',
+                data={
+                    '_id': self._id,
+                    'errors': errors,
+                }
+            )
         updated_record = self.get_dao().update(self._id, prepared_record)
         self._data.update(updated_record)
         return self.clean()
@@ -337,7 +379,12 @@ class BizObject(metaclass=BizObjectMeta):
             record, errors = cls.schema.process(record)
             record.pop('_rev', None)
             if errors:
-                raise Exception(f'could not update object: {errors}')
+                raise ValidationError(
+                    message=(
+                        f'could not create {self.__class__.__name__} object'
+                    ),
+                    data=errors
+                )
             records.append(record)
 
         created_records = cls.get_dao().create_many(records)
