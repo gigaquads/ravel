@@ -88,7 +88,7 @@ class DaoBinder(object):
         if dao_type_name not in self._named_dao_types:
             dao_type = type(dao_type_name, (dao_type, ), {})
             self._named_dao_types[dao_type_name] = dao_type
-            console.debug(f'{self} registered {dao_type_name} Dao')
+            console.debug(f'{self} registered {dao_type_name} (Dao)')
 
         dao_instance = dao_type()
 
@@ -101,7 +101,7 @@ class DaoBinder(object):
                 dao_instance=dao_instance,
                 dao_bind_kwargs=dao_bind_kwargs,
             )
-            console.debug(f'{self} registered {biz_type_name} BizObject')
+            console.debug(f'{self} registered {biz_type_name} (BizObject)')
             return binding
 
         return None

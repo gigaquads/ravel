@@ -200,7 +200,7 @@ class BizObject(metaclass=BizObjectMeta):
     def get(cls, _id, fields: Dict = None) -> 'BizObject':
         _id, err = cls.schema.fields['_id'].process(_id)
         if err:
-            raise Exception(err)  # TODO: raise validation error
+            raise ValidationError(f'invalid _id {_id}: {err}')
 
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
         fields.update({'_id', '_rev'})
@@ -223,7 +223,7 @@ class BizObject(metaclass=BizObjectMeta):
             processed_id, err = cls.schema.fields['_id'].process(_id)
             processed_ids.append(processed_id)
             if err:
-                raise Exception(err)  # TODO: raise validation error
+                raise ValidationError(f'invalid _id {_id}: {err}')
 
         # separate field names into those corresponding to this BizObjects
         # class and those of the related BizObject classes.

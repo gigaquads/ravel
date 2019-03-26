@@ -254,7 +254,8 @@ class Manifest(object):
         import pybiz.contrib
 
         def on_error(name):
-            console = get_console_logger('pybiz.manifest')
+            from pybiz.util.loggers import console
+            
             exc_str = traceback.format_exc()
             console.debug(
                 message=f'venusian scan failed for {name}',
