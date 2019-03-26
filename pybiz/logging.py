@@ -70,7 +70,7 @@ class ConsoleLoggerInterface(LoggerInterface):
         self._style = style or 'json'
 
     def process_message(self, level: Text, message: Text, data: Dict) -> Text:
-        when = TimeUtils.utc_now().strftime('%m/%d/%Y @ %H:%M:%S:%f')
+        when = TimeUtils.utc_now().strftime('%m/%d/%Y @ %H:%M:%S,%f')
         level = level.upper()
 
         if data:
@@ -95,11 +95,3 @@ class ConsoleLoggerInterface(LoggerInterface):
     def _to_yaml(self, data):
         lines = yaml.dump(data, default_flow_style=False).split('\n')
         return '\n'.join('  ' + line for line in lines)
-
-
-if __name__ == '__main__':
-    log = ConsoleLogger(__name__, style='yaml')
-    log.debug(
-        message='user tried to hack us',
-        user={'id': 'a1fb78', 'email': 'foo@bar.baz'}
-    )

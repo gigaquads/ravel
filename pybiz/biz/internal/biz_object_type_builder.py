@@ -7,6 +7,7 @@ from appyratus.utils import DictObject
 
 from pybiz.schema import Schema, fields, String, Field, Int
 from pybiz.util import import_object, is_bizobj
+from pybiz.util.loggers import console
 from pybiz.constants import (
     IS_BIZOBJ_ANNOTATION,
     IS_BOOTSTRAPPED,
@@ -53,6 +54,17 @@ class BizObjectTypeBuilder(object):
 
         setattr(biz_type, 'r', DictObject(biz_type.relationships))
         setattr(biz_type, 'f', DictObject(biz_type.schema.fields))
+
+        console.debug(
+            message=f'{biz_type.__name__} fields:',
+            data={'fields': list(biz_type.schema.fields.keys())}
+        )
+
+        if biz_type.relationships:
+            console.debug(
+                message=f'{biz_type.__name__} relationships:',
+                data={'relationships': list(biz_type.relationships.keys())}
+            )
 
     def _build_schema_type(self, name, biz_type):
         # use the schema class override if defined

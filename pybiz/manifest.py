@@ -16,10 +16,9 @@ from appyratus.files import Yaml, Json
 from appyratus.env import Environment
 
 from pybiz.exc import ManifestError
-from pybiz.util import import_object, get_console_logger
+from pybiz.util import import_object
+from pybiz.util.loggers import console
 from pybiz.dao import DaoBinder
-
-console = get_console_logger(__name__)
 
 
 class Manifest(object):
@@ -94,17 +93,20 @@ class Manifest(object):
         # replace env $var names with values from env
         self._expand_environment_vars(self.env, self.data)
 
+        console.info('manifest', data=self.data)
+
         self.package = self.data.get('package')
 
         for binding_data in (self.data.get('bindings') or []):
             biz = binding_data['biz']
             dao = binding_data.get('dao', 'PythonDao')
             params = binding_data.get('params', {})
-            self.bindings.append(ManifestBinding(
+            binding = ManifestBinding(
                 biz=biz,
                 dao=dao,
                 params=params,
-            ))
+            )
+            self.bindings.append(binding)
 
         # create self.bootstraps
         self.bootstraps = {}
@@ -170,6 +172,7 @@ class Manifest(object):
 
         # remove base BizObject class from types dict
         self.types.biz.pop('BizObject', None)
+        self.types.dao.pop('Dao', None)
 
     def _register_dao_types(self):
         """
@@ -185,9 +188,6 @@ class Manifest(object):
                 )
             dao_type = self.types.dao[info.dao]
             if not self.binder.is_registered(biz_type):
-                console.debug(
-                    f'registering {biz_type.__name__} with DaoBinder'
-                )
                 binding = self.binder.register(
                     biz_type=biz_type,
                     dao_type=dao_type,
@@ -263,7 +263,7 @@ class Manifest(object):
                 }
             )
 
-        console.debug('venusian scan initiated')
+        console.debug('venusian scan for BizType and Dao types initiated')
 
         self.scanner.scan(pybiz.dao, onerror=on_error)
         self.scanner.scan(pybiz.contrib, onerror=on_error)

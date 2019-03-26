@@ -1,14 +1,13 @@
 from typing import Text, Tuple, List, Type
 
-from pybiz.util import is_bizobj, get_console_logger
+from pybiz.util import is_bizobj
+from pybiz.util.loggers import console
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,
     OP_CODE,
 )
-
-console = get_console_logger(__name__)
 
 
 class FieldProperty(property):

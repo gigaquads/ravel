@@ -8,7 +8,8 @@ from collections import defaultdict
 
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
-from pybiz.util import is_bizobj, is_sequence, repr_biz_id, get_console_logger
+from pybiz.util import is_bizobj, is_sequence, repr_biz_id
+from pybiz.util.loggers import console
 from pybiz.dirty import DirtyDict
 
 from .internal.biz_object_type_builder import BizObjectTypeBuilder
@@ -16,25 +17,23 @@ from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
 from .internal.query import Query, QueryUtils
 
-console = get_console_logger(__name__)
-
 
 class BizObjectMeta(type):
 
     builder = BizObjectTypeBuilder.get_instance()
 
     def __new__(cls, name, bases, ns):
-        return type.__new__(
-            cls, name, bases,
-            BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
-        )
+        if name != 'BizObject':
+            ns = BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
+        return type.__new__(cls, name, bases, ns)
 
     def __init__(biz_type, name, bases, ns):
         type.__init__(biz_type, name, bases, ns)
-        BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
-        venusian.attach(
-            biz_type, BizObjectMeta.venusian_callback, category='biz'
-        )
+        if name != 'BizObject':
+            BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
+            venusian.attach(
+                biz_type, BizObjectMeta.venusian_callback, category='biz'
+            )
 
     @staticmethod
     def venusian_callback(scanner, name, biz_type):
