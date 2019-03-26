@@ -349,7 +349,7 @@ class BizObject(metaclass=BizObjectMeta):
         raw_record = self.dirty_data
         raw_record.pop('_rev', None)
         raw_record.pop('_id', None)
-        prepared_record, errors = self.schema.process(prepared_record)
+        prepared_record, errors = self.schema.process(raw_record)
         # TODO: allow schema.process to take a subset of total keys
         if errors:
             raise ValidationError(
