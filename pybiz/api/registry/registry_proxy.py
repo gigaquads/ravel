@@ -4,11 +4,9 @@ import logging
 
 from typing import Dict, Text, Tuple
 
-from pybiz.util import get_console_logger
+from pybiz.util.loggers import console
 
 from ..exc import RegistryProxyError
-
-console = get_console_logger(__name__)
 
 
 class RegistryProxy(object):
@@ -43,7 +41,7 @@ class RegistryProxy(object):
         Args:
         - `func`: the callable being wrapped by this proxy (or another proxy).
         - `decorator`: the decorator that created this proxy.
-        
+
         Attributes:
         - `target`: the native python function wrapped by this proxy.
         - `signature`: metadata on target, like its parameters, name, etc.

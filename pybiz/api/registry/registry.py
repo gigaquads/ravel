@@ -7,18 +7,16 @@ from collections import deque
 from appyratus.utils import DictObject, DictUtils
 
 from pybiz.manifest import Manifest
-from pybiz.util import JsonEncoder, get_console_logger
+from pybiz.util import JsonEncoder
+from pybiz.util.loggers import console
 
 from ..exc import RegistryError
 from .registry_decorator import RegistryDecorator
 from .registry_proxy import RegistryProxy
 from .registry_argument_loader import RegistryArgumentLoader
 
-console = get_console_logger(__name__)
-
 
 class Registry(object):
-
     def __init__(self, middleware: List['RegistryMiddleware'] = None):
         self._decorators = []
         self._proxies = {}
@@ -33,6 +31,15 @@ class Registry(object):
             m for m in (middleware or [])
             if isinstance(self, m.registry_types)
         ])
+
+    def __repr__(self):
+        return (
+            f'<{self.__class__.__name__}('
+            f'bootstrapped={self._is_bootstrapped}, '
+            f'started={self._is_started}, '
+            f'size={len(self._proxies)}'
+            f')>'
+        )
 
     def __call__(self, *args, **kwargs) -> RegistryDecorator:
         """
@@ -97,12 +104,16 @@ class Registry(object):
         return self._is_bootstrapped
 
     def register(self, proxy):
+        """
+        Add a RegistryProxy to this registry.
+        """
         if proxy.name not in self._proxies:
+            console.debug(f'{self} registered proxy: {proxy}')
             self._proxies[proxy.name] = proxy
         else:
             raise RegistryError(
                 message='proxy already registered',
-                data={'proxy': str(proxy)}
+                data={'proxy': proxy}
             )
 
     def bootstrap(
@@ -118,6 +129,8 @@ class Registry(object):
 
         if self.is_bootstrapped:
             return self
+
+        console.debug(f'bootstrapping {self}')
 
         # merge additional namespace data into namespace accumulator
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
