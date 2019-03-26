@@ -125,9 +125,8 @@ class Registry(object):
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
-        from pybiz import BizObject
-
         if self.is_bootstrapped:
+            console.warning(f'{self} already bootstrapped. skipping...')
             return self
 
         console.debug(f'bootstrapping {self}')

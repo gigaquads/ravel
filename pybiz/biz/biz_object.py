@@ -23,17 +23,17 @@ class BizObjectMeta(type):
     builder = BizObjectTypeBuilder.get_instance()
 
     def __new__(cls, name, bases, ns):
-        return type.__new__(
-            cls, name, bases,
-            BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
-        )
+        if name != 'BizObject':
+            ns = BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
+        return type.__new__(cls, name, bases, ns)
 
     def __init__(biz_type, name, bases, ns):
         type.__init__(biz_type, name, bases, ns)
-        BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
-        venusian.attach(
-            biz_type, BizObjectMeta.venusian_callback, category='biz'
-        )
+        if name != 'BizObject':
+            BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
+            venusian.attach(
+                biz_type, BizObjectMeta.venusian_callback, category='biz'
+            )
 
     @staticmethod
     def venusian_callback(scanner, name, biz_type):
