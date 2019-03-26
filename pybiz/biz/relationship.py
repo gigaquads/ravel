@@ -9,6 +9,7 @@ from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
 from pybiz.util import is_bizobj, normalize_to_tuple
+from pybiz.exc import RelationshipArgumentError
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -304,7 +305,7 @@ class ConditionMetadata(object):
         elif self.num_positional_args == 2:
             return True
         else:
-            raise Exception(
+            raise RelationshipArgumentError(
                 'condition functions do not accept '
                 'custom positional arguments'
             )

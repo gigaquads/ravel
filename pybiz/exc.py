@@ -18,3 +18,15 @@ class NotAuthorizedError(PybizError):
 
 class ManifestError(PybizError):
     pass
+
+
+class ValidationError(PybizError):
+    pass
+
+
+class RelationshipArgumentError(PybizError):
+    pass
+
+
+class BizObjectError(PybizError):
+    pass
