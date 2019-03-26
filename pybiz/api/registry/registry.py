@@ -178,18 +178,6 @@ class Registry(object):
         self._is_started = True
         return self.on_start()
 
-    def dump(self) -> Dict:
-        """
-        Return a Python dict that can be serialized to JSON, represents the
-        contents of the Registry. The purpose of this method is to export
-        metadata about this registry to be consumed by some other service or
-        external process without said service or process needing to import this
-        Registry directly.
-        """
-        return {
-            'registry': {p.dump() for p in self.proxies.values()}
-        }
-
     def on_bootstrap(self, *args, **kwargs):
         pass
 
