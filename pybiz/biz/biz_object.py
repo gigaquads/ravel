@@ -8,7 +8,8 @@ from collections import defaultdict
 
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
-from pybiz.util import is_bizobj, is_sequence, repr_biz_id, get_console_logger
+from pybiz.util import is_bizobj, is_sequence, repr_biz_id
+from pybiz.util.loggers import console
 from pybiz.dirty import DirtyDict
 
 from .internal.biz_object_type_builder import BizObjectTypeBuilder
@@ -16,25 +17,23 @@ from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
 from .internal.query import Query, QueryUtils
 
-console = get_console_logger(__name__)
-
 
 class BizObjectMeta(type):
 
     builder = BizObjectTypeBuilder.get_instance()
 
     def __new__(cls, name, bases, ns):
-        return type.__new__(
-            cls, name, bases,
-            BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
-        )
+        if name != 'BizObject':
+            ns = BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
+        return type.__new__(cls, name, bases, ns)
 
     def __init__(biz_type, name, bases, ns):
         type.__init__(biz_type, name, bases, ns)
-        BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
-        venusian.attach(
-            biz_type, BizObjectMeta.venusian_callback, category='biz'
-        )
+        if name != 'BizObject':
+            BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
+            venusian.attach(
+                biz_type, BizObjectMeta.venusian_callback, category='biz'
+            )
 
     @staticmethod
     def venusian_callback(scanner, name, biz_type):
@@ -201,7 +200,7 @@ class BizObject(metaclass=BizObjectMeta):
     def get(cls, _id, fields: Dict = None) -> 'BizObject':
         _id, err = cls.schema.fields['_id'].process(_id)
         if err:
-            raise Exception(err)  # TODO: raise validation error
+            raise ValidationError(f'invalid _id {_id}: {err}')
 
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
         fields.update({'_id', '_rev'})
@@ -224,7 +223,7 @@ class BizObject(metaclass=BizObjectMeta):
             processed_id, err = cls.schema.fields['_id'].process(_id)
             processed_ids.append(processed_id)
             if err:
-                raise Exception(err)  # TODO: raise validation error
+                raise ValidationError(f'invalid _id {_id}: {err}')
 
         # separate field names into those corresponding to this BizObjects
         # class and those of the related BizObject classes.

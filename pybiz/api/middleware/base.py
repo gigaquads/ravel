@@ -6,16 +6,19 @@ from appyratus.memoize import memoized_property
 
 
 class RegistryMiddleware(object):
+    def __init__(self, *args, **kwargs):
+        self._is_bootstrapped = False
+        
     def __repr__(self):
         return (
             f'<Middleware({self.__class__.__name__}, '
-            f'bootstrapped={self.is_bootstrapped})>'
+            f'bootstrapped={self._is_bootstrapped})>'
         )
 
     def bootstrap(self, registry: 'Registry'):
-        self._is_bootstrapped = True
         self._registry = registry
         self.on_bootstrap()
+        self._is_bootstrapped = True
 
     def on_bootstrap(self):
         pass

@@ -2,6 +2,7 @@ from typing import Dict, List, Type, Set, Text
 
 from pybiz.dao import Dao
 from pybiz.util import is_sequence
+from pybiz.util.loggers import console
 
 
 class DaoBinding(object):
@@ -50,6 +51,9 @@ class DaoBinder(object):
         self._named_dao_types = {}
         self._named_biz_types = {}
 
+    def __repr__(self):
+        return f'<DaoBinder(bindings={len(self.bindings)})>'
+
     @classmethod
     def get_instance(cls):
         """
@@ -84,6 +88,7 @@ class DaoBinder(object):
         if dao_type_name not in self._named_dao_types:
             dao_type = type(dao_type_name, (dao_type, ), {})
             self._named_dao_types[dao_type_name] = dao_type
+            console.debug(f'{self} registered {dao_type_name} (Dao)')
 
         dao_instance = dao_type()
 
@@ -96,6 +101,7 @@ class DaoBinder(object):
                 dao_instance=dao_instance,
                 dao_bind_kwargs=dao_bind_kwargs,
             )
+            console.debug(f'{self} registered {biz_type_name} (BizObject)')
             return binding
 
         return None
@@ -119,6 +125,10 @@ class DaoBinder(object):
         if binding is None:
             # lazily register a new binding
             base_dao_type = biz_type.__dao__()
+            console.debug(
+                f'no Dao type registered for {biz_type.__name__}. '
+                f'calling {biz_type.__name__}.__dao__'
+            )
             binding = self.register(biz_type, base_dao_type)
 
         # call bind only if it already hasn't been called

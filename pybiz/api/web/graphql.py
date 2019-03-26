@@ -7,6 +7,7 @@ from graphql.parser import GraphQLParser
 from pybiz.util import is_bizobj, is_bizlist, is_sequence
 from pybiz.biz.internal.query import QuerySpecification
 from pybiz.biz import BizObject
+from pybiz.api.exc import NotAuthorized
 
 
 class GraphQLEngine(object):
@@ -38,7 +39,7 @@ class GraphQLEngine(object):
         if target:
             is_authorized = self._authorize(target, context)
             if not is_authorized:
-                raise Exception('not authorized')
+                raise NotAuthorized()
 
         # load BizObject fields values
         if is_bizobj(target):
