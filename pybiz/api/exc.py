@@ -19,7 +19,3 @@ class GuardFailed(PybizError):
 
 class NotAuthorized(PybizError):
     pass
-
-
-class ValidationError(PybizError):
-    pass
