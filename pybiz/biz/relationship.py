@@ -127,8 +127,13 @@ class Relationship(object):
     def on_bootstrap(self):
         pass
 
+    def pre_bootstrap(self):
+        pass
+
     def bootstrap(self, registry: 'Registry'):
         self._registry = registry
+
+        self.pre_bootstrap()
 
         # this injects all BizObject class names into the condition functions'
         # lexical scopes. This mechanism helps avoid cyclic import dependencies
