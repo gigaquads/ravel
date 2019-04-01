@@ -1,9 +1,17 @@
-from uuid import UUID
-from importlib import import_module
-from typing import Dict, Set, Text, List
 from copy import deepcopy
+from importlib import import_module
+from typing import (
+    Dict,
+    List,
+    Set,
+    Text,
+)
+from uuid import UUID
 
-from pybiz.constants import IS_BIZOBJ_ANNOTATION
+from pybiz.constants import (
+    IS_BIZLIST_ANNOTATION,
+    IS_BIZOBJ_ANNOTATION,
+)
 
 _dict_keys = {}.keys().__class__
 _dict_values = {}.values().__class__
@@ -20,7 +28,7 @@ def is_bizlist(obj) -> bool:
     """
     Return True if obj is an instance of BizObject.
     """
-    return getattr(obj, IS_BIZLIST_ANNOTATION, False) if obj else False
+    return getattr(obj, IS_BIZLIST_ANNOTATION, False) if obj is not None else False
 
 
 def is_sequence(obj) -> bool:
