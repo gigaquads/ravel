@@ -1,18 +1,28 @@
 import inspect
-
 from pprint import pprint
 
 from IPython.terminal.embed import InteractiveShellEmbed
-from appyratus.utils import SysUtils, StringUtils
 from appyratus.cli import (
     CliProgram,
-    Subparser,
     OptionalArg,
     PositionalArg,
+    Subparser,
 )
-from pybiz.util import is_bizobj, is_bizlist
+from appyratus.files import Yaml
+from appyratus.utils import (
+    StringUtils,
+    SysUtils,
+)
+from pybiz.util import (
+    is_bizlist,
+    is_bizobj,
+)
 
-from .registry import Registry, RegistryDecorator, RegistryProxy
+from .registry import (
+    Registry,
+    RegistryDecorator,
+    RegistryProxy,
+)
 
 
 class CliRegistry(Registry):
@@ -90,9 +100,20 @@ class CliRegistry(Registry):
         response = super().on_response(proxy, result, *args, **kwargs)
         dumped_result = _dump_result_obj(response)
         if self._echo:
-            pprint(dumped_result)
+            
+            output_format = getattr(self._cli_program.cli_args, 'format', None)
+            formatted_result = _format_result_data(dumped_result, output_format)
+            if isinstance(formatted_result, str):
+                print(formatted_result)
+            else:
+                pprint(formatted_result)
         return dumped_result
 
+def _format_result_data(data, output_format):
+    if output_format == 'yaml':
+        return Yaml.from_data(data)
+    else:
+        return data
 
 def _dump_result_obj(obj):
     if is_bizobj(obj) or is_bizlist(obj):

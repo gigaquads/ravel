@@ -17,7 +17,7 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from .internal.query import QuerySpecification
+from pybiz.biz.internal.query import QuerySpecification
 
 
 class Relationship(object):
@@ -211,6 +211,7 @@ class Relationship(object):
             # as an initial positional argument and some may not, we have to
             # consider this here when invoking the function, which gives us
             # the query predicate to use in the query below.
+
             if meta.has_rel_argument:
                 predicate = func(self, target, **func_kwargs)[1]
             else:
@@ -314,3 +315,28 @@ class ConditionMetadata(object):
                 'condition functions do not accept '
                 'custom positional arguments'
             )
+
+class BetterRelationship(Relationship):
+    """
+    # Better Relationship 
+    Next generation of Relationship class to be merged in
+    """
+
+    def __init__(
+        self,
+        behavior: 'RelationshipBehavior' = None,
+        *args,
+        **kwargs
+    ):
+        if behavior is not None:
+            self._behavior = behavior
+            behavior_kwargs = behavior(relationship=self)
+        if behavior is None:
+            self._behavior = None
+            behavior_kwargs = {}
+        super().__init__(*args, **behavior_kwargs, **kwargs)
+
+    def pre_bootstrap(self):
+        self._behavior.pre_bootstrap()
+
+
