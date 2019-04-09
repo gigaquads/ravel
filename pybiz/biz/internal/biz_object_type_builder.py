@@ -5,6 +5,7 @@ from typing import Type, List, Dict, Tuple
 
 from appyratus.utils import DictObject
 
+from pybiz.biz.relationship.relationship import Relationship
 from pybiz.schema import Schema, fields, String, Field, Int
 from pybiz.util import import_object, is_bizobj
 from pybiz.util.loggers import console
@@ -15,7 +16,6 @@ from pybiz.constants import (
 )
 
 from ..biz_list import BizList
-from ..relationship import Relationship
 from .relationship_property import RelationshipProperty
 from .field_property import FieldProperty
 
