@@ -330,7 +330,7 @@ class BetterRelationship(Relationship):
     ):
         if behavior is not None:
             self._behavior = behavior
-            behavior_kwargs = behavior(relationship=self)
+            behavior_kwargs = behavior(relationship=self, many=kwargs.get('many'))
         if behavior is None:
             self._behavior = None
             behavior_kwargs = {}

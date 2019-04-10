@@ -25,23 +25,22 @@ class RelationshipBehavior(object):
         self._bridge = None
 
     def __call__(
-        self, relationship: 'Relationship', *args, **kwargs
+        self,
+        relationship: 'Relationship',
+        many=False,
+        *args,
+        **kwargs
     ):
         self._relationship = relationship
+        self._many = many
         behavior = self
         behaviors = {
-            #'conditions': lambda self: behavior.build_conditions(self),
             'conditions': behavior.build_conditions(),
-            'on_add': lambda self, target: behavior.
-            on_add(self, target, relationship),
-            'on_set': lambda self, target: behavior.
-            on_set(self, target, relationship),
-            'on_get': lambda self, target: behavior.
-            on_get(self, target, relationship),
-            'on_rem': lambda self, target: behavior.
-            on_rem(self, target, relationship),
-            'on_del': lambda self, target: behavior.
-            on_del(self, target, relationship),
+            'on_add': lambda self, target: behavior.on_add(self, target, relationship),
+            'on_set': lambda self, target: behavior.on_set(self, target, relationship),
+            'on_get': lambda self, target: behavior.on_get(self, target, relationship),
+            'on_rem': lambda self, target: behavior.on_rem(self, target, relationship),
+            'on_del': lambda self, target: behavior.on_del(self, target, relationship),
         }
         return behaviors
 
@@ -83,12 +82,9 @@ class RelationshipBehavior(object):
         - `[GroupUser.group_id, GroupUser.user_id]`, reference multiple fields
         """
         if not path:
-            return []
             raise Exception()
         clean_path = []
-        node_source = None
-        node_target = None
-    
+
         def resolve_field(node):
             node_field = None
             # resolve the node class and field from string
@@ -104,7 +100,9 @@ class RelationshipBehavior(object):
 
         for node in path:
             if isinstance(node, list):
-                node_field = [resolve_field(n) for n in node]
+                node_field = [
+                    resolve_field(n) for n in node
+                ]
             else:
                 node_field = resolve_field(node)
             clean_path.append(node_field)
@@ -133,7 +131,7 @@ class CrudBehavior(RelationshipBehavior):
     """
     """
 
-    def build_conditions(self, srs = None):
+    def build_conditions(self):
         """
         # Nodes = 2
         Target ID == Source Target ID
@@ -142,50 +140,36 @@ class CrudBehavior(RelationshipBehavior):
         Bridge Source ID ==  Source ID
         Bridge List ID includes Target ID
         """
-        behavior = self
-        rel = self._relationship
-        target = behavior._target
         path = self._path
-        bridge = behavior._bridge
 
-        def one2one(source, behavior):
-            source_id = getattr(source, behavior._source_id)
-            target_id = getattr(target, self._build_id())
-            return lambda self: (target, target_id == source_id)
+        def one2one(behavior):
+            return lambda self: (behavior._target, getattr(behavior._target, behavior._build_id())== getattr(self, behavior._target_id))
 
-        def one2many(source, behavior):
-            target_source_id = getattr(
+        def one2many(behavior):
+            return lambda self: (behavior._target, getattr(
                 behavior._target,
-                self._build_id(self._source)
-            )
-            source_id = source._id
-            return lambda self: (target, target_source_id == source_id)
+                behavior._source_id
+            ) == self._id)
 
-        def many2many(source, behavior):
-            bridge = behavior._bridge
-            bridge_source_id = getattr(
-                bridge, behavior._source_id
-            )
-            source_id = source._id
-            target_id = target._id
+        def many2many(behavior):
             return (
                 lambda self:
-                (bridge, bridge_source_id  == source_id),
+                (behavior._bridge, getattr(behavior._bridge, behavior._source_id)
+                 == self._id),
                 lambda bridge_list: (
-                    target,
-                    target_id.
-                    including(getattr(bridge_list, target_id))
+                    behavior._target,
+                    behavior._target._id.
+                    including(getattr(bridge_list, behavior._target_id))
                 )
             )
 
-        if not rel.many:
-            return one2one(source, behavior)
+        if not self._many:
+            return one2one(self)
         else:
             if len(path) == 2:
-                return one2many(source, behavior)
+                return one2many(self)
             else:
-                return many2many(source, behavior)
-
+                return many2many(self)
 
     def on_add(self, source, target, relationship):
         #return target.merge(
