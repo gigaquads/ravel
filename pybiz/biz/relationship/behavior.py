@@ -143,7 +143,7 @@ class CrudBehavior(RelationshipBehavior):
         path = self._path
 
         def one2one(behavior):
-            return lambda self: (behavior._target, getattr(behavior._target, behavior._build_id())== getattr(self, behavior._target_id))
+            return lambda self: (behavior._target, getattr(behavior._target, behavior._build_id())== getattr(self, behavior._build_id()))
 
         def one2many(behavior):
             return lambda self: (behavior._target, getattr(
