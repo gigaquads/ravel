@@ -63,7 +63,8 @@ class RelationshipBehavior(object):
         elif len(path) == 3:
             source, bridge, target = path
             self._source = source.target
-            self._bridge = bridge[0].target
+            self._bridge = [b.target for b in bridge]
+            self._bridge_id = [b.key for b in bridge]
             self._target = target.target
             self._source_id = source.key
             self._target_id = target.key
@@ -143,24 +144,31 @@ class CrudBehavior(RelationshipBehavior):
         path = self._path
 
         def one2one(behavior):
-            return lambda self: (behavior._target, getattr(behavior._target, behavior._build_id())== getattr(self, behavior._build_id()))
+            return lambda self: (
+                behavior._target,
+                getattr(behavior._target, behavior._build_id())
+                == getattr(self, behavior._build_id())
+            )
 
         def one2many(behavior):
-            return lambda self: (behavior._target, getattr(
+            return lambda self: (
                 behavior._target,
-                behavior._source_id
-            ) == self._id)
+                getattr(behavior._target, behavior._target_id)
+                == getattr(self, behavior._build_id())
+            )
 
         def many2many(behavior):
             return (
-                lambda self:
-                (behavior._bridge, getattr(behavior._bridge, behavior._source_id)
-                 == self._id),
+                lambda self: (
+                    behavior._bridge[0],
+                    getattr(behavior._bridge[0], behavior._bridge_id[0])
+                    == getattr(self, behavior._build_id())
+                ),
                 lambda bridge_list: (
                     behavior._target,
-                    behavior._target._id.
-                    including(getattr(bridge_list, behavior._target_id))
-                )
+                    getattr(behavior._target, behavior._build_id())
+                    .including(getattr(bridge_list, behavior._bridge_id[1]))
+                ),
             )
 
         if not self._many:
