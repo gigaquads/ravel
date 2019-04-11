@@ -144,29 +144,44 @@ class CrudBehavior(RelationshipBehavior):
         path = self._path
 
         def one2one(behavior):
-            return lambda self: (
-                behavior._target,
-                getattr(behavior._target, behavior._build_id())
-                == getattr(self, behavior._build_id())
-            )
-
-        def one2many(behavior):
+            """
+            # One 2 One Relationship Behavior
+            Target ID is equal to Source ID
+            E.g., Worf._id == H
+            """
             return lambda self: (
                 behavior._target,
                 getattr(behavior._target, behavior._target_id)
-                == getattr(self, behavior._build_id())
+                == getattr(self, behavior._source_id)
+            )
+
+        def one2many(behavior):
+            """
+            # One 2 Many (1..n)
+            Target's Source ID is equal to Source ID
+            E.g., LaForge.visor_id == Visor._id
+            """
+            return lambda self: (
+                behavior._target,
+                getattr(behavior._target, behavior._target_id)
+                == getattr(self, behavior._source_id)
             )
 
         def many2many(behavior):
+            """
+            # Many 2 Many Relationship Behavior (n..n)
+            - Bridge's Source ID is equal to Source ID,
+            - Bridge List's Target IDs include Target ID
+            """
             return (
                 lambda self: (
                     behavior._bridge[0],
                     getattr(behavior._bridge[0], behavior._bridge_id[0])
-                    == getattr(self, behavior._build_id())
+                    == getattr(self, behavior._source_id)
                 ),
                 lambda bridge_list: (
                     behavior._target,
-                    getattr(behavior._target, behavior._build_id())
+                    getattr(behavior._target, behavior._target_id)
                     .including(getattr(bridge_list, behavior._bridge_id[1]))
                 ),
             )
