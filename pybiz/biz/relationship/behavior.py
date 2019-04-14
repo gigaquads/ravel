@@ -266,7 +266,7 @@ class CrudBehavior(RelationshipBehavior):
 
         def one2many():
             return getattr(source,
-                           behavior._target_id) in getattr(
+                           behavior._source_id) in getattr(
                                target, behavior._target_id
                            )
 
@@ -297,16 +297,20 @@ class CrudBehavior(RelationshipBehavior):
             )
 
         def one2many():
-            return source._id in getattr(
+            return getattr(source, behavior._source_id) in getattr(
                 target, behavior._source_id
             )
+
+        def many2many():
+            # XXX How to do this?
+            pass
 
         if self.is_one2one:
             return one2one()
         elif self.is_one2many:
             return one2many()
         elif self.is_many2many:
-            raise NotImplementedError()
+            return many2many()
 
     def on_rem(self, source, target):
         """
