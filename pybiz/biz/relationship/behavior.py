@@ -211,6 +211,8 @@ class CrudBehavior(RelationshipBehavior):
         - `BizList.insert(BizObject)`
         """
         behavior = self
+        if not target:
+            return
 
         def one2many():
             """
@@ -253,7 +255,6 @@ class CrudBehavior(RelationshipBehavior):
         - `print(BizObject.Relationship)`
         """
         behavior = self
-
         if not target:
             return
 
@@ -262,23 +263,21 @@ class CrudBehavior(RelationshipBehavior):
                            behavior._target_id) == getattr(
                                target, behavior._target_id
                            )
-            pass
 
         def one2many():
-            return getattr(source,
-                           behavior._source_id) in getattr(
-                               target, behavior._target_id
-                           )
+            pass
+            # *** AttributeError: 'ProjectBizList' object has no attribute 'project_id'
 
         def many2many():
+            # TODO or not TODO
             pass
 
         if self.is_one2one:
-            one2one()
+            return one2one()
         elif self.is_one2many:
-            one2many()
+            return one2many()
         elif self.is_many2many:
-            many2many()
+            return many2many()
 
     def on_set(self, source, target):
         """
@@ -287,19 +286,20 @@ class CrudBehavior(RelationshipBehavior):
         - `BizObject.Relationship = BizObject`
         """
         behavior = self
+        if not target:
+            return
 
         def one2one():
-            if not target:
-                return
             return (
                 getattr(source, behavior._source_id) ==
                 getattr(target, behavior._target_id)
             )
 
         def one2many():
-            return getattr(source, behavior._source_id) in getattr(
-                target, behavior._source_id
-            )
+            return getattr(source,
+                           behavior._source_id) in getattr(
+                               target, behavior._target_id
+                           )
 
         def many2many():
             # XXX How to do this?
@@ -319,6 +319,8 @@ class CrudBehavior(RelationshipBehavior):
         - `BizList.remove(BizObject)`
         """
         behavior = self
+        if not target:
+            return
 
         def one2many():
             """
@@ -358,6 +360,8 @@ class CrudBehavior(RelationshipBehavior):
         - `del BizObject.Relationship`
         """
         behavior = self
+        if not target:
+            return
 
         def one2many():
             return target.merge(
