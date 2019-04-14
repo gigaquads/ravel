@@ -40,7 +40,7 @@ class Relationship(object):
 
     def __init__(
         self,
-        conditions,
+        conditions=None,
         on_set=None,
         on_get=None,
         on_del=None,
@@ -54,11 +54,27 @@ class Relationship(object):
         private=False,
         lazy=True,
         readonly=False,
+        behavior: 'RelationshipBehavior' = None,
     ):
         self.many = many
         self.private = private
         self.lazy = lazy
         self.readonly = readonly
+
+        # relationship behavior provided, now process to generate conditions
+        # and callbacks.  if any is not provided by the behavior, then default
+        # to ones provided through this initialization
+        if behavior is not None:
+            self._behavior = behavior
+            behavior_kwargs = behavior(relationship=self, many=many)
+            conditions = behavior_kwargs.get('conditions', conditions)
+            on_set = behavior_kwargs.get('on_set', on_set)
+            on_get = behavior_kwargs.get('on_get', on_get)
+            on_del = behavior_kwargs.get('on_del', on_del)
+            on_add = behavior_kwargs.get('on_add', on_add)
+            on_rem = behavior_kwargs.get('on_rem', on_rem)
+        if behavior is None:
+            self._behavior = None
 
         self.conditions = normalize_to_tuple(conditions)
         self.on_set = normalize_to_tuple(on_set)
@@ -128,7 +144,8 @@ class Relationship(object):
         pass
 
     def pre_bootstrap(self):
-        pass
+        if self._behavior:
+            self._behavior.pre_bootstrap()
 
     def bootstrap(self, registry: 'Registry'):
         self._registry = registry
@@ -315,28 +332,3 @@ class ConditionMetadata(object):
                 'condition functions do not accept '
                 'custom positional arguments'
             )
-
-class BetterRelationship(Relationship):
-    """
-    # Better Relationship 
-    Next generation of Relationship class to be merged in
-    """
-
-    def __init__(
-        self,
-        behavior: 'RelationshipBehavior' = None,
-        *args,
-        **kwargs
-    ):
-        if behavior is not None:
-            self._behavior = behavior
-            behavior_kwargs = behavior(relationship=self, many=kwargs.get('many'))
-        if behavior is None:
-            self._behavior = None
-            behavior_kwargs = {}
-        super().__init__(*args, **behavior_kwargs, **kwargs)
-
-    def pre_bootstrap(self):
-        self._behavior.pre_bootstrap()
-
-

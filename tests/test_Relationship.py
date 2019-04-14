@@ -1,1 +1,1 @@
-from pybiz.biz.relationship import BetterRelationship, RelationshipBehavior
+from pybiz.biz.relationship import Relationship, RelationshipBehavior
