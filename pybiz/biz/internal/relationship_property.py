@@ -104,7 +104,7 @@ class RelationshipProperty(property):
 
         def fdel(self):
             """
-            Remove the related BizObject or list. The field will appeear in
+            Remove the related BizObject or list. The field will appear in
             dump() results. You must assign None if you want to None to appear.
             """
             if key in self._related:

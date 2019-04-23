@@ -25,23 +25,22 @@ class RelationshipBehavior(object):
         self._bridge = None
 
     def __call__(
-        self, relationship: 'Relationship', *args, **kwargs
+        self,
+        relationship: 'Relationship',
+        many=False,
+        *args,
+        **kwargs
     ):
         self._relationship = relationship
+        self._many = many
         behavior = self
         behaviors = {
-            #'conditions': lambda self: behavior.build_conditions(self),
             'conditions': behavior.build_conditions(),
-            'on_add': lambda self, target: behavior.
-            on_add(self, target, relationship),
-            'on_set': lambda self, target: behavior.
-            on_set(self, target, relationship),
-            'on_get': lambda self, target: behavior.
-            on_get(self, target, relationship),
-            'on_rem': lambda self, target: behavior.
-            on_rem(self, target, relationship),
-            'on_del': lambda self, target: behavior.
-            on_del(self, target, relationship),
+            'on_add': lambda self, target: behavior.on_add(self, target),
+            'on_set': lambda self, target: behavior.on_set(self, target),
+            'on_get': lambda self, target: behavior.on_get(self, target),
+            'on_rem': lambda self, target: behavior.on_rem(self, target),
+            'on_del': lambda self, target: behavior.on_del(self, target),
         }
         return behaviors
 
@@ -64,7 +63,8 @@ class RelationshipBehavior(object):
         elif len(path) == 3:
             source, bridge, target = path
             self._source = source.target
-            self._bridge = bridge[0].target
+            self._bridge = [b.target for b in bridge]
+            self._bridge_id = [b.key for b in bridge]
             self._target = target.target
             self._source_id = source.key
             self._target_id = target.key
@@ -83,12 +83,9 @@ class RelationshipBehavior(object):
         - `[GroupUser.group_id, GroupUser.user_id]`, reference multiple fields
         """
         if not path:
-            return []
             raise Exception()
         clean_path = []
-        node_source = None
-        node_target = None
-    
+
         def resolve_field(node):
             node_field = None
             # resolve the node class and field from string
@@ -104,7 +101,9 @@ class RelationshipBehavior(object):
 
         for node in path:
             if isinstance(node, list):
-                node_field = [resolve_field(n) for n in node]
+                node_field = [
+                    resolve_field(n) for n in node
+                ]
             else:
                 node_field = resolve_field(node)
             clean_path.append(node_field)
@@ -112,6 +111,9 @@ class RelationshipBehavior(object):
 
     @classmethod
     def _build_id(cls, entity=None) -> Text:
+        """
+        # Build ID
+        """
         base_id = '_id'
         if not entity:
             return base_id
@@ -131,86 +133,247 @@ class RelationshipBehavior(object):
 
 class CrudBehavior(RelationshipBehavior):
     """
+    CRUD Behavior
     """
 
-    def build_conditions(self, srs = None):
-        """
-        # Nodes = 2
-        Target ID == Source Target ID
+    @property
+    def is_one2one(self):
+        return not self._many
 
-        # Nodes = 3 (bridge)
-        Bridge Source ID ==  Source ID
-        Bridge List ID includes Target ID
+    @property
+    def is_one2many(self):
+        return self._many and len(self._path) == 2
+
+    @property
+    def is_many2many(self):
+        return self._many and len(self._path) > 2
+
+    def build_conditions(self):
+        """
+        # Build Conditions
+        """
+        path = self._path
+        behavior = self
+
+        def one2one():
+            """
+            # One 2 One Relationship Behavior
+            Target ID is equal to Source ID
+            """
+            return lambda self: (
+                behavior._target,
+                getattr(behavior._target, behavior._target_id)
+                == getattr(self, behavior._source_id)
+            )
+
+        def one2many():
+            """
+            # One 2 Many (1..n)
+            Target's Source ID is equal to Source ID
+            """
+            return lambda self: (
+                behavior._target,
+                getattr(behavior._target, behavior._target_id)
+                == getattr(self, behavior._source_id)
+            )
+
+        def many2many():
+            """
+            # Many 2 Many Relationship Behavior (n..n)
+            - Bridge's Source ID is equal to Source ID,
+            - Bridge List's Target IDs include Target ID
+            """
+            return (
+                lambda self: (
+                    behavior._bridge[0],
+                    getattr(behavior._bridge[0], behavior._bridge_id[0])
+                    == getattr(self, behavior._source_id)
+                ),
+                lambda bridge_list: (
+                    behavior._target,
+                    getattr(behavior._target, behavior._target_id)
+                    .including(getattr(bridge_list, behavior._bridge_id[1]))
+                ),
+            )
+
+        if self.is_one2one:
+            return one2one()
+        elif self.is_one2many:
+            return one2many()
+        elif self.is_many2many:
+            return many2many()
+
+    def on_add(self, source, target):
+        """
+        # On Add
+        The following actions will initiate a call to this method:
+        - `BizList.append(BizObject)`
+        - `BizList.insert(BizObject)`
         """
         behavior = self
-        rel = self._relationship
-        target = behavior._target
-        path = self._path
-        bridge = behavior._bridge
+        if not target:
+            return
 
-        def one2one(source, behavior):
-            source_id = getattr(source, behavior._source_id)
-            target_id = getattr(target, self._build_id())
-            return lambda self: (target, target_id == source_id)
+        def one2many():
+            """
+            # One2Many
+            Target contains the foreign key to Source
+            """
+            return target.merge(
+                {
+                    behavior._target_id: getattr(
+                        source, behavior._source_id
+                    )
+                }
+            ).save()
 
-        def one2many(source, behavior):
-            target_source_id = getattr(
-                behavior._target,
-                self._build_id(self._source)
-            )
-            source_id = source._id
-            return lambda self: (target, target_source_id == source_id)
+        def many2many():
+            """
+            # Many2Many
+            Bridge contains both the Source and Target IDs
+            """
+            return behavior._bridge[0](
+                **{
+                    behavior._bridge_id[0]: getattr(
+                        source, behavior._source_id
+                    ),
+                    behavior._bridge_id[1]: getattr(
+                        target, behavior._target_id
+                    ),
+                }
+            ).save()
 
-        def many2many(source, behavior):
-            bridge = behavior._bridge
-            bridge_source_id = getattr(
-                bridge, behavior._source_id
-            )
-            source_id = source._id
-            target_id = target._id
+        if self.is_one2many:
+            return one2many()
+        elif self.is_many2many:
+            return many2many()
+
+    def on_get(self, source, target):
+        """
+        # On Get
+        The following actions will initiate a call to this method:
+        - `print(BizObject.Relationship)`
+        """
+        behavior = self
+        if not target:
+            return
+
+        def one2one():
+            return getattr(source,
+                           behavior._target_id) == getattr(
+                               target, behavior._target_id
+                           )
+
+        def one2many():
+            pass
+            # *** AttributeError: 'ProjectBizList' object has no attribute 'project_id'
+
+        def many2many():
+            # TODO or not TODO
+            pass
+
+        if self.is_one2one:
+            return one2one()
+        elif self.is_one2many:
+            return one2many()
+        elif self.is_many2many:
+            return many2many()
+
+    def on_set(self, source, target):
+        """
+        # On Set
+        The following actions will initiate a call to this method:
+        - `BizObject.Relationship = BizObject`
+        """
+        behavior = self
+        if not target:
+            return
+
+        def one2one():
             return (
-                lambda self:
-                (bridge, bridge_source_id  == source_id),
-                lambda bridge_list: (
-                    target,
-                    target_id.
-                    including(getattr(bridge_list, target_id))
-                )
+                getattr(source, behavior._source_id) ==
+                getattr(target, behavior._target_id)
             )
 
-        if not rel.many:
-            return one2one(source, behavior)
-        else:
-            if len(path) == 2:
-                return one2many(source, behavior)
-            else:
-                return many2many(source, behavior)
+        def one2many():
+            return getattr(source,
+                           behavior._source_id) in getattr(
+                               target, behavior._target_id
+                           )
 
+        def many2many():
+            # XXX How to do this?
+            pass
 
-    def on_add(self, source, target, relationship):
-        #return target.merge(
-        #    {
-        #        relationship._source_id: source._id
-        #    }
-        #).save()
-        pass
+        if self.is_one2one:
+            return one2one()
+        elif self.is_one2many:
+            return one2many()
+        elif self.is_many2many:
+            return many2many()
 
-    def on_set(self, source, target, relationship):
-        #return source._id in getattr(
-        #    target, relationship._source_id
-        #)
-        pass
+    def on_rem(self, source, target):
+        """
+        # On Remove
+        The following actions will initiate a call to this method:
+        - `BizList.remove(BizObject)`
+        """
+        behavior = self
+        if not target:
+            return
 
-    def on_get(self, source, target, relationship):
-        pass
+        def one2many():
+            """
+            # One 2 Many
+            """
+            return target.merge(
+                {
+                    behavior._source_id: None
+                }
+            ).save()
 
-    def on_rem(self, source, target, relationship):
-        #return target.merge(
-        #    {
-        #        relationship._source_id: None
-        #    }
-        #).save()
-        pass
+        def many2many():
+            """
+            # Many 2 Many
+            """
+            return behavior._bridge[0].query(
+                (
+                    getattr(
+                        behavior._bridge[0],
+                        behavior._bridge_id[0]
+                    ) == getattr(
+                        source, behavior._source_id
+                    )
+                )
+            ).delete()
 
-    def on_del(self, source, target, relationship):
-        pass
+        if self.is_one2many:
+            return one2many()
+        elif self.is_many2many:
+            return many2many()
+
+    def on_del(self, source, target):
+        """
+        # On Delete
+        The following actions will initiate a call to this method:
+        - `BizList.delete()`
+        - `del BizObject.Relationship`
+        """
+        behavior = self
+        if not target:
+            return
+
+        def one2many():
+            return target.merge(
+                **{
+                    behavior._target_id: None
+                }
+            ).save()
+
+        def many2many():
+            raise NotImplementedError()
+
+        if self.is_one2many:
+            return one2many()
+        elif self.is_many2many:
+            return many2many()

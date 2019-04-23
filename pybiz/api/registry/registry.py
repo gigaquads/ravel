@@ -111,8 +111,9 @@ class Registry(object):
             console.debug(f'{self} registered proxy: {proxy}')
             self._proxies[proxy.name] = proxy
         else:
+            import ipdb; ipdb.set_trace(); print('=' * 100)
             raise RegistryError(
-                message='proxy already registered',
+                message=f'proxy already registered, {proxy.name}',
                 data={'proxy': proxy}
             )
 
