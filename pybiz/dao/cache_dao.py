@@ -47,18 +47,22 @@ class CacheDao(Dao):
     mode = CacheMode.writethru
     fe = None
     be = None
+    fe_params = None
+    be_params = None
 
     def __init__(self):
         super().__init__()
         self.executor = None
 
     @classmethod
-    def on_bootstrap(cls, prefetch=False, mode=None):
+    def on_bootstrap(cls, prefetch=False, mode=None, front=None, back=None):
         from .python_dao import PythonDao
 
         cls.prefetch = prefetch if prefetch is not None else cls.prefetch
         cls.mode = mode or cls.mode
         cls.fe = PythonDao()
+        cls.fe_params = front
+        cls.be_params = back
 
     def on_bind(
         self,
@@ -70,6 +74,8 @@ class CacheDao(Dao):
     ):
         self.prefetch = prefetch if prefetch is not None else self.prefetch
         self.mode = mode or self.mode
+        front = front or self.fe_params
+        back = back or self.be_params
 
         self.fe = self._setup_inner_dao(
             biz_type,
