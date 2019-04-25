@@ -67,12 +67,13 @@ class CacheDao(Dao):
     def on_bind(
         self,
         biz_type: Type['BizObject'],
-        prefetch=False,
+        prefetch=None,
         mode: CacheMode = None,
         front: Dict = None,
         back: Dict = None,
     ):
-        self.prefetch = prefetch if prefetch is not None else self.prefetch
+        if prefetch is not None:
+            self.prefetch = prefetch
         self.mode = mode or self.mode
         front = front or self.fe_params
         back = back or self.be_params
