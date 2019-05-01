@@ -1,8 +1,0 @@
-from appyratus.test import mark, BaseTests
-
-
-class Test{{ api.name|camel }}Api(BaseTests):
-    """
-    Tests associated with the {{ api.name|title }} API
-    """
-    pass

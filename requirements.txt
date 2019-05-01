@@ -9,6 +9,9 @@ google
 protobuf
 grpcio
 grpcio_tools
+btrees
+falcon
+websockets
 
 pytest
 mock

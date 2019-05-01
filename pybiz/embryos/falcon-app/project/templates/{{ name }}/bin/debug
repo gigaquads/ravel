@@ -1,4 +1,0 @@
-#!/usr/bin/bash
-
-uwsgi_ini_file=$1
-uwsgi --ini $uwsgi_ini_file --virtualenv $VIRTUAL_ENV

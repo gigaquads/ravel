@@ -3,6 +3,8 @@ import uuid
 
 from abc import ABCMeta, abstractmethod
 
+from pybiz.util import is_sequence
+
 
 class DirtyInterface(metaclass=ABCMeta):
 
@@ -83,7 +85,8 @@ class DirtyObject(DirtyInterface):
             self._dirty_keys -= set(keys)
 
     def mark_dirty(self, keys):
-        keys = {keys} if isinstance(keys, (int, str)) else set(keys)
+        if not isinstance(keys, set):
+            keys = {keys} if isinstance(keys, (int, str)) else set(keys)
         self._dirty_keys |= keys
         if self._parent_ref is not None:
             parent = self._parent_ref()
@@ -114,7 +117,7 @@ class DirtyDict(dict, DirtyObject):
         for k, v in items:
             if isinstance(v, dict):
                 self[k] = DirtyDict(v)
-            elif isinstance(v, (list, tuple, set)):
+            elif is_sequence(v):
                 self[k] = DirtyList(v)
 
 
@@ -140,5 +143,5 @@ class DirtyList(list, DirtyObject):
         for i, v in enumerate(self):
             if isinstance(v, dict):
                 self[i] = DirtyDict(v)
-            elif isinstance(v, (list, tuple, set)):
+            elif is_sequence(v):
                 self[i] = DirtyList(v)

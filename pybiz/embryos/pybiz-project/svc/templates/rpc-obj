@@ -1,5 +1,0 @@
-from pybiz.api.grpc import GrpcFunctionRegistry
-
-
-class {{ project.context.project.name|camel }}RpcService(GrpcFunctionRegistry):
-    pass

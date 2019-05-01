@@ -1,9 +1,0 @@
----
-- {{ project.context.project.name|snake }}/:
-  - dao/:
-    - {{ dao.name|snake }}_dao.py: daoobj()
-- tests/:
-  - dao/:
-    - test_{{ dao.name|snake }}_dao.py: daotest()
-- manifest.yml
-...

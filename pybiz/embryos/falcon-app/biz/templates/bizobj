@@ -1,7 +1,0 @@
-from pybiz import BizObject
-
-
-class {{ name }}(BizObject):
-    """
-    {{ name }} business object
-    """

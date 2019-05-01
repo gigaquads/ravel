@@ -1,9 +1,0 @@
-from . import app
-
-
-@app.{{ http_method|lower }}('{{ url_path }}')
-def {{ name|snake }}(*args, **kwargs):
-    """
-	TODO: add docstring
-    """
-    return {}

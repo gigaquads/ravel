@@ -1,9 +1,0 @@
----
-- {{ project.context.project.name|snake }}/:
-  - biz/:
-    - {{ biz.name|snake }}.py: bizobj()
-- tests/:
-  - biz/:
-    - test_{{ biz.name|snake }}.py: biztest()
-- manifest.yml
-...

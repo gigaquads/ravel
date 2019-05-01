@@ -1,7 +1,0 @@
-from pybiz.dao.dict_dao import DictDao
-
-
-class {{ name }}Dao(DictDao):
-    """
-    {{ name }} data access object
-    """
