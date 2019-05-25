@@ -24,6 +24,7 @@ class RegistryProxy(object):
         in the processing of requests, where the existence of errors has
         implications on control flow for middleware.
         """
+
         def __init__(self, exc, middleware=None):
             self.middleware = middleware
             self.trace = traceback.format_exc().split('\n')
@@ -48,7 +49,9 @@ class RegistryProxy(object):
         """
         self.func = func
         self.decorator = decorator
-        self.target = func.target if isinstance(func, RegistryProxy) else func
+        self.target = func.target if isinstance(
+            func, RegistryProxy
+        ) else func
         self.signature = inspect.signature(self.target)
 
     def __getattr__(self, key: Text):
@@ -126,7 +129,8 @@ class RegistryProxy(object):
         )
         return error
 
-    def pre_call(self, raw_args, raw_kwargs) -> Tuple[Tuple, Dict, Error]:
+    def pre_call(self, raw_args,
+                 raw_kwargs) -> Tuple[Tuple, Dict, Error]:
         """
         This is where we apply all logic in self.__call__ that precedes the
         actual calling of the wrapped "target" function. This is where we
@@ -137,7 +141,9 @@ class RegistryProxy(object):
         if error is None:
             # get prepared args and kwargs from Registry.on_request,
             # followed by middleware on_request.
-            args, kwargs, error = self.on_request(raw_args, raw_kwargs)
+            args, kwargs, error = self.on_request(
+                raw_args, raw_kwargs
+            )
         else:
             args = tuple()
             kwargs = {}
@@ -188,13 +194,19 @@ class RegistryProxy(object):
         """
         # get args and kwargs from native inputs
         try:
-            params = self.registry.on_request(self, *raw_args, **raw_kwargs)
-            args, kwargs = params if params else (raw_args, raw_kwargs)
+            params = self.registry.on_request(
+                self, *raw_args, **raw_kwargs
+            )
+            args, kwargs = params if params else (
+                raw_args, raw_kwargs
+            )
         except Exception as exc:
             return (tuple(), {}, RegistryProxy.Error(exc))
 
         # load BizObjects from ID's passed into the proxy in place
-        args, kwargs = self.registry.argument_loader.load(self, args, kwargs)
+        args, kwargs = self.registry.argument_loader.load(
+            self, args, kwargs
+        )
 
         # middleware on_request logic
         try:
@@ -205,7 +217,8 @@ class RegistryProxy(object):
         except Exception as exc:
             error = RegistryProxy.Error(exc, mware)
             console.error(
-                message=f'{mware.__class__.__name__}.on_request failed',
+                message=
+                f'{mware.__class__.__name__}.on_request failed',
                 data=error.to_dict()
             )
             return (args, kwargs, error)
@@ -224,7 +237,8 @@ class RegistryProxy(object):
         # prepare the proxy "result" return value
         try:
             result = self.decorator.registry.on_response(
-                self, raw_result, *args, **kwargs
+                self, raw_result, *args, *raw_args, **kwargs,
+                **raw_kwargs
             )
         except Exception as exc:
             result = None
@@ -239,9 +253,7 @@ class RegistryProxy(object):
             if isinstance(self.registry, mware.registry_types):
                 try:
                     mware.post_request(
-                        self,
-                        raw_args, raw_kwargs,
-                        args, kwargs,
+                        self, raw_args, raw_kwargs, args, kwargs,
                         result
                     )
                 except Exception as exc:
