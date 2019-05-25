@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 
 import six
-import ujson
 
 from falcon import errors
 from falcon.media import BaseHandler
@@ -12,7 +11,7 @@ from pybiz.util import JsonEncoder
 
 class JsonHandler(BaseHandler):
     """
-    Handler built using the :py:mod:`ujson` module.
+    # Json Handler
     """
 
     def __init__(self, encoder: 'JsonEncoder' = None, *args, **kwargs):
@@ -29,7 +28,7 @@ class JsonHandler(BaseHandler):
             )
 
     def serialize(self, media, content_type):
-        result = ujson.dumps(media, ensure_ascii=False)
+        result = self.encoder.encode(media)
         if six.PY3 or not isinstance(result, bytes):
             result = result.encode('utf-8')
         return result
