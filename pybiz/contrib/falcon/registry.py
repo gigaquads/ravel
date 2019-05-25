@@ -32,6 +32,11 @@ class FalconServiceRegistry(WsgiServiceRegistry):
             self.json = {}
 
     class Response(falcon.Response):
+        class Options(falcon.ResponseOptions):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.media_handlers['application/json'] = JsonHandler()
+
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
 
@@ -80,6 +85,7 @@ class FalconServiceRegistry(WsgiServiceRegistry):
             response_type=self.response_type,
         )
         falcon_api.req_options = self.Request.Options()
+        falcon_api.resp_options = self.Response.Options()
         falcon_api.add_error_handler(Exception, self.handle_error)
 
         for url_path, resource in self._url_path2resource.items():

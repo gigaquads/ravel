@@ -28,7 +28,7 @@ class JsonHandler(BaseHandler):
                 'Could not parse JSON body - {0}'.format(err)
             )
 
-    def serialize(self, media):
+    def serialize(self, media, content_type):
         result = ujson.dumps(media, ensure_ascii=False)
         if six.PY3 or not isinstance(result, bytes):
             result = result.encode('utf-8')
