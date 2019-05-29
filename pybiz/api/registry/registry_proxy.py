@@ -225,7 +225,7 @@ class RegistryProxy(object):
         # prepare the proxy "result" return value
         try:
             result = self.decorator.registry.on_response(
-                self, raw_result, *args, *raw_args, **kwargs, **raw_kwargs
+                self, raw_result, raw_args, raw_kwargs, *args, **kwargs
             )
         except Exception as exc:
             result = None
