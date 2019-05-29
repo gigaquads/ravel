@@ -22,7 +22,6 @@ from google.protobuf.message import Message
 from appyratus.schema import fields
 from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
-from appyratus.json import JsonEncoder
 
 from pybiz.util import is_bizobj, is_bizlist, JsonEncoder
 from pybiz.api.registry import Registry

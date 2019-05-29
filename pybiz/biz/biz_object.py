@@ -210,6 +210,7 @@ class BizObject(metaclass=BizObjectMeta):
                 order_by = (order_by, )
             query.spec.order_by = order_by
 
+        """
         console.debug(
             message='executing query',
             data={
@@ -221,6 +222,7 @@ class BizObject(metaclass=BizObjectMeta):
                 'offset': query.spec.offset,
             }
         )
+        """
 
         results = query.execute()
         if first:

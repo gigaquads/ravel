@@ -20,7 +20,7 @@ class JsonHandler(BaseHandler):
 
     def deserialize(self, raw):
         try:
-            return JsonEncoder.decode(raw.decode('utf-8'))
+            return self.encoder.decode(raw.decode('utf-8'))
         except ValueError as err:
             raise errors.HTTPBadRequest(
                 'Invalid JSON',

@@ -49,9 +49,7 @@ class RegistryProxy(object):
         """
         self.func = func
         self.decorator = decorator
-        self.target = func.target if isinstance(
-            func, RegistryProxy
-        ) else func
+        self.target = func.target if isinstance(func, RegistryProxy) else func
         self.signature = inspect.signature(self.target)
 
     def __getattr__(self, key: Text):
@@ -191,17 +189,13 @@ class RegistryProxy(object):
         """
         # get args and kwargs from native inputs
         try:
-            params = self.registry.on_request(
-                self, *raw_args, **raw_kwargs
-            )
+            params = self.registry.on_request(self, *raw_args, **raw_kwargs)
             args, kwargs = params if params else (raw_args, raw_kwargs)
         except Exception as exc:
             return (tuple(), {}, RegistryProxy.Error(exc))
 
         # load BizObjects from ID's passed into the proxy in place
-        args, kwargs = self.registry.argument_loader.load(
-            self, args, kwargs
-        )
+        args, kwargs = self.registry.argument_loader.load(self, args, kwargs)
 
         # middleware on_request logic
         try:

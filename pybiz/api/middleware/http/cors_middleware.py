@@ -42,8 +42,8 @@ class CorsMiddleware(RegistryMiddleware):
         response.set_headers(
             {
                 'Access-Control-Allow-Origin': DEFAULT_ALLOW_ORIGIN,
-                'Access-Control-Allow-Methods': DEFAULT_ALLOW_METHODS,
-                'Access-Control-Allow-Headers': DEFAULT_ALLOW_HEADERS,
+                'Access-Control-Allow-Methods': ','.join(DEFAULT_ALLOW_METHODS),
+                'Access-Control-Allow-Headers': ','.join(DEFAULT_ALLOW_HEADERS),
             }
         )
 
