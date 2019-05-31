@@ -223,7 +223,7 @@ class PythonDao(Dao):
 
             return _ids
 
-        results  = []
+        results = []
 
         with self.lock:
             _ids = process(predicate)
@@ -239,6 +239,8 @@ class PythonDao(Dao):
         return results
 
     def _update_indexes(self, _id, record):
+        schema = self.biz_type.schema
+        record, error = schema.process(record, strict=True)
         for k, v in record.items():
             if k not in self.ignored_indexes:
                 if v not in self.indexes[k]:
