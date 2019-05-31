@@ -25,11 +25,7 @@ class RelationshipBehavior(object):
         self._bridge = None
 
     def __call__(
-        self,
-        relationship: 'Relationship',
-        many=False,
-        *args,
-        **kwargs
+        self, relationship: 'Relationship', many=False, *args, **kwargs
     ):
         self._relationship = relationship
         self._many = many
@@ -93,17 +89,22 @@ class RelationshipBehavior(object):
                 if '.' in node:
                     node_class, node_field = node.split('.')
                 node_class = self._relationship.registry.types.biz[
-                    node_class]
+                    node_class
+                ]
                 if node_field is None:
                     node_field = '_id'
-                node_field = getattr(node_class, node_field)
+                if ':' in node_field:
+                    node_field = [
+                        getattr(node_class, nf)
+                        for nf in node_field.split(':')
+                    ]
+                else:
+                    node_field = getattr(node_class, node_field)
             return node_field
 
         for node in path:
             if isinstance(node, list):
-                node_field = [
-                    resolve_field(n) for n in node
-                ]
+                node_field = [resolve_field(n) for n in node]
             else:
                 node_field = resolve_field(node)
             clean_path.append(node_field)
@@ -259,10 +260,9 @@ class CrudBehavior(RelationshipBehavior):
             return
 
         def one2one():
-            return getattr(source,
-                           behavior._target_id) == getattr(
-                               target, behavior._target_id
-                           )
+            return getattr(source, behavior._target_id) == getattr(
+                target, behavior._target_id
+            )
 
         def one2many():
             pass
@@ -291,15 +291,15 @@ class CrudBehavior(RelationshipBehavior):
 
         def one2one():
             return (
-                getattr(source, behavior._source_id) ==
-                getattr(target, behavior._target_id)
+                getattr(source, behavior._source_id) == getattr(
+                    target, behavior._target_id
+                )
             )
 
         def one2many():
-            return getattr(source,
-                           behavior._source_id) in getattr(
-                               target, behavior._target_id
-                           )
+            return getattr(source, behavior._source_id) in getattr(
+                target, behavior._target_id
+            )
 
         def many2many():
             # XXX How to do this?
@@ -326,11 +326,7 @@ class CrudBehavior(RelationshipBehavior):
             """
             # One 2 Many
             """
-            return target.merge(
-                {
-                    behavior._source_id: None
-                }
-            ).save()
+            return target.merge({behavior._source_id: None}).save()
 
         def many2many():
             """
@@ -338,12 +334,8 @@ class CrudBehavior(RelationshipBehavior):
             """
             return behavior._bridge[0].query(
                 (
-                    getattr(
-                        behavior._bridge[0],
-                        behavior._bridge_id[0]
-                    ) == getattr(
-                        source, behavior._source_id
-                    )
+                    getattr(behavior._bridge[0], behavior._bridge_id[0]) ==
+                    getattr(source, behavior._source_id)
                 )
             ).delete()
 
@@ -364,11 +356,7 @@ class CrudBehavior(RelationshipBehavior):
             return
 
         def one2many():
-            return target.merge(
-                **{
-                    behavior._target_id: None
-                }
-            ).save()
+            return target.merge(**{behavior._target_id: None}).save()
 
         def many2many():
             raise NotImplementedError()
