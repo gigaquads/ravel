@@ -18,8 +18,9 @@ class JsonHandler(BaseHandler):
         super().__init__(*args, **kwargs)
         self.encoder = encoder or JsonEncoder()
 
-    def deserialize(self, raw):
+    def deserialize(self, stream, content_type, content_length):
         try:
+            raw = stream.read()
             return self.encoder.decode(raw.decode('utf-8'))
         except ValueError as err:
             raise errors.HTTPBadRequest(

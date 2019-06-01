@@ -31,7 +31,7 @@ class HttpServerRegistry(HttpRegistry):
 
         def write_headers(self, status_code: int):
             self.send_response(status_code)
-            self.send_header('Content-type','application/json')
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
 
         def process_request(self):
@@ -85,6 +85,9 @@ class HttpServerRegistry(HttpRegistry):
             self.process()
 
         def do_DELETE(self):
+            self.process()
+
+        def do_OPTIONS(self):
             self.process()
 
     def __init__(self, json_encode=None, *args, **kwargs):

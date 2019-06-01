@@ -2,11 +2,12 @@ import falcon
 
 from typing import Dict, Tuple, Type, Text
 from inspect import Parameter
+from pybiz.contrib.falcon.constants import HTTP_METHODS
 
 from ..base import RegistryMiddleware
 
 DEFAULT_ALLOW_ORIGIN = '*'
-DEFAULT_ALLOW_METHODS = falcon.HTTP_METHODS
+DEFAULT_ALLOW_METHODS = HTTP_METHODS
 DEFAULT_ALLOW_HEADERS = (
     'Authorization',
     'Content-Type',

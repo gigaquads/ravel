@@ -119,7 +119,15 @@ class FalconServiceRegistry(WsgiServiceRegistry):
         #api_args.extend(args)
         return (tuple(), api_kwargs)
 
-    def on_response(self, proxy, result, raw_args=None, raw_kwargs = None, *args, **kwargs):
+    def on_response(
+        self,
+        proxy,
+        result,
+        raw_args=None,
+        raw_kwargs=None,
+        *args,
+        **kwargs
+    ):
         request, response = raw_args
         response.media = result
         return result
