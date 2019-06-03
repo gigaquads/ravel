@@ -107,6 +107,7 @@ class PythonDao(Dao):
             merged_record = DictUtils.merge(old_record, data)
             merged_record['_rev'] = old_rev + 1
 
+            merged_record, error = self.biz_type.schema.process(merged_record, strict=True)
             record = self.create(merged_record)
             return record
 
@@ -239,8 +240,7 @@ class PythonDao(Dao):
         return results
 
     def _update_indexes(self, _id, record):
-        schema = self.biz_type.schema
-        record, error = schema.process(record, strict=True)
+        record, error = self.biz_type.schema.process(record, strict=True)
         for k, v in record.items():
             if k not in self.ignored_indexes:
                 if v not in self.indexes[k]:
@@ -248,6 +248,7 @@ class PythonDao(Dao):
                 self.indexes[k][v].add(_id)
 
     def _delete_from_indexes(self, _id, record):
+        record, error = self.biz_type.schema.process(record, strict=True)
         for k, v in record.items():
             if k not in self.ignored_indexes:
                 self.indexes[k][v].remove(_id)

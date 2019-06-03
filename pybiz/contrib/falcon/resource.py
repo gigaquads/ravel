@@ -2,7 +2,7 @@ from .constants import HTTP_METHODS, RE_HANDLER_METHOD
 
 
 class Resource(object):
-    def __init__(self, url_path:str = None):
+    def __init__(self, url_path: str = None):
         self._url_path = url_path
         self._http_method_2_route = {}
 
@@ -26,7 +26,7 @@ class Resource(object):
 
     def __repr__(self):
         name_str = self.__class__.__name__
-        path_str = '(path='+self.url_path+')' if self.url_path else ''
+        path_str = '(path=' + self.url_path + ')' if self.url_path else ''
         return '<{}{}>'.format(name_str, path_str)
 
     @property
