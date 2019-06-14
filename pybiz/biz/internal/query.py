@@ -190,6 +190,7 @@ class QueryUtils(object):
         cls,
         biz_type: Type['BizObject'],
         argument: object,
+        depth=0,
         parent: Type['BizObject'] = None,
     ) -> Tuple[Set[Text], Dict[Text, Dict]]:
         """
@@ -216,6 +217,12 @@ class QueryUtils(object):
         fields = set()      # <- set of fields to query on this biz_type
         relationships = {}  # <- map from relationship name to recursive result
 
+        if depth > 0:
+            spec.update({
+                k: set(biz_type.relationships[k].biz_type.schema.fields.keys())
+                for k in (biz_type.relationships.keys() - spec.keys())
+            })
+
         # recursively partition keys between the `fields`
         # set and `relationships` dict
         for k, v in spec.items():
@@ -232,6 +239,7 @@ class QueryUtils(object):
                 relationships[k] = cls.prepare_fields_argument(
                     biz_type=rel.target,
                     argument=related_fields,
+                    depth=depth-1,
                     parent=biz_type,
                 )
 

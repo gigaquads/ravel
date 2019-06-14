@@ -159,6 +159,9 @@ class RegistryProxy(object):
         # we raise a higher-level exception that contains a list of all errors,
         # which in turn contain a stack trace and Exception object.
         if errors:
+            console.error(data=[
+                err.to_dict() for err in errors
+            ])
             raise RegistryProxyError(errors)
         return result
 

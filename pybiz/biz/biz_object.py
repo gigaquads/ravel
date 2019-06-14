@@ -231,12 +231,14 @@ class BizObject(metaclass=BizObjectMeta):
             return cls.BizList(results)
 
     @classmethod
-    def get(cls, _id, fields: Dict = None) -> 'BizObject':
+    def get(cls, _id, fields: Dict = None, depth=0) -> 'BizObject':
         _id, err = cls.schema.fields['_id'].process(_id)
         if err:
             raise ValidationError(f'invalid _id {_id}: {err}')
 
-        fields, children = QueryUtils.prepare_fields_argument(cls, fields)
+        fields, children = QueryUtils.prepare_fields_argument(
+            cls, fields, depth=depth
+        )
         fields.update({'_id', '_rev'})
 
         record = cls.get_dao().fetch(_id=_id, fields=fields)
@@ -336,6 +338,10 @@ class BizObject(metaclass=BizObjectMeta):
         prepared_record.pop('_rev', None)
         prepared_record, errors = self.schema.process(prepared_record)
         if errors:
+            console.error(
+                message=f'could not create {self.__class__.__name__} object',
+                data=errors
+            )
             raise ValidationError(
                 message=f'could not create {self.__class__.__name__} object',
                 data=errors
@@ -383,7 +389,7 @@ class BizObject(metaclass=BizObjectMeta):
             if errors:
                 raise ValidationError(
                     message=(
-                        f'could not create {self.__class__.__name__} object'
+                        f'could not create {cls.__name__} object: {errors}'
                     ),
                     data=errors
                 )
@@ -581,7 +587,7 @@ class BizObject(metaclass=BizObjectMeta):
 
         return self
 
-    def load(self, keys=None) -> 'BizObject':
+    def load(self, keys=None, depth=0) -> 'BizObject':
         """
         Assuming _id is not None, this will load the rest of the BizObject's
         data. By default, relationship data is not loaded unless explicitly
@@ -594,7 +600,7 @@ class BizObject(metaclass=BizObjectMeta):
             'instance': self._id,
             'keys': keys
         })
-        fresh = self.get(_id=self._id, fields=keys)
+        fresh = self.get(_id=self._id, fields=keys, depth=depth)
         self.merge(fresh)
         self.clean(keys)
         return self

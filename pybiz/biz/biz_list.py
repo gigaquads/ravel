@@ -107,13 +107,20 @@ class BizList(object):
             obj.merge(obj, **more_data)
         return self
 
+    def each(self, func):
+        for idx, bizobj in enumerate(self._bizobj_arr):
+            func(idx, bizobj)
+        return self
+
     def mark(self, keys=None):
         for bizobj in self._bizobj_arr:
             bizobj.mark(keys=keys)
+        return self
 
     def clean(self, keys=None):
         for bizobj in self._bizobj_arr:
             bizobj.clean(keys=keys)
+        return self
 
     def save(self, *args, **kwargs):
         return self.biz_type.save_many(self._bizobj_arr, *args, **kwargs)

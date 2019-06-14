@@ -91,7 +91,7 @@ class FalconServiceRegistry(WsgiServiceRegistry):
         for url_path, resource in self._url_path2resource.items():
             falcon_api.add_route(url_path, resource)
 
-        return falcon_api(environ, start_response)
+        return falcon_api
 
     def on_decorate(self, route):
         resource = self._resource_manager.add_route(route)

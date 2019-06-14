@@ -307,9 +307,16 @@ class ConditionMetadata(object):
         mock_self = MagicMock()
         mock_kwargs = {k: MagicMock() for k in self.kwarg_names}
         if self.has_rel_argument:
-            return self.func(self.relationship, mock_self, **mock_kwargs)[0]
+            cond_retval = self.func(
+                self.relationship, mock_self, **mock_kwargs
+            )
         else:
-            return self.func(mock_self, **mock_kwargs)[0]
+            cond_retval = self.func(mock_self, **mock_kwargs)
+        if not isinstance(cond_retval, (list, tuple)):
+            # a condition func must return Tuple[Type[BizObject], Predicate]
+            raise ValueError(f'Unrecognized condition: {cond_retval}')
+        target_type = cond_retval[0]
+        return target_type
 
     def _set_kwarg_names(self):
         param_names = list(self.signature.parameters.keys())

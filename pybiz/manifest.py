@@ -151,11 +151,14 @@ class Manifest(object):
                 )
                 biz_type.bootstrap(registry=registry)
 
-        # inject all proxy target callables into each other's global namespace
-        # to avoid having to import them across modules.
-        targets = {p.name: p.target for p in registry.proxies.values()}
+        # inject the following into each proxy target's lexical scope:
+        # all other proxies, all BizObject and Dao classes.
         for proxy in registry.proxies.values():
-            proxy.target.__globals__.update(targets)
+            proxy.target.__globals__.update(self.types.biz)
+            proxy.target.__globals__.update(self.types.dao)
+            proxy.target.__globals__.update({
+                p.name: p.target for p in registry.proxies.values()
+            })
 
     def bind(self):
         self.binder.bind()
