@@ -300,7 +300,7 @@ class ConditionMetadata(object):
         self.has_rel_argument = self._set_has_rel_argument()
         self.kwarg_names = self._set_kwarg_names()
         self.target_type = self._set_target_type()
-        self.query_spec = QuerySpecification.prepare([], self.target_type)
+        self.query_spec = QuerySpecification.build([], self.target_type)
         return self
 
     def _set_target_type(self):

@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from appyratus.utils import StringUtils, DictUtils
 
-from pybiz.util import is_bizobj, is_sequence
+from pybiz.util import is_bizobj, is_bizlist, is_sequence
 
 
 class Dumper(object):
@@ -14,11 +14,19 @@ class Dumper(object):
         if isinstance(fields, dict):
             fields = DictUtils.unflatten_keys(fields)
         elif (not fields) or is_sequence(fields):
-            fields = DictUtils.unflatten_keys({
-                k: None for k in (
-                    fields or (target.raw.keys() | target.related.keys())
-                )
-            })
+            if is_bizobj(target):
+                fields = DictUtils.unflatten_keys({
+                    k: None for k in (
+                        fields or (target.raw.keys() | target.relationships.keys())
+                    )
+                })
+            elif is_sequence(target) or is_bizlist(target):
+                fields = DictUtils.unflatten_keys({
+                    k: None for k in (
+                        fields or (target[0].raw.keys() | target[0].relationships.keys())
+                    )
+                })
+
         else:
             raise ValueError(
                 'uncoregnized fields argument type'
@@ -102,7 +110,7 @@ class NestingDumper(Dumper):
                     continue
                 # k corresponds to a declared Relationship, which could
                 # refer either to an instance object or a list thereof.
-                related = target.related[k]
+                related = target.related.get(k)
                 if related is None:
                     record[k] = None
                 elif is_bizobj(related):

@@ -8,18 +8,30 @@ from appyratus.enum import Enum
 
 
 OP_CODE = Enum(
-    EQ='=',
-    NEQ='!=',
-    GT='>',
-    LT='<',
-    GEQ='>=',
-    LEQ='<=',
+    EQ='eq',
+    NEQ='neq',
+    GT='gt',
+    LT='lt',
+    GEQ='geq',
+    LEQ='leq',
     INCLUDING='in',
     EXCLUDING='ex',
-    AND='&',
-    OR='|',
+    AND='and',
+    OR='or',
 )
 
+OP_CODE_2_DISPLAY_STRING = {
+    OP_CODE.EQ: '==',
+    OP_CODE.NEQ: '!=',
+    OP_CODE.GT: '>=',
+    OP_CODE.LT: '<=',
+    OP_CODE.GEQ: '>=',
+    OP_CODE.LEQ: '<=',
+    OP_CODE.INCLUDING: 'IN',
+    OP_CODE.EXCLUDING: 'NOT IN',
+    OP_CODE.AND: 'AND',
+    OP_CODE.OR: 'OR',
+}
 
 class Predicate(object):
     def serialize(self) -> Text:
@@ -60,13 +72,14 @@ class ConditionalPredicate(Predicate):
             lhs = host_name + '.' + self.prop.key
         else:
             lhs = '[NULL]'
-        return '({} {} {})'.format(lhs, self.op, self.value)
+
+        return f'({lhs} {OP_CODE_2_DISPLAY_STRING[self.op]} {self.value})'
 
     def __or__(self, other):
-        return BooleanPredicate('|', self, other)
+        return BooleanPredicate(OP_CODE.OR, self, other)
 
     def __and__(self, other):
-        return BooleanPredicate('&', self, other)
+        return BooleanPredicate(OP_CODE.AND, self, other)
 
     @property
     def field(self):
@@ -99,10 +112,10 @@ class BooleanPredicate(Predicate):
         self.targets = list(self.targets)
 
     def __or__(self, other):
-        return BooleanPredicate('|', self, other)
+        return BooleanPredicate(OP_CODE.OR, self, other)
 
     def __and__(self, other):
-        return BooleanPredicate('&', self, other)
+        return BooleanPredicate(OP_CODE.AND, self, other)
 
     def __str__(self):
         return self._build_string(self)
@@ -114,20 +127,17 @@ class BooleanPredicate(Predicate):
 
     def _build_string(self, p, depth=0):
         substr = ''
+
         if isinstance(p.lhs, BooleanPredicate):
             substr += self._build_string(p.lhs, depth+1)
         else:
             substr += str(p.lhs)
-        substr += ' {} '.format(p.op)
+
+        substr += f' {OP_CODE_2_DISPLAY_STRING[p.op]} '
+
         if isinstance(p.rhs, BooleanPredicate):
             substr += self._build_string(p.rhs, depth+1)
         else:
             substr += str(p.rhs)
-        if depth == 1:
-            return '(' + substr + ')'
-        elif depth == 2:
-            return '[' + substr + ']'
-        if depth > 2:
-            return '{' + substr + '}'
-        else:
-            return substr
+
+        return f'({substr})'

@@ -169,17 +169,17 @@ class PythonDao(Dao):
                 v = predicate.value
                 index = self.indexes[k]
 
-                if op == '=':
+                if op == OP_CODE.EQ:
                     _ids = self.indexes[k].get(v, empty)
-                elif op == '!=':
+                elif op == OP_CODE.NEQ:
                     _ids = union([
                         _id_set for v_idx, _id_set in index.items()
                         if v_idx != v
                     ])
-                elif op == 'in':
+                elif op == OP_CODE.INCLUDING:
                     v = v if isinstance(v, set) else set(v)
                     _ids = union([index.get(k_idx, empty) for k_idx in v])
-                elif op == 'nin':
+                elif op == OP_CODE.EXCLUDING:
                     v = v if isinstance(v, set) else set(v)
                     _ids = union([
                         _id_set for v_idx, _id_set in index.items()
@@ -187,16 +187,16 @@ class PythonDao(Dao):
                     ])
                 else:
                     keys = np.array(index.keys(), dtype=object)
-                    if op == '>=':
+                    if op == OP_CODE.GEQ:
                         offset = bisect.bisect_left(keys, v)
                         interval = slice(offset, None, 1)
-                    elif op == '>':
+                    elif op == OP_CODE.GT:
                         offset = bisect.bisect(keys, v)
                         interval = slice(offset, None, 1)
-                    elif op == '<':
+                    elif op == OP_CODE.LT:
                         offset = bisect.bisect_left(keys, v)
                         interval = slice(0, offset, 1)
-                    elif op == '<=':
+                    elif op == OP_CODE.LEQ:
                         offset = bisect.bisect(keys, v)
                         interval = slice(0, offset, 1)
                     else:
@@ -209,12 +209,12 @@ class PythonDao(Dao):
             elif isinstance(predicate, BooleanPredicate):
                 lhs = predicate.lhs
                 rhs = predicate.rhs
-                if op == '&':
+                if op == OP_CODE.AND:
                     lhs_result = process(lhs)
                     if lhs_result:
                         rhs_result = process(rhs)
                         _ids = set.intersection(lhs_result, rhs_result)
-                elif op == '|':
+                elif op == OP_CODE.OR:
                     lhs_result = process(lhs)
                     rhs_result = process(rhs)
                     _ids = set.union(lhs_result, rhs_result)

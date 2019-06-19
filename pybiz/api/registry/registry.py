@@ -173,7 +173,7 @@ class Registry(object):
         Enter the main loop in whatever program context your Registry is
         being used, like in a web framework or a REPL.
         """
-        console.debug(f'starting {self}')
+        console.info(f'starting {self}')
         self._is_started = True
         return self.on_start()
 

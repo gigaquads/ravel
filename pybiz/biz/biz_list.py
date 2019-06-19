@@ -1,9 +1,22 @@
+from functools import reduce
+
 from typing import Type, List, Set, Tuple, Text, Dict
 from uuid import UUID
 
 from pybiz.util import repr_biz_id
-from pybiz.constants import IS_BIZLIST_ANNOTATION
+from pybiz.constants import IS_BIZLIST_ANNOTATION, IS_BIZOBJ_ANNOTATION
 from pybiz.exc import RelationshipError
+
+
+class FilterableList(list):
+    def where(self, *filters):
+        filtered = FilterableList()
+        for obj in self:
+            for keep in filters:
+                if not keep(obj):
+                    continue
+                filtered.append(obj)
+        return filtered
 
 
 class BizList(object):
@@ -17,14 +30,18 @@ class BizList(object):
             }
         )
 
-        def build_property(attr_name):
+        def build_property(key):
+            if key in biz_type.relationships:
+                collection_type = biz_type.BizList
+            else:
+                collection_type = FilterableList
             return property(
-                fget=lambda self: [
-                    getattr(bizobj, attr_name, None)
+                fget=lambda self: collection_type(
+                    getattr(bizobj, key, None)
                     for bizobj in self._bizobj_arr
-                ],
+                ),
                 fset=lambda self, value: [
-                    setattr(bizobj, attr_name, value)
+                    setattr(bizobj, key, value)
                     for bizobj in self._bizobj_arr
                 ]
             )
@@ -33,7 +50,7 @@ class BizList(object):
             prop = build_property(field_name)
             setattr(derived_type, field_name, prop)
 
-        for rel_name in biz_type.relationships:
+        for rel_name, rel in biz_type.relationships.items():
             prop = build_property(rel_name)
             setattr(derived_type, rel_name, prop)
 
@@ -41,13 +58,25 @@ class BizList(object):
 
     def __init__(
         self,
-        objects: List['BizObject'],
+        objects: List['BizObject'] = None,
         relationship: 'Relationship' = None,
         bizobj: 'BizObject' = None,
     ):
         self.relationship = relationship
-        self._bizobj_arr = list(objects)
+        self._bizobj_arr = list(objects or [])
         self.bizobj = bizobj
+
+    def __getattr__(self, attr: Text):
+        if attr in self.biz_type.relationships:
+            collection_type = biz_type.BizList
+        else:
+            collection_type = FilterableList
+        if attr != IS_BIZLIST_ANNOTATION and attr != IS_BIZOBJ_ANNOTATION:
+            return collection_type(
+                getattr(bizobj, attr, None) for
+                bizobj in self._bizobj_arr
+            )
+        raise AttributeError(attr)
 
     def __getitem__(self, idx: int) -> 'BizObject':
         return self._bizobj_arr[idx]
@@ -90,6 +119,15 @@ class BizList(object):
             raise ValueError(str(other))
         return clone
 
+    def where(self, *filters):
+        filtered = []
+        for obj in self:
+            for keep in filters:
+                if not keep(obj):
+                    continue
+                filtered.append(obj)
+        return self.biz_type.BizList(filtered)
+
     def copy(self):
         cls = self.__class__
         return cls(self._bizobj_arr, self.relationship, self.bizobj)
@@ -131,6 +169,7 @@ class BizList(object):
         return self
 
     def load(self, fields: Set[Text] = None):
+        # TODO: add a depth=None kwarg like in BizObject.load
         if not fields:
             fields = set(self.biz_type.schema.fields.keys())
         elif isinstance(fields, str):

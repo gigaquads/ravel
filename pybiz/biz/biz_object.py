@@ -189,6 +189,7 @@ class BizObject(metaclass=BizObjectMeta):
         cls,
         predicate: 'Predicate' = None,
         specification: 'QuerySpecification' = None,
+        fields: Set[Text] = None,
         order_by: Tuple[Text] = None,
         first=False,
     ) -> List['BizObject']:
@@ -203,28 +204,23 @@ class BizObject(metaclass=BizObjectMeta):
         2. Nested dict, like `{'foo': {'bar': {'baz': None}}}`
         3. Set of dotted paths, like `{'foo', 'bar.baz'}`
         """
-        query = Query(cls, predicate, specification)
+        query = Query(cls, predicate, specification, fields=fields)
 
         if order_by:
             if not isinstance(order_by, (tuple, list)):
                 order_by = (order_by, )
             query.spec.order_by = order_by
 
-        """
         console.debug(
             message='executing query',
             data={
                 'class': cls.__name__,
-                'predicate': predicate,
-                'fields': query.spec.fields,
-                'order_by': query.spec.order_by,
-                'limit': query.spec.limit,
-                'offset': query.spec.offset,
+                'predicate': str(predicate),
             }
         )
-        """
 
         results = query.execute()
+
         if first:
             return results[0] if results else None
         else:
@@ -354,10 +350,20 @@ class BizObject(metaclass=BizObjectMeta):
         data = dict(data or {}, **more_data)
         if data:
             self.merge(data)
+
         raw_record = self.dirty_data
         raw_record.pop('_rev', None)
         raw_record.pop('_id', None)
-        prepared_record, errors = self.schema.process(raw_record)
+
+        errors = {}
+        prepared_record = {}
+        for k, v in raw_record.items():
+            field = self.schema.fields.get(k)
+            if field is not None:
+                prepared_record[k], error = field.process(v)
+                if error:
+                    errors[k] = error
+
         # TODO: allow schema.process to take a subset of total keys
         if errors:
             raise ValidationError(
@@ -602,7 +608,7 @@ class BizObject(metaclass=BizObjectMeta):
         })
         fresh = self.get(_id=self._id, fields=keys, depth=depth)
         self.merge(fresh)
-        self.clean(keys)
+        self.clean(fresh.raw.keys())
         return self
 
     def reload(self, keys=None) -> 'BizObject':

@@ -1,6 +1,10 @@
+import traceback
+
 from typing import Dict, List, Type, Text, Tuple
 
 from appyratus.utils import TimeUtils
+
+from pybiz.util.loggers import console
 
 
 class DaoEvent(object):
@@ -72,7 +76,20 @@ class DaoHistory(object):
     @classmethod
     def _build_dao_interface_method_decorator(cls, func):
         def dao_interface_method_decorator(self, *args, **kwargs):
-            retval = func(self, *args, **kwargs)
+            try:
+                retval = func(self, *args, **kwargs)
+            except Exception as exc:
+                console.error(
+                    message=f'{func.__name__} failed',
+                    data={
+                        'args': args,
+                        'kwargs': kwargs,
+                        'traceback': traceback.format_exc().split('\n')
+                    }
+                )
+                raise
+
+
             method_name = func.__name__
 
             # record the historical DAO event
