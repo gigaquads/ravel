@@ -92,7 +92,7 @@ class Relationship(object):
         self._is_bootstrapped = False
         self._registry = None
 
-        self._ordering = normalize_to_tuple(ordering)
+        self._ordering = ordering
         self._limit = max(1, limit) if limit is not None else None
         self._offset = max(0, offset) if offset is not None else None
         self._fields = fields
@@ -157,8 +157,8 @@ class Relationship(object):
         # for the sake of defining relationships in BizObjects.
         for func in self.conditions:
             func.__globals__.update(registry.manifest.types.biz)
-        for func in self._ordering:
-            func.__globals__.update(registry.manifest.types.biz)
+        if self._ordering:
+            self._ordering.__globals__.update(registry.manifest.types.biz)
 
         # analyze each Relationship condition function and collect relevant
         # metadata used in their incocation during self.query()
@@ -174,9 +174,9 @@ class Relationship(object):
             if func is self.conditions[-1]:
                 meta.query_spec.limit = self._limit
                 meta.query_spec.offset = self._offset
-                meta.query_spec.order_by = tuple(
-                    f(meta.target_type) for f in self._ordering
-                )
+                if self._ordering:
+                    order_by = self._ordering(meta.target_type)
+                    meta.query_spec.order_by = normalize_to_tuple(order_by)
                 for x in meta.query_spec.order_by:
                     meta.query_spec.fields.add(x.key)
 
