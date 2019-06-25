@@ -607,8 +607,10 @@ class BizObject(metaclass=BizObjectMeta):
             'keys': keys
         })
         fresh = self.get(_id=self._id, fields=keys, depth=depth)
-        self.merge(fresh)
-        self.clean(fresh.raw.keys())
+        if fresh:
+            self.merge(fresh)
+            self.clean(fresh.raw.keys())
+
         return self
 
     def reload(self, keys=None) -> 'BizObject':
