@@ -235,10 +235,18 @@ class BizObject(metaclass=BizObjectMeta):
         fields, children = QueryUtils.prepare_fields_argument(
             cls, fields, depth=depth
         )
-        fields.update({'_id', '_rev'})
+        fields.update({
+            cls.schema.fields['_id'].source,
+            cls.schema.fields['_rev'].source,
+        })
 
         record = cls.get_dao().fetch(_id=_id, fields=fields)
         if record is not None:
+            # TODO: DO THIS IN GET_MANY AND QUERY AS WELL
+            for k, f in cls.schema.fields.items():
+                if f.source != f.name and f.source in record:
+                    record[f.name] = record.pop(f.source)
+
             bizobj = cls(record)
 
             # recursively load nested relationships
@@ -260,7 +268,10 @@ class BizObject(metaclass=BizObjectMeta):
         # separate field names into those corresponding to this BizObjects
         # class and those of the related BizObject classes.
         fields, children = QueryUtils.prepare_fields_argument(cls, fields)
-        fields.update({'_id', '_rev'})
+        fields.update({
+            cls.schema.fields['_id'].source,
+            cls.schema.fields['_rev'].source,
+        })
 
         # fetch data from the dao
         records = cls.get_dao().fetch_many(_ids=processed_ids, fields=fields)
@@ -268,7 +279,11 @@ class BizObject(metaclass=BizObjectMeta):
         # now fetch and merge related business objects.
         # This could be optimized.
         bizobjs = {}
+
         for _id, record in records.items():
+            for k, f in cls.schema.fields.items():
+                if f.source != f.name and f.source in record:
+                    record[f.name] = record.pop(f.source)
             if record is not None:
                 bizobjs[_id] = bizobj = cls(record).clean()
                 QueryUtils.query_relationships(bizobj, children)
@@ -575,6 +590,7 @@ class BizObject(metaclass=BizObjectMeta):
                 rel = self.relationships[k]
                 rel.set_internally(self, v)
         elif isinstance(obj, dict):
+            obj = self.schema.translate_source(obj)
             dirty_keys = obj.keys()
             for k, v in obj.items():
                 rel = self.relationships.get(k)
@@ -584,6 +600,7 @@ class BizObject(metaclass=BizObjectMeta):
                     setattr(self, k, v)
 
         if more_data:
+            more_data = self.schema.translate_source(obj)
             for k, v in more_data.items():
                 rel = self.relationships.get(k)
                 if rel:

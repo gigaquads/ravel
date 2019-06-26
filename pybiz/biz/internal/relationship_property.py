@@ -1,5 +1,3 @@
-import pybiz.biz.biz_object as biz_object
-
 from typing import Text, Type, Tuple
 
 from pybiz.util import is_sequence

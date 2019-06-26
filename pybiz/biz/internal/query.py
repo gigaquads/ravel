@@ -76,11 +76,15 @@ class QuerySpecification(object):
 
         def build_recursive(biz_type: Type['BizObject'], names: Dict):
             spec = cls()
-            if names.pop('*', None) is not None:
-                spec.fields = set(biz_type.schema.fields.keys())
+            if '*' in names:
+                del names['*']
+                spec.fields = set(
+                    f.source for f in biz_type.schema.fields.values()
+                )
             for k, v in names.items():
-                if k in biz_type.schema.fields:
-                    spec.fields.add(k)
+                field = biz_type.schema.fields.get(k)
+                if field:
+                    spec.fields.add(field.source)
                 elif k in biz_type.relationships:
                     rel = biz_type.relationships[k]
                     if v is None:  # base case
@@ -101,15 +105,17 @@ class QuerySpecification(object):
             # in a new spec object.
             names = DictUtils.unflatten_keys({k: None for k in spec})
             spec = build_recursive(biz_type, names)
-        elif spec is None:
+        elif not spec:
             # by default, a new spec includes all fields and relationships
             spec = cls(
-                fields={k for k, field in biz_type.schema.fields.items()},
+                fields={f.source for f in biz_type.schema.fields.values()},
             )
 
         # ensure that _id and required fields are *always* specified
-        spec.fields |= biz_type.schema.required_fields.keys()
-        spec.fields.add('_id')
+        spec.fields |= {
+            f.source for f in biz_type.schema.required_fields.values()
+        }
+        spec.fields.add(biz_type.schema.fields['_id'].source)
 
         if fields:
             tmp_spec = build_recursive(
@@ -207,7 +213,7 @@ class QueryUtils(object):
         # standardized the `argument` to a nested dict structure
         if argument is None:
             # if none, specified, select all fields and relationships
-            spec = {k: None for k in biz_type.schema.required_fields}
+            spec = {f.name: None for f in biz_type.schema.fields.values()}
         else:
             if is_sequence(argument):
                 spec = DictUtils.unflatten_keys({k: None for k in argument})
@@ -218,9 +224,12 @@ class QueryUtils(object):
                     spec = argument
             if '*' in spec:
                 del spec['*']
-                spec = {k: None for k in biz_type.schema.fields}
+                spec.update({f.name: None for f in biz_type.schema.fields.values()})
             if not spec:
-                spec = {k: None for k in biz_type.schema.required_fields}
+                spec = {
+                    f.name: None for f.name in
+                    biz_type.schema.required_fields.values()
+                }
 
         fields = set()      # <- set of fields to query on this biz_type
         relationships = {}  # <- map from relationship name to recursive result
@@ -235,7 +244,8 @@ class QueryUtils(object):
         # set and `relationships` dict
         for k, v in spec.items():
             if k in biz_type.schema.fields:
-                fields.add(k)
+                field = biz_type.schema.fields[k]
+                fields.add(field.source)
             elif k in biz_type.relationships:
                 rel = biz_type.relationships[k]
                 if v is None:

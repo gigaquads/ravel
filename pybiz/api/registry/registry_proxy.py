@@ -6,7 +6,7 @@ from typing import Dict, Text, Tuple
 
 from pybiz.util.loggers import console
 
-from ..exc import RegistryProxyError
+from ..exc import RegistryProxyError, PybizError
 
 
 class RegistryProxy(object):

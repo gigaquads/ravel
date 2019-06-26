@@ -26,8 +26,8 @@ class SqlalchemyTableBuilder(object):
     def __init__(self, dao: 'SqlalchemyDao'):
         self._dialect = dao.dialect
         self._biz_type = dao.biz_type
-        self._metadata = dao.get_metadata()
         self._adapters = dao.adapters
+        self._metadata = deepcopy(dao.get_metadata())
 
     @property
     def adapters(self):
@@ -37,19 +37,24 @@ class SqlalchemyTableBuilder(object):
     def dialect(self):
         return self._dialect
 
-    def build_table(self) -> sa.Table:
+    def build_table(self, name=None, schema=None) -> sa.Table:
         columns = [
             self.build_column(field)
             for field in self._biz_type.schema.fields.values()
         ]
-        table_name = StringUtils.snake(self._biz_type.__name__)
+        if name is not None:
+            table_name = name
+        else:
+            table_name = StringUtils.snake(self._biz_type.__name__)
+        if schema is not None:
+            self._metadata.schema = schema
         table = sa.Table(table_name, self._metadata, *columns)
         return table
 
     def build_column(self, field: Field) -> sa.Column:
         name = field.source
-        dtype = self.adapters.get(field.source).on_adapt(field)
-        primary_key = field.name == '_id'
+        dtype = self.adapters.get(field.name).on_adapt(field)
+        primary_key = field.meta.get('primary_key', False)
         meta = field.meta.get('sa', {})
         unique = meta.get('unique', False)
 
@@ -62,7 +67,7 @@ class SqlalchemyTableBuilder(object):
 
         return sa.Column(
             name,
-            dtype(),
+            dtype() if isinstance(dtype, type) else dtype,
             index=indexed,
             primary_key=primary_key,
             nullable=field.nullable,

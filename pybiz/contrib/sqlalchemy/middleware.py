@@ -6,17 +6,21 @@ from .dao import SqlalchemyDao
 
 
 class SqlalchemyMiddleware(RegistryMiddleware):
+    def on_bootstrap(self):
+        self.SqlalchemyDao = self.registry.types.dao['SqlalchemyDao']
+
     def pre_request(self, proxy, raw_args: Tuple, raw_kwargs: Dict):
         """
         In pre_request, args and kwargs are in the raw form before being
         processed by registry.on_request.
         """
-        SqlalchemyDao.connect()
-        SqlalchemyDao.begin()
+        self.SqlalchemyDao.connect()
+        self.SqlalchemyDao.begin()
 
-        return (raw_args, raw_kwargs)
-
-    def post_request(self, proxy, args: Tuple, kwargs: Dict, result):
+    def post_request(
+        self, proxy: 'RegistryObject', raw_args: Tuple, raw_kwargs: Dict,
+        args: Tuple, kwargs: Dict, result, exc: Exception = None
+    ):
         """
         In post_request, args and kwargs are in the form output by
         registry.on_request.
@@ -24,8 +28,8 @@ class SqlalchemyMiddleware(RegistryMiddleware):
         # TODO: pass in exc to post_request if there
         #   was an exception and rollback
         try:
-            SqlalchemyDao.commit()
+            self.SqlalchemyDao.commit()
         except:
-            SqlalchemyDao.rollback()
+            self.SqlalchemyDao.rollback()
         finally:
-            SqlalchemyDao.close()
+            self.SqlalchemyDao.close()

@@ -10,8 +10,12 @@ from typing import List, Dict, Text, Type, Set, Tuple
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
 from sqlalchemy.sql import bindparam
+from sqlalchemy.dialects.postgresql import ARRAY
 
-from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
+from pybiz.predicate import (
+    Predicate, ConditionalPredicate, BooleanPredicate,
+    OP_CODE,
+)
 from pybiz.schema import fields, Field
 from pybiz.util import JsonEncoder
 from pybiz.dao.base import Dao
@@ -78,7 +82,7 @@ class SqlalchemyDao(Dao):
 
     @classmethod
     def get_postgresql_default_adapters(cls) -> List[Field.TypeAdapter]:
-        pg_types = sa.dialect.postgresql
+        pg_types = sa.dialects.postgresql
         return [
             fields.Uuid.adapt(on_adapt=lambda field: pg_types.UUID),
             fields.Dict.adapt(on_adapt=lambda field: pg_types.JSONB),
@@ -87,6 +91,10 @@ class SqlalchemyDao(Dao):
                 on_adapt=lambda field: pg_types.JSONB,
                 on_encode=lambda x: list(x),
                 on_decode=lambda x: set(x)
+            ),
+            fields.UuidString.adapt(
+                on_adapt=lambda field: pg_types.UUID,
+                on_decode=lambda x: x.replace('-', '') if x else x,
             ),
             fields.List.adapt(on_adapt=lambda field: ARRAY({
                     fields.String: sa.Text,
@@ -141,6 +149,7 @@ class SqlalchemyDao(Dao):
         self._table = None
         self._builder = None
         self._adapters = None
+        self._id_column = None
 
     @property
     def adapters(self):
@@ -180,7 +189,9 @@ class SqlalchemyDao(Dao):
             echo=bool(echo or cls.env.SQLALCHEMY_ECHO),
         )
 
-    def on_bind(self, biz_type: Type['BizObject'], **kwargs):
+    def on_bind(
+        self, biz_type: Type['BizObject'], table: Text = None, schema: Text = None, **kwargs
+    ):
         field_type_2_adapter = {
             adapter.field_type: adapter for adapter in
             self.get_default_adapters(self.dialect) + self._custom_adapters
@@ -191,7 +202,8 @@ class SqlalchemyDao(Dao):
             if type(field) in field_type_2_adapter
         }
         self._builder = SqlalchemyTableBuilder(self)
-        self._table = self._builder.build_table()
+        self._table = self._builder.build_table(name=table, schema=schema)
+        self._id_column = getattr(self._table.c, biz_type.f['_id'].source)
 
     def query(
         self,
@@ -203,7 +215,10 @@ class SqlalchemyDao(Dao):
         **kwargs,
     ):
         fields = fields or self.biz_type.schema.fields.keys()
-        fields.update(['_id', '_rev'])
+        fields.update({
+            self.biz_type.schema.fields['_id'].source,
+            self.biz_type.schema.fields['_rev'].source,
+        })
 
         columns = [getattr(self.table.c, k) for k in fields]
         predicate = Predicate.deserialize(predicate)
@@ -238,26 +253,30 @@ class SqlalchemyDao(Dao):
             if adapter and adapter.on_encode:
                 pred.value = adapter.on_encode(pred.value)
             col = getattr(self.table.c, pred.field.source)
-            if pred.op == '=':
+            if pred.op == OP_CODE.EQ:
                 return col == pred.value
-            elif pred.op == '!=':
+            elif pred.op == OP_CODE.NEQ:
                 return col != pred.value
-            if pred.op == '>=':
+            if pred.op == OP_CODE.GEQ:
                 return col >= pred.value
-            elif pred.op == '>':
+            elif pred.op == OP_CODE.GT:
                 return col > pred.value
-            elif pred.op == '<':
+            elif pred.op == OP_CODE.LT:
                 return col < pred.value
-            elif pred.op == '<=':
+            elif pred.op == OP_CODE.LEQ:
                 return col <= pred.value
+            elif pred.op == OP_CODE.INCLUDING:
+                return col.in_(pred.value)
+            elif pred.op == OP_CODE.EXCLUDING:
+                return ~col.in_(pred.value)
             else:
                 raise Exception('unrecognized conditional predicate')
         elif isinstance(pred, BooleanPredicate):
-            if pred.op == '&':
+            if pred.op == OP_CODE.AND:
                 lhs_result = self._prepare_predicate(pred.lhs)
                 rhs_result = self._prepare_predicate(pred.rhs)
                 return sa.and_(lhs_result, rhs_result)
-            elif pred.op == '|':
+            elif pred.op == OP_CODE.OR:
                 lhs_result = self._prepare_predicate(pred.lhs)
                 rhs_result = self._prepare_predicate(pred.rhs)
                 return sa.or_(lhs_result, rhs_result)
@@ -267,16 +286,16 @@ class SqlalchemyDao(Dao):
             raise Exception('unrecognized predicate type')
 
     def exists(self, _id) -> bool:
-        columns = [sa.func.count(self.table.c._id)]
+        columns = [sa.func.count(self._id_column)]
         query = (
             sa.select(columns)
-                .where(self.table.c._id == self.adapt_id(_id))
+                .where(self._id_column == self.adapt_id(_id))
         )
         result = self.conn.execute(query)
         return bool(result.scalar())
 
     def count(self) -> int:
-        query = sa.select([sa.func.count(self.table.c._id)])
+        query = sa.select([sa.func.count(self._id_column)])
         result = self.conn.execute(query)
         return result.scalar()
 
@@ -286,12 +305,27 @@ class SqlalchemyDao(Dao):
 
     def fetch_many(self, _ids: List, fields=None, as_list=False) -> Dict:
         prepared_ids = [self.adapt_id(_id, serialize=True) for _id in _ids]
-        fields = set(fields or self.biz_type.schema.fields.keys())
-        fields.update(['_id', '_rev'])
+
+        if fields:
+            if not isinstance(fields, set):
+                fields = set(fields)
+        else:
+            fields = {
+                f.source for f in self.biz_type.schema.fields.values()
+            }
+        fields.update({
+            self.biz_type.schema.fields['_id'].source,
+            self.biz_type.schema.fields['_rev'].source,
+        })
+
         columns = [getattr(self.table.c, k) for k in fields]
         select_stmt = sa.select(columns)
+
+        id_col_name = self.biz_type.schema.fields['_id'].source
+        id_col = getattr(self.table.c, id_col_name) 
+
         if prepared_ids:
-            select_stmt = select_stmt.where(self.table.c._id.in_(prepared_ids))
+            select_stmt = select_stmt.where(id_col.in_(prepared_ids))
         cursor = self.conn.execute(select_stmt)
         records = {} if not as_list else []
 
@@ -301,7 +335,7 @@ class SqlalchemyDao(Dao):
                 for row in page:
                     raw_record = dict(row.items())
                     record = self.adapt_record(raw_record, serialize=False)
-                    _id = self.adapt_id(row._id, serialize=False)
+                    _id = self.adapt_id(row[id_col_name], serialize=False)
                     if as_list:
                         records.append(record)
                     else:
@@ -315,6 +349,7 @@ class SqlalchemyDao(Dao):
         return self.fetch_many([], fields=fields)
 
     def create(self, record: dict) -> dict:
+        # TODO: use id_col_name instead of '_id' here
         record['_id'] = self.create_id(record)
         prepared_record = self.adapt_record(record, serialize=True)
         insert_stmt = self.table.insert().values(**prepared_record)
@@ -348,7 +383,7 @@ class SqlalchemyDao(Dao):
             self.table
                 .update()
                 .values(**prepared_data)
-                .where(self.table.c._id == prepared_id)
+                .where(self._id_column == prepared_id)
             )
         if self.supports_returning:
             update_stmt = update_stmt.return_defaults()
@@ -372,7 +407,7 @@ class SqlalchemyDao(Dao):
         update_stmt = (
             self.table
                 .update()
-                .where(self.table.c._id == bindparam('_id'))
+                .where(self._id_column == bindparam('_id'))
                 .values(**values)
         )
         self.conn.execute(update_stmt, prepared_data)
@@ -386,14 +421,14 @@ class SqlalchemyDao(Dao):
     def delete(self, _id) -> None:
         prepared_id = self.adapt_id(_id)
         delete_stmt = self.table.delete().where(
-            self.table.c._id == prepared_id
+            self._id_column == prepared_id
         )
         self.conn.execute(delete_stmt)
 
     def delete_many(self, _ids: list) -> None:
         prepared_ids = [self.adapt_id(_id) for _id in _ids]
         delete_stmt = self.table.delete().where(
-            self.table.c._id.in_(prepared_ids)
+            self._id_column.in_(prepared_ids)
         )
         self.conn.execute(delete_stmt)
 
@@ -428,6 +463,7 @@ class SqlalchemyDao(Dao):
 
         # add a trigger to each table to auto-increment
         # the _rev column on update.
+        id_col_name = cls.biz_type.f['_id'].source
         for table in meta.tables.values():
             engine.execute(f'''
                 create trigger incr_{table.name}_rev_on_update
@@ -435,7 +471,7 @@ class SqlalchemyDao(Dao):
                 for each row
                 begin
                     update {table.name} set _rev = old._rev + 1
-                    where _id = old._id;
+                    where {id_col_name} = old.{id_col_name};
                 end
             ''')
 

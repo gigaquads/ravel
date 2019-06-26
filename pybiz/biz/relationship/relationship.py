@@ -228,7 +228,6 @@ class Relationship(object):
             # as an initial positional argument and some may not, we have to
             # consider this here when invoking the function, which gives us
             # the query predicate to use in the query below.
-
             if meta.has_rel_argument:
                 predicate = func(self, target, **func_kwargs)[1]
             else:
@@ -236,7 +235,11 @@ class Relationship(object):
 
             # finally perform the query.
             if predicate:
-                result = meta.target_type.query(predicate, specification=spec)
+                result = meta.target_type.query(
+                    predicate=predicate,
+                    specification=spec,
+                    first=(not self.many)
+                )
             else:
                 result = None
 
@@ -256,9 +259,8 @@ class Relationship(object):
         if self.many:
             result.relationship = self
             result.bizobj = caller    # TODO: rename bizobj back to owner
-            return result
-        else:
-            return result[0]
+
+        return result
 
     def associate(self, biz_type: Type['BizObject'], name: Text):
         """
@@ -300,7 +302,8 @@ class ConditionMetadata(object):
         self.has_rel_argument = self._set_has_rel_argument()
         self.kwarg_names = self._set_kwarg_names()
         self.target_type = self._set_target_type()
-        self.query_spec = QuerySpecification.build([], self.target_type)
+        # TODO: only get fields usedin relationshp query
+        self.query_spec = QuerySpecification.build({'*'}, self.target_type)
         return self
 
     def _set_target_type(self):

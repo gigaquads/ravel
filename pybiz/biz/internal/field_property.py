@@ -90,6 +90,7 @@ class FieldProperty(property):
         """
         """
         key = field.name
+        field_source = field.source
 
         def fget(self):
             # raise if the field is not declared in the schema
@@ -100,17 +101,20 @@ class FieldProperty(property):
             if (key not in self._data) and ('_id' in self._data):
                 field = self.schema.fields.get(key)
                 if field and field.meta.get('lazy', True):
-                    unloaded_fields = list(
+                    unloaded_field_keys = list(
                         self.schema.fields.keys() - self._data.keys()
                     )
+                    unloaded_keys = {
+                        f.source for k, f in self.schema.fields.items()
+                    }
                     console.debug(
                         message=f'lazy loading fields',
                         data={
                             'object': str(self),
-                            'fields': unloaded_fields,
+                            'fields': unloaded_keys,
                         }
                     )
-                    self.load(unloaded_fields)
+                    self.load(unloaded_keys)
 
             if key in self._data:
                 return self._data[key]

@@ -3,6 +3,12 @@ class PybizError(Exception):
         super().__init__(message)
         self.data = data or {}
 
+    def to_dict(self):
+        return {
+            'message': str(self),
+            'data': self.data,
+        }
+
 
 class RelationshipError(PybizError):
     pass
