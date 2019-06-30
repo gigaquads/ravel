@@ -29,6 +29,7 @@ class QuerySpecification(object):
         self,
         fields: Set[Text] = None,
         relationships: Dict[Text, 'QuerySpecification'] = None,
+        views: Set[Text] = None,
         limit: int = None,
         offset: int = None,
         order_by: Tuple = None,
@@ -37,6 +38,7 @@ class QuerySpecification(object):
         # set epxected default values for items in the tuple.
         # always work on a copy of the input `fields` set.
         self.fields = set(fields) if fields else set()
+        self.views = set(views) if views else set()
         self.relationships = {} if relationships else {}
         self.limit = min(1, limit) if limit is not None else None
         self.offset = max(0, offset) if offset is not None else None
@@ -46,6 +48,7 @@ class QuerySpecification(object):
         self._tuplized_attrs = (
             self.fields,
             self.relationships,
+            self.views,
             self.limit,
             self.offset,
             self.order_by,
@@ -91,6 +94,8 @@ class QuerySpecification(object):
                         spec.relationships[k] = cls()
                     elif isinstance(v, dict):
                         spec.relationships[k] = build_recursive(rel.target, v)
+                elif k in biz_type.views:
+                    spec.views.add(k)
             return spec
 
         if isinstance(spec, cls):
@@ -123,6 +128,7 @@ class QuerySpecification(object):
             )
             spec.fields.update(tmp_spec.fields)
             spec.relationships.update(tmp_spec.relationships)
+            spec.views.update(tmp_spec.views)
 
         return spec
 
@@ -156,6 +162,13 @@ class Query(object):
             offset=self.spec.offset,
             order_by=self.spec.order_by,
         )
+
+        return self._recursively_execute_v2(
+            bizobjs=self.biz_type.BizList([
+                self.biz_type(record).clean() for record in records
+            ]),
+            spec=self.spec
+        )
         return [
             self._recursive_execute(
                 bizobj=self.biz_type(record).clean(),
@@ -164,120 +177,28 @@ class Query(object):
             for record in records
         ]
 
-    def _recursive_execute(
-        self,
-        bizobj: 'BizObject',
-        spec: 'QuerySpecification'
-    ) -> 'BizObject':
-        """
-        Recurse through all of the target biz object's relationships.
-        """
-        if bizobj is None:
-            return None
-        for k, child_spec in spec.relationships.items():
-            rel = bizobj.relationships[k]
-            v = rel.query(
-                bizobj,
-                fields=child_spec.fields,
-                limit=child_spec.limit,
-                offset=child_spec.offset,
-                ordering=child_spec.ordering,
-                kwargs=child_spec.kwargs,
-            )
-            setattr(bizobj, k, v)
-            if rel.many:
-                assert isinstance(v, BizList)
-                for child in v:
-                    self._recursive_execute(child, child_spec)
+    def _recursively_execute_v2(
+        self, bizobjs: List['BizObject'], spec: 'QuerySpecification'
+    ) -> 'BizList':
+        for rel_name, child_spec in spec.relationships.items():
+            rel = self.biz_type.relationships[rel_name]
+            if rel.batch_loader:
+                batched_data = rel.batch_loader.load(bizobjs, fields=child_spec.fields)
+                for bizobj, related in zip(bizobjs, batched_data):
+                    rel.set_internally(bizobj, related)
             else:
-                self._recursive_execute(v, child_spec)
-        return bizobj
-
-
-class QueryUtils(object):
-    """
-    Misc functions used by BizObject to implement the get and get_many methods.
-    """
-
-    @classmethod
-    def prepare_fields_argument(
-        cls,
-        biz_type: Type['BizObject'],
-        argument: object,
-        depth=0,
-        parent: Type['BizObject'] = None,
-    ) -> Tuple[Set[Text], Dict[Text, Dict]]:
-        """
-        Normalize the `fields` argument to BizObject.get and get_many.
-        """
-        # standardized the `argument` to a nested dict structure
-        if argument is None:
-            # if none, specified, select all fields and relationships
-            spec = {f.name: None for f in biz_type.schema.fields.values()}
-        else:
-            if is_sequence(argument):
-                spec = DictUtils.unflatten_keys({k: None for k in argument})
-            elif isinstance(argument, dict):
-                if parent is None:
-                    spec = DictUtils.unflatten_keys(argument)
-                else:
-                    spec = argument
-            if '*' in spec:
-                del spec['*']
-                spec.update({f.name: None for f in biz_type.schema.fields.values()})
-            if not spec:
-                spec = {
-                    f.name: None for f.name in
-                    biz_type.schema.required_fields.values()
-                }
-
-        fields = set()      # <- set of fields to query on this biz_type
-        relationships = {}  # <- map from relationship name to recursive result
-
-        if depth > 0:
-            spec.update({
-                k: set(biz_type.relationships[k].biz_type.schema.fields.keys())
-                for k in (biz_type.relationships.keys() - spec.keys())
-            })
-
-        # recursively partition keys between the `fields`
-        # set and `relationships` dict
-        for k, v in spec.items():
-            if k in biz_type.schema.fields:
-                field = biz_type.schema.fields[k]
-                fields.add(field.source)
-            elif k in biz_type.relationships:
-                rel = biz_type.relationships[k]
-                if v is None:
-                    related_fields = {}
-                else:
-                    related_fields = v
-
-                # recurse on relationship
-                relationships[k] = cls.prepare_fields_argument(
-                    biz_type=rel.target,
-                    argument=related_fields,
-                    depth=depth-1,
-                    parent=biz_type,
-                )
-
-        return (fields, relationships)
-
-    @classmethod
-    def query_relationships(cls, bizobj, children):
-        """
-        Works in concert with prepare_fields_argument. See get or get_many in
-        BizObject.
-        """
-        if bizobj is not None:
-            for k, (related_fields, nested_children) in children.items():
-                rel = bizobj.relationships[k]
-                related = rel.query(bizobj, fields=related_fields)
-                rel.set_internally(bizobj, related)
-                if not related:
-                    continue
-                if is_bizobj(related):
-                    cls.query_relationships(related, nested_children)
-                else:
-                    for x in related:
-                        cls.query_relationships(x, nested_children)
+                for bizobj in bizobjs:
+                    related = rel.query(
+                        bizobj,
+                        fields=child_spec.fields,
+                        limit=child_spec.limit,
+                        offset=child_spec.offset,
+                        ordering=child_spec.order_by,
+                        kwargs=child_spec.kwargs,
+                    )
+                    rel.set_internally(bizobj, related)
+        for bizobj in bizobjs:
+            for view_name in spec.views:
+                view_data = self.biz_type.views[view_name].query(bizobj)
+                setattr(bizobj, view_name, view_data)
+        return bizobjs

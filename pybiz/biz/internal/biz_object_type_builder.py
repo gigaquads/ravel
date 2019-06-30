@@ -15,10 +15,12 @@ from pybiz.constants import (
     IS_ABSTRACT_ANNOTATION,
 )
 
-from ..biz_list import BizList
 from .relationship_property import RelationshipProperty
 from .field_property import FieldProperty
+from ..view import View, ViewProperty
+from ..biz_list import BizList
 
+# TODO: call getmembers only once
 
 class BizObjectTypeBuilder(object):
 
@@ -29,9 +31,11 @@ class BizObjectTypeBuilder(object):
         return cls._instance
 
     def prepare_class_attributes(self, name, bases, ns):
-        ns['relationships'] = self._build_relationships(bases, ns)
         ns[IS_BIZOBJ_ANNOTATION] = True
         ns[IS_BOOTSTRAPPED] = False
+
+        ns['relationships'] = self._inherit_relationships(bases, ns)
+        ns['views'] = self._inherit_views(bases, ns)
 
         if '__abstract__' in ns:
             static_method = ns.pop('__abstract__')
@@ -48,12 +52,13 @@ class BizObjectTypeBuilder(object):
         biz_type.schema = biz_type.Schema()
         biz_type.defaults = self._extract_defaults(biz_type)
 
-        self._bind_relationships(biz_type)
-        self._build_relationship_properties(biz_type)
         self._build_field_properties(biz_type)
+        self._build_relationship_properties(biz_type)
+        self._build_view_properties(biz_type)
 
         setattr(biz_type, 'r', DictObject(biz_type.relationships))
         setattr(biz_type, 'f', DictObject(biz_type.schema.fields))
+        setattr(biz_type, 'v', DictObject(biz_type.views))
 
         console.debug(
             message=f'{biz_type.__name__} fields:',
@@ -117,7 +122,7 @@ class BizObjectTypeBuilder(object):
 
         return defaults
 
-    def _build_relationships(self, bases: Tuple[Type], ns: Dict) -> Dict:
+    def _inherit_relationships(self, bases: Tuple[Type], ns: Dict) -> Dict:
         relationships = {}
 
         for k, v in list(ns.items()):
@@ -139,10 +144,6 @@ class BizObjectTypeBuilder(object):
 
         return relationships
 
-    def _bind_relationships(self, biz_type):
-        for k, rel in biz_type.relationships.items():
-            rel.associate(biz_type, k)
-
     def _build_field_properties(self, biz_type):
         """
         Create properties out of the fields declared on the schema associated
@@ -154,9 +155,38 @@ class BizObjectTypeBuilder(object):
                 setattr(biz_type, field_name, field_prop)
 
     def _build_relationship_properties(self, biz_type):
-        for rel in biz_type.relationships.values():
+        for rel_name, rel in biz_type.relationships.items():
             rel_prop = RelationshipProperty.build(rel)
-            setattr(biz_type, rel.name, rel_prop)
+            rel.associate(biz_type, rel_name)
+            setattr(biz_type, rel_name, rel_prop)
 
     def _build_biz_list_type(self, biz_type):
         return BizList.type_factory(biz_type)
+
+    def _inherit_views(self, bases: Tuple[Type], ns: Dict) -> Dict:
+        views = {}
+
+        for k, v in list(ns.items()):
+            if isinstance(v, View):
+                views[k] = v
+                del ns[k]
+
+        for base in bases:
+            if is_bizobj(base):
+                inherited_views = getattr(base, 'views', {})
+            else:
+                inherited_views = {
+                    k: v for k, v in inspect.getmembers(
+                        base, predicate=lambda v: isinstance(v, View)
+                    )
+                }
+            for k, v in inherited_views.items():
+                views[k] = copy.deepcopy(v)
+
+        return views
+
+    def _build_view_properties(self, biz_type):
+        for view_name, view in biz_type.views.items():
+            view_prop = ViewProperty.build(view)
+            view.associate(biz_type, view_name)
+            setattr(biz_type, view.name, view_prop)

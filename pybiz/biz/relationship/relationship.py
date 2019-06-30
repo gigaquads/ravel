@@ -19,8 +19,11 @@ from pybiz.predicate import (
 
 from pybiz.biz.internal.query import QuerySpecification
 
+from ..biz_attribute import BizAttribute
+from .batch_relationship_loader import BatchRelationshipLoader
 
-class Relationship(object):
+
+class Relationship(BizAttribute):
     """
     `Relationship` objects are declared as `BizObject` class attributes and
     endow them with the ability to load and dump other `BizObject` objects and
@@ -41,6 +44,7 @@ class Relationship(object):
     def __init__(
         self,
         conditions=None,
+        batch_conditions=None,
         on_set=None,
         on_get=None,
         on_del=None,
@@ -56,10 +60,17 @@ class Relationship(object):
         readonly=False,
         behavior: 'RelationshipBehavior' = None,
     ):
+        super().__init__(private=private)
         self.many = many
-        self.private = private
         self.lazy = lazy
         self.readonly = readonly
+        if batch_conditions:
+            self.batch_loader = BatchRelationshipLoader(
+                conditions=batch_conditions,
+                many=many,
+            )
+        else:
+            self.batch_loader = None
 
         # relationship behavior provided, now process to generate conditions
         # and callbacks.  if any is not provided by the behavior, then default
@@ -83,14 +94,7 @@ class Relationship(object):
         self.on_add = normalize_to_tuple(on_add)
         self.on_rem = normalize_to_tuple(on_rem)
 
-        # set in self.bind. Host is the BizObject class that hosts tis
-        # relationship, and `name` is the relationship attribute on said class.
-        self._biz_type = None
-        self._name = None
-
         self.metadata = []
-        self._is_bootstrapped = False
-        self._registry = None
 
         self._ordering = ordering
         self._limit = max(1, limit) if limit is not None else None
@@ -103,7 +107,7 @@ class Relationship(object):
             attrs=', '.join(
                 [
                     (self.biz_type.__name__ + '.' if self.biz_type else '') +
-                    str(self._name) or '',
+                    str(self.name) or '',
                     'many={}'.format(self.many),
                     'private={}'.format(self.private),
                     'lazy={}'.format(self.lazy),
@@ -113,50 +117,23 @@ class Relationship(object):
         )
 
     @property
-    def name(self) -> Text:
-        return self._name
-
-    @property
-    def join(self) -> Tuple:
-        return self.conditions
-
-    @property
-    def biz_type(self) -> Type['BizObject']:
-        return self._biz_type
-
-    @property
     def target(self) -> Type['BizObject']:
         return self.metadata[-1].target_type
-
-    @property
-    def spec(self) -> 'QuerySpecification':
-        return self._meta[-1].query_spec
-
-    @property
-    def is_bootstrapped(self):
-        return self._is_bootstrapped
-
-    @property
-    def registry(self):
-        return self._registry
-
-    def on_bootstrap(self):
-        pass
 
     def pre_bootstrap(self):
         if self._behavior:
             self._behavior.pre_bootstrap()
 
-    def bootstrap(self, registry: 'Registry'):
-        self._registry = registry
-
+    def on_bootstrap(self):
         self.pre_bootstrap()
 
         # this injects all BizObject class names into the condition functions'
         # lexical scopes. This mechanism helps avoid cyclic import dependencies
         # for the sake of defining relationships in BizObjects.
+        registry = self._registry
         for func in self.conditions:
             func.__globals__.update(registry.manifest.types.biz)
+
         if self._ordering:
             self._ordering.__globals__.update(registry.manifest.types.biz)
 
@@ -179,10 +156,6 @@ class Relationship(object):
                     meta.query_spec.order_by = normalize_to_tuple(order_by)
                 for x in meta.query_spec.order_by:
                     meta.query_spec.fields.add(x.key)
-
-        # finally perform on_boostrap logic and mark as bootstrapped
-        self.on_bootstrap()
-        self._is_bootstrapped = True
 
     def query(
         self,
@@ -261,14 +234,6 @@ class Relationship(object):
             result.bizobj = caller    # TODO: rename bizobj back to owner
 
         return result
-
-    def associate(self, biz_type: Type['BizObject'], name: Text):
-        """
-        This is called by the BizObject metaclass when associating its set of
-        relationship objects with the owner BizObject class.
-        """
-        self._biz_type = biz_type
-        self._name = name
 
     def set_internally(self, owner: 'BizObject', related):
         """

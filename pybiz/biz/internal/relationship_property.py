@@ -34,13 +34,12 @@ class RelationshipProperty(property):
         getting/setting and lazy-loads data on get.
         """
         rel = relationship
-        key = relationship.name
 
         def fget(self):
             """
             Return the related BizObject instance or list.
             """
-            if key not in self._related:
+            if rel.name not in self._related:
                 if rel.lazy:
                     # fetch all fields
                     console.debug(
@@ -54,7 +53,7 @@ class RelationshipProperty(property):
                     rel.set_internally(self, value)
 
             default = self.BizList([], rel, self) if rel.many else None
-            value = self._related.get(key, default)
+            value = self._related.get(rel.name, default)
 
             for cb_func in rel.on_get:
                 cb_func(self, value)
@@ -66,7 +65,7 @@ class RelationshipProperty(property):
             Set the related BizObject or list, enuring that a list can't be
             assigned to a Relationship with many == False and vice versa.
             """
-            rel = self.relationships[key]
+            rel = self.relationships[rel.name]
 
             if rel.readonly:
                 raise RelationshipError(f'{rel} is read-only')
@@ -88,15 +87,15 @@ class RelationshipProperty(property):
             if is_scalar and not expect_scalar:
                 raise ValueError(
                     'relationship "{}" must be a sequence because '
-                    'relationship.many is True'.format(key)
+                    'relationship.many is True'.format(rel.name)
                 )
             elif (not is_scalar) and expect_scalar:
                 raise ValueError(
                     'relationship "{}" cannot be a BizObject because '
-                    'relationship.many is False'.format(key)
+                    'relationship.many is False'.format(rel.name)
                 )
 
-            self._related[key] = value
+            self._related[rel.name] = value
             for cb_func in rel.on_set:
                 cb_func(self, value)
 
@@ -105,8 +104,8 @@ class RelationshipProperty(property):
             Remove the related BizObject or list. The field will appear in
             dump() results. You must assign None if you want to None to appear.
             """
-            if key in self._related:
-                value = self._related.pop(key)
+            if rel.name in self._related:
+                value = self._related.pop(rel.name)
                 for cb_func in rel.on_del:
                     cb_func(self, value)
 

@@ -16,7 +16,7 @@ from pybiz.exc import ValidationError, BizObjectError
 from .internal.biz_object_type_builder import BizObjectTypeBuilder
 from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
-from .internal.query import Query, QueryUtils
+from .internal.query import Query
 
 
 class BizObjectMeta(type):
@@ -30,7 +30,7 @@ class BizObjectMeta(type):
         else:
             BizObjectMeta.reserved_attrs = {
                 k for k in ns if not k.startswith('_')
-            } | {'_data', '_related', '_hash'}
+            } | {'_data', '_related', '_hash', '_viewed'}
         return type.__new__(cls, name, bases, ns)
 
     def __init__(biz_type, name, bases, ns):
@@ -110,6 +110,7 @@ class BizObject(metaclass=BizObjectMeta):
     def __init__(self, data=None, **more_data):
         self._data = DirtyDict()
         self._related = {}
+        self._viewed = {}
         self._hash = int(uuid.uuid4().hex, 16)
         self.merge(dict(data or {}, **more_data))
 
@@ -227,74 +228,21 @@ class BizObject(metaclass=BizObjectMeta):
             return cls.BizList(results)
 
     @classmethod
-    def get(cls, _id, fields: Dict = None, depth=0) -> 'BizObject':
-        _id, err = cls.schema.fields['_id'].process(_id)
-        if err:
-            raise ValidationError(f'invalid _id {_id}: {err}')
-
-        fields, children = QueryUtils.prepare_fields_argument(
-            cls, fields, depth=depth
-        )
-        fields.update({
-            cls.schema.fields['_id'].source,
-            cls.schema.fields['_rev'].source,
-        })
-
-        record = cls.get_dao().fetch(_id=_id, fields=fields)
-        if record is not None:
-            # TODO: DO THIS IN GET_MANY AND QUERY AS WELL
-            for k, f in cls.schema.fields.items():
-                if f.source != f.name and f.source in record:
-                    record[f.name] = record.pop(f.source)
-
-            bizobj = cls(record)
-
-            # recursively load nested relationships
-            QueryUtils.query_relationships(bizobj, children)
-            return bizobj.clean()
-
-        return None
+    def get(cls, _id, fields: Dict = None) -> 'BizObject':
+        return cls.query(cls._id == _id, fields=fields, first=True)
 
     @classmethod
-    def get_many(cls, _ids = None, fields: List=None, as_list=True):
-        _ids = _ids or []
-        processed_ids = []
-        for _id in _ids:
-            processed_id, err = cls.schema.fields['_id'].process(_id)
-            processed_ids.append(processed_id)
-            if err:
-                raise ValidationError(f'invalid _id {_id}: {err}')
-
-        # separate field names into those corresponding to this BizObjects
-        # class and those of the related BizObject classes.
-        fields, children = QueryUtils.prepare_fields_argument(cls, fields)
-        fields.update({
-            cls.schema.fields['_id'].source,
-            cls.schema.fields['_rev'].source,
-        })
-
-        # fetch data from the dao
-        records = cls.get_dao().fetch_many(_ids=processed_ids, fields=fields)
-
-        # now fetch and merge related business objects.
-        # This could be optimized.
-        bizobjs = {}
-
-        for _id, record in records.items():
-            for k, f in cls.schema.fields.items():
-                if f.source != f.name and f.source in record:
-                    record[f.name] = record.pop(f.source)
-            if record is not None:
-                bizobjs[_id] = bizobj = cls(record).clean()
-                QueryUtils.query_relationships(bizobj, children)
-            else:
-                bizobjs[_id] = None
-
-        # return results either as a list or a mapping from id to object
+    def get_many(
+        cls, _ids: List = None, fields: Set[Text] = None, as_list=True
+    ) -> 'BizList':
+        """
+        Return a list or _id mapping of BizObjects.
+        """
+        biz_list = cls.query(cls._id.including(_id), fields=fields)
         if as_list:
-            return cls.BizList(list(bizobjs.values()))
+            return biz_list
         else:
-            return bizobjs
+            return {x._id: x for x in biz_list}
 
     @classmethod
     def get_all(cls, fields: Set[Text] = None) -> Dict:
@@ -539,6 +487,10 @@ class BizObject(metaclass=BizObjectMeta):
         return self._related
 
     @property
+    def viewed(self) -> Dict:
+        return self._viewed
+
+    @property
     def dirty(self) -> Set[Text]:
         return self._data.dirty
 
@@ -623,7 +575,7 @@ class BizObject(metaclass=BizObjectMeta):
             'instance': self._id,
             'keys': keys
         })
-        fresh = self.get(_id=self._id, fields=keys, depth=depth)
+        fresh = self.get(_id=self._id, fields=keys)# TODO:, depth=depth)
         if fresh:
             self.merge(fresh)
             self.clean(fresh.raw.keys())

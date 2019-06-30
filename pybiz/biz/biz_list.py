@@ -7,6 +7,8 @@ from pybiz.util import repr_biz_id
 from pybiz.constants import IS_BIZLIST_ANNOTATION, IS_BIZOBJ_ANNOTATION
 from pybiz.exc import RelationshipError
 
+from .view import View, ViewProperty
+
 
 class FilterableList(list):
     def where(self, *filters):
@@ -35,6 +37,7 @@ class BizList(object):
                 collection_type = biz_type.BizList
             else:
                 collection_type = FilterableList
+
             return property(
                 fget=lambda self: collection_type(
                     getattr(bizobj, key, None)
@@ -216,3 +219,43 @@ class BizList(object):
             for bizobj in bizobjs:
                 for cb_func in self.relationship.on_add:
                     cb_func(self.bizobj, bizobj)
+
+
+
+class BulkPropertyBuilder(object):
+
+    def __init__(self, biz_type, biz_list_type):
+        self.biz_type = biz_type
+        self.biz_list_type = biz_list_type
+
+    def build_bulk_field_property(self, key):
+        return property(
+            fget=lambda self: FilterableList(
+                getattr(bizobj, key, None)
+                for bizobj in self._bizobj_arr
+            ),
+            fset=lambda self, value: [
+                setattr(bizobj, key, value)
+                for bizobj in self._bizobj_arr
+            ]
+        )
+
+    def build_bulk_relationship_property(self, key):
+        rel = self.biz_list_type.relationships.get(key)
+        use_bulk_relationship = (rel is not None)
+
+        if use_bulk_relationship:
+            pass
+        else:
+            rel = self.biz_type.relationships.get(key)
+            if rel is not None:
+                return property(
+                    fget=lambda self: rel.target.BizList(
+                        getattr(bizobj, key, None)
+                        for bizobj in self._bizobj_arr
+                    ),
+                    fset=lambda self, value: [
+                        setattr(bizobj, key, value)
+                        for bizobj in self._bizobj_arr
+                    ]
+                )

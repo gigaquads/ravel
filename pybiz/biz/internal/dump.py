@@ -17,13 +17,21 @@ class Dumper(object):
             if is_bizobj(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
-                        fields or (target.raw.keys() | target.relationships.keys())
+                        fields or (
+                            target.raw.keys()
+                            | target.relationships.keys()
+                            | target.views.keys()
+                        )
                     )
                 })
             elif is_sequence(target) or is_bizlist(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
-                        fields or (target[0].raw.keys() | target[0].relationships.keys())
+                        fields or (
+                            target[0].raw.keys()
+                            | target[0].relationships.keys()
+                            | target[0].views.keys()
+                        )
                     )
                 })
 
@@ -120,8 +128,31 @@ class NestingDumper(Dumper):
                         self(obj, fields=fields[k])
                         for obj in related
                     ]
+            elif k in target.views:
+                view = target.views[k]
+                if view.private:
+                    continue
+                if k in target.viewed:
+                    viewed = target.viewed[k]
+                    record[k] = self._dump_viewed_object(viewed)
+                else:
+                    record[k] = None
 
         return record
+
+    def _dump_viewed_object(self, obj):
+        if is_bizobj(obj) or is_bizlist(obj):
+            return obj.dump()
+        elif is_sequence(obj):
+            return [
+                self._dump_viewed_object(x) for x in obj
+            ]
+        elif isinstance(obj, dict):
+            return {
+                self._dump_viewed_object(k): self._dump_viewed_object(v)
+                for k, v in obj.items()
+            }
+        return obj
 
 
 class SideLoadingDumper(Dumper):
