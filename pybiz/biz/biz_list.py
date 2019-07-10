@@ -81,8 +81,11 @@ class BizList(object):
             )
         raise AttributeError(attr)
 
-    def __getitem__(self, idx: int) -> 'BizObject':
-        return self._bizobj_arr[idx]
+    def __getitem__(self, key: int) -> 'BizObject':
+        if isinstance(key, int):
+            return self._bizobj_arr[key]
+        else:
+            return getattr(self._bizobj_arr, key)
 
     def __len__(self):
         return len(self._bizobj_arr)

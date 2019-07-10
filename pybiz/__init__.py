@@ -1,6 +1,6 @@
 import logging
 
-from pybiz.biz import BizObject, Relationship, View
+from pybiz.biz import BizObject, BizList, Relationship, View
 from pybiz.schema import Schema, fields
 from pybiz.manifest import Manifest
 from pybiz.logging import ConsoleLoggerInterface

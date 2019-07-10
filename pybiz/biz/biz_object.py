@@ -238,7 +238,8 @@ class BizObject(metaclass=BizObjectMeta):
         """
         Return a list or _id mapping of BizObjects.
         """
-        biz_list = cls.query(cls._id.including(_id), fields=fields)
+        assert is_sequence(_ids)
+        biz_list = cls.query(cls._id.including(_ids), fields=fields)
         if as_list:
             return biz_list
         else:

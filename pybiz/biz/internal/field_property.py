@@ -127,7 +127,7 @@ class FieldProperty(property):
                 if not (value is None and field.nullable):
                     value, error = field.process(value)
                     if error:
-                        raise ValueError(f'error setting {key}: {error}')
+                        raise ValueError(f'error setting {key} to {value}: {error}')
                 self._data[key] = value
             else:
                 raise AttributeError(key)

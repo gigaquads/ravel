@@ -101,34 +101,40 @@ class QuerySpecification(object):
         if isinstance(spec, cls):
             if '*' in spec.fields:
                 spec.fields = set(biz_type.schema.fields.keys())
+            if fields:
+                tmp_spec = build_recursive(
+                    biz_type, DictUtils.unflatten_keys({k: None for k in fields})
+                )
+                spec.fields.update(tmp_spec.fields)
+                spec.relationships.update(tmp_spec.relationships)
+                spec.views.update(tmp_spec.views)
         elif isinstance(spec, dict):
+            if fields:
+                spec.update(fields)
             names = DictUtils.unflatten_keys({k: None for k in spec})
             spec = build_recursive(biz_type, names)
         elif is_sequence(spec):
             # spec is an array of field and relationship names
             # so partition the names between fields and relationships
             # in a new spec object.
+            if fields:
+                spec.update(fields)
             names = DictUtils.unflatten_keys({k: None for k in spec})
             spec = build_recursive(biz_type, names)
         elif not spec:
             # by default, a new spec includes all fields and relationships
-            spec = cls(
-                fields={f.source for f in biz_type.schema.fields.values()},
-            )
+            if fields:
+                spec = build_recursive(
+                    biz_type, DictUtils.unflatten_keys({k: None for k in fields})
+                )
+            else:
+                spec = cls(fields={f.source for f in biz_type.schema.fields.values()})
 
         # ensure that _id and required fields are *always* specified
         spec.fields |= {
             f.source for f in biz_type.schema.required_fields.values()
         }
         spec.fields.add(biz_type.schema.fields['_id'].source)
-
-        if fields:
-            tmp_spec = build_recursive(
-                biz_type, DictUtils.unflatten_keys({k: None for k in fields})
-            )
-            spec.fields.update(tmp_spec.fields)
-            spec.relationships.update(tmp_spec.relationships)
-            spec.views.update(tmp_spec.views)
 
         return spec
 
@@ -162,30 +168,25 @@ class Query(object):
             offset=self.spec.offset,
             order_by=self.spec.order_by,
         )
-
         return self._recursively_execute_v2(
-            bizobjs=self.biz_type.BizList([
-                self.biz_type(record).clean() for record in records
-            ]),
-            spec=self.spec
+            biz_type=self.biz_type,
+            bizobjs=[self.biz_type(record).clean() for record in records],
+            spec=self.spec,
         )
-        return [
-            self._recursive_execute(
-                bizobj=self.biz_type(record).clean(),
-                spec=self.spec
-            ).clean()
-            for record in records
-        ]
 
     def _recursively_execute_v2(
-        self, bizobjs: List['BizObject'], spec: 'QuerySpecification'
+        self,
+        biz_type: Type['BizObject'],
+        bizobjs: List['BizObject'],
+        spec: 'QuerySpecification',
     ) -> 'BizList':
         for rel_name, child_spec in spec.relationships.items():
-            rel = self.biz_type.relationships[rel_name]
+            rel = biz_type.relationships[rel_name]
             if rel.batch_loader:
-                batched_data = rel.batch_loader.load(bizobjs, fields=child_spec.fields)
+                batched_data = rel.batch_loader.load(rel, bizobjs, fields=child_spec.fields)
                 for bizobj, related in zip(bizobjs, batched_data):
                     rel.set_internally(bizobj, related)
+                self._recursively_execute_v2(rel.target, batched_data, child_spec)
             else:
                 for bizobj in bizobjs:
                     related = rel.query(
@@ -199,6 +200,6 @@ class Query(object):
                     rel.set_internally(bizobj, related)
         for bizobj in bizobjs:
             for view_name in spec.views:
-                view_data = self.biz_type.views[view_name].query(bizobj)
+                view_data = biz_type.views[view_name].query(bizobj)
                 setattr(bizobj, view_name, view_data)
-        return bizobjs
+        return biz_type.BizList(bizobjs)

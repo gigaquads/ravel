@@ -9,7 +9,7 @@ from mock import MagicMock
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
-from pybiz.util import is_bizobj, normalize_to_tuple
+from pybiz.util import is_bizobj, is_bizlist, normalize_to_tuple
 from pybiz.exc import RelationshipArgumentError
 from pybiz.predicate import (
     Predicate,
@@ -27,9 +27,12 @@ class BatchRelationshipLoader(object):
         self._order_by = order_by
         self._many = many
 
-    def load(self, callers: List['BizObject'], fields = None, args: Dict = None):
+    def load(self, relationship, callers: List['BizObject'], fields = None, args: Dict = None):
         if not callers:
             return
+
+        if not is_bizlist(callers):
+            callers = relationship.biz_type.BizList(callers)
 
         sources = callers
         args = args or {}
@@ -64,22 +67,23 @@ class BatchRelationshipLoader(object):
             for source_bizobj in sources:
                 source_field_value = source_bizobj[source_field_name]
                 mapped_targets = target_map.get(source_field_value)
-
-                if idx == 0:
-                    source_bizobj._children = list(mapped_targets)
-                else:
-                    source_bizobj._children.extend(mapped_targets)
+                if mapped_targets:
+                    if not hasattr(source_bizobj, '_children'):
+                        source_bizobj._children = list(mapped_targets)
+                    else:
+                        source_bizobj._children.extend(mapped_targets)
 
             sources = target_type.BizList(distinct_targets)
 
         def get_terminal_nodes(parent, acc):
-            children = getattr(parent, '_children', None)
-            if not children:
+            children = getattr(parent, '_children', [])
+            if not children and isinstance(parent, terminal_target_type):
                 acc.append(parent)
             else:
                 for bizobj in children:
                     get_terminal_nodes(bizobj, acc)
-                delattr(parent, '_children')
+                if hasattr(parent, '_children'):
+                    delattr(parent, '_children')
             return acc
 
         results = []
@@ -87,9 +91,6 @@ class BatchRelationshipLoader(object):
         for caller in callers:
             targets = get_terminal_nodes(caller, [])
             if self._many:
-                #if targets and targets[0].__class__ != target_field.biz_type:
-                    # ensure targets are of the expected terminal type
-                #    targets = []
                 results.append(terminal_target_type.BizList(targets or []))
             else:
                 results.append(targets[0] if targets else None)

@@ -7,6 +7,9 @@ import sqlalchemy as sa
 
 from typing import List, Dict, Text, Type, Set, Tuple
 
+from sqlalchemy import TypeDecorator
+from sqlalchemy.dialects.postgresql import ARRAY
+
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
 from sqlalchemy.sql import bindparam
@@ -22,6 +25,7 @@ from pybiz.dao.base import Dao
 
 from .dialect import Dialect
 from .sqlalchemy_table_builder import SqlalchemyTableBuilder
+from ..types import ArrayOfEnum
 
 
 class SqlalchemyDao(Dao):
@@ -83,6 +87,23 @@ class SqlalchemyDao(Dao):
     @classmethod
     def get_postgresql_default_adapters(cls) -> List[Field.TypeAdapter]:
         pg_types = sa.dialects.postgresql
+
+        def on_adapt_list(field):
+            if isinstance(field.nested, fields.Enum):
+                return ArrayOfEnum(
+                    pg_types.ENUM(*field.nested.values)
+                )
+            return pg_types.ARRAY({
+                fields.String: sa.Text,
+                fields.Int: sa.Integer,
+                fields.Bool: sa.Boolean,
+                fields.Float: sa.Float,
+                fields.DateTime: sa.DateTime,
+                fields.Timestamp: sa.DateTime,
+                fields.Dict: pg_types.JSONB,
+                fields.Nested: pg_types.JSONB,
+            }.get(type(field.nested), sa.Text))
+            
         return [
             fields.Uuid.adapt(on_adapt=lambda field: pg_types.UUID),
             fields.Dict.adapt(on_adapt=lambda field: pg_types.JSONB),
@@ -96,17 +117,7 @@ class SqlalchemyDao(Dao):
                 on_adapt=lambda field: pg_types.UUID,
                 on_decode=lambda x: x.replace('-', '') if x else x,
             ),
-            fields.List.adapt(on_adapt=lambda field: ARRAY({
-                    fields.String: sa.Text,
-                    fields.Int: sa.Integer,
-                    fields.Bool: sa.Boolean,
-                    fields.Float: sa.Float,
-                    fields.DateTime: sa.DateTime,
-                    fields.Timestamp: sa.DateTime,
-                    fields.Dict: pg_types.JSONB,
-                    fields.Nested: pg_types.JSONB,
-                }[type(field.nested)])
-            ),
+            fields.List.adapt(on_adapt=on_adapt_list)
         ]
 
     @classmethod
