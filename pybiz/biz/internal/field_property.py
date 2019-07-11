@@ -62,7 +62,12 @@ class FieldProperty(property):
         return self._build_predicate(OP_CODE.EXCLUDING, others)
 
     @property
+    def biz_type(self):
+        return self._target
+
+    @property
     def target(self):
+        # XXX: deprecated
         return self._target
 
     @property

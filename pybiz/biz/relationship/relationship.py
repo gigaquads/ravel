@@ -1,14 +1,15 @@
 import inspect
 
 from copy import copy
-from typing import Text, Type, Tuple, Dict, Set
+from typing import Text, Type, Tuple, Dict, Set, Callable
 from inspect import Parameter
+from collections import defaultdict
 
 from mock import MagicMock
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
-from pybiz.util import is_bizobj, normalize_to_tuple
+from pybiz.util import is_bizobj, is_sequence, is_bizlist, normalize_to_tuple
 from pybiz.exc import RelationshipArgumentError
 from pybiz.predicate import (
     Predicate,
@@ -22,8 +23,142 @@ from pybiz.biz.internal.query import QuerySpecification
 from ..biz_attribute import BizAttribute
 from .batch_relationship_loader import BatchRelationshipLoader
 
+'''
+company = Relationship(
+    joins=(
+        lambda intent: (Intent.db_id, IntentCompany.intent_db_id),
+        lambda company: (IntentCompany.company_db_id, Company.db_id),
+    ),
+)
+'''
+
+class Join(object):
+    def __init__(self, source, source_fprop, target_fprop, predicate=None):
+        self.source = source
+        self.predicate = predicate
+        self.target_fprop = target_fprop
+        self.source_fprop = source_fprop
+        self.source_fname = source_fprop.field.name
+        self.target_fname = target_fprop.field.name
+        self.target_biz_type = self.target_fprop.biz_type
+        self.source_biz_type = self.source_fprop.biz_type
+
+    def query(self):
+        predicate = self._build_predicate()
+        target = self.target_fprop.biz_type.query(predicate=predicate)
+        return target
+
+    def _build_predicate(self):
+        target_field_value = getattr(self.source, self.source_fprop.field.name)
+        computed_predicate = None
+        if is_bizobj(self.source):
+            computed_predicate = (self.target_fprop == target_field_value)
+        elif is_bizlist(self.source):
+            computed_predicate = (self.target_fprop.including(target_field_value))
+        else:
+            raise TypeError('TODO: raise custom exception')
+        if self.predicate:
+            computed_predicate &= self.predicate
+        return computed_predicate
+
+
 
 class Relationship(BizAttribute):
+    def __init__(
+        self,
+        join: Tuple[Callable] = None,
+        many=False,
+        lazy=True,
+    ):
+        self.joins = normalize_to_tuple(join)
+        self.many = many
+        self.lazy = lazy
+        self.target_biz_type = None
+        self.on_get = tuple()
+
+    def on_bootstrap(self):
+        for func in self.joins:
+            func.__globals__.update(self.registry.manifest.types.biz)
+        self.target_biz_type = self.joins[-1](MagicMock())[1].biz_type
+
+    def set_internally(self, owner: 'BizObject', related):
+        # TODO: rename?
+        owner.related[self.name] = related
+
+    def query(self, source):
+        if is_bizobj(source):
+            return self._load_for_bizobj(source)
+        else:
+            return self._load_for_bizlist(source)
+
+    def _load_for_bizobj(self, root: 'BizObject'):
+        source = root
+        target = None
+        for func in self.joins:
+            join = Join(source, *func(source))
+            target = join.query()
+            source = target
+        if not self.many:
+            return target[0] if target else None
+        else:
+            return target
+
+
+    def _load_for_bizlist(self, sources: 'BizList'):
+        if is_sequence(sources):
+            sources = self.biz_type.BizList(sources)
+        original_sources = sources
+        joins = []
+        for idx, func in enumerate(self.joins):
+            join = Join(sources, *func(sources))
+            targets = join.query()
+
+            field_value_2_targets = defaultdict(list)
+            distinct_targets = set()
+
+            joins.append(join)
+
+            for bizobj in targets:
+                target_field_value = bizobj[join.target_fname]
+                field_value_2_targets[target_field_value].append(bizobj)
+                distinct_targets.add(bizobj)
+
+            for bizobj in sources:
+                source_field_value = bizobj[join.source_fname]
+                mapped_targets = field_value_2_targets.get(source_field_value)
+                if mapped_targets:
+                    # TODO: don't modify the bizobj directly. use a temp var
+                    if not hasattr(bizobj, '_children'):
+                        bizobj._children = list(mapped_targets)
+                    else:
+                        bizobj._children.extend(mapped_targets)
+
+            sources = join.target_biz_type.BizList(distinct_targets)
+
+        results = []
+        terminal_biz_type = joins[-1].target_biz_type
+        for bizobj in original_sources:
+            targets = self._get_terminal_nodes(bizobj, terminal_biz_type, [])
+            if self.many:
+                results.append(terminal_biz_type.BizList(targets or []))
+            else:
+                results.append(targets[0] if targets else None)
+
+        return results
+
+    def _get_terminal_nodes(self, parent, target_biz_type, acc):
+        children = getattr(parent, '_children', [])
+        if not children and isinstance(parent, target_biz_type):
+            acc.append(parent)
+        else:
+            for bizobj in children:
+                self._get_terminal_nodes(bizobj, target_biz_type, acc)
+            if hasattr(parent, '_children'):
+                delattr(parent, '_children')
+        return acc
+
+
+class _Relationship(BizAttribute):
     """
     `Relationship` objects are declared as `BizObject` class attributes and
     endow them with the ability to load and dump other `BizObject` objects and

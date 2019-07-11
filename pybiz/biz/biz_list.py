@@ -33,13 +33,14 @@ class BizList(object):
         )
 
         def build_property(key):
-            if key in biz_type.relationships:
-                collection_type = biz_type.BizList
-            else:
-                collection_type = FilterableList
-
+            # TODO: define fget outside to clean it up
             return property(
-                fget=lambda self: collection_type(
+                fget=lambda self: (
+                        biz_type.BizList if (
+                            key in biz_type.relationships and
+                            not biz_type.relationships[key].many
+                        ) else FilterableList
+                    )(
                     getattr(bizobj, key, None)
                     for bizobj in self._bizobj_arr
                 ),

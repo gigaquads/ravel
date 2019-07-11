@@ -1,22 +1,6 @@
-import inspect
-
-from copy import copy
 from typing import Text, Type, Tuple, Dict, Set, List
-from inspect import Parameter
-from collections import defaultdict
-
-from mock import MagicMock
-from appyratus.memoize import memoized_property
-from appyratus.schema.fields import Field
 
 from pybiz.util import is_bizobj, is_bizlist, normalize_to_tuple
-from pybiz.exc import RelationshipArgumentError
-from pybiz.predicate import (
-    Predicate,
-    ConditionalPredicate,
-    BooleanPredicate,
-    OP_CODE,
-)
 
 from pybiz.biz.internal.query import QuerySpecification
 

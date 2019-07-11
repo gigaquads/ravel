@@ -93,7 +93,7 @@ class QuerySpecification(object):
                     if v is None:  # base case
                         spec.relationships[k] = cls()
                     elif isinstance(v, dict):
-                        spec.relationships[k] = build_recursive(rel.target, v)
+                        spec.relationships[k] = build_recursive(rel.target_biz_type, v)
                 elif k in biz_type.views:
                     spec.views.add(k)
             return spec
@@ -182,11 +182,15 @@ class Query(object):
     ) -> 'BizList':
         for rel_name, child_spec in spec.relationships.items():
             rel = biz_type.relationships[rel_name]
-            if rel.batch_loader:
+            if True:
+                related_objs = rel.query(bizobjs)
+                for bizobj, related_obj in zip(bizobjs, related_objs):
+                    rel.set_internally(bizobj, related_obj)
+            elif rel.batch_loader:
                 batched_data = rel.batch_loader.load(rel, bizobjs, fields=child_spec.fields)
                 for bizobj, related in zip(bizobjs, batched_data):
                     rel.set_internally(bizobj, related)
-                self._recursively_execute_v2(rel.target, batched_data, child_spec)
+                self._recursively_execute_v2(rel.target_biz_type, batched_data, child_spec)
             else:
                 for bizobj in bizobjs:
                     related = rel.query(
