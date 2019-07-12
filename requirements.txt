@@ -13,6 +13,6 @@ grpcio_tools
 btrees
 falcon
 websockets
-
+redis
 pytest
 mock
