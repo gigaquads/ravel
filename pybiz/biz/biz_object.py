@@ -16,8 +16,7 @@ from pybiz.exc import ValidationError, BizObjectError
 from .internal.biz_object_type_builder import BizObjectTypeBuilder
 from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
-from .internal.query import Query as LegacyQuery
-from .internal.query_v2 import Query
+from .internal.query import Query
 
 
 class BizObjectMeta(type):
@@ -192,45 +191,25 @@ class BizObject(metaclass=BizObjectMeta):
 
     @classmethod
     def query(
-        cls,
-        predicate: 'Predicate' = None,
-        specification: 'QuerySpecification' = None,
-        fields: Set[Text] = None,
-        order_by: Tuple[Text] = None,
+        cls, select: Set[Text] = None, where: 'Predicate' = None,
+        order_by: Tuple[Text] = None, offset: int = None, limit: int = None,
         first=False,
-    ) -> List['BizObject']:
+    ):
         """
-        Request a data structure containing the specified fields of this
-        `BizObject` and all related `BizObject` instances declared with
-        `Relationship`.
-
-        The `specification` argument can be either,
-
-        1. A well-formed `QuerySpecification` object,
-        2. Nested dict, like `{'foo': {'bar': {'baz': None}}}`
-        3. Set of dotted paths, like `{'foo', 'bar.baz'}`
+        Alternate syntax for building Query objects manually.
         """
-        query = LegacyQuery(cls, predicate, specification, fields=fields)
+        query = Query.from_keys(select or set())
 
+        if where:
+            query.where(*where)
         if order_by:
-            if not isinstance(order_by, (tuple, list)):
-                order_by = (order_by, )
-            query.spec.order_by = order_by
+            query.order_by(*order_by)
+        if limit is not None:
+            query.limit(limit)
+        if offet is not None:
+            query.offset(offset)
 
-        console.debug(
-            message='executing query',
-            data={
-                'class': cls.__name__,
-                'predicate': str(predicate),
-            }
-        )
-
-        results = query.execute()
-
-        if first:
-            return results[0] if results else None
-        else:
-            return cls.BizList(results)
+        return query.execute(first=first)
 
     @classmethod
     def get(cls, _id, fields: Dict = None) -> 'BizObject':
@@ -279,23 +258,6 @@ class BizObject(metaclass=BizObjectMeta):
     @classmethod
     def delete_all(cls) -> None:
         cls.get_dao().delete_all()
-
-    def save(self, method: SaveMethod = None) -> 'BizObject':
-        method = SaveMethod(method or SaveMethod.breadth_first)
-        if method == SaveMethod.breadth_first:
-            saver = BreadthFirstSaver(self.__class__)
-        return saver.save_one(self)
-
-    @classmethod
-    def save_many(
-        cls,
-        bizobjs: List['BizObject'],
-        method: SaveMethod = None,
-    ) -> 'BizList':
-        method = SaveMethod(method or SaveMethod.breadth_first)
-        if method == SaveMethod.breadth_first:
-            saver = BreadthFirstSaver(cls)
-        return saver.save_many(bizobjs)
 
     def create(self) -> 'BizObject':
         prepared_record = self._data.copy()

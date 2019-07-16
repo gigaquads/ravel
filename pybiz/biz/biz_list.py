@@ -10,15 +10,20 @@ from pybiz.exc import RelationshipError
 from .view import View, ViewProperty
 
 
-class FilterableList(list):
+class AttributeList(list):
     def where(self, *filters):
-        filtered = FilterableList()
+        filtered = AttributeList()
         for obj in self:
             for keep in filters:
                 if not keep(obj):
                     continue
                 filtered.append(obj)
         return filtered
+
+    def each(self, func):
+        for idx, obj in enumerate(self):
+            func(idx, obj)
+        return self
 
 
 class BizList(object):
@@ -39,7 +44,7 @@ class BizList(object):
                         biz_type.BizList if (
                             key in biz_type.relationships and
                             not biz_type.relationships[key].many
-                        ) else FilterableList
+                        ) else AttributeList
                     )(
                     getattr(bizobj, key, None)
                     for bizobj in self._bizobj_arr
@@ -74,7 +79,7 @@ class BizList(object):
         if attr in self.biz_type.relationships:
             collection_type = biz_type.BizList
         else:
-            collection_type = FilterableList
+            collection_type = AttributeList
         if attr != IS_BIZLIST_ANNOTATION and attr != IS_BIZOBJ_ANNOTATION:
             return collection_type(
                 getattr(bizobj, attr, None) for
@@ -167,12 +172,8 @@ class BizList(object):
             bizobj.clean(keys=keys)
         return self
 
-    def save(self, *args, **kwargs):
-        return self.biz_type.save_many(self._bizobj_arr, *args, **kwargs)
-
     def delete(self):
         ids = [bizobj for bizobj in self._bizobj_arr if bizobj._id]
-        return self.biz_type.delete_many(ids)
         return self
 
     def load(self, fields: Set[Text] = None):
@@ -181,16 +182,22 @@ class BizList(object):
             fields = set(self.biz_type.schema.fields.keys())
         elif isinstance(fields, str):
             fields = {fields}
+
         _ids = [obj._id for obj in self if obj._id is not None]
         results = self.biz_type.get_many(_ids, fields)
+
         for stale, fresh in zip(self, results):
             if stale._id is not None:
                 stale.merge(fresh)
                 stale.clean(fresh.raw.keys())
+
         return self
 
     def dump(self, *args, **kwargs):
-        return [bizobj.dump(*args, **kwargs) for bizobj in self._bizobj_arr]
+        return [
+            bizobj.dump(*args, **kwargs)
+            for bizobj in self._bizobj_arr
+        ]
 
     def append(self, bizobj):
         self._perform_on_add([bizobj])
@@ -223,43 +230,3 @@ class BizList(object):
             for bizobj in bizobjs:
                 for cb_func in self.relationship.on_add:
                     cb_func(self.bizobj, bizobj)
-
-
-
-class BulkPropertyBuilder(object):
-
-    def __init__(self, biz_type, biz_list_type):
-        self.biz_type = biz_type
-        self.biz_list_type = biz_list_type
-
-    def build_bulk_field_property(self, key):
-        return property(
-            fget=lambda self: FilterableList(
-                getattr(bizobj, key, None)
-                for bizobj in self._bizobj_arr
-            ),
-            fset=lambda self, value: [
-                setattr(bizobj, key, value)
-                for bizobj in self._bizobj_arr
-            ]
-        )
-
-    def build_bulk_relationship_property(self, key):
-        rel = self.biz_list_type.relationships.get(key)
-        use_bulk_relationship = (rel is not None)
-
-        if use_bulk_relationship:
-            pass
-        else:
-            rel = self.biz_type.relationships.get(key)
-            if rel is not None:
-                return property(
-                    fget=lambda self: rel.target.BizList(
-                        getattr(bizobj, key, None)
-                        for bizobj in self._bizobj_arr
-                    ),
-                    fset=lambda self, value: [
-                        setattr(bizobj, key, value)
-                        for bizobj in self._bizobj_arr
-                    ]
-                )

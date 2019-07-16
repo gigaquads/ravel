@@ -1,209 +1,298 @@
+from functools import reduce
 from typing import List, Dict, Set, Text, Type, Tuple
 
-from appyratus.utils import DictUtils
+from appyratus.utils import DictUtils, DictObject
 
 from pybiz.util import is_bizobj, is_sequence
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
+from pybiz.schema import Schema, fields
+from pybiz.predicate import Predicate
 
 from ..biz_list import BizList
+from ..biz_attribute import BizAttribute
+from ..relationship import Relationship
+from ..view import View, ViewProperty
+from .field_property import FieldProperty
+from .order_by import OrderBy
 
 
-class QuerySpecification(object):
-    """
-    A `QuerySpecification` is a named tuple, containing a specification of which
-    fields we are selecting from a target `BizObject`, along with the fields
-    nested inside related instance objects, declared in a `Relationship`.
-    """
+class QuerySchema(Schema):
+    alias = fields.String()
+    limit = fields.Int(nullable=True)
+    offset = fields.Int(nullable=True)
+    order_by = fields.List(fields.String(), default=[])
+    children = fields.Dict(default={})
+    predicates = fields.List(fields.Dict())
+    targets = fields.Nested({
+        'biz_type': fields.String(),
+        'attributes': fields.Dict(default={}),
+        'fields': fields.Dict(default={}),
+        'views': fields.Dict(default={}),
+    })
 
-    # correspondance between tuple field names
-    # to tuple positional indexes:
-    name2index = {
-        'fields': 0,
-        'relationships': 1,
-        'limit': 2,
-        'offset': 3,
-        'order_by': 4,
-    }
 
-    def __init__(
-        self,
-        fields: Set[Text] = None,
-        relationships: Dict[Text, 'QuerySpecification'] = None,
-        views: Set[Text] = None,
-        limit: int = None,
-        offset: int = None,
-        order_by: Tuple = None,
-        kwargs: Dict = None,
-    ):
-        # set epxected default values for items in the tuple.
-        # always work on a copy of the input `fields` set.
-        self.fields = set(fields) if fields else set()
-        self.views = set(views) if views else set()
-        self.relationships = {} if relationships else {}
-        self.limit = min(1, limit) if limit is not None else None
-        self.offset = max(0, offset) if offset is not None else None
-        self.order_by = tuple(order_by) if order_by else tuple()
-        self.kwargs = kwargs or {}
-
-        self._tuplized_attrs = (
-            self.fields,
-            self.relationships,
-            self.views,
-            self.limit,
-            self.offset,
-            self.order_by,
-            self.kwargs,
+class QueryExecutor(object):
+    def execute(self, query: 'Query'):
+        biz_type = query.biz_type
+        dao = biz_type.get_dao()
+        records = dao.query(
+            predicate=reduce(lambda x, y: x & y, query.predicates),
+            fields=query.target_fields, order_by=query.get_order_by(),
+            limit=query.get_limit(), offset=query.get_offset(),
         )
+        targets = biz_type.BizList(
+            biz_type(record).clean() for record in records
+        )
+        return self.execute_recursive(query, targets)
 
-    def __getitem__(self, index):
-        """
-        Access tuple element by name.
-        """
-        return self._tuplized_attrs[index]
+    def execute_recursive(self, query: 'Query', sources: List['BizObject']):
+        biz_type = query.biz_type
+        for k, subquery in query.children.items():
+            relationship = biz_type.relationships[k]
+            targets = relationship.query(
+                sources,
+                limit=query.get_limit(),
+                offset=query.get_offset(),
+                order_by=query.get_order_by(),
+            )
+            self.execute_recursive(subquery, targets)
+            for source, target in zip(sources, targets):
+                source.related[k] = target
+        for k in query.target_views:
+            for source in sources:
+                view = getattr(biz_type, k)
+                view_data = view.query()
+                source.viewed[k] = view_data
+        for k in query.target_attributes:
+            for source in sources:
+                attr = getattr(biz_type, k)
+                value = attr.query()
+                setattr(source, k, value)
+        return sources
 
-    def __len__(self):
-        return len(self._tuplized_attrs)
 
-    def __iter__(self):
-        return iter(self._tuplized_attrs)
+class QueryPrinter(object):
+    def print_query(self, query, depth=0):
+        print(self.format_query(query, depth=depth))
+
+    def format_query(self, query, depth=0) -> Text:
+        biz_type_name = query.biz_type.__name__
+        chunks = ['SELECT']
+
+        if query.target_fields:
+            for k in query.target_fields:
+                chunks.append(f' - {k}')
+
+        if query.target_views:
+            for k in query.target_views:
+                chunks.append(f' - {k}')
+
+        if query.children:
+            for name, subq in query.children.items():
+                chunks.append(f' - {name}: (')
+                chunks.append('  ' + subq.show(depth=depth+3))
+                chunks.append(f' )')
+
+        chunks.append(f'FROM {biz_type_name}')
+
+        for predicate in query.predicates:
+            predicate = reduce(lambda x, y: x & y, query.predicates)
+            chunks.append(f'WHERE {predicate}')
+
+        chunks.append(
+            'ORDER_BY ' + ', '.join(
+            f'{x.key} {"DESC" if x.desc else "ASC"}'
+            for x in query.get_order_by()
+        ))
+
+        offset = query.get_offset()
+        if offset is not None:
+            chunks.append(f'OFFSET {offset}')
+
+        limit = query.get_limit()
+        if limit is not None:
+            chunks.append(f'LIMIT {limit}')
+
+        return (f'\n {" " * depth}'.join(chunks))
+
+
+class QueryDumper(object):
+    def dump(self, query):
+        return {
+            'alias': query.alias,
+            'limit': query.get_limit(),
+            'offset': query.get_offset(),
+            'order_by': [x.dump() for x in query.get_order_by()],
+            'predicates': [x.dump() for x in query.predicates],
+            'children': {k: self.dump(v) for k, v in query.children.items()},
+            'targets': {
+                'biz_type': query.biz_type.__name__,
+                'attributes': query.target_attributes,
+                'fields': query.target_fields,
+                'views': query.target_views,
+            }
+        }
+
+    def load(self, biz_type, data):
+        query = Query(biz_type, alias=data['alias'])
+        query.select(*list(data['targets']['fields'].keys()))
+        query.select(*list(data['targets']['views'].keys()))
+        query.select(*list(data['targets']['attributes'].keys()))
+        query.select(*[
+            self.load(
+                biz_type.registry.types.biz[x['targets']['biz_type']], x
+            ) for x in data['children'].values()
+        ])
+        query.where(*[
+            Predicate.load(biz_type, x) for x in data['predicates']
+        ])
+        query.order_by(*[
+            OrderBy.load(x) for x in data['order_by']
+        ])
+        query.limit(data['limit'])
+        query.offset(data['offset'])
+
+        return query
 
     @classmethod
-    def build(
-        cls, spec, biz_type: Type['BizObject'], fields=None,
-    ) -> 'QuerySpecification':
-        """
-        Translate input "spec" data structure into a well-formed
-        QuerySpecification with appropriate starting conditions.
-        """
-        fields = fields or {}
+    def load_from_keys(cls, biz_type: Type['BizObject'], keys: Set[Text]) -> 'Query':
+        query = Query(biz_type)
+        key_tree = DictUtils.unflatten_keys({k: None for k in keys})
 
-        def build_recursive(biz_type: Type['BizObject'], names: Dict):
-            spec = cls()
-            if '*' in names:
-                del names['*']
-                spec.fields = set(
-                    f.source for f in biz_type.schema.fields.values()
-                )
-            for k, v in names.items():
-                field = biz_type.schema.fields.get(k)
-                if field:
-                    spec.fields.add(field.source)
-                elif k in biz_type.relationships:
-                    rel = biz_type.relationships[k]
-                    if v is None:  # base case
-                        spec.relationships[k] = cls()
-                    elif isinstance(v, dict):
-                        spec.relationships[k] = build_recursive(rel.target_biz_type, v)
-                elif k in biz_type.views:
-                    spec.views.add(k)
-            return spec
-
-        if isinstance(spec, cls):
-            if '*' in spec.fields:
-                spec.fields = set(biz_type.schema.fields.keys())
-            if fields:
-                tmp_spec = build_recursive(
-                    biz_type, DictUtils.unflatten_keys({k: None for k in fields})
-                )
-                spec.fields.update(tmp_spec.fields)
-                spec.relationships.update(tmp_spec.relationships)
-                spec.views.update(tmp_spec.views)
-        elif isinstance(spec, dict):
-            if fields:
-                spec.update(fields)
-            names = DictUtils.unflatten_keys({k: None for k in spec})
-            spec = build_recursive(biz_type, names)
-        elif is_sequence(spec):
-            # spec is an array of field and relationship names
-            # so partition the names between fields and relationships
-            # in a new spec object.
-            if fields:
-                spec.update(fields)
-            names = DictUtils.unflatten_keys({k: None for k in spec})
-            spec = build_recursive(biz_type, names)
-        elif not spec:
-            # by default, a new spec includes all fields and relationships
-            if fields:
-                spec = build_recursive(
-                    biz_type, DictUtils.unflatten_keys({k: None for k in fields})
-                )
+        for k, v in key_tree.items():
+            field = biz_type.schema.fields.get(k)
+            if field:
+                query.fields[k] = v
             else:
-                spec = cls(fields={f.source for f in biz_type.schema.fields.values()})
+                attr = getattr(biz_type, k, None)
+                if isinstance(attr, Relationship):
+                    query._children[k] = cls.from_keys(attr.target_biz_type, v)
+                elif isinstance(attr, View):
+                    query.views[k] = v
+                elif isinstance(attr, BizAttribute):
+                    query.attributes[k] = v
 
-        # ensure that _id and required fields are *always* specified
-        spec.fields |= {
-            f.source for f in biz_type.schema.required_fields.values()
-        }
-        spec.fields.add(biz_type.schema.fields['_id'].source)
-
-        return spec
+        return query
 
 
 class Query(object):
-    def __init__(
-        self,
-        biz_type: Type['BizObject'],
-        predicate: 'Predicate',
-        spec: 'QuerySpecification',
-        fields: Set[Text] = None,
-    ):
-        """
-        Execute a recursive query according to a given logical match predicate
-        and target field/relationship spec.
-        """
-        self.biz_type = biz_type
-        self.dao = biz_type.get_dao()
-        self.spec = QuerySpecification.build(spec, biz_type, fields=fields)
-        self.predicate = predicate
+    """
+    query = (
+        User.select(
+            User.account.select(Account.name)
+            User.email
+        ).where(
+            User.age > 14
+        ).order_by(
+            User.email.desc
+        ).limit(1)
+    )
+    """
 
-    def execute(self) -> List['BizObject']:
-        """
-        Recursively query fields from the target `BizObject` along with all
-        fields nested inside related objects declared in with `Relationship`.
-        """
-        records = self.dao.query(
-            predicate=self.predicate,
-            fields=self.spec.fields,
-            limit=self.spec.limit,
-            offset=self.spec.offset,
-            order_by=self.spec.order_by,
-        )
-        return self._recursively_execute_v2(
-            biz_type=self.biz_type,
-            bizobjs=[self.biz_type(record).clean() for record in records],
-            spec=self.spec,
-        )
+    _executor = QueryExecutor()
+    _printer  = QueryPrinter()
+    _dumper = QueryDumper()
 
-    def _recursively_execute_v2(
-        self,
-        biz_type: Type['BizObject'],
-        bizobjs: List['BizObject'],
-        spec: 'QuerySpecification',
-    ) -> 'BizList':
-        for rel_name, child_spec in spec.relationships.items():
-            rel = biz_type.relationships[rel_name]
-            if True:
-                related_objs = rel.query(bizobjs)
-                for bizobj, related_obj in zip(bizobjs, related_objs):
-                    rel.set_internally(bizobj, related_obj)
-            elif rel.batch_loader:
-                batched_data = rel.batch_loader.load(rel, bizobjs, fields=child_spec.fields)
-                for bizobj, related in zip(bizobjs, batched_data):
-                    rel.set_internally(bizobj, related)
-                self._recursively_execute_v2(rel.target_biz_type, batched_data, child_spec)
-            else:
-                for bizobj in bizobjs:
-                    related = rel.query(
-                        bizobj,
-                        fields=child_spec.fields,
-                        limit=child_spec.limit,
-                        offset=child_spec.offset,
-                        ordering=child_spec.order_by,
-                        kwargs=child_spec.kwargs,
-                    )
-                    rel.set_internally(bizobj, related)
-        for bizobj in bizobjs:
-            for view_name in spec.views:
-                view_data = biz_type.views[view_name].query(bizobj)
-                setattr(bizobj, view_name, view_data)
-        return biz_type.BizList(bizobjs)
+    def __init__(self, biz_type: Type['BizType'], alias: Text = None):
+        self._alias = alias
+        self._biz_type = biz_type
+        self._target_fields = {'_id': None}
+        self._target_views = {}
+        self._target_attributes = {}
+        self._children = {}
+        self._order_by = []
+        self._predicates = []
+        self._offset = None
+        self._limit = None
+
+    def execute(self, first=False):
+        targets = self._executor.execute(query=self)
+        if first:
+            return targets[0] if targets else None
+        else:
+            return targets
+
+    def select(self, *targets: Tuple, append=True) -> 'Query':
+        if not append:
+            self._children.clear()
+            self._target_fields.clear()
+            self._target_views.clear()
+
+        for obj in targets:
+            if isinstance(obj, str):
+                obj = getattr(self._biz_type, obj)
+            if isinstance(obj, FieldProperty):
+                self._target_fields[obj.field.name] = None
+            elif isinstance(obj, ViewProperty):
+                self._target_views[obj.name] = None
+            elif isinstance(obj, BizAttribute):
+                self._target_attributes[obj.name] = None
+            elif isinstance(obj, Query):
+                self._children[obj.alias] = obj
+
+        return self
+
+    def where(self, *predicates: 'Predicate', append=True) -> 'Query':
+        if append:
+            self._predicates += predicates
+        else:
+            self._predicates = predicates
+        return self
+
+    def limit(self, limit: int) -> 'Query':
+        self._limit = max(limit, 1) if limit is not None else None
+        return self
+
+    def offset(self, offset: int) -> 'Query':
+        self._offset = max(0, offset) if offset is not None else None
+        return self
+
+    def order_by(self, *order_by) -> 'Query':
+        self._order_by = order_by if order_by else tuple()
+        return self
+
+    def show(self, depth=0):
+        self._printer.print_query(query=self, depth=depth)
+
+    def dump(self) -> Dict:
+        return self._dumper.dump(self)
+
+    @classmethod
+    def load(cls, biz_type: Type['BizObject'], data: Dict) -> 'Query':
+        return cls._dumper.load(biz_type, data)
+
+    @property
+    def alias(self) -> Text:
+        return self._alias
+
+    @property
+    def biz_type(self) -> Type['BizObject']:
+        return self._biz_type
+
+    @property
+    def target_fields(self) -> Dict:
+        return self._target_fields
+    @property
+    def target_views(self) -> Dict:
+        return self._target_views
+
+    @property
+    def target_attributes(self) -> Dict:
+        return self._target_attributes
+
+    @property
+    def predicates(self) -> Dict:
+        return self._predicates
+
+    @property
+    def children(self) -> Dict[Text, 'Query']:
+        return self._children
+
+    def get_order_by(self) -> Tuple:
+        return self._order_by
+
+    def get_limit(self) -> int:
+        return self._limit
+
+    def get_offset(self) -> int:
+        return self._offset

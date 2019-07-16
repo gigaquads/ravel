@@ -2,7 +2,7 @@ import pickle
 import codecs
 
 from collections import defaultdict
-from typing import Text
+from typing import Text, Type, Dict
 
 from appyratus.enum import Enum
 
@@ -34,6 +34,9 @@ OP_CODE_2_DISPLAY_STRING = {
 }
 
 class Predicate(object):
+    def __init__(self, type_name):
+        self.type_name = type_name
+
     def serialize(self) -> Text:
         pickled = codecs.encode(pickle.dumps(self), "base64").decode()
         return '#' + pickled + '#'
@@ -47,6 +50,16 @@ class Predicate(object):
         else:
             raise ValueError(str(obj))
 
+    def dump(self):
+        raise NotImplementedError()
+
+    @classmethod
+    def load(cls, biz_type: Type['BizObject'], data: Dict):
+        if data['type_name'] == 'cond':
+            return ConditionalPredicate.load(biz_type, data)
+        elif data['type_name'] == 'bool':
+            return BooleanPredicate.load(biz_type, data)
+
 
 class ConditionalPredicate(Predicate):
     """
@@ -55,7 +68,7 @@ class ConditionalPredicate(Predicate):
     objects that instantiated the predicate.
     """
     def __init__(self, op: Text, prop: 'FieldProperty', value):
-        super().__init__()
+        super().__init__(type_name='cond')
         self.op = op
         self.prop = prop
         self.value = value
@@ -89,6 +102,19 @@ class ConditionalPredicate(Predicate):
     def targets(self):
         return [self.prop.target]
 
+    def dump(self):
+        return {
+            'op': self.op,
+            'field': self.prop.field.name,
+            'value': self.value,
+            'type_name': self.type_name,
+        }
+
+    @classmethod
+    def load(cls, biz_type: Type['BizObject'], data: Dict):
+        field_prop = getattr(biz_type, data['field'])
+        return cls(data['op'], field_prop, data['value'])
+
 
 class BooleanPredicate(Predicate):
     """
@@ -97,7 +123,7 @@ class BooleanPredicate(Predicate):
     LSH, and LHS stand for "left-hand side" and "right-hand side", respectively.
     """
     def __init__(self, op, lhs: 'Predicate', rhs: 'Predicate' = None):
-        super().__init__()
+        super().__init__(type_name='bool')
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
@@ -141,3 +167,19 @@ class BooleanPredicate(Predicate):
             substr += str(p.rhs)
 
         return f'({substr})'
+
+    def dump(self):
+        return {
+            'op': self.op,
+            'lhs': self.lhs.dump(),
+            'rhs': self.rhs.dump(),
+            'type_name': self.type_name,
+        }
+
+    @classmethod
+    def load(cls, biz_type: Type['BizObject'], data: Dict):
+        return cls(
+            data['op'],
+            Predicate.load(biz_type, data['lhs']),
+            Predicate.load(biz_type, data['rhs']),
+        )

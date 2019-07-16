@@ -116,7 +116,7 @@ class RelationshipProperty(property):
 
     def select(self, *keys) -> 'Query':
         rel = self.relationship
-        query = Query(rel.biz_type, rel.name)
+        query = Query(rel.target_biz_type, rel.name)
         return (
             query
                 .select(*keys)

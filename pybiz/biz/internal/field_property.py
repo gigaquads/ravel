@@ -9,6 +9,8 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
+from .order_by import OrderBy
+
 
 class FieldProperty(property):
     def __init__(self,
@@ -146,13 +148,3 @@ class FieldProperty(property):
                 self._data.pop(key, None)
 
         return cls(target, field, fget=fget, fset=fset, fdel=fdel)
-
-
-class OrderBy(object):
-    def __init__(self, key: Text, desc=False):
-        self.key = key
-        self.desc = desc
-
-    @property
-    def asc(self):
-        return not self.desc

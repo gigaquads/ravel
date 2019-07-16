@@ -87,15 +87,15 @@ class Relationship(BizAttribute):
             func.__globals__.update(self.registry.manifest.types.biz)
         self.target_biz_type = self.joins[-1](MagicMock())[1].biz_type
 
-    def set_internally(self, owner: 'BizObject', related):
-        # TODO: rename?
-        owner.related[self.name] = related
-
-    def query(self, source):
+    def query(self, source, offset=None, limit=None, order_by=None):
+        # TODO: pass offset, limit etc down into terminal join
         if is_bizobj(source):
             return self._load_for_bizobj(source)
         else:
             return self._load_for_bizlist(source)
+
+    def set_internally(self, owner: 'BizObject', related):  # TODO: rename this
+        owner.related[self.name] = related
 
     def _load_for_bizobj(self, root: 'BizObject'):
         source = root
@@ -108,7 +108,6 @@ class Relationship(BizAttribute):
             return target[0] if target else None
         else:
             return target
-
 
     def _load_for_bizlist(self, sources: 'BizList'):
         if is_sequence(sources):
