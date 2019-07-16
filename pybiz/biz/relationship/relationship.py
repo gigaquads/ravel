@@ -67,12 +67,18 @@ class Relationship(BizAttribute):
     def __init__(
         self,
         join: Tuple[Callable] = None,
+        offset: int = None,
+        limit: int = None,
+        order_by: Tuple = None,
         many=False,
         lazy=True,
     ):
         self.joins = normalize_to_tuple(join)
+        self.order_by = normalize_to_tuple(order_by)
         self.many = many
         self.lazy = lazy
+        self.offset = offset
+        self.limit = limit
         self.target_biz_type = None
         self.on_get = tuple()
 

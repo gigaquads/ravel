@@ -16,7 +16,8 @@ from pybiz.exc import ValidationError, BizObjectError
 from .internal.biz_object_type_builder import BizObjectTypeBuilder
 from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
-from .internal.query import Query
+from .internal.query import Query as LegacyQuery
+from .internal.query_v2 import Query
 
 
 class BizObjectMeta(type):
@@ -106,6 +107,10 @@ class BizObject(metaclass=BizObjectMeta):
         Get the global Dao reference associated with this class.
         """
         return cls.binder.get_dao_instance(cls)
+
+    @classmethod
+    def select(cls, *keys):
+        return Query(cls).select(*keys)
 
     def __init__(self, data=None, **more_data):
         self._data = DirtyDict()
@@ -205,7 +210,7 @@ class BizObject(metaclass=BizObjectMeta):
         2. Nested dict, like `{'foo': {'bar': {'baz': None}}}`
         3. Set of dotted paths, like `{'foo', 'bar.baz'}`
         """
-        query = Query(cls, predicate, specification, fields=fields)
+        query = LegacyQuery(cls, predicate, specification, fields=fields)
 
         if order_by:
             if not isinstance(order_by, (tuple, list)):

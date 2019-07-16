@@ -10,22 +10,12 @@ from pybiz.predicate import (
 )
 
 from .query import QuerySpecification
+from .query_v2 import Query
 from ..relationship import Relationship
 from ..biz_list import BizList
 
 
 class RelationshipProperty(property):
-    def __init__(self, relationship, **kwargs):
-        super().__init__(**kwargs)
-        self.relationship = relationship
-
-    def __repr__(self):
-        if self.relationship is not None:
-            return repr(self.relationship).replace(
-                'Relationship', 'RelationshipProperty'
-            )
-        else:
-            return '<RelationshipProperty>'
 
     @classmethod
     def build(cls, relationship: 'Relationship') -> 'RelationshipProperty':
@@ -110,3 +100,28 @@ class RelationshipProperty(property):
                     cb_func(self, value)
 
         return cls(relationship, fget=fget, fset=fset, fdel=fdel)
+
+    def __init__(self, relationship, **kwargs):
+        super().__init__(**kwargs)
+        self.relationship = relationship
+
+    def __repr__(self):
+        if self.relationship is not None:
+            return repr(self.relationship).replace(
+                'Relationship', 'RelationshipProperty'
+            )
+        else:
+            return '<RelationshipProperty>'
+
+
+    def select(self, *keys) -> 'Query':
+        rel = self.relationship
+        query = Query(rel.biz_type, rel.name)
+        return (
+            query
+                .select(*keys)
+                .order_by(*rel.order_by)
+                .limit(rel.limit)
+                .offset(rel.offset)
+            )
+
