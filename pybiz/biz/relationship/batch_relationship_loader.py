@@ -2,8 +2,6 @@ from typing import Text, Type, Tuple, Dict, Set, List
 
 from pybiz.util import is_bizobj, is_bizlist, normalize_to_tuple
 
-from pybiz.biz.internal.query import QuerySpecification
-
 
 class BatchRelationshipLoader(object):
     def __init__(self, conditions, order_by=None, many=False):

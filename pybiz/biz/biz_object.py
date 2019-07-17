@@ -13,10 +13,10 @@ from pybiz.util.loggers import console
 from pybiz.dirty import DirtyDict
 from pybiz.exc import ValidationError, BizObjectError
 
+from .query import Query
 from .internal.biz_object_type_builder import BizObjectTypeBuilder
-from .internal.save import SaveMethod, BreadthFirstSaver
+#from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
-from .internal.query import Query
 
 
 class BizObjectMeta(type):

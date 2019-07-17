@@ -18,8 +18,6 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from pybiz.biz.internal.query import QuerySpecification
-
 from ..biz_attribute import BizAttribute
 from .batch_relationship_loader import BatchRelationshipLoader
 
@@ -44,11 +42,12 @@ class Join(object):
         self.source_biz_type = self.source_fprop.biz_type
 
     def query(self):
-        predicate = self._build_predicate()
+        predicate = self.computed_predicate
         target = self.target_fprop.biz_type.query(predicate=predicate)
         return target
 
-    def _build_predicate(self):
+    @property
+    def computed_predicate(self):
         target_field_value = getattr(self.source, self.source_fprop.field.name)
         computed_predicate = None
         if is_bizobj(self.source):
@@ -162,8 +161,10 @@ class Relationship(BizAttribute):
                 delattr(parent, '_children')
         return acc
 
+'''
+from pybiz.biz.internal.query import QuerySpecification
 
-class _Relationship(BizAttribute):
+class LegacyRelationship(BizAttribute):
     """
     `Relationship` objects are declared as `BizObject` class attributes and
     endow them with the ability to load and dump other `BizObject` objects and
@@ -447,3 +448,4 @@ class ConditionMetadata(object):
                 'condition functions do not accept '
                 'custom positional arguments'
             )
+'''

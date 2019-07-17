@@ -5,7 +5,7 @@ from typing import Dict, Set, Text, List, Type
 from graphql.parser import GraphQLParser
 
 from pybiz.util import is_bizobj, is_bizlist, is_sequence
-from pybiz.biz.internal.query import QuerySpecification
+# from pybiz.biz.internal.query import QuerySpecification
 from pybiz.biz import BizObject
 from pybiz.api.exc import NotAuthorized
 
@@ -28,7 +28,7 @@ class GraphQLEngine(object):
     def mutate(self, query: Text, context: Dict = None) -> BizObject:
         raise NotImplementedError('not yet supported')
 
-    def parse(self, query: Text) -> QuerySpecification:
+    def parse(self, query: Text) -> 'QuerySpecification':
         """
         Parse a GraphQL query string to a corresponding QuerySpecification.
         """
@@ -106,5 +106,5 @@ class GraphQLEngine(object):
 
 
 class GraphQLObject(object):
-    def graphql_authorize(self, spec: QuerySpecification, ctx: Dict) -> bool:
+    def graphql_authorize(self, spec: 'QuerySpecification', ctx: Dict) -> bool:
         return True

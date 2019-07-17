@@ -8,12 +8,12 @@ from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from pybiz.schema import Schema, fields
 from pybiz.predicate import Predicate
 
-from ..biz_list import BizList
-from ..biz_attribute import BizAttribute
-from ..relationship import Relationship
-from ..view import View, ViewProperty
-from .field_property import FieldProperty
-from .order_by import OrderBy
+from .internal.field_property import FieldProperty
+from .internal.order_by import OrderBy
+from .biz_list import BizList
+from .biz_attribute import BizAttribute
+from .relationship import Relationship
+from .view import View, ViewProperty
 
 
 class QuerySchema(Schema):
@@ -22,7 +22,7 @@ class QuerySchema(Schema):
     offset = fields.Int(nullable=True)
     order_by = fields.List(fields.String(), default=[])
     children = fields.Dict(default={})
-    predicates = fields.List(fields.Dict())
+    predicates = fields.List(fields.Dict(), nullable=True)
     targets = fields.Nested({
         'biz_type': fields.String(),
         'attributes': fields.Dict(default={}),
@@ -117,13 +117,20 @@ class QueryPrinter(object):
 
 
 class QueryDumper(object):
+
+    schema = QuerySchema()
+
     def dump(self, query):
         return {
             'alias': query.alias,
             'limit': query.get_limit(),
             'offset': query.get_offset(),
             'order_by': [x.dump() for x in query.get_order_by()],
-            'predicates': [x.dump() for x in query.predicates],
+            'predicates': (
+                [x.dump() for x in query.predicates] if
+                query.predicates is not None
+                else None
+            ),
             'children': {k: self.dump(v) for k, v in query.children.items()},
             'targets': {
                 'biz_type': query.biz_type.__name__,
@@ -134,6 +141,11 @@ class QueryDumper(object):
         }
 
     def load(self, biz_type, data):
+        data, errors = self.schema.process(data)
+        if errors:
+            # TODO: raise custom exceptions
+            raise ValueError(str(errors))
+
         query = Query(biz_type, alias=data['alias'])
         query.select(*list(data['targets']['fields'].keys()))
         query.select(*list(data['targets']['views'].keys()))
@@ -143,9 +155,10 @@ class QueryDumper(object):
                 biz_type.registry.types.biz[x['targets']['biz_type']], x
             ) for x in data['children'].values()
         ])
-        query.where(*[
-            Predicate.load(biz_type, x) for x in data['predicates']
-        ])
+        if data['predicates']:
+            query.where(*[
+                Predicate.load(biz_type, x) for x in data['predicates']
+            ])
         query.order_by(*[
             OrderBy.load(x) for x in data['order_by']
         ])
@@ -201,7 +214,7 @@ class Query(object):
         self._target_attributes = {}
         self._children = {}
         self._order_by = []
-        self._predicates = []
+        self._predicates = None
         self._offset = None
         self._limit = None
 
@@ -233,10 +246,15 @@ class Query(object):
         return self
 
     def where(self, *predicates: 'Predicate', append=True) -> 'Query':
-        if append:
-            self._predicates += predicates
+        if predicates is None:
+            self._predicates = None
         else:
-            self._predicates = predicates
+            if self._predicates is None:
+                self._predicates = tuple()
+            if append:
+                self._predicates += predicates
+            else:
+                self._predicates = predicates
         return self
 
     def limit(self, limit: int) -> 'Query':

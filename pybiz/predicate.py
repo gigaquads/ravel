@@ -33,9 +33,13 @@ OP_CODE_2_DISPLAY_STRING = {
     OP_CODE.OR: 'OR',
 }
 
+TYPE_BOOLEAN = 1
+TYPE_CONDITIONAL = 2
+
+
 class Predicate(object):
-    def __init__(self, type_name):
-        self.type_name = type_name
+    def __init__(self, code):
+        self.code = code
 
     def serialize(self) -> Text:
         pickled = codecs.encode(pickle.dumps(self), "base64").decode()
@@ -55,9 +59,9 @@ class Predicate(object):
 
     @classmethod
     def load(cls, biz_type: Type['BizObject'], data: Dict):
-        if data['type_name'] == 'cond':
+        if data['code'] == TYPE_CONDITIONAL:
             return ConditionalPredicate.load(biz_type, data)
-        elif data['type_name'] == 'bool':
+        elif data['code'] == TYPE_BOOLEAN:
             return BooleanPredicate.load(biz_type, data)
 
 
@@ -68,7 +72,7 @@ class ConditionalPredicate(Predicate):
     objects that instantiated the predicate.
     """
     def __init__(self, op: Text, prop: 'FieldProperty', value):
-        super().__init__(type_name='cond')
+        super().__init__(code=TYPE_CONDITIONAL)
         self.op = op
         self.prop = prop
         self.value = value
@@ -107,7 +111,7 @@ class ConditionalPredicate(Predicate):
             'op': self.op,
             'field': self.prop.field.name,
             'value': self.value,
-            'type_name': self.type_name,
+            'code': self.code,
         }
 
     @classmethod
@@ -123,7 +127,7 @@ class BooleanPredicate(Predicate):
     LSH, and LHS stand for "left-hand side" and "right-hand side", respectively.
     """
     def __init__(self, op, lhs: 'Predicate', rhs: 'Predicate' = None):
-        super().__init__(type_name='bool')
+        super().__init__(code=TYPE_BOOLEAN)
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
@@ -173,7 +177,7 @@ class BooleanPredicate(Predicate):
             'op': self.op,
             'lhs': self.lhs.dump(),
             'rhs': self.rhs.dump(),
-            'type_name': self.type_name,
+            'code': self.code,
         }
 
     @classmethod

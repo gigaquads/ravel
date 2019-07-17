@@ -9,8 +9,7 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from .query import QuerySpecification
-from .query_v2 import Query
+from ..query import Query
 from ..relationship import Relationship
 from ..biz_list import BizList
 
