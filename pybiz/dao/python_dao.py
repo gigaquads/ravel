@@ -145,6 +145,8 @@ class PythonDao(Dao):
         predicate: Predicate,
         fields: Set[Text] = None,
         order_by: Tuple = None,
+        limit: int = None,
+        offset: int = None,
         **kwargs
     ) -> List:
         def union(sequences):
@@ -228,7 +230,10 @@ class PythonDao(Dao):
 
         with self.lock:
             _ids = process(predicate)
+
             results = list(self.fetch_many(_ids, fields=fields).values())
+
+            # post processing...
             if order_by:
                 for item in order_by:
                     results = sorted(
@@ -236,6 +241,14 @@ class PythonDao(Dao):
                         key=lambda x: x[item.key],
                         reverse=item.desc
                     )
+
+            if offset is not None:
+                if limit is not None:
+                    results = results[offset:offset+limit]
+                else:
+                    results = results[offset:]
+            elif limit is not None:
+                results = results[:limit]
 
         return results
 

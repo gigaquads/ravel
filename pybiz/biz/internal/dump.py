@@ -17,21 +17,13 @@ class Dumper(object):
             if is_bizobj(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
-                        fields or (
-                            target.raw.keys()
-                            | target.relationships.keys()
-                            | target.views.keys()
-                        )
+                        fields or (target.raw.keys() | target.related.keys())
                     )
                 })
             elif is_sequence(target) or is_bizlist(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
-                        fields or (
-                            target[0].raw.keys()
-                            | target[0].relationships.keys()
-                            | target[0].views.keys()
-                        )
+                        fields or (target.raw.keys() | target.related.keys())
                     )
                 })
 
@@ -39,7 +31,6 @@ class Dumper(object):
             raise ValueError(
                 'uncoregnized fields argument type'
             )
-
         return self.on_dump(target, fields=fields, raw=raw)
 
     def on_dump(

@@ -8,14 +8,13 @@ from collections import defaultdict
 
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
-from pybiz.util import is_bizobj, is_sequence, repr_biz_id
+from pybiz.util import is_bizobj, is_sequence, repr_biz_id, normalize_to_tuple
 from pybiz.util.loggers import console
 from pybiz.dirty import DirtyDict
 from pybiz.exc import ValidationError, BizObjectError
 
 from .query import Query
 from .internal.biz_object_type_builder import BizObjectTypeBuilder
-#from .internal.save import SaveMethod, BreadthFirstSaver
 from .internal.dump import NestingDumper, SideLoadingDumper
 
 
@@ -198,36 +197,46 @@ class BizObject(metaclass=BizObjectMeta):
         """
         Alternate syntax for building Query objects manually.
         """
-        query = Query.from_keys(select or set())
+        query = Query.from_keys(cls, keys=(select or cls.schema.fields.keys()))
 
         if where:
-            query.where(*where)
+            query.where(normalize_to_tuple(where))
         if order_by:
-            query.order_by(*order_by)
+            query.order_by(normalize_to_tuple(order_by))
         if limit is not None:
             query.limit(limit)
-        if offet is not None:
+        if offset is not None:
             query.offset(offset)
 
         return query.execute(first=first)
 
     @classmethod
-    def get(cls, _id, fields: Dict = None) -> 'BizObject':
-        return cls.query(cls._id == _id, fields=fields, first=True)
+    def get(cls, _id, select=None) -> 'BizObject':
+        return cls.query(
+            select=select,
+            where=(cls._id == _id),
+            first=True
+        )
 
     @classmethod
     def get_many(
-        cls, _ids: List = None, fields: Set[Text] = None, as_list=True
+        cls,
+        _ids: List = None,
+        select=None,
+        offset=None,
+        limit=None,
+        order_by=None,
     ) -> 'BizList':
         """
         Return a list or _id mapping of BizObjects.
         """
-        assert is_sequence(_ids)
-        biz_list = cls.query(cls._id.including(_ids), fields=fields)
-        if as_list:
-            return biz_list
-        else:
-            return {x._id: x for x in biz_list}
+        return cls.query(
+            select=select,
+            where=(cls._id == _id),
+            order_by=order_by,
+            offset=offset,
+            limit=limit,
+        )
 
     @classmethod
     def get_all(cls, fields: Set[Text] = None) -> Dict:
@@ -530,20 +539,22 @@ class BizObject(metaclass=BizObjectMeta):
 
         return self
 
-    def load(self, keys=None, depth=0) -> 'BizObject':
+    def load(self, select=None, depth=0) -> 'BizObject':
         """
         Assuming _id is not None, this will load the rest of the BizObject's
         data. By default, relationship data is not loaded unless explicitly
         requested.
         """
-        if isinstance(keys, str):
-            keys = {keys}
+        if isinstance(select, str):
+            select = {select}
+
         console.debug(message='loading', data={
             'class': self.__class__.__name__,
             'instance': self._id,
-            'keys': keys
+            'select': select
         })
-        fresh = self.get(_id=self._id, fields=keys)# TODO:, depth=depth)
+
+        fresh = self.get(_id=self._id, select=select)  # TODO: depth=depth
         if fresh:
             self.merge(fresh)
             self.clean(fresh.raw.keys())

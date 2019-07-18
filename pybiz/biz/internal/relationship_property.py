@@ -112,14 +112,13 @@ class RelationshipProperty(property):
         else:
             return '<RelationshipProperty>'
 
-
-    def select(self, *keys) -> 'Query':
+    def select(self, *targets) -> 'Query':
         rel = self.relationship
         query = Query(rel.target_biz_type, rel.name)
         return (
             query
-                .select(*keys)
-                .order_by(*rel.order_by)
+                .select(targets)
+                .order_by(rel.order_by)
                 .limit(rel.limit)
                 .offset(rel.offset)
             )

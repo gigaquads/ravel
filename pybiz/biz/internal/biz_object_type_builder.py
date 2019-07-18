@@ -19,6 +19,7 @@ from .relationship_property import RelationshipProperty
 from .field_property import FieldProperty
 from ..view import View, ViewProperty
 from ..biz_list import BizList
+from ..biz_attribute import BizAttribute
 
 # TODO: call getmembers only once
 
@@ -55,6 +56,7 @@ class BizObjectTypeBuilder(object):
         self._build_field_properties(biz_type)
         self._build_relationship_properties(biz_type)
         self._build_view_properties(biz_type)
+        self._aggregate_selectable_attribute_names(biz_type)
 
         setattr(biz_type, 'r', DictObject(biz_type.relationships))
         setattr(biz_type, 'f', DictObject(biz_type.schema.fields))
@@ -70,6 +72,13 @@ class BizObjectTypeBuilder(object):
                 message=f'{biz_type.__name__} relationships:',
                 data={'relationships': list(biz_type.relationships.keys())}
             )
+
+    def _aggregate_selectable_attribute_names(self, biz_type):
+        biz_type.selectable_attribute_names = set()
+        selectable_types = (BizAttribute, RelationshipProperty, FieldProperty)
+        is_selectable = lambda x: isinstance(x, selectable_types)
+        for k, v in inspect.getmembers(biz_type, predicate=is_selectable):
+            biz_type.selectable_attribute_names.add(k)
 
     def _build_schema_type(self, name, biz_type):
         # use the schema class override if defined
