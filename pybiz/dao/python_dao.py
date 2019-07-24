@@ -233,7 +233,7 @@ class PythonDao(Dao):
 
             results = list(self.fetch_many(_ids, fields=fields).values())
 
-            # post processing...
+            # post processing, like ordering and pagination
             if order_by:
                 for item in order_by:
                     results = sorted(

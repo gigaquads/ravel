@@ -1,2 +1,2 @@
 from .relationship import Relationship
-from .behavior import RelationshipBehavior, CrudBehavior
+from .behavior import Behavior

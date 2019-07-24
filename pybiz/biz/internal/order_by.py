@@ -6,11 +6,14 @@ class OrderBy(object):
         self.key = key
         self.desc = desc
 
+    def __repr__(self):
+        return f'<OrderBy({self.key} {"desc" if self.desc else "asc"})>'
+
     def dump(self):
-        return {'key': key, 'desc': desc}
+        return {'key': self.key, 'desc': self.desc}
 
     @classmethod
-    def load(self, data):
+    def load(cls, data):
         return cls(data['key'], data['desc'])
 
     @property

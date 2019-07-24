@@ -4,9 +4,17 @@ from appyratus.schema import Schema
 
 
 class BizAttribute(object):
-    def __init__(self, name: Text = None, private=False, *args, **kwargs):
+    def __init__(
+        self,
+        name: Text = None,
+        private: bool = None,
+        lazy: bool = None,
+        *args,
+        **kwargs
+    ):
         self._name = name
         self._private = private
+        self._lazy = lazy
         self._is_bootstrapped = False
         self._registry = None
         self._biz_type = None
@@ -15,9 +23,34 @@ class BizAttribute(object):
     def name(self) -> Text:
         return self._name
 
+    @name.setter
+    def name(self, name):
+        if self._name is None:
+            self._name = name
+        else:
+            raise ValueError('readonly')
+
     @property
     def private(self):
         return self._private
+
+    @private.setter
+    def private(self, private):
+        if self._private is None:
+            self._private = private
+        else:
+            raise ValueError('readonly')
+
+    @property
+    def lazy(self) -> Text:
+        return self._lazy
+
+    @lazy.setter
+    def lazy(self, lazy):
+        if self._lazy is None:
+            self._lazy = lazy
+        else:
+            raise ValueError('readonly')
 
     @property
     def is_bootstrapped(self):

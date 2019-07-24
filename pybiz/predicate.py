@@ -38,6 +38,9 @@ TYPE_CONDITIONAL = 2
 
 
 class Predicate(object):
+    TYPE_BOOLEAN = TYPE_BOOLEAN
+    TYPE_CONDITIONAL = TYPE_CONDITIONAL
+
     def __init__(self, code):
         self.code = code
 

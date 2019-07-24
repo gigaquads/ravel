@@ -20,16 +20,7 @@ from pybiz.predicate import (
 )
 
 from ..biz_attribute import BizAttribute
-from .batch_relationship_loader import BatchRelationshipLoader
 
-'''
-company = Relationship(
-    joins=(
-        lambda intent: (Intent.db_id, IntentCompany.intent_db_id),
-        lambda company: (IntentCompany.company_db_id, Company.db_id),
-    ),
-)
-'''
 
 class Join(object):
     def __init__(self, source, source_fprop, target_fprop, predicate=None):
@@ -52,7 +43,7 @@ class Join(object):
         **kwargs
     ) -> 'BizList':
         computed_where_predicate = self.where_predicate
-        if where is not None:
+        if where:
             computed_where_predicate &= reduce(lambda x, y: x & y, where)
 
         results = self.target_fprop.biz_type.query(
@@ -85,46 +76,136 @@ class Relationship(BizAttribute):
         self,
         join: Tuple[Callable] = None,
         select: Set = None,
+        order_by: Tuple['OrderBy'] = None,
         offset: int = None,
         limit: int = None,
-        order_by: Tuple = None,
-        many=False,
-        private=False,
-        lazy=True,
+        many: bool = False,
+        private: bool = False,
+        lazy: bool = True,
+        readonly: bool = True,
+        on_get: Tuple[Callable] = None,
+        on_set: Tuple[Callable] = None,
+        on_del: Tuple[Callable] = None,
+        on_rem: Tuple[Callable] = None,
+        on_add: Tuple[Callable] = None,
+        behavior: 'Behavior' = None,
     ):
-        self._private = private
+        super().__init__(private=private, lazy=lazy)
+
         self.joins = normalize_to_tuple(join)
-        self.order_by = normalize_to_tuple(order_by)
-        self.select = select
+        self.behaviors = normalize_to_tuple(behavior)
         self.many = many
-        self.lazy = lazy
+        self.target_biz_type = None
+        self.readonly = readonly
+
+        # Default relationship-level query params:
+        self.select = select
+        self.order_by = normalize_to_tuple(order_by)
         self.offset = offset
         self.limit = limit
-        self.target_biz_type = None
-        self.on_get = tuple()
+
+        # callbacks
+        self.on_get = normalize_to_tuple(on_get)
+        self.on_set = normalize_to_tuple(on_set)
+        self.on_rem = normalize_to_tuple(on_rem)
+        self.on_add = normalize_to_tuple(on_add)
+        self.on_del = normalize_to_tuple(on_del)
+
+        self._is_bootstrapped = False
+
+    def __repr__(self):
+        if self.target_biz_type:
+            target_type_name = self.target_biz_type.__name__
+            source_type_name = self.biz_type.__name__
+        else :
+            target_type_name = '?'
+            source_type_name = '?'
+
+        name = f'name={self.name}' if self.name else ''
+
+        if self.many:
+            target = f'target=[{target_type_name}]'
+        else:
+            target = f'target={target_type_name}'
+
+        return (
+            f'<Relationship('
+            f'name={name}'
+            f'source={source_type_name}'
+            f'target={target}'
+            f')>'
+        )
+
+    @property
+    def is_bootstrapped(self):
+        return self._is_bootstrapped
 
     def on_bootstrap(self):
+        if self._is_bootstrapped:
+            return
+
+        if self.behaviors is not None:
+            for behavior in self.behaviors:
+                behavior.on_pre_bootstrap(self)
+
         for func in self.joins:
+            # add all BizObject classes to the lexical scope of
+            # each callable to prevent import errors/cycles
             func.__globals__.update(self.registry.manifest.types.biz)
+
+            # "pybiz_is_fk" is used by Query when it decides which fields to
+            # load at a baseline, in order to ensure that all relationships of
+            # the BizObjects loaded through this relationship have all required
+            # field data to satisfy their own Relationships' join conditions.
             mocked_retval = func(MagicMock())
             mocked_retval[0].field.meta['pybiz_is_fk'] = True
             mocked_retval[1].field.meta['pybiz_is_fk'] = True
 
+        # determine in advance what the "target" BizObject
+        # class is that this relationship queries.
         self.target_biz_type = self.joins[-1](MagicMock())[1].biz_type
 
+        # by default, the relationship will load all
+        # required AND all "foreign key" fields.
         if not self.select:
             self.select = {
                 k: None for k, f in self.target_biz_type.schema.fields.items()
                 if (f.meta.get('pybiz_is_fk', False) or f.required)
             }
 
-    def query(self, source, select=None, where=None, offset=None, limit=None, order_by=None):
-        # TODO: pass offset, limit etc down into terminal join
-        if is_bizobj(source):
-            load = self._load_for_bizobj
-        else:
-            load = self._load_for_bizlist
-        return load(
+        self._is_bootstrapped = True
+
+        if self.behaviors is not None:
+            for behavior in self.behaviors:
+                behavior.on_post_bootstrap(self)
+
+    def query(
+        self,
+        source,
+        select: Set = None,
+        where: Set = None,
+        order_by: Tuple = None,
+        offset: int = None,
+        limit: int = None,
+    ):
+        """
+        Recursively execute this Relationship on a caller BizObject or BizList,
+        loading the related BizObject(s).
+        """
+        # override default query parameters if provided as arguments here
+        select = select if select is not None else self.select
+        limit = limit if limit is not None else self.limit
+        offset = offset if offset is not None else self.offset
+        order_by = order_by if order_by else self.order_by
+
+        # Apply the "query_simple" method when this relationship is being loaded
+        # on a single BizObject; otherwise, apply "query_batch" if it is being
+        # loaded by a BizList (i.e. batch load)
+        perform_query = (
+            self._query_simple if is_bizobj(source)
+            else self._query_batch
+        )
+        return perform_query(
             source,
             select=select,
             where=where,
@@ -133,10 +214,7 @@ class Relationship(BizAttribute):
             limit=limit,
         )
 
-    def set_internally(self, owner: 'BizObject', related):  # TODO: rename this
-        owner.related[self.name] = related
-
-    def _load_for_bizobj(
+    def _query_simple(
         self,
         root: 'BizObject',
         select: Set = None,
@@ -145,12 +223,18 @@ class Relationship(BizAttribute):
         offset: int = None,
         order_by: Tuple['OrderBy'] = None,
     ) -> 'BizObject':
+        """
+        Recursively load this relationship on a single BizObject caller.
+        """
         source = root
         target = None
-        terminal_join_func = self.joins[-1]
+
         for func in self.joins:
             join = Join(source, *func(source))
-            if func is terminal_join_func:
+            if func is self.joins[-1]:
+                # only pass in the query params to the last join in the join
+                # sequence, as this is the one that truly applies to the
+                # "target" BizObject type being queried.
                 target = join.query(
                     select=select,
                     where=where,
@@ -160,36 +244,52 @@ class Relationship(BizAttribute):
                 )
             else:
                 target = join.query(select=select)
+
             source = target
+
+        # return the related BizObject or BizList we just loaded
         if not self.many:
             return target[0] if target else None
         else:
             return target
 
-    def _load_for_bizlist(
+    def _query_batch(
         self,
         sources: 'BizList',
-        select=None,
-        where: List = None,
+        select: Set = None,
+        where: Set = None,
+        order_by: Tuple['OrderBy'] = None,
         limit: int = None,
         offset: int = None,
-        order_by: Tuple['OrderBy'] = None,
      ) -> 'BizList':
-        select = select if select is not None else self.select
-        limit = limit if limit is not None else self.limit
-        offset = offset if offset is not None else self.offset
-        order_by = order_by if order_by else self.order_by
-
+        """
+        Recursively load this relationship on a BizList caller.
+        """
         if is_sequence(sources):
             sources = self.biz_type.BizList(sources)
 
         original_sources = sources
-        paths = defaultdict(list)
-        evaluated_joins = []
-        terminal_join_func = self.joins[-1]
+
+        # `tree` is used as a tree of BizObjects mapped to arrays of loaded
+        # child BizObjects and, in the end, is used to resolve which source
+        # BizObjects we zip up with which target BizObjects or BizLists.
+        tree = defaultdict(list)
+
+        # `join_objs` just keeps in memory each Join object
+        # instantiated in the process of performing the querying process
+        join_objs = []
+
         for func in self.joins:
+            # the "join.query" here is configured to issue a query that loads
+            # all data required by all source BizObjects' relationships, not
+            # just one BizObject's relationship at a time.
             join = Join(sources, *func(sources))
-            if func is terminal_join_func:
+            join_objs.append(join)
+
+            # compute `targets` - the collection of ALL BizObjects related to
+            # the source objects. Below, we perform logic to determine which
+            # source object to zip up with which target BizObject(s)
+            if func is self.joins[-1]:
                 targets = join.query(
                     select=select,
                     where=where,
@@ -200,10 +300,11 @@ class Relationship(BizAttribute):
             else:
                 targets = join.query()
 
+            # adjust data structures that we used to determine, in the end,
+            # which original_source objects are to be zipped up with which
+            # subsets of target objects.
             field_value_2_targets = defaultdict(list)
             distinct_targets = set()
-
-            evaluated_joins.append(join)
 
             for bizobj in targets:
                 target_field_value = bizobj[join.target_fname]
@@ -214,29 +315,40 @@ class Relationship(BizAttribute):
                 source_field_value = bizobj[join.source_fname]
                 mapped_targets = field_value_2_targets.get(source_field_value)
                 if mapped_targets:
-                    paths[bizobj].extend(mapped_targets)
+                    tree[bizobj].extend(mapped_targets)
 
+            # Make targest the new sources for the next iteration
             sources = join.target_biz_type.BizList(distinct_targets)
 
+        # Now we compute `results`, which is a list of either BizObjects or
+        # BizLists (for a many=True relationship). The caller of query() now
+        # must zip up the source and result objects.
         results = []
-        terminal_biz_type = evaluated_joins[-1].target_biz_type
-
-        for bizobj in original_sources:
-            targets = self._get_terminal_nodes(
-                paths, bizobj, terminal_biz_type, []
+        terminal_biz_type = join_objs[-1].target_biz_type
+        for source in original_sources:
+            resolved_targets = self._get_terminal_nodes(
+                tree, source, terminal_biz_type, []
             )
             if self.many:
-                results.append(terminal_biz_type.BizList(targets or []))
+                results.append(
+                    terminal_biz_type.BizList( resolved_targets, self, source)
+                )
             else:
-                results.append(targets[0] if targets else None)
+                results.append(
+                    resolved_targets[0] if resolved_targets else None
+                )
 
         return results
 
-    def _get_terminal_nodes(self, paths, parent, target_biz_type, acc):
-        children = paths[parent]
+    def _get_terminal_nodes(self, tree, parent, target_biz_type, acc):
+        """
+        Follow a path in the tree dict to determine which BizObjects were loaded
+        for the given parent source BizObject.
+        """
+        children = tree[parent]
         if not children and isinstance(parent, target_biz_type):
             acc.append(parent)
         else:
             for bizobj in children:
-                self._get_terminal_nodes(paths, bizobj, target_biz_type, acc)
+                self._get_terminal_nodes(tree, bizobj, target_biz_type, acc)
         return acc

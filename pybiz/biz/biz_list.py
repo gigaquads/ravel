@@ -1,110 +1,105 @@
-from functools import reduce
-
 from typing import Type, List, Set, Tuple, Text, Dict
-from uuid import UUID
 
-from pybiz.util import repr_biz_id
-from pybiz.constants import IS_BIZLIST_ANNOTATION, IS_BIZOBJ_ANNOTATION
+from pybiz.constants import IS_BIZLIST_ANNOTATION
 from pybiz.exc import RelationshipError
+from pybiz.util import repr_biz_id
 
-from .view import View, ViewProperty
 
+class BizListTypeBuilder(object):
+    """
+    This builder is used to endow each BizObject class with its
+    BizObject.BizList attribute, which is a derived BizList class which knows
+    about the BizObject class it is associated with. In this way, we are able to
+    build accessor properties through which attributes of the stored BizObjects
+    can be get and set in batch.
+    """
 
-class AttributeList(list):
-    def where(self, *filters):
-        filtered = AttributeList()
-        for obj in self:
-            for keep in filters:
-                if not keep(obj):
-                    continue
-                filtered.append(obj)
-        return filtered
+    def build(self, biz_type):
+        """
+        Create a BizList subclass, specialized for the given BizObject type.
+        """
+        derived_name = f'{biz_type.__name__}BizList'
+        derived_attrs = {IS_BIZLIST_ANNOTATION: True, 'biz_type': biz_type}
+        derived_type = type(derived_name, (BizList, ), derived_attrs)
 
-    def each(self, func):
-        for idx, obj in enumerate(self):
-            func(idx, obj)
-        return self
+        # create "batch" accessor properties for
+        # selectable BizObject attributes
+        for name in biz_type.selectable_attribute_names:
+            prop = self._build_property(name)
+            setattr(derived_type, name, prop)
+
+        return derived_type
+
+    def _build_property(self, key):
+        """
+        Build a property object for a given BizAttribute on the BizObject type
+        associated with the BizList subclass.
+        """
+        def fget(biz_list):
+            rel = biz_list.biz_type.relationships.get(key)
+            if (rel is not None) and (not rel.many):
+                return rel.target_biz_type.BizList([
+                    getattr(x, key, None) for x in biz_list
+                ])
+            else:
+                return [
+                    getattr(x, key, None) for x in biz_list
+                ]
+
+        def fset(biz_list, value):
+            for target in biz_list:
+                setattr(target, key, value)
+
+        return property(fget=fget, fset=fset)
 
 
 class BizList(object):
-    @classmethod
-    def type_factory(cls, biz_type: Type['BizObject']):
-        derived_name = f'{biz_type.__name__}BizList'
-        derived_type = type(
-            derived_name, (cls, ), {
-                IS_BIZLIST_ANNOTATION: True,
-                'biz_type': biz_type,
-            }
-        )
+    """
+    A BizList is a collection of BizObjects with "batch" version of BizObject
+    CRUD methods among others base methods. Attributes of the underlying
+    colelction of BizObjects can be access through properties on the BizList
+    instance, like:
 
-        def build_property(key):
-            # TODO: define fget outside to clean it up
-            return property(
-                fget=lambda self: (
-                        biz_type.BizList if (
-                            key in biz_type.relationships and
-                            not biz_type.relationships[key].many
-                        ) else AttributeList
-                    )(
-                    getattr(bizobj, key, None)
-                    for bizobj in self._bizobj_arr
-                ),
-                fset=lambda self, value: [
-                    setattr(bizobj, key, value)
-                    for bizobj in self._bizobj_arr
-                ]
-            )
-
-        for field_name in biz_type.Schema.fields:
-            prop = build_property(field_name)
-            setattr(derived_type, field_name, prop)
-
-        for rel_name, rel in biz_type.relationships.items():
-            prop = build_property(rel_name)
-            setattr(derived_type, rel_name, prop)
-
-        return derived_type
+    ```python3
+    users = User.BizList([u1, u2])
+    assert users._id == [u1._id, u2._id]
+    ```
+    """
 
     def __init__(
         self,
         objects: List['BizObject'] = None,
         relationship: 'Relationship' = None,
-        bizobj: 'BizObject' = None,
+        source: 'BizObject' = None,
     ):
-        self.relationship = relationship
-        self._bizobj_arr = list(objects or [])
-        self.bizobj = bizobj
-
-    def __getattr__(self, attr: Text):
-        if attr in self.biz_type.relationships:
-            collection_type = biz_type.BizList
-        else:
-            collection_type = AttributeList
-        if attr != IS_BIZLIST_ANNOTATION and attr != IS_BIZOBJ_ANNOTATION:
-            return collection_type(
-                getattr(bizobj, attr, None) for
-                bizobj in self._bizobj_arr
-            )
-        raise AttributeError(attr)
+        """
+        If this BizList is the result of being queried through a relationships,
+        then both `relationship` and `source` will be defined. The `source` is
+        the BizObject which owns the Relationship, and the `relationship` is
+        the, well, Relationship through which the BizList was loaded.
+        """
+        self._relationship = relationship
+        self._targets = list(objects or [])
+        self._source = source
 
     def __getitem__(self, key: int) -> 'BizObject':
         if isinstance(key, int):
-            return self._bizobj_arr[key]
+            return self._targets[key]
         else:
-            return getattr(self._bizobj_arr, key)
+            return getattr(self._targets, key)
 
     def __len__(self):
-        return len(self._bizobj_arr)
+        return len(self._targets)
 
     def __bool__(self):
-        return bool(self._bizobj_arr)
+        return bool(self._targets)
 
     def __iter__(self):
-        return iter(self._bizobj_arr)
+        return iter(self._targets)
 
     def __repr__(self):
         id_parts = []
-        for bizobj in self._bizobj_arr:
+        for bizobj in self._targets:
             id_str = repr_biz_id(bizobj)
             if bizobj is not None:
                 dirty_flag = '*' if bizobj.dirty else ''
@@ -114,38 +109,26 @@ class BizList(object):
         ids = ', '.join(id_parts)
         return (
             f'<BizList(type={self.biz_type.__name__}, '
-            f'size={len(self)}, ids=[{ids}])>'
+            f'size={len(self)}, [{ids}])>'
         )
 
     def __add__(self, other):
         """
         Create and return a copy, containing the concatenated data lists.
         """
-        clone = self.copy()
+        cls = self.__class__
+        clone = cls(self._targets, self._relationship, self._source)
         if isinstance(other, (list, tuple)):
-            clone._bizobj_arr += other
+            clone._targets += other
         elif isinstance(other, BizList):
-            assert self.relationship is other.relationship
-            clone._bizobj_arr += other._bizobj_arr
+            assert self._relationship is other.relationship
+            clone._targets += other._targets
         else:
             raise ValueError(str(other))
         return clone
 
-    def where(self, *filters):
-        filtered = []
-        for obj in self:
-            for keep in filters:
-                if not keep(obj):
-                    continue
-                filtered.append(obj)
-        return self.biz_type.BizList(filtered)
-
-    def copy(self):
-        cls = self.__class__
-        return cls(self._bizobj_arr, self.relationship, self.bizobj)
-
     def create(self):
-        self.biz_type.create_many(self._bizobj_arr)
+        self.biz_type.create_many(self._targets)
         return self
 
     def update(self, data: Dict = None, **more_data):
@@ -153,27 +136,25 @@ class BizList(object):
         return self
 
     def merge(self, obj=None, **more_data):
-        for obj in self._bizobj_arr:
+        for obj in self._targets:
             obj.merge(obj, **more_data)
         return self
 
-    def each(self, func):
-        for idx, bizobj in enumerate(self._bizobj_arr):
-            func(idx, bizobj)
-        return self
-
     def mark(self, keys=None):
-        for bizobj in self._bizobj_arr:
+        for bizobj in self._targets:
             bizobj.mark(keys=keys)
         return self
 
     def clean(self, keys=None):
-        for bizobj in self._bizobj_arr:
+        for bizobj in self._targets:
             bizobj.clean(keys=keys)
         return self
 
     def delete(self):
-        ids = [bizobj for bizobj in self._bizobj_arr if bizobj._id]
+        self.biz_type.delete_many([
+            target._id for target in self._targets
+            if (target and target._id)
+        ])
         return self
 
     def load(self, fields: Set[Text] = None):
@@ -193,40 +174,47 @@ class BizList(object):
 
         return self
 
-    def dump(self, *args, **kwargs):
+    def dump(self, *args, **kwargs) -> List[Dict]:
         return [
-            bizobj.dump(*args, **kwargs)
-            for bizobj in self._bizobj_arr
+            target.dump(*args, **kwargs)
+            for target in self._targets
         ]
 
-    def append(self, bizobj):
-        self._perform_on_add([bizobj])
-        self._bizobj_arr.append(bizobj)
+    def append(self, target: 'BizObject'):
+        self._perform_on_add([target])
+        self._targets.append(target)
         return self
 
     def extend(self, bizobjs):
         self._perform_on_add(bizobjs)
-        self._bizobj_arr.extend(bizobjs)
+        self._targets.extend(bizobjs)
         return self
 
-    def insert(self, index, bizobj):
-        self._perform_on_add([bizobj])
-        self._bizobj_arr.insert(index, bizobj)
+    def insert(self, index, target):
+        self._perform_on_add([target])
+        self._targets.insert(index, target)
         return self
 
-    def remove(self, bizobj):
-        if self.relationship and self.relationship.on_rem:
-            if self.relationship.readonly:
-                raise RelationshipError(f'{self.relationship} is read-only')
-            if bizobj:
-                for cb_func in self.relationship.on_rem:
-                    cb_func(self.bizobj, bizobj)
-            del self._bizobj_arr[self._id.index(bizobj._id)]
+    def remove(self, target):
+        if self._relationship and self._relationship.on_rem:
+            if self._relationship.readonly:
+                raise RelationshipError(
+                    f'{self._relationship} is read-only'
+                )
+            if target:
+                for cb_func in self._relationship.on_rem:
+                    cb_func(self._source, target)
+            del self._targets[self._id.index(target._id)]
 
-    def _perform_on_add(self, bizobjs):
-        if self.relationship and self.relationship.on_add:
-            if self.relationship.readonly:
-                raise RelationshipError(f'{self.relationship} is read-only')
-            for bizobj in bizobjs:
-                for cb_func in self.relationship.on_add:
-                    cb_func(self.bizobj, bizobj)
+    def pop(self, default=None):
+        if self._targets:
+            return self.remove(self._targets[-1])
+        return default
+
+    def _perform_on_add(self, targets):
+        if self._relationship and self._relationship.on_add:
+            if self._relationship.readonly:
+                raise RelationshipError(f'{self._relationship} is read-only')
+            for target in bizobjs:
+                for cb_func in self._relationship.on_add:
+                    cb_func(self._source, targets)

@@ -18,12 +18,14 @@ from pybiz.constants import (
 from .relationship_property import RelationshipProperty
 from .field_property import FieldProperty
 from ..view import View, ViewProperty
-from ..biz_list import BizList
+from ..biz_list import BizList, BizListTypeBuilder
 from ..biz_attribute import BizAttribute
 
 # TODO: call getmembers only once
 
 class BizObjectTypeBuilder(object):
+
+    biz_list_type_builder = BizListTypeBuilder()
 
     @classmethod
     def get_instance(cls):
@@ -49,7 +51,7 @@ class BizObjectTypeBuilder(object):
 
     def initialize_class_attributes(self, name, biz_type):
         biz_type.Schema = self._build_schema_type(name, biz_type)
-        biz_type.BizList = self._build_biz_list_type(biz_type)
+
         biz_type.schema = biz_type.Schema()
         biz_type.defaults = self._extract_defaults(biz_type)
 
@@ -57,6 +59,11 @@ class BizObjectTypeBuilder(object):
         self._build_relationship_properties(biz_type)
         self._build_view_properties(biz_type)
         self._aggregate_selectable_attribute_names(biz_type)
+
+        biz_type.BizList = self.biz_list_type_builder.build(biz_type)
+
+        # TODO: build in support for creating generic BizAttribute properties
+        # and storing them somewhere here, thne updating the logic in BizList
 
         setattr(biz_type, 'r', DictObject(biz_type.relationships))
         setattr(biz_type, 'f', DictObject(biz_type.schema.fields))
@@ -165,12 +172,9 @@ class BizObjectTypeBuilder(object):
 
     def _build_relationship_properties(self, biz_type):
         for rel_name, rel in biz_type.relationships.items():
-            rel_prop = RelationshipProperty.build(rel)
+            rel_prop = RelationshipProperty(rel)
             rel.associate(biz_type, rel_name)
             setattr(biz_type, rel_name, rel_prop)
-
-    def _build_biz_list_type(self, biz_type):
-        return BizList.type_factory(biz_type)
 
     def _inherit_views(self, bases: Tuple[Type], ns: Dict) -> Dict:
         views = {}
