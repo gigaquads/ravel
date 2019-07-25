@@ -1,3 +1,4 @@
+import typing
 import inspect
 from pprint import pprint
 
@@ -6,6 +7,7 @@ from appyratus.cli import (
     CliProgram,
     OptionalArg,
     PositionalArg,
+    ListArg,
     Subparser,
 )
 from appyratus.files import Yaml
@@ -62,13 +64,9 @@ class CliRegistry(Registry):
         Collect subparsers and build cli program
         """
         self._cli_args = cli_args
-        subparsers = [
-            c.subparser for c in self.proxies.values() if c.subparser
-        ]
+        subparsers = [c.subparser for c in self.proxies.values() if c.subparser]
         self._cli_program = CliProgram(
-            subparsers=subparsers,
-            cli_args=self._cli_args,
-            **self._cli_program_kwargs
+            subparsers=subparsers, cli_args=self._cli_args, **self._cli_program_kwargs
         )
 
     def on_start(self):
@@ -100,7 +98,7 @@ class CliRegistry(Registry):
         response = super().on_response(proxy, result, *args, **kwargs)
         dumped_result = _dump_result_obj(response)
         if self._echo:
-            
+
             output_format = getattr(self._cli_program.cli_args, 'format', None)
             formatted_result = _format_result_data(dumped_result, output_format)
             if isinstance(formatted_result, str):
@@ -109,11 +107,13 @@ class CliRegistry(Registry):
                 pprint(formatted_result)
         return dumped_result
 
+
 def _format_result_data(data, output_format):
     if output_format == 'yaml':
         return Yaml.from_data(data)
     else:
         return data
+
 
 def _dump_result_obj(obj):
     if is_bizobj(obj) or is_bizlist(obj):
@@ -141,13 +141,11 @@ class CliCommand(RegistryProxy):
         parser_kwargs = decorator.kwargs.get('parser') or {}
         cli_args = self._build_cli_args(func)
         name = StringUtils.dash(parser_kwargs.get('name') or self.program_name)
-        return dict(
-            parser_kwargs, **dict(
-                name=name,
-                args=cli_args,
-                perform=self,
-            )
-        )
+        return dict(parser_kwargs, **dict(
+            name=name,
+            args=cli_args,
+            perform=self,
+        ))
 
     def _build_cli_args(self, func):
         required_args = []
@@ -155,19 +153,29 @@ class CliCommand(RegistryProxy):
         args = []
         for k, param in self.signature.parameters.items():
             arg = None
+            arg_class = None
             if param.annotation is inspect._empty:
                 dtype = None
             else:
                 dtype = param.annotation
+            arg_params = {
+                'name': k,
+                'dtype': dtype,
+            }
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
-                    arg = PositionalArg(name=k, dtype=dtype)
+                    arg_class = PositionalArg
                 else:
-                    arg = OptionalArg(name=k, dtype=dtype)
+                    arg_class = OptionalArg
             elif param.kind == inspect.Parameter.POSITIONAL_ONLY:
-                arg = PositionalArg(name=k, dtype=dtype)
+                arg_class = PositionalArg
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
-                arg = OptionalArg(name=k, dtype=dtype)
+                arg_class = OptionalArg
+            if 'List' in str(dtype):
+                arg_class = ListArg
+            if arg_class:
+                print(arg_class, arg_params)
+                arg = arg_class(**arg_params)
             if arg is not None:
                 args.append(arg)
         return args
