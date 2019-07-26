@@ -110,7 +110,7 @@ class FilesystemDao(Dao):
 
         for _id in _ids:
             fpath = self.mkpath(_id)
-            record = self.ftype.from_file(fpath)
+            record = self.ftype.read(fpath)
             if record:
                 record.setdefault('_id', _id)
                 record['_rev'] = record.setdefault('_rev', 0)
@@ -131,7 +131,7 @@ class FilesystemDao(Dao):
             self.biz_type.insert_defaults(data)
 
         fpath = self.mkpath(_id)
-        base_record = self.ftype.from_file(fpath)
+        base_record = self.ftype.read(fpath)
         if base_record:
             # this is an upsert
             record = DictUtils.merge(base_record, data)
@@ -146,7 +146,7 @@ class FilesystemDao(Dao):
         else:
             record['_rev'] += 1
 
-        self.ftype.to_file(file_path=fpath, data=record)
+        self.ftype.write(file_path=fpath, contents=record)
         return record
 
     def update_many(self, _ids: List, updates: List = None) -> Dict:
