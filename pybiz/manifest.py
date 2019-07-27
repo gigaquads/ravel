@@ -80,9 +80,9 @@ class Manifest(object):
             )
             ext = os.path.splitext(self.path)[1].lstrip('.').lower()
             if ext in Yaml.extensions():
-                file_data = Yaml.load_file(self.path)
+                file_data = Yaml.read(self.path)
             elif ext in Json.extensions():
-                file_data = Json.load_file(self.path)
+                file_data = Json.read(self.path)
 
             # merge contents of file with data dict arg
             self.data = DictUtils.merge(file_data, self.data)

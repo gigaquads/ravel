@@ -146,7 +146,7 @@ class FilesystemDao(Dao):
         else:
             record['_rev'] += 1
 
-        self.ftype.write(file_path=fpath, contents=record)
+        self.ftype.write(path=fpath, data=record)
         return record
 
     def update_many(self, _ids: List, updates: List = None) -> Dict:
