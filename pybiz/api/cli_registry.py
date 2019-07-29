@@ -1,12 +1,13 @@
 import inspect
 from pprint import pprint
-from typing import List 
+from typing import List
 from IPython.terminal.embed import InteractiveShellEmbed
 from appyratus.cli import (
     CliProgram,
     OptionalArg,
     PositionalArg,
     ListArg,
+    FlagArg,
     Subparser,
 )
 from appyratus.files import Yaml
@@ -183,6 +184,8 @@ class CliCommand(RegistryProxy):
                 arg_class = OptionalArg
             if 'List' in str(dtype):
                 arg_class = ListArg
+            elif 'bool' in str(dtype):
+                arg_class = FlagArg
             if arg_class:
                 print(arg_class, arg_params)
                 arg = arg_class(**arg_params)
