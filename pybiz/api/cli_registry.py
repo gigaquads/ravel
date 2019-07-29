@@ -1,7 +1,6 @@
-import typing
 import inspect
 from pprint import pprint
-
+from typing import List 
 from IPython.terminal.embed import InteractiveShellEmbed
 from appyratus.cli import (
     CliProgram,
@@ -139,7 +138,8 @@ class CliCommand(RegistryProxy):
 
     def _build_subparser_kwargs(self, func, decorator):
         parser_kwargs = decorator.kwargs.get('parser') or {}
-        cli_args = self._build_cli_args(func)
+        custom_args = decorator.kwargs.get('args') or []
+        cli_args = self._build_cli_args(func, custom_args)
         name = StringUtils.dash(parser_kwargs.get('name') or self.program_name)
         return dict(parser_kwargs, **dict(
             name=name,
@@ -147,11 +147,21 @@ class CliCommand(RegistryProxy):
             perform=self,
         ))
 
-    def _build_cli_args(self, func):
+    def _build_cli_args(self, func, custom_args: List = None):
+        if custom_args is None:
+            custom_args = []
         required_args = []
         optional_args = []
         args = []
+        custom_args_by_name = {a.name: a for a in custom_args}
         for k, param in self.signature.parameters.items():
+            if k in custom_args_by_name.keys():
+                # if a custom argument was passed into the decorator, then this
+                # should take precedent over the inferred arg created in this
+                # iteration
+                args.append(custom_args_by_name[k])
+                continue
+
             arg = None
             arg_class = None
             if param.annotation is inspect._empty:
