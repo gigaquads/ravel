@@ -1,3 +1,5 @@
+import bisect
+
 from functools import reduce
 from typing import List, Dict, Set, Text, Type, Tuple
 
@@ -8,12 +10,10 @@ from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from pybiz.schema import Schema, fields
 from pybiz.predicate import Predicate
 
-from .internal.field_property import FieldProperty
-from .internal.order_by import OrderBy
+from .field_property import FieldProperty
+from .order_by import OrderBy
 from .biz_list import BizList
 from .biz_attribute import BizAttribute
-from .relationship import Relationship
-from .view import View, ViewProperty
 
 
 class QuerySchema(Schema):
@@ -27,7 +27,6 @@ class QuerySchema(Schema):
         'type': fields.String(),
         'attributes': fields.Dict(default={}),
         'fields': fields.Dict(default={}),
-        'views': fields.Dict(default={}),
     })
 
 
@@ -56,6 +55,7 @@ class QueryExecutor(object):
 
     def execute_recursive(self, query: 'Query', sources: List['BizObject']):
         biz_type = query.biz_type
+
         for k, subquery in query.get_subqueries().items():
             relationship = biz_type.relationships[k]
             # these "where" predicates are AND'ed with the predicates provided
@@ -70,17 +70,19 @@ class QueryExecutor(object):
             )
             self.execute_recursive(subquery, targets)
             for source, target in zip(sources, targets):
-                source.related[k] = target
-        for k in query.get_views():
+                setattr(source, k, target)
+
+        # now sort attribute names by their BizAttribute priority.
+        ordered_biz_attrs = []
+        for category, params in query.get_attributes():
+            biz_attr = biz_type.attributes.by_name(category)
+            bisect.insort(ordered_biz_attrs, biz_attr)
+
+        for biz_attr in ordered_biz_attrs:
             for source in sources:
-                view = getattr(biz_type, k)
-                view_data = view.query()
-                source.viewed[k] = view_data
-        for k in query.get_attributes():
-            for source in sources:
-                attr = getattr(biz_type, k)
-                value = attr.query()
-                setattr(source, k, value)
+                value = biz_attr.execute(source)
+                setattr(source, biz_attr.name, value)
+
         return sources
 
 
@@ -110,7 +112,6 @@ class QueryPrinter(object):
         # class.
         target_names = []
         target_names += list(query.get_fields().keys() - {'_id', '_rev'})
-        target_names += list(query.get_views().keys())
         target_names += list(query.get_attributes().keys())
         target_names.sort()
 
@@ -185,7 +186,6 @@ class QueryMarshaller(object):
                 'type': query.biz_type.__name__,
                 'attributes': sorted(query.get_attributes().keys()),
                 'fields': sorted(query.get_fields().keys()),
-                'views': sorted(query.get_views().keys()),
             }
         }
 
@@ -203,7 +203,6 @@ class QueryMarshaller(object):
 
         targets = subqueries.copy()
         targets += list(data['target']['fields'].keys())
-        targets += list(data['target']['views'].keys())
         targets += list(data['target']['attributes'].keys())
 
         order_by = [OrderBy.load(x) for x in data['order_by']]
@@ -275,7 +274,6 @@ class Query(object):
     ):
         self._alias = alias
         self._biz_type = biz_type
-        self._target_views = {}
         self._target_attributes = {}
         self._subqueries = {}
         self._order_by = []
@@ -298,7 +296,6 @@ class Query(object):
             'where': self.get_where,
             'order_by': self.get_order_by,
             'fields': self.get_fields,
-            'views': self.get_views,
             'attributes': self.get_attributes,
             'subqueries': self.get_subqueries,
         }
@@ -331,7 +328,6 @@ class Query(object):
     def clear_targets(self):
         self._subqueries.clear()
         self._target_fields.clear()
-        self._target_views.clear()
         self._target_attributes.clear()
 
     def add_targets(self, targets):
@@ -352,8 +348,6 @@ class Query(object):
         The target can also just be the string name of one of these things.
         Finally, a target can also be an already-formed Query object.
         """
-        from .internal.relationship_property import RelationshipProperty
-
         key = None
         targets = None
 
@@ -368,20 +362,15 @@ class Query(object):
         if isinstance(target, FieldProperty):
             key = target.field.name
             targets = self._target_fields
-        if isinstance(target, RelationshipProperty):
-            key = target.relationship.name
-            target = Query.from_keys(
-                biz_type=target.relationship.target_biz_type,
-                keys={'_id', '_rev'}  # minimum fields to query
-            )
-            targets = self._subqueries
-            params = target
-        elif isinstance(target, ViewProperty):
-            key = target.name
-            targets = self._target_views
         elif isinstance(target, BizAttribute):
-            key = target.name
-            targets = self._target_attributes
+            if target.category == 'relationship':
+                key = target.relationship.name
+                targets = self._subqueries
+                target_biz_type = target.relationship.target_biz_type
+                params = Query.from_keys(biz_type=target_biz_type)
+            else:
+                key = target.name
+                targets = self._target_attributes
         elif isinstance(target, Query):
             key = target.alias
             targets = self._subqueries
@@ -469,9 +458,6 @@ class Query(object):
 
     def get_fields(self) -> Dict:
         return self._target_fields
-
-    def get_views(self) -> Dict:
-        return self._target_views
 
     def get_attributes(self) -> Dict:
         return self._target_attributes

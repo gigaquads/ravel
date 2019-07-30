@@ -362,7 +362,7 @@ def _bind_message(message, source: Dict):
 
 def _dump_result_obj(obj):
     if is_bizobj(obj) or is_bizlist(obj):
-        return obj.dump(raw=True)
+        return obj.dump()
     elif isinstance(obj, (list, set, tuple)):
         return [_dump_result_obj(x) for x in obj]
     elif isinstance(obj, dict):

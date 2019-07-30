@@ -1,6 +1,6 @@
 import copy
 
-from typing import Dict
+from typing import Dict, Text
 from collections import defaultdict
 
 from appyratus.utils import StringUtils, DictUtils
@@ -9,7 +9,7 @@ from pybiz.util import is_bizobj, is_bizlist, is_sequence
 
 
 class Dumper(object):
-    def __call__(self, target: 'BizObject', fields: Dict = None, raw=False) -> Dict:
+    def __call__(self, target: 'BizObject', fields: Dict = None) -> Dict:
         # normaize the incoming `fields` data structure to a nested dict
         if isinstance(fields, dict):
             fields = DictUtils.unflatten_keys(fields)
@@ -17,13 +17,13 @@ class Dumper(object):
             if is_bizobj(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
-                        fields or (target.raw.keys() | target.related.keys())
+                        fields or (target.raw.keys() | target.memoized.keys())
                     )
                 })
             elif is_sequence(target) or is_bizlist(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
-                        fields or (target.raw.keys() | target.related.keys())
+                        fields or (target.raw.keys() | target.memoized.keys())
                     )
                 })
 
@@ -31,14 +31,10 @@ class Dumper(object):
             raise ValueError(
                 'uncoregnized fields argument type'
             )
-        return self.on_dump(target, fields=fields, raw=raw)
 
-    def on_dump(
-        self,
-        target: 'BizObject',
-        fields: Dict = None,
-        raw=False,
-    ) -> Dict:
+        return self.on_dump(target, fields=fields)
+
+    def on_dump(self, target: 'BizObject', fields: Dict = None) -> Dict:
         raise NotImplementedError('override in subclass')
 
 
@@ -46,8 +42,7 @@ class NestingDumper(Dumper):
     def on_dump(
         self,
         target: 'BizObject',
-        fields: Dict = None,
-        raw=False,
+        fields: Dict[Text, Dict] = None,
     ):
         """
         Dump the target BizObject as a nested dictionary. For example, imagine
@@ -73,27 +68,21 @@ class NestingDumper(Dumper):
             }
         ```
         """
-        # `record` is the return values
-        if not raw:
-            record = {
-                'id': target._id,
-                'rev': target._rev,
-            }
-        else:
-            record = {
-                '_id': target._id,
-                '_rev': target._rev,
-            }
-
         # fields to ignore while dumping, excpecting custom handling
-        # in following logic
-        pybiz_field_names = {'_id', '_rev'}
+        fields_to_ignore = {'_id', '_rev'}
+
+        # `record` is the return values
+        record = {
+            'id': target._id,
+            'rev': target._rev,
+        }
 
         # add each specified field data to the return record
         # and recurse on nested targets available through Relationships
         for k in fields:
-            if k in pybiz_field_names:
+            if k in fields_to_ignore:
                 continue
+
             field = target.schema.fields.get(k)
             if field is not None:
                 # k corresponds to a field data element
@@ -109,7 +98,7 @@ class NestingDumper(Dumper):
                     continue
                 # k corresponds to a declared Relationship, which could
                 # refer either to an instance object or a list thereof.
-                related = target.related.get(k)
+                related = getattr(target, k, None)
                 if related is None:
                     record[k] = None
                 elif is_bizobj(related):
@@ -119,28 +108,24 @@ class NestingDumper(Dumper):
                         self(obj, fields=fields[k])
                         for obj in related
                     ]
-            elif k in target.views:
-                view = target.views[k]
-                if view.private:
-                    continue
-                if k in target.viewed:
-                    viewed = target.viewed[k]
-                    record[k] = self._dump_viewed_object(viewed)
-                else:
-                    record[k] = None
+            elif k in target.attributes:
+                biz_attr = target.attributes.by_name(k)
+                if not biz_attr.private:
+                    value = getattr(bizobj, k, None)
+                    record[k] = self._dump_object(value)
 
         return record
 
-    def _dump_viewed_object(self, obj):
+    def _dump_object(self, obj):
         if is_bizobj(obj) or is_bizlist(obj):
             return obj.dump()
         elif is_sequence(obj):
             return [
-                self._dump_viewed_object(x) for x in obj
+                self._dump_object(x) for x in obj
             ]
         elif isinstance(obj, dict):
             return {
-                self._dump_viewed_object(k): self._dump_viewed_object(v)
+                self._dump_object(k): self._dump_object(v)
                 for k, v in obj.items()
             }
         return obj

@@ -2,114 +2,16 @@ from __future__ import absolute_import
 
 import re
 
-from functools import reduce
 from typing import Dict, Set, Text, List, Type, Tuple
 
 from graphql.parser import GraphQLParser
-from pyparsing import Literal, Regex, Forward, Optional, Word
-from appyratus.utils import DictObject
 
-from pybiz.util import is_bizobj, is_bizlist, is_sequence
-from pybiz.biz.internal.order_by import OrderBy
-from pybiz.biz import BizObject, Query
+from pybiz.biz import Query
+from pybiz.biz.order_by import OrderBy
 from pybiz.api.exc import NotAuthorized
-from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
+from pybiz.predicate import Predicate, PredicateParser
 
 RE_ORDER_BY = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
-RE_PREDICATE = re.compile(r'([a-z_]\w*)', re.I)
-RE_INT = re.compile(r'\d+')
-RE_FLOAT = re.compile(r'\d*(\.\d+)')
-RE_STRING = re.compile(r'(\'|").+(\'|")')
-CONDITIONAL_OPERATORS = frozenset({'==', '!=', '>', '>=', '<', '<='})
-BOOLEAN_OPERATORS = frozenset({'&&', '||'})
-
-
-class GraphQLPredicateParser(object):
-
-    def __init__(self):
-        self._stack = []
-        self._biz_type = None
-        self._init_grammar()
-
-    def _init_grammar(self):
-        self._grammar = DictObject()
-        self._grammar.ident = Regex(r'[a-zA-Z_]\w*')
-        self._grammar.number = Regex(r'\d*(\.\d+)?')
-        self._grammar.string = Regex(r'(".*")|(\'.*\')')
-        self._grammar.conditional_value = (
-            self._grammar.number | self._grammar.string
-        )
-        self._grammar.conditional_operator = reduce(
-            lambda x, y: x | y, (Literal(op) for op in CONDITIONAL_OPERATORS)
-        )
-        self._grammar.boolean_operator = reduce(
-            lambda x, y: x | y, (Literal(op) for op in BOOLEAN_OPERATORS)
-        )
-        self._grammar.lparen = Literal('(')
-        self._grammar.rparen = Literal(')')
-        self._grammar.conditional_predicate = (
-            self._grammar.ident.setResultsName('field') +
-            self._grammar.conditional_operator.setResultsName('op') +
-            self._grammar.conditional_value.setResultsName('value')
-        ).addParseAction(self._on_parse_conditional_predicate)
-
-        self._grammar.boolean_predicate = Forward().addParseAction(
-            self._on_parse_boolean_predicate
-        )
-        self._grammar.any_predicate = (
-            self._grammar.lparen
-            + (self._grammar.boolean_predicate
-                | self._grammar.conditional_predicate)
-            + self._grammar.rparen
-        )
-        self._grammar.boolean_predicate << (
-            Optional(self._grammar.lparen)
-            + (
-                self._grammar.any_predicate
-                + self._grammar.boolean_operator.setResultsName('operator')
-                + self._grammar.any_predicate
-            )
-            + Optional(self._grammar.rparen)
-        )
-        self._grammar.root = (
-            (
-                Optional(self._grammar.lparen)
-                + self._grammar.conditional_predicate
-                + Optional(self._grammar.rparen)
-            )
-            | self._grammar.boolean_predicate
-        )
-
-    def _on_parse_conditional_predicate(self, source: Text, loc: int, tokens: Tuple):
-        # TODO: further process "value" as list or other dtype
-        op = 'eq'  # TODO
-        fprop = getattr(self._biz_type, tokens['field'])
-        value = tokens['value']
-        if RE_STRING.match(value):
-            value = value[1:-1]
-        elif RE_INT.match(value):
-            value = int(value)
-        elif RE_FLOAT.match(value):
-            value = float(value)
-        else:
-            raise ValueError()
-        predicate = ConditionalPredicate(op, fprop, value)
-        self._stack.append(predicate)
-
-    def _on_parse_boolean_predicate(self, source: Text, loc: int, tokens: Tuple):
-        lhs = self._stack.pop()
-        rhs = self._stack.pop()
-        if tokens['op'] == '&&':
-            self._stack.append(lhs & rhs)
-        elif tokens['op'] == '||':
-            self._stack.append(lhs | rhs)
-
-    def parse(self, biz_type, source: Text) -> 'Predicate':
-        self._biz_type = biz_type
-        self._stack.clear()
-        self._grammar.root.parseString(source)
-        predicate = self._stack[-1]
-        return predicate
 
 
 class GraphQLArguments(object):
@@ -164,7 +66,7 @@ class GraphQLArguments(object):
         cls,
         biz_type: Type['BizObject'],
         predicate_strings: List[Text],
-        parser: GraphQLPredicateParser
+        parser: PredicateParser
     ) -> List['Predicate']:
         if isinstance(predicate_strings, str):
             predicate_strings = [predicate_strings]
@@ -188,7 +90,7 @@ class GraphQLExecutor(object):
     def __init__(self, root_biz_type: Type['BizType']):
         self._graphql_parser = GraphQLParser()
         self._root_biz_type = root_biz_type
-        self._predicate_parser = GraphQLPredicateParser()
+        self._predicate_parser = PredicateParser()
 
     def query(
         self,

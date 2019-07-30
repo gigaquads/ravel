@@ -14,62 +14,8 @@ from pybiz.dirty import DirtyDict
 from pybiz.exc import ValidationError, BizObjectError
 
 from .query import Query
-from .internal.biz_object_type_builder import BizObjectTypeBuilder
-from .internal.dump import NestingDumper, SideLoadingDumper
-
-
-class BizObjectMeta(type):
-
-    builder = BizObjectTypeBuilder.get_instance()
-    reserved_attrs = set()
-
-    def __new__(cls, name, bases, ns):
-        if name != 'BizObject':
-            ns = BizObjectMeta.builder.prepare_class_attributes(name, bases, ns)
-        else:
-            BizObjectMeta.reserved_attrs = {
-                k for k in ns if not k.startswith('_')
-            } | {'_data', '_related', '_hash', '_viewed'}
-        return type.__new__(cls, name, bases, ns)
-
-    def __init__(biz_type, name, bases, ns):
-        type.__init__(biz_type, name, bases, ns)
-        if name != 'BizObject':
-            BizObjectMeta.builder.initialize_class_attributes(name, biz_type)
-
-            venusian.attach(
-                biz_type, BizObjectMeta.venusian_callback, category='biz'
-            )
-
-            field_name_conflicts = (
-                biz_type.schema.fields.keys() & BizObjectMeta.reserved_attrs
-            )
-            if field_name_conflicts:
-                raise BizObjectError(
-                    message=(
-                        'tried to define field(s) with '
-                        'reserved name: {}'.format(
-                            ', '.join(field_name_conflicts)
-                        )
-                    )
-                )
-            rel_name_conflicts = (
-                biz_type.relationships.keys() & BizObjectMeta.reserved_attrs
-            )
-            if rel_name_conflicts:
-                raise BizObjectError(
-                    message=(
-                        'tried to define relationship(s) with '
-                        'reserved names: {}'.format(
-                            ', '.join(rel_name_conflicts)
-                        )
-                    )
-                )
-
-    @staticmethod
-    def venusian_callback(scanner, name, biz_type):
-        console.info(f'venusian detected {biz_type.__name__}')
-        scanner.biz_types.setdefault(name, biz_type)
+from .biz_object_meta import BizObjectTypeBuilder, BizObjectMeta
+from .dump import NestingDumper, SideLoadingDumper
 
 
 class BizObject(metaclass=BizObjectMeta):
@@ -112,8 +58,7 @@ class BizObject(metaclass=BizObjectMeta):
 
     def __init__(self, data=None, **more_data):
         self._data = DirtyDict()
-        self._related = {}
-        self._viewed = {}
+        self._memoized = {}
         self._hash = int(uuid.uuid4().hex, 16)
         self.merge(dict(data or {}, **more_data))
 
@@ -124,17 +69,17 @@ class BizObject(metaclass=BizObjectMeta):
         return self._id == other._id if self._id is not None else False
 
     def __getitem__(self, key):
-        if key in self.schema.fields or key in self.relationships:
+        if key in self.selectable_attribute_names:
             return getattr(self, key)
         raise KeyError(key)
 
     def __setitem__(self, key, value):
-        if key in self.schema.fields or key in self.relationships:
+        if key in self.selectable_attribute_names:
             return setattr(self, key, value)
         raise KeyError(key)
 
     def __delitem__(self, key):
-        if key in self.schema.fields or key in self.relationships:
+        if key in self.selectable_attribute_names:
             delattr(self, key)
         else:
             raise KeyError(key)
@@ -154,8 +99,8 @@ class BizObject(metaclass=BizObjectMeta):
     @classmethod
     def bootstrap(cls, registry: 'Registry', **kwargs):
         cls.registry = registry
-        for rel in cls.relationships.values():
-            rel.bootstrap(registry)
+        for biz_attr in cls.attributes.values():
+            biz_attr.bootstrap(registry)
         cls.on_bootstrap()
         cls.is_bootstrapped = True
 
@@ -190,14 +135,20 @@ class BizObject(metaclass=BizObjectMeta):
 
     @classmethod
     def query(
-        cls, select: Set[Text] = None, where: 'Predicate' = None,
-        order_by: Tuple[Text] = None, offset: int = None, limit: int = None,
+        cls,
+        select: Set[Text] = None,
+        where: 'Predicate' = None,
+        order_by: Tuple[Text] = None,
+        offset: int = None,
+        limit: int = None,
         first=False,
     ):
         """
         Alternate syntax for building Query objects manually.
         """
-        query = Query.from_keys(cls, keys=(select or cls.schema.fields.keys()))
+        query = Query.from_keys(
+            cls, keys=(select or cls.schema.fields.keys())
+        )
 
         if where:
             query.where(normalize_to_tuple(where))
@@ -232,18 +183,26 @@ class BizObject(metaclass=BizObjectMeta):
         """
         return cls.query(
             select=select,
-            where=(cls._id == _id),
+            where=cls._id.including(_ids),
             order_by=order_by,
             offset=offset,
             limit=limit,
         )
 
     @classmethod
-    def get_all(cls, fields: Set[Text] = None) -> Dict:
-        return {
-            _id: cls(record).clean()
-            for _id, record in cls.get_dao().fetch_all().items()
-        }
+    def get_all(
+        cls,
+        select: Set[Text] = None,
+        offset: int = None,
+        limit: int = None,
+    ) -> 'BizList':
+        return cls.query(
+            select=select,
+            where=cls._id != None,
+            order_by=cls._id.asc,
+            offset=offset,
+            limit=limit,
+        )
 
     def delete(self) -> 'BizObject':
         """
@@ -455,17 +414,13 @@ class BizObject(metaclass=BizObjectMeta):
         return self._data
 
     @property
+    def memoized(self) -> Dict:
+        return self._memoized
+
+    @property
     def dirty_data(self) -> Dict:
         dirty_keys = self.dirty
         return {k: self._data[k] for k in dirty_keys}
-
-    @property
-    def related(self) -> Dict:
-        return self._related
-
-    @property
-    def viewed(self) -> Dict:
-        return self._viewed
 
     @property
     def dirty(self) -> Set[Text]:
@@ -512,30 +467,22 @@ class BizObject(metaclass=BizObjectMeta):
             return self
 
         if is_bizobj(obj):
+            assert isinstance(obj, self.__class__)
             dirty_keys = obj._data.keys()
             for k, v in obj._data.items():
                 setattr(self, k, v)
-            for k, v in obj._related.items():
-                rel = self.relationships[k]
-                rel.set_internally(self, v)
+            for k, v in obj._memoized.items():
+                setattr(self, k, v)
         elif isinstance(obj, dict):
             obj = self.schema.translate_source(obj)
             dirty_keys = obj.keys()
             for k, v in obj.items():
-                rel = self.relationships.get(k)
-                if rel:
-                    rel.set_internally(self, v)
-                else:
+                if k in self.schema.fields or k in self.attributes:
                     setattr(self, k, v)
 
         if more_data:
+            self.merge(obj=more_data)
             more_data = self.schema.translate_source(obj)
-            for k, v in more_data.items():
-                rel = self.relationships.get(k)
-                if rel:
-                    rel.set_internally(self, v)
-                else:
-                    setattr(self, k, v)
 
         return self
 
@@ -580,8 +527,8 @@ class BizObject(metaclass=BizObjectMeta):
         for k in keys:
             if k in self._data:
                 self._data.pop(k, None)
-            elif k in self._related:
-                self._related.pop(k, None)
+            elif k in self._memoized:
+                self._memoized.pop(k, None)
 
     def is_loaded(self, keys: Set[Text]) -> bool:
         """
@@ -589,11 +536,11 @@ class BizObject(metaclass=BizObjectMeta):
         """
         keys = {keys} if isinstance(keys, str) else keys
         for k in keys:
-            if not (k in self._data or k in self._related):
+            if not (k in self._data or k in self._memoized):
                 return False
         return True
 
-    def dump(self, fields=None, raw=False, style='nested') -> Dict:
+    def dump(self, fields=None, style='nested') -> Dict:
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
@@ -605,5 +552,5 @@ class BizObject(metaclass=BizObjectMeta):
         else:
             return None
 
-        result = dump(target=self, fields=fields, raw=raw)
+        result = dump(target=self, fields=fields)
         return result

@@ -11,7 +11,9 @@ from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
 from pybiz.util import is_bizobj, is_sequence, is_bizlist, normalize_to_tuple
-from pybiz.exc import RelationshipArgumentError
+from pybiz.exc import RelationshipArgumentError, RelationshipError
+from pybiz.util import is_sequence
+from pybiz.util.loggers import console
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -19,7 +21,9 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from ..biz_attribute import BizAttribute
+from ..query import Query
+from ..biz_list import BizList
+from ..biz_attribute import BizAttribute, BizAttributeProperty
 
 
 class Join(object):
@@ -82,15 +86,16 @@ class Relationship(BizAttribute):
         many: bool = False,
         private: bool = False,
         lazy: bool = True,
-        readonly: bool = True,
+        readonly: bool = False,
+        behavior: 'Behavior' = None,
         on_get: Tuple[Callable] = None,
         on_set: Tuple[Callable] = None,
         on_del: Tuple[Callable] = None,
         on_rem: Tuple[Callable] = None,
         on_add: Tuple[Callable] = None,
-        behavior: 'Behavior' = None,
+        **kwargs
     ):
-        super().__init__(private=private, lazy=lazy)
+        super().__init__(**kwargs)
 
         self.joins = normalize_to_tuple(join)
         self.behaviors = normalize_to_tuple(behavior)
@@ -121,6 +126,8 @@ class Relationship(BizAttribute):
             target_type_name = '?'
             source_type_name = '?'
 
+        source = f'source={source_type_name}'
+
         name = f'name={self.name}' if self.name else ''
 
         if self.many:
@@ -130,11 +137,22 @@ class Relationship(BizAttribute):
 
         return (
             f'<Relationship('
-            f'name={name}'
-            f'source={source_type_name}'
-            f'target={target}'
+            f'{name}, '
+            f'{source}, '
+            f'{target}'
             f')>'
         )
+
+    def build_property(self):
+        return RelationshipProperty(self)
+
+    @property
+    def order_key(self):
+        return 1
+
+    @property
+    def category(self):
+        return 'relationship'
 
     @property
     def is_bootstrapped(self):
@@ -179,7 +197,7 @@ class Relationship(BizAttribute):
             for behavior in self.behaviors:
                 behavior.on_post_bootstrap(self)
 
-    def query(
+    def execute(
         self,
         source,
         select: Set = None,
@@ -352,3 +370,76 @@ class Relationship(BizAttribute):
             for bizobj in children:
                 self._get_terminal_nodes(tree, bizobj, target_biz_type, acc)
         return acc
+
+
+class RelationshipProperty(BizAttributeProperty):
+
+    @property
+    def relationship(self):
+        return self.biz_attr
+
+    def select(self, *targets) -> 'Query':
+        rel = self.relationship
+        query = Query(rel.target_biz_type, rel.name)
+        return (
+            query
+                .select(targets)
+                .order_by(rel.order_by)
+                .limit(rel.limit)
+                .offset(rel.offset)
+            )
+
+    def fget(self, source):
+        """
+        Return the memoized BizObject instance or list.
+        """
+        rel = self.relationship
+        default = rel.target_biz_type.BizList([], rel, source) if rel.many else None
+        fields_to_load = set(rel.target_biz_type.schema.fields.keys())
+        value = super().fget(source, select=fields_to_load) or default
+        for cb_func in rel.on_get:
+            cb_func(source, value)
+        return value
+
+    def fset(self, source, target):
+        """
+        Set the memoized BizObject or list, enuring that a list can't be
+        assigned to a Relationship with many == False and vice versa.
+        """
+        rel = self.relationship
+
+        if source[rel.name] and rel.readonly:
+            raise RelationshipError(f'{rel} is read-only')
+
+        if target is None and rel.many:
+            target = rel.target_biz_type.BizList([], rel, target)
+        elif is_sequence(target):
+            target = rel.target_biz_type.BizList(target, rel, target)
+
+        is_scalar = not isinstance(target, BizList)
+        expect_scalar = not rel.many
+
+        if is_scalar and not expect_scalar:
+            raise ValueError(
+                'relationship "{}" must be a sequence because '
+                'relationship.many is True'.format(rel.name)
+            )
+        elif (not is_scalar) and expect_scalar:
+            raise ValueError(
+                'relationship "{}" cannot be a BizObject because '
+                'relationship.many is False'.format(rel.name)
+            )
+
+        super().fset(source, target)
+
+        for cb_func in rel.on_set:
+            cb_func(source, target)
+
+    def fdel(self, source):
+        """
+        Remove the memoized BizObject or list. The field will appear in
+        dump() results. You must assign None if you want to None to appear.
+        """
+        super().fdel(source)
+        for cb_func in self.relationship.on_del:
+            cb_func(source, target)
