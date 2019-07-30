@@ -20,9 +20,12 @@ class Session(BizObject):
     def __abstract__():
         return True
 
-    @staticmethod
-    def user_type() -> Type[User]:
-        raise NotImplementedError('return a User subclass')
+    @classmethod
+    def user_type(cls) -> Type[User]:
+        user_type = cls.registry.types.biz.get('User')
+        if user_type is None:
+            raise NotImplementedError('return a User subclass')
+        return user_type
 
     def build_user_predicate(self) -> Predicate:
         User = self.user_type()

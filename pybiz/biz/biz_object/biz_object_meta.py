@@ -43,11 +43,13 @@ class BizObjectTypeBuilder(object):
         biz_type.Schema = self._build_schema_type(name, biz_type)
 
         biz_type.schema = biz_type.Schema()
+        biz_type.schema.pybiz_internal = True
         biz_type.defaults = self._extract_defaults(biz_type)
 
         for field in biz_type.schema.fields.values():
-            field_prop = FieldProperty(biz_type, field)
-            setattr(biz_type, field.name, field_prop)
+            if not getattr(field, 'pybiz_internal', False):
+                field_prop = FieldProperty(biz_type, field)
+                setattr(biz_type, field.name, field_prop)
 
         for biz_attr in biz_type.attributes.values():
             biz_attr.bind(biz_type)
@@ -68,7 +70,7 @@ class BizObjectTypeBuilder(object):
     def _compute_is_abstract(self, namespace):
         if ABSTRACT_MAGIC_METHOD in namespace:
             static_method = namespace.pop(ABSTRACT_MAGIC_METHOD)
-            namespace = static_method.__func__
+            is_abstract = static_method.__func__
             return is_abstract()
         return False
 

@@ -63,10 +63,7 @@ class BizAttribute(object):
 
     @name.setter
     def name(self, name):
-        if self._name is None:
-            self._name = name
-        else:
-            raise ValueError('readonly')
+        self._name = name
 
     @property
     def private(self):
@@ -74,10 +71,7 @@ class BizAttribute(object):
 
     @private.setter
     def private(self, private):
-        if self._private is None:
-            self._private = private
-        else:
-            raise ValueError('readonly')
+        self._private = private
 
     @property
     def lazy(self) -> Text:
@@ -85,10 +79,7 @@ class BizAttribute(object):
 
     @lazy.setter
     def lazy(self, lazy):
-        if self._lazy is None:
-            self._lazy = lazy
-        else:
-            raise ValueError('readonly')
+        self._lazy = lazy
 
     @property
     def is_bootstrapped(self):
