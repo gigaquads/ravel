@@ -4,6 +4,8 @@ from pybiz.constants import IS_BIZLIST_ANNOTATION
 from pybiz.exc import RelationshipError
 from pybiz.util import repr_biz_id
 
+from .biz_thing import BizThing
+
 
 class BizListTypeBuilder(object):
     """
@@ -53,7 +55,7 @@ class BizListTypeBuilder(object):
         return property(fget=fget, fset=fset)
 
 
-class BizList(object):
+class BizList(BizThing):
     """
     A BizList is a collection of BizObjects with "batch" version of BizObject
     CRUD methods among others base methods. Attributes of the underlying

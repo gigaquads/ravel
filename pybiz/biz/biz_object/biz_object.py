@@ -12,15 +12,16 @@ from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
 from pybiz.util import is_bizobj, is_sequence, repr_biz_id, normalize_to_tuple
 from pybiz.util.loggers import console
-from pybiz.dirty import DirtyDict
+from pybiz.util.dirty import DirtyDict
 from pybiz.exc import ValidationError, BizObjectError
 
-from .query import Query
+from ..query import Query
+from ..dump import NestingDumper, SideLoadingDumper
+from ..biz_thing import BizThing
 from .biz_object_meta import BizObjectTypeBuilder, BizObjectMeta
-from .dump import NestingDumper, SideLoadingDumper
 
 
-class BizObject(metaclass=BizObjectMeta):
+class BizObject(BizThing, metaclass=BizObjectMeta):
 
     Schema = None
     BizList = None

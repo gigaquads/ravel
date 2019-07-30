@@ -8,7 +8,6 @@ from collections import defaultdict
 
 from appyratus.utils import DictObject
 
-from pybiz.biz.relationship.relationship import Relationship
 from pybiz.schema import Schema, fields, String, Field, Int
 from pybiz.util import import_object, is_bizobj
 from pybiz.util.loggers import console
@@ -22,11 +21,11 @@ from pybiz.constants import (
     REV_FIELD_NAME,
 )
 
-from .field_property import FieldProperty
-from .relationship import RelationshipProperty
-from .view import View, ViewProperty
-from .biz_list import BizList, BizListTypeBuilder
-from .biz_attribute import BizAttribute, BizAttributeProperty
+from ..field_property import FieldProperty
+from ..biz_list import BizList, BizListTypeBuilder
+from ..biz_attribute import BizAttribute, BizAttributeProperty
+from ..biz_attribute.relationship import Relationship, RelationshipProperty
+from ..biz_attribute.view import View, ViewProperty
 
 # TODO: call getmembers only once
 

@@ -1,5 +1,8 @@
 import inspect
 
+import pybiz.biz.biz_list
+import pybiz.biz.query
+
 from copy import copy
 from functools import reduce
 from typing import Text, Type, Tuple, Dict, Set, Callable, List
@@ -10,24 +13,22 @@ from mock import MagicMock
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
-from pybiz.util import is_bizobj, is_sequence, is_bizlist, normalize_to_tuple
 from pybiz.exc import RelationshipArgumentError, RelationshipError
-from pybiz.util import is_sequence
+from pybiz.util import is_bizobj, is_sequence, is_bizlist, normalize_to_tuple
 from pybiz.util.loggers import console
-from pybiz.predicate import (
-    Predicate,
-    ConditionalPredicate,
-    BooleanPredicate,
-    OP_CODE,
-)
 
-from ..query import Query
-from ..biz_list import BizList
 from ..biz_attribute import BizAttribute, BizAttributeProperty
+from ...biz_thing import BizThing
 
 
 class Join(object):
-    def __init__(self, source, source_fprop, target_fprop, predicate=None):
+    def __init__(
+        self,
+        source: BizThing,
+        source_fprop: 'FieldProperty',
+        target_fprop: 'FieldProperty',
+        predicate: 'Predicate' = None
+    ):
         self.source = source
         self.predicate = predicate
         self.target_fprop = target_fprop
@@ -380,7 +381,7 @@ class RelationshipProperty(BizAttributeProperty):
 
     def select(self, *targets) -> 'Query':
         rel = self.relationship
-        query = Query(rel.target_biz_type, rel.name)
+        query = pybiz.biz.Query(rel.target_biz_type, rel.name)
         return (
             query
                 .select(targets)
@@ -416,7 +417,7 @@ class RelationshipProperty(BizAttributeProperty):
         elif is_sequence(target):
             target = rel.target_biz_type.BizList(target, rel, target)
 
-        is_scalar = not isinstance(target, BizList)
+        is_scalar = not isinstance(target, pybiz.biz.BizList)
         expect_scalar = not rel.many
 
         if is_scalar and not expect_scalar:
