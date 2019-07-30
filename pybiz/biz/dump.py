@@ -17,13 +17,19 @@ class Dumper(object):
             if is_bizobj(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
-                        fields or (target.raw.keys() | target.memoized.keys())
+                        fields or (
+                            target.internal.record.keys()
+                            | target.internal.memoized.keys()
+                        )
                     )
                 })
             elif is_sequence(target) or is_bizlist(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
-                        fields or (target.raw.keys() | target.memoized.keys())
+                        fields or (
+                            target.internal.record.keys()
+                            | target.internal.memoized.keys()
+                        )
                     )
                 })
 
@@ -88,7 +94,7 @@ class NestingDumper(Dumper):
                 # k corresponds to a field data element
                 if not field.meta.get('private', False):
                     # only dump "public" fields
-                    v = target.raw[k]
+                    v = target.internal.record[k]
                     if is_sequence(v):
                         v = copy.deepcopy(v)
                     record[k] = v

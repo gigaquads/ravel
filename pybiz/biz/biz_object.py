@@ -6,6 +6,8 @@ from copy import deepcopy, copy
 from typing import List, Dict, Text, Type, Tuple, Set
 from collections import defaultdict
 
+from appyratus.utils import DictObject
+
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
 from pybiz.util import is_bizobj, is_sequence, repr_biz_id, normalize_to_tuple
@@ -53,20 +55,19 @@ class BizObject(metaclass=BizObjectMeta):
         return cls.binder.get_dao_instance(cls)
 
     @classmethod
-    def select(cls, *keys):
+    def select(cls, *keys) -> 'Query':
         return Query(cls).select(*keys)
 
     def __init__(self, data=None, **more_data):
-        self._data = DirtyDict()
-        self._memoized = {}
-        self._hash = int(uuid.uuid4().hex, 16)
+        self.internal = DictObject({
+            'hash': int(uuid.uuid4().hex, 16),
+            'record': DirtyDict(),
+            'memoized': {},
+        })
         self.merge(dict(data or {}, **more_data))
 
     def __hash__(self):
-        return self._hash
-
-    def __eq__(self):
-        return self._id == other._id if self._id is not None else False
+        return self.internal.hash
 
     def __getitem__(self, key):
         if key in self.selectable_attribute_names:
@@ -85,15 +86,15 @@ class BizObject(metaclass=BizObjectMeta):
             raise KeyError(key)
 
     def __iter__(self):
-        return iter(self._data)
+        return iter(self.internal.record)
 
     def __contains__(self, key):
-        return key in self._data
+        return key in self.internal.record
 
     def __repr__(self):
         id_str = repr_biz_id(self)
         name = self.__class__.__name__
-        dirty = '*' if self._data.dirty else ''
+        dirty = '*' if self.internal.record.dirty else ''
         return f'<{name}({id_str}){dirty}>'
 
     @classmethod
@@ -210,7 +211,7 @@ class BizObject(metaclass=BizObjectMeta):
         and delete its _id so that save now triggers Dao.create.
         """
         self.dao.delete(_id=self._id)
-        self.mark(self._data.keys())
+        self.mark(self.internal.record.keys())
         self._id = None
         return self
 
@@ -218,7 +219,7 @@ class BizObject(metaclass=BizObjectMeta):
     def delete_many(cls, bizobjs) -> None:
         bizobj_ids = []
         for obj in bizobjs:
-            obj.mark(obj._data.keys())
+            obj.mark(obj.internal.record.keys())
             bizobj_ids.append(obj._id)
             obj._id = None
         cls.get_dao().delete_many(bizobj_ids)
@@ -228,7 +229,7 @@ class BizObject(metaclass=BizObjectMeta):
         cls.get_dao().delete_all()
 
     def create(self) -> 'BizObject':
-        prepared_record = self._data.copy()
+        prepared_record = self.internal.record.copy()
         self.insert_defaults(prepared_record)
         prepared_record.pop('_rev', None)
         prepared_record, errors = self.schema.process(prepared_record)
@@ -242,7 +243,7 @@ class BizObject(metaclass=BizObjectMeta):
                 data=errors
             )
         created_record = self.get_dao().create(prepared_record)
-        self._data.update(created_record)
+        self.internal.record.update(created_record)
         return self.clean()
 
     def update(self, data: Dict = None, **more_data) -> 'BizObject':
@@ -273,7 +274,7 @@ class BizObject(metaclass=BizObjectMeta):
                 }
             )
         updated_record = self.get_dao().update(self._id, prepared_record)
-        self._data.update(updated_record)
+        self.internal.record.update(updated_record)
         return self.clean()
 
     @classmethod
@@ -287,7 +288,7 @@ class BizObject(metaclass=BizObjectMeta):
         for bizobj in bizobjs:
             if bizobj is None:
                 continue
-            record = bizobj._data.copy()
+            record = bizobj.internal.record.copy()
             cls.insert_defaults(record)
             record, errors = cls.schema.process(record)
             record.pop('_rev', None)
@@ -303,7 +304,7 @@ class BizObject(metaclass=BizObjectMeta):
         created_records = cls.get_dao().create_many(records)
 
         for bizobj, record in zip(bizobjs, created_records):
-            bizobj._data.update(record)
+            bizobj.internal.record.update(record)
             bizobj.clean()
 
         return cls.BizList(bizobjs)
@@ -375,7 +376,7 @@ class BizObject(metaclass=BizObjectMeta):
             updated_records = cls.get_dao().update_many(_ids, records)
 
             for bizobj, record in zip(bizobj_partition, updated_records):
-                bizobj._data.update(record)
+                bizobj.internal.record.update(record)
                 bizobj.clean()
 
         return cls.BizList(bizobjs)
@@ -411,29 +412,29 @@ class BizObject(metaclass=BizObjectMeta):
 
     @property
     def raw(self) -> 'DirtyDict':
-        return self._data
+        return self.internal.record
 
     @property
     def memoized(self) -> Dict:
-        return self._memoized
+        return self.internal.memoized
 
     @property
     def dirty_data(self) -> Dict:
         dirty_keys = self.dirty
-        return {k: self._data[k] for k in dirty_keys}
+        return {k: self.internal.record[k] for k in dirty_keys}
 
     @property
     def dirty(self) -> Set[Text]:
-        return self._data.dirty
+        return self.internal.record.dirty
 
     def clean(self, keys=None) -> 'BizObject':
-        self._data.clear_dirty(keys)
+        self.internal.record.clear_dirty(keys)
         return self
 
     def mark(self, keys) -> 'BizObject':
         if not is_sequence(keys):
             keys = {keys}
-        self._data.mark_dirty({k for k in keys if k in self.schema.fields})
+        self.internal.record.mark_dirty({k for k in keys if k in self.schema.fields})
         return self
 
     def copy(self, deep=False) -> 'BizObject':
@@ -443,7 +444,7 @@ class BizObject(metaclass=BizObjectMeta):
         Args:
         - `deep`: If set, deep copy related BizObjects.
         """
-        clone = self.__class__(deepcopy(self._data))
+        clone = self.__class__(deepcopy(self.internal.record))
 
         # select the copy method to use for relationship-loaded data
         copy_related_value = deepcopy if deep else copy
@@ -468,10 +469,10 @@ class BizObject(metaclass=BizObjectMeta):
 
         if is_bizobj(obj):
             assert isinstance(obj, self.__class__)
-            dirty_keys = obj._data.keys()
-            for k, v in obj._data.items():
+            dirty_keys = obj.internal.record.keys()
+            for k, v in obj.internal.record.items():
                 setattr(self, k, v)
-            for k, v in obj._memoized.items():
+            for k, v in obj.internal.memoized.items():
                 setattr(self, k, v)
         elif isinstance(obj, dict):
             obj = self.schema.translate_source(obj)
@@ -504,7 +505,7 @@ class BizObject(metaclass=BizObjectMeta):
         fresh = self.get(_id=self._id, select=select)  # TODO: depth=depth
         if fresh:
             self.merge(fresh)
-            self.clean(fresh.raw.keys())
+            self.clean(fresh.internal.record.keys())
 
         return self
 
@@ -525,10 +526,10 @@ class BizObject(metaclass=BizObjectMeta):
             'keys': keys
         })
         for k in keys:
-            if k in self._data:
-                self._data.pop(k, None)
-            elif k in self._memoized:
-                self._memoized.pop(k, None)
+            if k in self.internal.record:
+                self.internal.record.pop(k, None)
+            elif k in self.internal.memoized:
+                self.internal.memoized.pop(k, None)
 
     def is_loaded(self, keys: Set[Text]) -> bool:
         """
@@ -536,7 +537,7 @@ class BizObject(metaclass=BizObjectMeta):
         """
         keys = {keys} if isinstance(keys, str) else keys
         for k in keys:
-            if not (k in self._data or k in self._memoized):
+            if not (k in self.internal.record or k in self.internal.memoized):
                 return False
         return True
 

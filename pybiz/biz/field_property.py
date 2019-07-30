@@ -79,13 +79,13 @@ class FieldProperty(property):
 
     def fget(self, bizobj):
         # try to lazy load the field value
-        is_loaded = self.field.name in bizobj.raw
-        exists_in_dao = '_id' in bizobj._data
+        is_loaded = self.field.name in bizobj.internal.record
+        exists_in_dao = '_id' in bizobj.internal.record
 
         if (not is_loaded) and exists_in_dao:
             if self.field.meta.get('lazy', True):
                 field_names_to_load = (
-                    bizobj.schema.fields.keys() - bizobj._data.keys()
+                    bizobj.schema.fields.keys() - bizobj.internal.record.keys()
                 )
                 field_source_names_to_load = {
                     bizobj.schema.fields[k].source
@@ -100,7 +100,7 @@ class FieldProperty(property):
                 )
                 bizobj.load(field_source_names_to_load)
 
-        return bizobj._data.get(self.field.name)
+        return bizobj.internal.record.get(self.field.name)
 
     def fset(self, bizobj, value):
         key = self.field.name
@@ -110,7 +110,7 @@ class FieldProperty(property):
                 raise ValueError(
                     f'error setting {key} to {value}: {error}'
                 )
-            bizobj._data[key] = value
+            bizobj.internal.record[key] = value
         else:
             raise AttributeError(key)
 
@@ -121,5 +121,5 @@ class FieldProperty(property):
                 f'cannot delete required field value: {key}'
             )
         else:
-            bizobj._data.pop(key, None)
+            bizobj.internal.record.pop(key, None)
 

@@ -170,7 +170,7 @@ class BizList(object):
         for stale, fresh in zip(self, results):
             if stale._id is not None:
                 stale.merge(fresh)
-                stale.clean(fresh.raw.keys())
+                stale.clean(fresh.internal.record.keys())
 
         return self
 
