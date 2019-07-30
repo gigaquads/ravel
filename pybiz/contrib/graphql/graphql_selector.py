@@ -3,12 +3,11 @@ from typing import Text, Dict, Callable, Tuple
 from appyratus.schema import Schema
 
 from pybiz.util.misc_functions import normalize_to_tuple
+from pybiz.biz.biz_attribute import BizAttribute
+from pybiz.biz.query import Query
 
-from .biz_attribute import BizAttribute
-from .query import Query
 
-
-class Subquery(BizAttribute):
+class GraphQLSelector(BizAttribute):
     def __init__(
         self,
         target: Callable,
@@ -34,7 +33,7 @@ class Subquery(BizAttribute):
 
     @property
     def biz_attr_name(self):
-        return 'subquery'
+        return 'graphql_selector'
 
     def on_bootstrap(self):
         if self._target_func is not None:
