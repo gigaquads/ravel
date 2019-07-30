@@ -11,7 +11,7 @@ from appyratus.utils import StringUtils
 
 from pybiz.dao import Dao
 from pybiz.schema import fields
-from pybiz.util import JsonEncoder
+from pybiz.util.json_encoder import JsonEncoder
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,

@@ -1,7 +1,7 @@
 from typing import Dict, List, Type, Set, Text
 
 from pybiz.dao import Dao
-from pybiz.util import is_sequence
+from pybiz.util.misc_functions import is_sequence
 from pybiz.util.loggers import console
 
 

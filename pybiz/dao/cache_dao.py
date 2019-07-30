@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from appyratus.enum import EnumValueStr
 
-from pybiz.util import remove_keys, import_object
+from pybiz.util.misc_functions import remove_keys, import_object
 
 from .base import Dao, DaoEvent
 from .dao_binder import DaoBinder

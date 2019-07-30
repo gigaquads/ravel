@@ -3,7 +3,7 @@ import uuid
 
 from abc import ABCMeta, abstractmethod
 
-from pybiz.util import is_sequence
+from .misc_functions import is_sequence
 
 
 class DirtyInterface(metaclass=ABCMeta):

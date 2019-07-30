@@ -5,7 +5,7 @@ from typing import List, Dict, Set, Text, Type, Tuple
 
 from appyratus.utils import DictUtils, DictObject
 
-from pybiz.util import is_bizobj, is_sequence
+from pybiz.util.misc_functions import is_bizobj, is_sequence
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from pybiz.schema import Schema, fields
 from pybiz.predicate import Predicate

@@ -1,7 +1,7 @@
 from typing import Dict, Tuple
 
 from pybiz.exc import NotAuthorizedError
-from pybiz.util import is_sequence
+from pybiz.util.misc_functions import is_sequence
 
 from ..base import RegistryMiddleware
 from .guard import Guard, GuardFailed

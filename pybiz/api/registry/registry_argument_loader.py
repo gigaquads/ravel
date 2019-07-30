@@ -3,7 +3,7 @@ from typing import (
     _GenericAlias as GenericAlias
 )
 
-from pybiz.util import is_bizobj
+from pybiz.util.misc_functions import is_bizobj
 
 
 class RegistryArgumentLoader(object):

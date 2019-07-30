@@ -7,7 +7,7 @@ from collections import deque
 from appyratus.utils import DictObject, DictUtils
 
 from pybiz.manifest import Manifest
-from pybiz.util import JsonEncoder
+from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
 
 from ..exc import RegistryError

@@ -13,7 +13,7 @@ from appyratus.utils import (
     StringUtils,
     SysUtils,
 )
-from pybiz.util import (
+from pybiz.util.misc_functions import (
     is_bizlist,
     is_bizobj,
 )

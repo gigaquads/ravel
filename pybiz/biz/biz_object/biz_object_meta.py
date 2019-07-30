@@ -9,7 +9,7 @@ from collections import defaultdict
 from appyratus.utils import DictObject
 
 from pybiz.schema import Schema, fields, String, Field, Int
-from pybiz.util import import_object, is_bizobj
+from pybiz.util.misc_functions import import_object, is_bizobj
 from pybiz.util.loggers import console
 from pybiz.constants import (
     IS_BIZOBJ_ANNOTATION,

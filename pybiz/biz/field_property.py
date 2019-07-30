@@ -1,6 +1,6 @@
 from typing import Text, Tuple, List, Type
 
-from pybiz.util import is_bizobj
+from pybiz.util.misc_functions import is_bizobj
 from pybiz.util.loggers import console
 from pybiz.predicate import (
     Predicate,

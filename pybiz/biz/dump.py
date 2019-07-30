@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from appyratus.utils import StringUtils, DictUtils
 
-from pybiz.util import is_bizobj, is_bizlist, is_sequence
+from pybiz.util.misc_functions import is_bizobj, is_bizlist, is_sequence
 
 
 class Dumper(object):

@@ -15,9 +15,8 @@ from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
 
 from pybiz.api.middleware import RegistryMiddleware
-from pybiz.predicate import Predicate, ConditionalPredicate, BooleanPredicate
+from pybiz.util.json_encoder import JsonEncoder
 from pybiz.schema import fields, Field
-from pybiz.util import JsonEncoder
 
 from .dialect import Dialect
 

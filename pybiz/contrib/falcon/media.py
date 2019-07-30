@@ -6,7 +6,7 @@ from falcon import errors
 from falcon.media import BaseHandler
 from falcon.util import json
 
-from pybiz.util import JsonEncoder
+from pybiz.util.json_encoder import JsonEncoder
 
 
 class JsonHandler(BaseHandler):

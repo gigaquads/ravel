@@ -14,7 +14,12 @@ from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
 from pybiz.exc import RelationshipArgumentError, RelationshipError
-from pybiz.util import is_bizobj, is_sequence, is_bizlist, normalize_to_tuple
+from pybiz.util.misc_functions import (
+    normalize_to_tuple,
+    is_bizobj,
+    is_sequence,
+    is_bizlist,
+)
 from pybiz.util.loggers import console
 
 from ..biz_attribute import BizAttribute, BizAttributeProperty

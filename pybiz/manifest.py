@@ -16,7 +16,7 @@ from appyratus.files import Yaml, Json
 from appyratus.env import Environment
 
 from pybiz.exc import ManifestError
-from pybiz.util import import_object
+from pybiz.util.misc_functions import import_object
 from pybiz.util.loggers import console
 from pybiz.dao import DaoBinder
 

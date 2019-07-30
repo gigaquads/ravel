@@ -14,7 +14,7 @@ from appyratus.utils import (
     StringUtils,
 )
 
-from pybiz.util import import_object
+from pybiz.util.misc_functions import import_object
 
 from .base import Dao
 from .python_dao import PythonDao

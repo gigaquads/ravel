@@ -1,7 +1,7 @@
 from typing import Text, Dict, Callable, Type, Tuple
 
 from pybiz.schema import Schema
-from pybiz.util import is_sequence
+from pybiz.util.misc_functions import is_sequence
 from pybiz.util.loggers import console
 
 from .biz_attribute import BizAttribute, BizAttributeProperty

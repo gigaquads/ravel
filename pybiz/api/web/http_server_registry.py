@@ -5,7 +5,7 @@ from typing import Dict
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
-from pybiz.util import JsonEncoder
+from pybiz.util.json_encoder import JsonEncoder
 
 from .http_registry import HttpRegistry, HttpRoute
 

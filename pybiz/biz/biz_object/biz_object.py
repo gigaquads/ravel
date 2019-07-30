@@ -10,7 +10,12 @@ from appyratus.utils import DictObject
 
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
-from pybiz.util import is_bizobj, is_sequence, repr_biz_id, normalize_to_tuple
+from pybiz.util.misc_functions import (
+    is_bizobj,
+    is_sequence,
+    repr_biz_id,
+    normalize_to_tuple,
+)
 from pybiz.util.loggers import console
 from pybiz.util.dirty import DirtyDict
 from pybiz.exc import ValidationError, BizObjectError

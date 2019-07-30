@@ -2,7 +2,7 @@ from typing import Text, Dict, Callable, Tuple
 
 from appyratus.schema import Schema
 
-from pybiz.util import normalize_to_tuple
+from pybiz.util.misc_functions import normalize_to_tuple
 
 from .biz_attribute import BizAttribute
 from .query import Query

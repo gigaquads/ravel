@@ -20,7 +20,7 @@ from pybiz.predicate import (
     OP_CODE,
 )
 from pybiz.schema import fields, Field
-from pybiz.util import JsonEncoder
+from pybiz.util.json_encoder import JsonEncoder
 from pybiz.dao.base import Dao
 
 from .dialect import Dialect

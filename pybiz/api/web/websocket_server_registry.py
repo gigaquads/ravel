@@ -4,7 +4,7 @@ import ujson
 
 from typing import List, Type, Dict, Tuple, Text
 
-from pybiz.util import JsonEncoder
+from pybiz.util.json_encoder import JsonEncoder
 
 from ..async_server_registry import AsyncServerRegistry
 
