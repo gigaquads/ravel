@@ -5,6 +5,8 @@ from typing import List, Dict, Set, Text, Type, Tuple
 
 from appyratus.utils import DictUtils, DictObject
 
+import pybiz.contrib.graphql as graphql
+
 from pybiz.util.misc_functions import is_bizobj, is_sequence
 from pybiz.constants import IS_BIZOBJ_ANNOTATION
 from pybiz.schema import Schema, fields
@@ -57,10 +59,11 @@ class QueryExecutor(object):
         biz_type = query.biz_type
 
         for k, subquery in query.get_subqueries().items():
-            relationship = biz_type.relationships[k]
+            biz_attr = biz_type.attributes.by_name(k)
             # these "where" predicates are AND'ed with the predicates provided
             # by the relationship, not overriding them.
-            targets = relationship.query(
+            assert biz_attr.category == 'relationship'
+            targets = biz_attr.execute(
                 sources,
                 select=subquery.get_fields(),
                 where=subquery.get_where(),
@@ -441,6 +444,13 @@ class Query(object):
     @classmethod
     def from_keys(cls, biz_type: Type['BizObject'], keys: Set[Text]):
         return cls._marshaller.load_from_keys(biz_type, keys=keys)
+
+    @classmethod
+    def from_graphql(
+        cls, biz_type: Type['BizObject'], graphql_query: Text
+    ) -> 'Query':
+        executor = graphql.GraphQLExecutor(biz_type)
+        return executor.query(graphql_query, execute=False)
 
     @property
     def alias(self) -> Text:

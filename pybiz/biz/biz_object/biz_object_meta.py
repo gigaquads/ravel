@@ -185,9 +185,13 @@ class BizAttributeManager(object):
         bisect.insort(self._ordered_biz_attrs, attr)
 
     def by_name(self, name: Text) -> 'BizAttribute':
-        return self._name_2_biz_attr.get(name, set())
+        return self._name_2_biz_attr.get(name, None)
 
     def by_type(self, category: Text) -> List['BizAttribute']:
+        # XXX: Deprecated. use by_category
+        return self._category_2_biz_attr.get(category, set())
+
+    def by_category(self, category: Text) -> List['BizAttribute']:
         return self._category_2_biz_attr.get(category, set())
 
 

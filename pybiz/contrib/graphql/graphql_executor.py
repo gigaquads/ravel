@@ -2,17 +2,16 @@ from typing import Dict, Set, Text, List, Type, Tuple
 
 from graphql.parser import GraphQLParser
 
-from pybiz.biz import Query
-from pybiz.predicate import PredicateParser
+import pybiz.biz
 
 from .graphql_arguments import GraphQLArguments
 
 
 class GraphQLExecutor(object):
+
     def __init__(self, root_biz_type: Type['BizType']):
         self._graphql_parser = GraphQLParser()
         self._root_biz_type = root_biz_type
-        self._predicate_parser = PredicateParser()
 
     def query(
         self,
@@ -34,21 +33,28 @@ class GraphQLExecutor(object):
 
     def _build_pybiz_query(self, node, biz_type=None):
         biz_type = biz_type or self._root_biz_type
-        args = GraphQLArguments.parse(biz_type, node, self._predicate_parser)
+        args = GraphQLArguments.parse(biz_type, node)
 
         selected_attributes = []
         selected_subqueries = []
         for child_node in node.selections:
             child_name = child_node.name
-            if child_name in biz_type.relationships:
-                rel = biz_type.relationships.get(child_name)
+            relationships = biz_type.attributes.by_category('relationship')
+            biz_attr = biz_type.attributes.by_name(child_name)
+            if biz_attr is None:
+                continue
+            if biz_attr.category == 'graphql_selector':
+                child_query = self._build_pybiz_query(child_node, biz_attr.target_biz_type)
+                selected_subqueries.append(child_query)
+            elif biz_attr.category == 'relationship':
+                rel = relationships.get(child_name)
                 child_query = self._build_pybiz_query(child_node, rel.target_biz_type)
                 selected_subqueries.append(child_query)
-            elif child_name in biz_type.selectable_attribute_names:
+            elif child_name in biz_type.attributes:
                 selected_attributes.append(child_name)
 
         return (
-            Query(
+            pybiz.biz.Query(
                 biz_type, alias=node.name
             )
             .select(

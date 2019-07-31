@@ -1,24 +1,27 @@
 import re
+import threading
 
 from typing import Dict, Set, Text, List, Type, Tuple
 
 from pybiz.biz.order_by import OrderBy
+from pybiz.predicate import PredicateParser
 
 RE_ORDER_BY = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
 
 
 class GraphQLArguments(object):
 
+    _thread_local = threading.local()
+    _thread_local.predicate_parser = PredicateParser()
+
     @classmethod
-    def parse(cls, biz_type, node, predicate_parser) -> 'GraphQLArguments':
+    def parse(cls, biz_type, node) -> 'GraphQLArguments':
         args = {
             arg.name: arg.value for arg in
             getattr(node, 'arguments', ())
         }
         return cls(
-            where=cls._parse_where(
-                biz_type, args.pop('where', None), predicate_parser
-            ),
+            where=cls._parse_where(biz_type, args.pop('where', None)),
             order_by=cls._parse_order_by(args.pop('order_by', None)),
             offset=cls._parse_offset(args.pop('offset', None)),
             limit=cls._parse_limit(args.pop('limit', None)),
@@ -59,8 +62,8 @@ class GraphQLArguments(object):
         cls,
         biz_type: Type['BizObject'],
         predicate_strings: List[Text],
-        parser: 'PredicateParser',
     ) -> List['Predicate']:
+        parser = cls._thread_local.predicate_parser
         if isinstance(predicate_strings, str):
             predicate_strings = [predicate_strings]
         return [
