@@ -167,10 +167,10 @@ class BizAttributeManager(object):
         return len(self._name_2_biz_attr)
 
     def keys(self):
-        return iter(self)
+        return self._name_2_biz_attr.keys()
 
     def values(self):
-        return (biz_attr for biz_attr in self._ordered_biz_attrs)
+        return self._name_2_biz_attr.values()
 
     def items(self):
         return (

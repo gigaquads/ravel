@@ -403,15 +403,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 record[k] = defval
                 generated_defaults[k] = defval
 
-        if generated_defaults:
-            console.debug(
-                message='generated default values',
-                data={
-                    'type': cls.__name__,
-                    'defaults': generated_defaults,
-                }
-            )
-
     @property
     def dao(self) -> 'Dao':
         return self.get_dao()

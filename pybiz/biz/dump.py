@@ -117,7 +117,7 @@ class NestingDumper(Dumper):
             elif k in target.attributes:
                 biz_attr = target.attributes.by_name(k)
                 if not biz_attr.private:
-                    value = getattr(bizobj, k, None)
+                    value = getattr(target, k, None)
                     record[k] = self._dump_object(value)
 
         return record

@@ -36,7 +36,6 @@ class View(BizAttribute):
         return ViewProperty(self)
 
     def execute(self, caller: 'BizObject', *args, **kwargs) -> object:
-        args = args or {}
         data = self._load(caller, *args, **kwargs)
         if self._transform is not None:
             data = self._transform(caller, data, *args, **kwargs)
@@ -46,18 +45,18 @@ class View(BizAttribute):
 class ViewProperty(BizAttributeProperty):
 
     @property
-    def view(self):
+    def view(self) -> 'View':
         return self.biz_attr
 
-    def fset(self, bizobj, value):
-        if view.schema is not None:
-            value, errors = view.schema.process(value)
+    def fset(self, source: 'BizObject', value):
+        if self.biz_attr.schema is not None:
+            value, errors = self.biz_attr.schema.process(value)
             if errors:
                 # TODO: raise proper exception
                 console.error(
                     message=(
                         f'validation error in setting '
-                        f'ViewProperty {view.name}',
+                        f'ViewProperty {self.biz_attr.name}',
                     ),
                     data={
                         'object': str(self),
@@ -65,4 +64,5 @@ class ViewProperty(BizAttributeProperty):
                     }
                 )
                 raise Exception('validation error')
-        super().fset(bizobj, value)
+
+        super().fset(source, value)

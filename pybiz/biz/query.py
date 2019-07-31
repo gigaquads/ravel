@@ -15,7 +15,7 @@ from pybiz.predicate import Predicate
 from .field_property import FieldProperty
 from .order_by import OrderBy
 from .biz_list import BizList
-from .biz_attribute import BizAttribute
+from .biz_attribute import BizAttributeProperty
 
 
 class QuerySchema(Schema):
@@ -77,13 +77,16 @@ class QueryExecutor(object):
 
         # now sort attribute names by their BizAttribute priority.
         ordered_biz_attrs = []
-        for category, params in query.get_attributes():
+        for category, params in query.get_attributes().items():
             biz_attr = biz_type.attributes.by_name(category)
-            bisect.insort(ordered_biz_attrs, biz_attr)
+            bisect.insort(ordered_biz_attrs, (biz_attr, params))
 
-        for biz_attr in ordered_biz_attrs:
+        for biz_attr, params in ordered_biz_attrs:
             for source in sources:
-                value = biz_attr.execute(source)
+                if params:
+                    value = params.execute(source)
+                else:
+                    value = biz_attr.execute(source)
                 setattr(source, biz_attr.name, value)
 
         return sources
@@ -251,7 +254,53 @@ class QueryMarshaller(object):
         return query
 
 
-class Query(object):
+class AbstractQuery(object):
+    def __init__(self, alias: Text = None):
+        self._alias = alias
+
+    @property
+    def alias(self) -> Text:
+        return self._alias
+
+    @alias.setter
+    def alias(self, alias):
+        if self._alias is not None:
+            raise ValueError('alias is readonly')
+        self._alias = alias
+
+
+class BizAttributeQuery(AbstractQuery):
+
+    class Assignment(object):
+        def __init__(self, name, query):
+            self.name = name
+            self.query = query
+
+        def __call__(self, value):
+            self.query.params[self.name] = value
+            return self.query
+
+    def __init__(self, biz_attr, alias=None):
+        super().__init__(alias=alias)
+        self._biz_attr = biz_attr
+        self._params = {}
+
+    def __getattr__(self, param_name):
+        return self.Assignment(param_name, self)
+
+    @property
+    def biz_attr(self):
+        return self._biz_attr
+
+    @property
+    def params(self):
+        return self._params
+
+    def execute(self, source: 'BizObject'):
+        return self._biz_attr.execute(source, **self.params)
+
+
+class Query(AbstractQuery):
     """
     query = (
         User.select(
@@ -275,7 +324,7 @@ class Query(object):
         alias: Text = None,
         fields: Set[Text] = None
     ):
-        self._alias = alias
+        super().__init__(alias=alias)
         self._biz_type = biz_type
         self._target_attributes = {}
         self._subqueries = {}
@@ -353,6 +402,7 @@ class Query(object):
         """
         key = None
         targets = None
+        params = params if params is not None else {}
 
         try:
             if isinstance(target, str):
@@ -361,19 +411,21 @@ class Query(object):
             raise AttributeError(
                 f'{self._biz_type} has no attribute "{target}"'
             )
-
         if isinstance(target, FieldProperty):
             key = target.field.name
             targets = self._target_fields
-        elif isinstance(target, BizAttribute):
-            if target.category == 'relationship':
-                key = target.relationship.name
+        elif isinstance(target, BizAttributeProperty):
+            biz_attr = target.biz_attr
+            key = biz_attr.name
+            if biz_attr.category == 'relationship':
                 targets = self._subqueries
-                target_biz_type = target.relationship.target_biz_type
-                params = Query.from_keys(biz_type=target_biz_type)
+                params = Query.from_keys(biz_type=biz_attr.target_biz_type)
             else:
-                key = target.name
                 targets = self._target_attributes
+        elif isinstance(target, BizAttributeQuery):
+            key = target.alias
+            targets = self._target_attributes
+            params = target
         elif isinstance(target, Query):
             key = target.alias
             targets = self._subqueries
@@ -442,7 +494,9 @@ class Query(object):
         return cls._marshaller.load(biz_type, data)
 
     @classmethod
-    def from_keys(cls, biz_type: Type['BizObject'], keys: Set[Text]):
+    def from_keys(cls, biz_type: Type['BizObject'], keys: Set[Text] = None):
+        if not keys:
+            keys = biz_type.schema.fields.keys()
         return cls._marshaller.load_from_keys(biz_type, keys=keys)
 
     @classmethod
@@ -451,16 +505,6 @@ class Query(object):
     ) -> 'Query':
         executor = graphql.GraphQLExecutor(biz_type)
         return executor.query(graphql_query, execute=False)
-
-    @property
-    def alias(self) -> Text:
-        return self._alias
-
-    @alias.setter
-    def alias(self, alias):
-        if self._alias is not None:
-            raise ValueError('alias is readonly')
-        self._alias = alias
 
     @property
     def biz_type(self) -> Type['BizObject']:

@@ -4,6 +4,8 @@ from typing import Text, Type, Dict, Callable
 
 from appyratus.schema import Schema
 
+import pybiz.biz.query
+
 
 class BizAttribute(object):
     def __init__(
@@ -108,7 +110,7 @@ class BizAttribute(object):
         """
         self._biz_type = biz_type
 
-    def execute(self, *args, **kwargs):
+    def execute(self, source: 'BizObject', *args, **kwargs):
         return
 
 
@@ -118,9 +120,16 @@ class BizAttributeProperty(property):
         self._biz_attr = biz_attr
 
     def __repr__(self):
-        name = f'{self.biz_attr.name}:' if self.biz_attr.name else ''
+        name = f'{self.biz_attr.name}: ' if self.biz_attr.name else ''
         biz_attr_type = self.biz_attr.__class__.__name__
         return f'<BizAttributeProperty({name}{biz_attr_type})>'
+
+    def select(self, *args, **kwargs) -> 'BizAttributeQuery':
+        return pybiz.biz.query.BizAttributeQuery(
+            biz_attr=self.biz_attr,
+            alias=self.biz_attr.name,
+            *args, **kwargs
+        )
 
     @property
     def biz_attr(self) -> 'BizAttribute':
