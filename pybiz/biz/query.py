@@ -20,12 +20,14 @@ from .biz_attribute import BizAttributeProperty
 
 class QueryExecutor(object):
     def execute(self, query: 'Query'):
+        biz_type = query.biz_type
+
         if query.params.where and len(query.params.where) > 1:
             predicate = reduce(lambda x, y: x & y, query.params.where)
         else:
-            predicate = (query.biz_type._id != None)
+            predicate = (biz_type._id != None)
 
-        records = query.biz_type.get_dao().query(
+        records = biz_type.get_dao().query(
             predicate=predicate,
             fields=query.params.fields,
             order_by=query.params.order_by,
@@ -50,8 +52,9 @@ class QueryExecutor(object):
         # have would be a bulk-execution interface built built into the
         # BizAttribute base class
         for biz_attr, sub_query in ordered_items:
-            if biz_attr.category == 'relationsihp':
-                targets = sub_query.execute(
+            if biz_attr.category == 'relationship':
+                relationship = biz_attr
+                targets = relationship.execute(
                     sources,
                     select=sub_query.params.fields,
                     where=sub_query.params.where,
@@ -59,12 +62,12 @@ class QueryExecutor(object):
                     limit=sub_query.params.limit,
                     offset=sub_query.params.offset,
                 )
-                # execute nested relationsihps and then zip each
+                # execute nested relationships and then zip each
                 # source BizObject up with its corresponding target
                 # BizObjects, as returned by the BizAttribute.
                 self._execute_recursive(sub_query, targets)
                 for source, target in zip(sources, targets):
-                    setattr(source, k, target)
+                    setattr(source, biz_attr.name, target)
             else:
                 for source in sources:
                     if sub_query:
@@ -83,6 +86,13 @@ class QueryPrinter(object):
         """
         print(self.format_query(query))
 
+    def format_biz_attr_query(self, query, indent):
+        lines = []
+        for k, v in query.params.items():
+            lines.append(f'{k.upper()} {v}')
+
+        return '\n'.join(f'{" " * indent}{line}' for line in lines)
+
     def format_query(self, query: 'AbstractQuery', indent=0) -> Text:
         """
         Return a pretty printed string of the query in Pybiz query langauge.
@@ -97,24 +107,39 @@ class QueryPrinter(object):
         post_sub_query_substrs = []
         sub_query_substrs = []
 
-        # target_names is a lexicographically sorted list of all
+        # field_names is a lexicographically sorted list of all
         # non-Relationship selectble attribute names on the target BizObject
         # class.
-        target_names = []
-        target_names += list(query.params.fields.keys() - {'_id', '_rev'})
-        target_names += list(query.params.attributes.keys())
-        target_names.sort()
+        field_names = []
+        field_names += list(query.params.fields.keys())
+        field_names.sort()
 
         pre_sub_query_substrs.append(f'FROM {biz_type_name} SELECT')
-        pre_sub_query_substrs.extend(f' - {k}' for k in target_names)
+        for k in field_names:
+            field = query.biz_type.schema.fields[k]
+            pre_sub_query_substrs.append(
+                f' - {k}: {field.__class__.__name__}'
+            )
 
         # recursively render sub_queries corresponding to selected Relationships
-        if query.params.sub_queries:
-            for name, sub_query in sorted(query.params.attributes.items()):
-                if isinstance(sub_query, Query):
-                    sub_query_substr = self.format_query(sub_query, indent=indent+5)
-                    sub_query_substrs.append(f'{" " * indent} - {name}: (')
-                    sub_query_substrs.append(sub_query_substr)
+        for name, sub_query in sorted(query.params.attributes.items()):
+            if isinstance(sub_query, Query):
+                type_name = sub_query.biz_type.__name__
+                rel = query.biz_type.attributes.by_name(name)
+                if rel and rel.many:
+                    type_name = f'[{type_name}]'
+                sub_query_substr = self.format_query(sub_query, indent=indent+5)
+                sub_query_substrs.append(f'{" " * indent} - {name}: {type_name} = (')
+                sub_query_substrs.append(sub_query_substr)
+                sub_query_substrs.append(f'{" " * indent}   )')
+            elif isinstance(sub_query, BizAttributeQuery):
+                type_name = sub_query.biz_attr.biz_type.__name__
+                sub_query_substr = self.format_biz_attr_query(
+                    sub_query, indent=indent+5
+                )
+                sub_query_substrs.append(f'{" " * indent} - {name}: {type_name} = (')
+                sub_query_substrs.append(sub_query_substr)
+                sub_query_substrs.append(f'{" " * indent}   )')
 
         # render "where"-expression Predicates
         predicates = query.params.where
@@ -292,9 +317,8 @@ class Query(AbstractQuery):
     class Parameters(object):
         def __init__(
             self,
-            fields=None
+            fields=None,
             attributes=None,
-            sub_queries=None,
             order_by=None,
             where=None,
             limit=None,
@@ -302,9 +326,8 @@ class Query(AbstractQuery):
         ):
             self.fields = fields or {'_id': None, '_rev': None}
             self.attributes = attributes or {}
-            self.sub_queries = sub_queries or {}
             self.order_by = order_by or tuple()
-            self.where = where or None,
+            self.where = tuple()
             self.limit = None
             self.offset = None
 
@@ -466,7 +489,7 @@ class Query(AbstractQuery):
 
         # add the target to the appropriate collection
         if isinstance(target, FieldProperty):
-            assert target.biz_attr is self.biz_type
+            assert target.biz_type is self.biz_type
             key = target.field.name
             targets = self._params.fields
         elif isinstance(target, BizAttributeProperty):
@@ -477,12 +500,12 @@ class Query(AbstractQuery):
             if biz_attr.category == 'relationship':
                 params = Query.from_keys(biz_type=biz_attr.target_biz_type)
         elif isinstance(target, BizAttributeQuery):
-            assert target.biz_type is self.biz_type
+            assert target.alias in self.biz_type.attributes
             key = target.alias
             targets = self._params.attributes
             params = target
         elif isinstance(target, Query):
-            assert target.biz_type is self.biz_type
+            assert target.alias in self.biz_type.attributes
             key = target.alias
             targets = self._params.attributes
             params = target

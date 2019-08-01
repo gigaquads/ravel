@@ -116,7 +116,7 @@ class ConditionalPredicate(Predicate):
     def __str__(self):
         if self.fprop:
             host_name = self.fprop.biz_type.__name__
-            lhs = host_name + '.' + self.fprop.key
+            lhs = host_name + '.' + self.fprop.field.name
         else:
             lhs = '[NULL]'
 
