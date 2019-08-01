@@ -18,88 +18,72 @@ from .biz_list import BizList
 from .biz_attribute import BizAttributeProperty
 
 
-class QuerySchema(Schema):
-    alias = fields.String()
-    limit = fields.Int(nullable=True)
-    offset = fields.Int(nullable=True)
-    order_by = fields.List(fields.String(), default=[])
-    subqueries = fields.Dict(default={})
-    where = fields.List(fields.Dict(), nullable=True)
-    target = fields.Nested({
-        'type': fields.String(),
-        'attributes': fields.Dict(default={}),
-        'fields': fields.Dict(default={}),
-    })
-
-
 class QueryExecutor(object):
     def execute(self, query: 'Query'):
-        biz_type = query.biz_type
-        dao = biz_type.get_dao()
-
-        query_predicates = query.get_where()
-        if query_predicates:
-            dao_predicate = reduce(lambda x, y: x & y, query.get_where())
+        if query.params.where and len(query.params.where) > 1:
+            predicate = reduce(lambda x, y: x & y, query.params.where)
         else:
-            dao_predicate = None
+            predicate = (query.biz_type._id != None)
 
-        records = dao.query(
-            predicate=dao_predicate,
-            fields=query.get_fields(),
-            order_by=query.get_order_by(),
-            limit=query.get_limit(),
-            offset=query.get_offset(),
+        records = query.biz_type.get_dao().query(
+            predicate=predicate,
+            fields=query.params.fields,
+            order_by=query.params.order_by,
+            limit=query.params.limit,
+            offset=query.params.offset,
         )
-        targets = biz_type.BizList(
-            biz_type(record).clean() for record in records
-        )
-        return self.execute_recursive(query, targets)
 
-    def execute_recursive(self, query: 'Query', sources: List['BizObject']):
+        targets = biz_type.BizList(biz_type(x) for x in records)
+        return self._execute_recursive(query, targets).clean()
+
+    def _execute_recursive(self, query: 'Query', sources: List['BizObject']):
+        # the class whose relationships we are executing:
         biz_type = query.biz_type
-
-        for k, subquery in query.get_subqueries().items():
-            biz_attr = biz_type.attributes.by_name(k)
-            # these "where" predicates are AND'ed with the predicates provided
-            # by the relationship, not overriding them.
-            assert biz_attr.category == 'relationship'
-            targets = biz_attr.execute(
-                sources,
-                select=subquery.get_fields(),
-                where=subquery.get_where(),
-                limit=subquery.get_limit(),
-                offset=subquery.get_offset(),
-                order_by=subquery.get_order_by(),
-            )
-            self.execute_recursive(subquery, targets)
-            for source, target in zip(sources, targets):
-                setattr(source, k, target)
 
         # now sort attribute names by their BizAttribute priority.
-        ordered_biz_attrs = []
-        for category, params in query.get_attributes().items():
-            biz_attr = biz_type.attributes.by_name(category)
-            bisect.insort(ordered_biz_attrs, (biz_attr, params))
+        ordered_items = []
+        for biz_attr_name, sub_query in query.params.attributes.items():
+            biz_attr = biz_type.attributes.by_name(biz_attr_name)
+            bisect.insort(ordered_items, (biz_attr, sub_query))
 
-        for biz_attr, params in ordered_biz_attrs:
-            for source in sources:
-                if params:
-                    value = params.execute(source)
-                else:
-                    value = biz_attr.execute(source)
-                setattr(source, biz_attr.name, value)
+        # execute each BizAttribute on each BizObject individually. a nice to
+        # have would be a bulk-execution interface built built into the
+        # BizAttribute base class
+        for biz_attr, sub_query in ordered_items:
+            if biz_attr.category == 'relationsihp':
+                targets = sub_query.execute(
+                    sources,
+                    select=sub_query.params.fields,
+                    where=sub_query.params.where,
+                    order_by=sub_query.params.order_by,
+                    limit=sub_query.params.limit,
+                    offset=sub_query.params.offset,
+                )
+                # execute nested relationsihps and then zip each
+                # source BizObject up with its corresponding target
+                # BizObjects, as returned by the BizAttribute.
+                self._execute_recursive(sub_query, targets)
+                for source, target in zip(sources, targets):
+                    setattr(source, k, target)
+            else:
+                for source in sources:
+                    if sub_query:
+                        value = sub_query.execute(source)
+                    else:
+                        value = biz_attr.execute(source)
+                    setattr(source, biz_attr.name, value)
 
         return sources
 
 
 class QueryPrinter(object):
-    def print_query(self, query):
+    def print_query(self, query: 'AbstractQuery') -> None:
         """
         Just pretty print the query.
         """
         print(self.format_query(query))
 
-    def format_query(self, query, indent=0) -> Text:
+    def format_query(self, query: 'AbstractQuery', indent=0) -> Text:
         """
         Return a pretty printed string of the query in Pybiz query langauge.
         """
@@ -109,105 +93,118 @@ class QueryPrinter(object):
         # different lists below. Formatting differs slightly for substrings
         # generated by recursive calls to this method, and this is why collect
         # them separarely here.
-        pre_subquery_substrs = []
-        post_subquery_substrs = []
-        subquery_substrs = []
+        pre_sub_query_substrs = []
+        post_sub_query_substrs = []
+        sub_query_substrs = []
 
         # target_names is a lexicographically sorted list of all
         # non-Relationship selectble attribute names on the target BizObject
         # class.
         target_names = []
-        target_names += list(query.get_fields().keys() - {'_id', '_rev'})
-        target_names += list(query.get_attributes().keys())
+        target_names += list(query.params.fields.keys() - {'_id', '_rev'})
+        target_names += list(query.params.attributes.keys())
         target_names.sort()
 
-        pre_subquery_substrs.append(f'FROM {biz_type_name} SELECT')
-        pre_subquery_substrs.extend(f' - {k}' for k in target_names)
+        pre_sub_query_substrs.append(f'FROM {biz_type_name} SELECT')
+        pre_sub_query_substrs.extend(f' - {k}' for k in target_names)
 
-        # recursively render subqueries corresponding to selected Relationships
-        if query.get_subqueries():
-            for name, subq in sorted(query.get_subqueries().items()):
-                subquery_substr = self.format_query(subq, indent=indent+5)
-                subquery_substrs.append(f'{" " * indent} - {name}: (')
-                subquery_substrs.append(subquery_substr)
+        # recursively render sub_queries corresponding to selected Relationships
+        if query.params.sub_queries:
+            for name, sub_query in sorted(query.params.attributes.items()):
+                if isinstance(sub_query, Query):
+                    sub_query_substr = self.format_query(sub_query, indent=indent+5)
+                    sub_query_substrs.append(f'{" " * indent} - {name}: (')
+                    sub_query_substrs.append(sub_query_substr)
 
         # render "where"-expression Predicates
-        predicates = query.get_where()
+        predicates = query.params.where
         if predicates:
             predicate = reduce(
-                lambda x, y: x & y, query.get_where()
+                lambda x, y: x & y, query.params.where
             )
-            post_subquery_substrs.append(f'WHERE {predicate}')
+            post_sub_query_substrs.append(f'WHERE {predicate}')
 
         # render order by
-        order_by = query.get_order_by()
+        order_by = query.params.order_by
         if order_by:
-            post_subquery_substrs.append(
+            post_sub_query_substrs.append(
                 'ORDER_BY (' + ', '.join(
                 f'{x.key} {"DESC" if x.desc else "ASC"}'
                 for x in order_by
             ) + ')')
 
         # render limit and offset
-        offset = query.get_offset()
+        offset = query.params.offset
         if offset is not None:
-            post_subquery_substrs.append(f'OFFSET {offset}')
-        limit = query.get_limit()
+            post_sub_query_substrs.append(f'OFFSET {offset}')
+        limit = query.params.limit
         if limit is not None:
-            post_subquery_substrs.append(f'LIMIT {limit}')
+            post_sub_query_substrs.append(f'LIMIT {limit}')
 
         # generate final format string
         fstr = '\n'.join(
-            f'{" " * indent}{chunk}' for chunk in pre_subquery_substrs
+            f'{" " * indent}{chunk}' for chunk in pre_sub_query_substrs
         )
-        if subquery_substrs:
-            fstr += '\n' + '\n'.join(f'{chunk}' for chunk in subquery_substrs)
-        if post_subquery_substrs:
+        if sub_query_substrs:
+            fstr += '\n' + '\n'.join(f'{chunk}' for chunk in sub_query_substrs)
+        if post_sub_query_substrs:
             fstr += '\n' + '\n'.join(
-                f'{" " * indent}{chunk}' for chunk in post_subquery_substrs
+                f'{" " * indent}{chunk}' for chunk in post_sub_query_substrs
             )
 
         return fstr
 
 
-class QueryMarshaller(object):
+class QueryLoader(object):
 
-    schema = QuerySchema()
+    class Schema(Schema):
+        alias = fields.String()
+        limit = fields.Int(nullable=True)
+        offset = fields.Int(nullable=True)
+        order_by = fields.List(fields.String(), default=[])
+        where = fields.List(fields.Dict(), nullable=True)
+        target = fields.Nested({
+            'type': fields.String(),
+            'attributes': fields.Dict(default={}),
+            'fields': fields.Dict(default={}),
+        })
+
+    def __init__(self):
+        self._schema = QueryLoader.Schema()
 
     def dump(self, query):
         return {
             'alias': query.alias,
-            'limit': query.get_limit(),
-            'offset': query.get_offset(),
-            'order_by': [x.dump() for x in query.get_order_by()],
+            'limit': query.params.limit,
+            'offset': query.params.offset,
+            'order_by': [x.dump() for x in query.params.order_by],
             'where': (
-                [x.dump() for x in query.get_where()] if
-                query.get_where() is not None
+                [x.dump() for x in query.params.where] if
+                query.params.where is not None
                 else None
             ),
-            'subqueries': {
-                k: self.dump(v) for k, v in query.get_subqueries().items()
-            },
             'target': {
                 'type': query.biz_type.__name__,
-                'attributes': sorted(query.get_attributes().keys()),
-                'fields': sorted(query.get_fields().keys()),
+                'fields': query.params.fields,
+                'attributes': {
+                    k: self.dump(v) for k, v in query.params.attributes.items()
+                }
             }
         }
 
     def load(self, biz_type, data):
-        data, errors = self.schema.process(data)
+        data, errors = self._schema.process(data)
         if errors:
             # TODO: raise custom exceptions
             raise ValueError(str(errors))
 
-        subqueries = []
-        for v in data['subqueries'].values():
+        sub_queries = []
+        for v in data['sub_queries'].values():
             child_biz_type_name = v['target']['type']
             child_biz_type = biz_type.registry.types.biz[child_biz_type_name]
-            subqueries.append(self.load(child_biz_type, v))
+            sub_queries.append(self.load(child_biz_type, v))
 
-        targets = subqueries.copy()
+        targets = sub_queries.copy()
         targets += list(data['target']['fields'].keys())
         targets += list(data['target']['attributes'].keys())
 
@@ -227,7 +224,12 @@ class QueryMarshaller(object):
         return query
 
     @classmethod
-    def load_from_keys(cls, biz_type: Type['BizObject'], keys: Set[Text]=None, tree=None) -> 'Query':
+    def from_keys(
+        cls, biz_type: Type['BizObject'], keys: Set[Text]=None, tree=None
+    ) -> 'Query':
+        """
+        Create a Query from a list of dotted field paths.
+        """
         query = Query(biz_type)
 
         if tree is None:
@@ -246,11 +248,12 @@ class QueryMarshaller(object):
         for k, v in tree.items():
             if isinstance(v, dict):
                 rel = biz_type.relationships[k]
-                subquery = cls.load_from_keys(rel.target_biz_type, tree=v)
-                subquery.alias = rel.name
-                query.add_target(subquery, None)
+                sub_query = cls.from_keys(rel.target_biz_type, tree=v)
+                sub_query.alias = rel.name
+                query._add_target(sub_query, None)
             else:
-                query.add_target(k, v)
+                query._add_target(k, v)
+
         return query
 
 
@@ -268,36 +271,8 @@ class AbstractQuery(object):
             raise ValueError('alias is readonly')
         self._alias = alias
 
-
-class BizAttributeQuery(AbstractQuery):
-
-    class Assignment(object):
-        def __init__(self, name, query):
-            self.name = name
-            self.query = query
-
-        def __call__(self, value):
-            self.query.params[self.name] = value
-            return self.query
-
-    def __init__(self, biz_attr, alias=None):
-        super().__init__(alias=alias)
-        self._biz_attr = biz_attr
-        self._params = {}
-
-    def __getattr__(self, param_name):
-        return self.Assignment(param_name, self)
-
-    @property
-    def biz_attr(self):
-        return self._biz_attr
-
-    @property
-    def params(self):
-        return self._params
-
     def execute(self, source: 'BizObject'):
-        return self._biz_attr.execute(source, **self.params)
+        raise NotImplementedError('override in subclass')
 
 
 class Query(AbstractQuery):
@@ -314,47 +289,48 @@ class Query(AbstractQuery):
     )
     """
 
+    class Parameters(object):
+        def __init__(
+            self,
+            fields=None
+            attributes=None,
+            sub_queries=None,
+            order_by=None,
+            where=None,
+            limit=None,
+            offset=None,
+        ):
+            self.fields = fields or {'_id': None, '_rev': None}
+            self.attributes = attributes or {}
+            self.sub_queries = sub_queries or {}
+            self.order_by = order_by or tuple()
+            self.where = where or None,
+            self.limit = None
+            self.offset = None
+
+
+    _loader = QueryLoader()
     _executor = QueryExecutor()
-    _marshaller = QueryMarshaller()
     _printer  = QueryPrinter()
 
-    def __init__(
-        self,
-        biz_type: Type['BizType'],
-        alias: Text = None,
-        fields: Set[Text] = None
-    ):
+    def __init__(self, biz_type: Type['BizType'], alias: Text = None):
         super().__init__(alias=alias)
+
         self._biz_type = biz_type
-        self._target_attributes = {}
-        self._subqueries = {}
-        self._order_by = []
-        self._where_predicates = None
-        self._offset = None
-        self._limit = None
+        self._params = Query.Parameters()
 
-        self._target_fields = {'_id': None, '_rev': None}
-        if fields:
-            self._target_fields.update({k: None for k in fields})
-        else:
-            self._target_fields.update({
-                k: None for k, f in biz_type.schema.fields.items()
-                if (f.meta.get('pybiz_is_fk', False) or f.required)
-            })
-
-        self._dict_value_map = {
-            'limit': self.get_limit,
-            'offset': self.get_offset,
-            'where': self.get_where,
-            'order_by': self.get_order_by,
-            'fields': self.get_fields,
-            'attributes': self.get_attributes,
-            'subqueries': self.get_subqueries,
-        }
+        # by default, select at least all fields used by any relationship
+        # declared on the biz_type.
+        self._params.fields.update({
+            f.name: None for f in biz_type.schema.fields.values()
+            if (f.meta.get('pybiz_is_fk', False) or f.required)
+        })
 
     def __getitem__(self, key):
-        getter = self._dict_value_map.get(key)
-        return getter() if getter else None
+        return getattr(self._params, key)
+
+    def __setitem__(self, key, value):
+        return setattr(self._params, key, value)
 
     def __repr__(self):
         biz_type_name = self.biz_type.__name__ if self.biz_type else ''
@@ -373,26 +349,101 @@ class Query(AbstractQuery):
 
     def select(self, *targets: Tuple, append=True) -> 'Query':
         if not append:
-            self.clear_targets()
-        self.add_targets(targets)
+            self._params.fields.clear()
+            self._params.sub_queries.clear()
+            self._params.attributes.clear()
+        self._add_targets(targets)
         return self
 
-    def clear_targets(self):
-        self._subqueries.clear()
-        self._target_fields.clear()
-        self._target_attributes.clear()
+    def where(self, *predicates: 'Predicate', append=True) -> 'Query':
+        """
+        Append or replace "where"-expression Predicates.
+        """
+        if predicates is None:
+            self._params.where = None
+        else:
+            additional_predicates = []
+            for obj in predicates:
+                if is_sequence(obj):
+                    additional_predicates.extend(obj)
+                else:
+                    additional_predicates.append(obj)
+            additional_predicates = tuple(additional_predicates)
+            if self._params.where is None:
+                self._params.where = tuple()
+            if append:
+                self._params.where += additional_predicates
+            else:
+                self._params.where = additional_predicates
+        return self
 
-    def add_targets(self, targets):
+    def limit(self, limit: int) -> 'Query':
+        """
+        Set or re-set the Query limit int, for pagination. Used in convert with
+        offset.
+        """
+        self._params.limit = max(limit, 1) if limit is not None else None
+        return self
+
+    def offset(self, offset: int) -> 'Query':
+        """
+        Set or re-set the Query offset int, for pagination, used in conjunction
+        with limit.
+        """
+        self._params.offset = max(0, offset) if offset is not None else None
+        return self
+
+    def order_by(self, *order_by) -> 'Query':
+        order_by_flattened = []
+        for obj in order_by:
+            if is_sequence(obj):
+                order_by_flattened.extend(obj)
+            else:
+                order_by_flattened.append(obj)
+        order_by_flattened = tuple(order_by_flattened)
+        self._params.order_by = order_by_flattened
+        return self
+
+    def show(self):
+        self._printer.print_query(query=self)
+
+    def dump(self) -> Dict:
+        return self._loader.dump(self)
+
+    @classmethod
+    def load(cls, biz_type: Type['BizObject'], data: Dict) -> 'Query':
+        return cls._loader.load(biz_type, data)
+
+    @classmethod
+    def from_keys(cls, biz_type: Type['BizObject'], keys: Set[Text] = None):
+        if not keys:
+            keys = biz_type.schema.fields.keys()
+        return cls._loader.from_keys(biz_type, keys=keys)
+
+    @classmethod
+    def from_graphql(cls, biz_type: Type['BizObject'], query: Text) -> 'Query':
+        executor = graphql.GraphQLExecutor(biz_type)
+        return executor.query(query, execute=False)
+
+    @property
+    def biz_type(self) -> Type['BizObject']:
+        return self._biz_type
+
+    @property
+    def params(self) -> Parameters:
+        return self._params
+
+    def _add_targets(self, targets):
         for obj in targets:
             if is_sequence(obj):
-                self.add_targets(obj)
+                self._add_targets(obj)
             elif isinstance(obj, dict):
                 for k, v in obj.items():
-                    self.add_target(k, v)
+                    self._add_target(k, v)
             else:
-                self.add_target(obj, None)
+                self._add_target(obj, None)
 
-    def add_target(self, target, params):
+    def _add_target(self, target, params):
         """
         Add a new query target to this Query. A target can be a FieldProperty,
         RelationshipProperty, ViewProperty, or more generically, any
@@ -404,6 +455,7 @@ class Query(AbstractQuery):
         targets = None
         params = params if params is not None else {}
 
+        # resolve pybiz type from string target variable
         try:
             if isinstance(target, str):
                 target = getattr(self._biz_type, target)
@@ -411,123 +463,77 @@ class Query(AbstractQuery):
             raise AttributeError(
                 f'{self._biz_type} has no attribute "{target}"'
             )
+
+        # add the target to the appropriate collection
         if isinstance(target, FieldProperty):
+            assert target.biz_attr is self.biz_type
             key = target.field.name
-            targets = self._target_fields
+            targets = self._params.fields
         elif isinstance(target, BizAttributeProperty):
+            assert target.biz_attr.biz_type is self.biz_type
             biz_attr = target.biz_attr
             key = biz_attr.name
+            targets = self._params.attributes
             if biz_attr.category == 'relationship':
-                targets = self._subqueries
                 params = Query.from_keys(biz_type=biz_attr.target_biz_type)
-            else:
-                targets = self._target_attributes
         elif isinstance(target, BizAttributeQuery):
+            assert target.biz_type is self.biz_type
             key = target.alias
-            targets = self._target_attributes
+            targets = self._params.attributes
             params = target
         elif isinstance(target, Query):
+            assert target.biz_type is self.biz_type
             key = target.alias
-            targets = self._subqueries
+            targets = self._params.attributes
             params = target
 
         if targets is not None:
             targets[key] = params
 
-    def where(self, *predicates: 'Predicate', append=True) -> 'Query':
-        """
-        Append or replace "where"-expression Predicates.
-        """
-        if predicates is None:
-            self._where_predicates = None
+
+class BizAttributeQuery(AbstractQuery):
+
+    class Assignment(object):
+        def __init__(self, name: Text, query: 'BizAttributeQuery'):
+            self.name = name
+            self.query = query
+
+        def __call__(self, value):
+            self.query._params[self.name] = value
+            return self.query
+
+
+    def __init__(self, biz_attr: 'BizAttribute', alias=None, *args, **kwargs):
+        super().__init__(alias=alias)
+        self._biz_attr = biz_attr
+        self._params = {}
+
+    def __repr__(self):
+        biz_type_name = (
+            self._biz_attr.biz_type.__name__
+            if self.biz_attr else ''
+        )
+        if self.alias:
+            alias_substr = f', alias="{self.alias}"'
         else:
-            predicates_tmp = []
-            for obj in predicates:
-                if is_sequence(obj):
-                    predicates_tmp.extend(obj)
-                else:
-                    predicates_tmp.append(obj)
-            predicates = tuple(predicates_tmp)
-            if self._where_predicates is None:
-                self._where_predicates = tuple()
-            if append:
-                self._where_predicates += predicates
-            else:
-                self._where_predicates = predicates
-        return self
+            alias_substr = ''
 
-    def limit(self, limit: int) -> 'Query':
+        return f'<BizAttributeQuery({biz_type_name}{alias_substr})>'
+
+    def __getattr__(self, param_name):
         """
-        Set or re-set the Query limit int, for pagination. Used in convert with
-        offset.
+        This is so you can do query.foo('bar'), resulting in a 'bar': 'foo'
+        entry in query._params.
         """
-        self._limit = max(limit, 1) if limit is not None else None
-        return self
-
-    def offset(self, offset: int) -> 'Query':
-        """
-        Set or re-set the Query offset int, for pagination, used in conjunction
-        with limit.
-        """
-        self._offset = max(0, offset) if offset is not None else None
-        return self
-
-    def order_by(self, *order_by) -> 'Query':
-        order_by_tmp = []
-        for obj in order_by:
-            if is_sequence(obj):
-                order_by_tmp.extend(obj)
-            else:
-                order_by_tmp.append(obj)
-        order_by = tuple(order_by_tmp)
-        self._order_by = order_by if order_by else tuple()
-        return self
-
-    def show(self):
-        self._printer.print_query(query=self)
-
-    def dump(self) -> Dict:
-        return self._marshaller.dump(self)
-
-    @classmethod
-    def load(cls, biz_type: Type['BizObject'], data: Dict) -> 'Query':
-        return cls._marshaller.load(biz_type, data)
-
-    @classmethod
-    def from_keys(cls, biz_type: Type['BizObject'], keys: Set[Text] = None):
-        if not keys:
-            keys = biz_type.schema.fields.keys()
-        return cls._marshaller.load_from_keys(biz_type, keys=keys)
-
-    @classmethod
-    def from_graphql(
-        cls, biz_type: Type['BizObject'], graphql_query: Text
-    ) -> 'Query':
-        executor = graphql.GraphQLExecutor(biz_type)
-        return executor.query(graphql_query, execute=False)
+        return BizAttributeQuery.Assignment(param_name, self)
 
     @property
-    def biz_type(self) -> Type['BizObject']:
-        return self._biz_type
+    def biz_attr(self) -> 'BizAttribute':
+        return self._biz_attr
 
-    def get_fields(self) -> Dict:
-        return self._target_fields
+    @property
+    def params(self) -> Dict:
+        return self._params
 
-    def get_attributes(self) -> Dict:
-        return self._target_attributes
-
-    def get_where(self) -> Dict:
-        return self._where_predicates
-
-    def get_subqueries(self) -> Dict[Text, 'Query']:
-        return self._subqueries
-
-    def get_order_by(self) -> Tuple:
-        return self._order_by
-
-    def get_limit(self) -> int:
-        return self._limit
-
-    def get_offset(self) -> int:
-        return self._offset
-
+    def execute(self, source: 'BizObject'):
+        return self._biz_attr.execute(source, **self._params)
