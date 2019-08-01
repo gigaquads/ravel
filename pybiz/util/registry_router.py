@@ -13,20 +13,16 @@ class RegistryRouter(CliProgram):
     """
 
     def __init__(
-        self,
-        manifest: 'Manifest' = None,
-        registries: List = None,
-        *args,
-        **kwargs
+        self, manifest: 'Manifest' = None, registries: List = None, *args, **kwargs
     ):
         """
         # Init
         Do not merge unknown args into the args dict, as the registry router
         only cares about the registry field and nothing else.
         """
-        super().__init__(merge_unknown=False, *args, **kwargs)
+        self._registries = registries or {}
         self._manifest = manifest
-        self._registries = registries
+        super().__init__(merge_unknown=False, *args, **kwargs)
 
     def args(self):
         """
@@ -35,8 +31,11 @@ class RegistryRouter(CliProgram):
         argument being the registry that the CLI request will be
         routed to
         """
+        registry_names = ', '.join([r for r in self._registries.keys()])
         return [
-            PositionalArg(name='registry', usage='the registry to utilize')
+            PositionalArg(
+                name='registry', usage=f'the registry to utilize [{registry_names}]'
+            )
         ]
 
     def perform(self, program: 'CliProgram'):
@@ -94,6 +93,5 @@ class RegistryRouter(CliProgram):
         unknown cli args to the cli registry program.
         """
         return self.registry_lifecycle(
-            registry=cli_registry,
-            bootstrap_kwargs={'cli_args': self._unknown_cli_args}
+            registry=cli_registry, bootstrap_kwargs={'cli_args': self._unknown_cli_args}
         )

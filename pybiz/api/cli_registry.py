@@ -187,7 +187,6 @@ class CliCommand(RegistryProxy):
             elif 'bool' in str(dtype):
                 arg_class = FlagArg
             if arg_class:
-                print(arg_class, arg_params)
                 arg = arg_class(**arg_params)
             if arg is not None:
                 args.append(arg)
