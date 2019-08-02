@@ -41,7 +41,7 @@ class Dao(object, metaclass=DaoMeta):
         self._history = DaoHistory(dao=self)
         self._is_bound = False
         self._biz_type = None
-        self._registry = None
+        self._api = None
 
     def __repr__(self):
         if self.is_bound:
@@ -61,8 +61,8 @@ class Dao(object, metaclass=DaoMeta):
         return self._biz_type
 
     @property
-    def registry(self):
-        return self._registry
+    def api(self):
+        return self._api
 
     @property
     def history(self):
@@ -85,12 +85,12 @@ class Dao(object, metaclass=DaoMeta):
         self.on_bind(biz_type, **kwargs)
 
     @classmethod
-    def bootstrap(cls, registry: 'Registry' = None, **kwargs):
+    def bootstrap(cls, api: 'Api' = None, **kwargs):
         """
         Perform class-level initialization, like getting
         a connectio pool, for example.
         """
-        cls._registry = registry
+        cls._api = api
         cls.on_bootstrap(**kwargs)
 
         # TODO: put this into a method

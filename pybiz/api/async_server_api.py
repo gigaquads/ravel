@@ -4,21 +4,21 @@ import uvloop
 
 from typing import Type, Coroutine
 
-from .registry import Registry, AsyncRegistryProxy
+from .base import Api, AsyncProxy
 
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 
-class AsyncServerRegistry(Registry):
+class AsyncServer(Api):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.server = None
         self.loop = None
 
     @property
-    def proxy_type(self) -> Type['RegistryProxy']:
-        return AsyncRegistryProxy
+    def proxy_type(self) -> Type['Proxy']:
+        return AsyncProxy
 
     def on_bootstrap(self, server):
         self.server = server

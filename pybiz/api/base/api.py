@@ -10,14 +10,14 @@ from pybiz.manifest import Manifest
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
 
-from ..exc import RegistryError
-from .registry_decorator import RegistryDecorator
-from .registry_proxy import RegistryProxy
-from .registry_argument_loader import RegistryArgumentLoader
+from ..exc import ApiError
+from .api_decorator import ApiDecorator
+from .api_proxy import Proxy
+from .api_argument_loader import ApiArgumentLoader
 
 
-class Registry(object):
-    def __init__(self, middleware: List['RegistryMiddleware'] = None):
+class Api(object):
+    def __init__(self, middleware: List['ApiMiddleware'] = None):
         self._decorators = []
         self._proxies = {}
         self._api = DictObject(self._proxies)
@@ -29,7 +29,7 @@ class Registry(object):
         self._arg_loader = None
         self._middleware = deque([
             m for m in (middleware or [])
-            if isinstance(self, m.registry_types)
+            if isinstance(self, m.api_types)
         ])
 
     def __repr__(self):
@@ -41,17 +41,17 @@ class Registry(object):
             f')>'
         )
 
-    def __call__(self, *args, **kwargs) -> RegistryDecorator:
+    def __call__(self, *args, **kwargs) -> ApiDecorator:
         """
-        Use this to decorate functions, adding them to this Registry.
+        Use this to decorate functions, adding them to this Api.
         Each time a function is decorated, it arives at the "on_decorate"
-        method, where you can registry the function with a web framework or
+        method, where you can api the function with a web framework or
         whatever system you have in mind.
 
         Usage:
 
         ```python3
-            api = Registry()
+            api = Api()
 
             @api()
             def do_something():
@@ -64,27 +64,27 @@ class Registry(object):
         return decorator
 
     @property
-    def decorator_type(self) -> Type[RegistryDecorator]:
-        return RegistryDecorator
+    def decorator_type(self) -> Type[ApiDecorator]:
+        return ApiDecorator
 
     @property
-    def proxy_type(self) -> Type[RegistryProxy]:
-        return RegistryProxy
+    def proxy_type(self) -> Type[Proxy]:
+        return Proxy
 
     @property
     def manifest(self) -> Manifest:
         return self._manifest
 
     @property
-    def middleware(self) -> List['RegistryMiddleware']:
+    def middleware(self) -> List['ApiMiddleware']:
         return self._middleware
 
     @property
-    def proxies(self) -> Dict[Text, RegistryProxy]:
+    def proxies(self) -> Dict[Text, Proxy]:
         return self._proxies
 
     @property
-    def decorators(self) -> List[RegistryDecorator]:
+    def decorators(self) -> List[ApiDecorator]:
         return self._decorators
 
     @property
@@ -105,7 +105,7 @@ class Registry(object):
 
     def register(self, proxy):
         """
-        Add a RegistryProxy to this registry.
+        Add a Proxy to this api.
         """
         if proxy.name not in self._proxies:
             console.debug(
@@ -114,7 +114,7 @@ class Registry(object):
             )
             self._proxies[proxy.name] = proxy
         else:
-            raise RegistryError(
+            raise ApiError(
                 message=f'proxy already registered, {proxy.name}',
                 data={'proxy': proxy}
             )
@@ -132,7 +132,7 @@ class Registry(object):
             console.warning(f'{self} already bootstrapped. skipping...')
             return self
 
-        console.debug(f'bootstrapping "{self.__class__.__name__}" Registry...')
+        console.debug(f'bootstrapping "{self.__class__.__name__}" Api...')
 
         # merge additional namespace data into namespace accumulator
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
@@ -151,17 +151,17 @@ class Registry(object):
 
         self._manifest.load()
         self._manifest.process(namespace=self._namespace)
-        self._manifest.bootstrap(registry=self)
+        self._manifest.bootstrap(api=self)
         self._manifest.bind()
 
         # bootstrap the middlware
         for mware in self.middleware:
             console.debug(f'bootstrapping {mware}')
-            mware.bootstrap(registry=self)
+            mware.bootstrap(api=self)
 
         # init the arg loader, which is responsible for replacing arguments
         # passed in as ID's with their respective BizObjects
-        self._arg_loader = RegistryArgumentLoader(self)
+        self._arg_loader = ApiArgumentLoader(self)
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
@@ -173,7 +173,7 @@ class Registry(object):
 
     def start(self, *args, **kwargs):
         """
-        Enter the main loop in whatever program context your Registry is
+        Enter the main loop in whatever program context your Api is
         being used, like in a web framework or a REPL.
         """
         console.info(f'starting {self.__class__.__name__}...')
@@ -183,9 +183,9 @@ class Registry(object):
     def on_bootstrap(self, *args, **kwargs):
         pass
 
-    def on_decorate(self, proxy: 'RegistryProxy'):
+    def on_decorate(self, proxy: 'Proxy'):
         """
-        We come here whenever a function is decorated by this registry. Here we
+        We come here whenever a function is decorated by this api. Here we
         can add the decorated function to, say, a web framework as a route.
         """
 

@@ -3,12 +3,12 @@ from typing import Text, List
 from appyratus.schema import Schema
 from appyratus.utils import StringUtils
 
-from pybiz.api.registry import RegistryProxy
+from pybiz.api import Proxy
 
 from .proto import MessageGenerator
 
 
-class GrpcRegistryProxy(RegistryProxy):
+class GrpcProxy(Proxy):
     def __init__(self, func, decorator):
         def build_schema(kwarg, name_suffix):
             type_name = self._msg_name_prefix + name_suffix

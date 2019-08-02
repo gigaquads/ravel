@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Type, Text
 from inspect import Parameter
 from pybiz.contrib.falcon.constants import HTTP_METHODS
 
-from ..base import RegistryMiddleware
+from ..base import ApiMiddleware
 
 DEFAULT_ALLOW_ORIGIN = '*'
 DEFAULT_ALLOW_METHODS = HTTP_METHODS
@@ -25,18 +25,18 @@ DEFAULT_ALLOW_HEADERS = (
 )
 
 
-class CorsMiddleware(RegistryMiddleware):
+class CorsMiddleware(ApiMiddleware):
     """
     CORS
     """
 
     @property
-    def registry_types(self) -> Tuple[Type['Registry']]:
-        from pybiz.contrib.falcon import FalconServiceRegistry
-        return (FalconServiceRegistry, )
+    def api_types(self) -> Tuple[Type['Api']]:
+        from pybiz.contrib.falcon import FalconServiceApi
+        return (FalconServiceApi, )
 
     def post_request(
-        self, proxy: 'RegistryProxy', raw_args: Tuple, raw_kwargs: Dict,
+        self, proxy: 'Proxy', raw_args: Tuple, raw_kwargs: Dict,
         *args, **kwargs
     ):
         request, response = raw_args

@@ -6,13 +6,13 @@ from typing import Dict, Text, Tuple
 
 from pybiz.util.loggers import console
 
-from ..exc import RegistryProxyError, PybizError
+from ..exc import ProxyError, PybizError
 
 
-class RegistryProxy(object):
+class Proxy(object):
     """
-    When a function is decorated with a `Registry` object, the result is a
-    `RegistryProxy`. Its job is to transform the inputs received from an
+    When a function is decorated with a `Api` object, the result is a
+    `Proxy`. Its job is to transform the inputs received from an
     external client into the positional and keyword arguments expected by the
     wrapped function. Proxies also run middleware.
     """
@@ -37,7 +37,7 @@ class RegistryProxy(object):
                 'trace': self.trace,
             }
 
-    def __init__(self, func, decorator: 'RegistryDecorator'):
+    def __init__(self, func, decorator: 'ApiDecorator'):
         """
         Args:
         - `func`: the callable being wrapped by this proxy (or another proxy).
@@ -49,7 +49,7 @@ class RegistryProxy(object):
         """
         self.func = func
         self.decorator = decorator
-        self.target = func.target if isinstance(func, RegistryProxy) else func
+        self.target = func.target if isinstance(func, Proxy) else func
         self.signature = inspect.signature(self.target)
 
     def __getattr__(self, key: Text):
@@ -95,11 +95,11 @@ class RegistryProxy(object):
         return f'<{self.__class__.__name__}({self.name})>'
 
     @property
-    def registry(self) -> 'Registry':
+    def api(self) -> 'Api':
         """
-        Get the `Registry` instance with which this proxy is registered.
+        Get the `Api` instance with which this proxy is registered.
         """
-        return self.decorator.registry
+        return self.decorator.api
 
     @property
     def name(self) -> Text:
@@ -120,7 +120,7 @@ class RegistryProxy(object):
         This is where we go when an exception is raised in self.target when
         called in self.__call__.
         """
-        error = RegistryProxy.Error(exc)
+        error = Proxy.Error(exc)
         console.error(
             message=f'{self}.target ({self.name}) failed',
             data=error.to_dict()
@@ -136,7 +136,7 @@ class RegistryProxy(object):
         # apply pre_request middleware, etc
         error = self.pre_request(raw_args, raw_kwargs)
         if error is None:
-            # get prepared args and kwargs from Registry.on_request,
+            # get prepared args and kwargs from Api.on_request,
             # followed by middleware on_request.
             args, kwargs, error = self.on_request(raw_args, raw_kwargs)
         else:
@@ -162,7 +162,7 @@ class RegistryProxy(object):
             console.error(data=[
                 err.to_dict() for err in errors
             ])
-            raise RegistryProxyError(errors)
+            raise ProxyError(errors)
         return result
 
     def pre_request(self, raw_args, raw_kwargs):
@@ -172,11 +172,11 @@ class RegistryProxy(object):
         """
         # middleware pre-request logic
         try:
-            for mware in self.registry.middleware:
-                if isinstance(self.registry, mware.registry_types):
+            for mware in self.api.middleware:
+                if isinstance(self.api, mware.api_types):
                     mware.pre_request(self, raw_args, raw_kwargs)
         except Exception as exc:
-            error = RegistryProxy.Error(exc, mware)
+            error = Proxy.Error(exc, mware)
             console.error(
                 message=f'{mware.__class__.__name__}.pre_request failed',
                 data=error.to_dict()
@@ -192,22 +192,22 @@ class RegistryProxy(object):
         """
         # get args and kwargs from native inputs
         try:
-            params = self.registry.on_request(self, *raw_args, **raw_kwargs)
+            params = self.api.on_request(self, *raw_args, **raw_kwargs)
             args, kwargs = params if params else (raw_args, raw_kwargs)
         except Exception as exc:
-            return (tuple(), {}, RegistryProxy.Error(exc))
+            return (tuple(), {}, Proxy.Error(exc))
 
         # load BizObjects from ID's passed into the proxy in place
-        args, kwargs = self.registry.argument_loader.load(self, args, kwargs)
+        args, kwargs = self.api.argument_loader.load(self, args, kwargs)
 
         # middleware on_request logic
         try:
-            for mware in self.registry.middleware:
-                if isinstance(self.registry, mware.registry_types):
+            for mware in self.api.middleware:
+                if isinstance(self.api, mware.api_types):
                     mware.on_request(self, args, kwargs)
             return (args, kwargs, None)
         except Exception as exc:
-            error = RegistryProxy.Error(exc, mware)
+            error = Proxy.Error(exc, mware)
             console.error(
                 message=f'{mware.__class__.__name__}.on_request failed',
                 data=error.to_dict()
@@ -227,20 +227,20 @@ class RegistryProxy(object):
 
         # prepare the proxy "result" return value
         try:
-            result = self.decorator.registry.on_response(
+            result = self.decorator.api.on_response(
                 self, raw_result, raw_args, raw_kwargs, *args, **kwargs
             )
         except Exception as exc:
             result = None
-            errors.append(RegistryProxy.Error(exc))
+            errors.append(Proxy.Error(exc))
             console.error(
-                message=f'{self.registry}.on_response failed',
+                message=f'{self.api}.on_response failed',
                 data=errors[-1].to_dict()
             )
 
         # run middleware post-request logic
-        for mware in self.registry.middleware:
-            if isinstance(self.registry, mware.registry_types):
+        for mware in self.api.middleware:
+            if isinstance(self.api, mware.api_types):
                 try:
                     mware.post_request(
                         self, raw_args, raw_kwargs, args, kwargs, result
@@ -261,9 +261,9 @@ class RegistryProxy(object):
         return (result, errors)
 
 
-class AsyncRegistryProxy(RegistryProxy):
+class AsyncProxy(Proxy):
     """
-    This specialized `RegistryProxy` can be used by any new `Registry` type
+    This specialized `Proxy` can be used by any new `Api` type
     whose wrapped functions are coroutines.
     """
 

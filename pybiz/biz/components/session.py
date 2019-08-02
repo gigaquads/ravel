@@ -16,7 +16,7 @@ class Session(BizObject):
 
     @classmethod
     def user_type(cls) -> Type[User]:
-        user_type = cls.registry.types.biz.get('User')
+        user_type = cls.api.types.biz.get('User')
         if user_type is None:
             raise NotImplementedError('return a User subclass')
         return user_type

@@ -1,9 +1,9 @@
-# Registry Applications
+# Api Applications
 
 - [Overview](#overview)
 - [Decorators and Proxies](#decorator-and-proxy-objects)
-- [Walkthru](#registry-walkthru)
-    1. [Implementing `Registry`](#step-1-implementing-registry)
+- [Walkthru](#api-walkthru)
+    1. [Implementing `Api`](#step-1-implementing-api)
     2. [Registering Functions](#step-2-registering-functions)
     1. [Creating an Entrypoint](#step-3-creating-an-entrypoint)
     4. [Running the Program](#step-4-running-the-program)
@@ -18,18 +18,18 @@
     - [Web Socket Server]()
 
 ## Overview
-In Pybiz, each `Registry` manages a collection of Python functions that together define a high-level interface. Each function is added to the `Registry` through a decorator. Moreover, it is job of the `Registry` to provide middleware, IO marshaling logic, and a standard configuration interface and runtime environment.
+In Pybiz, each `Api` manages a collection of Python functions that together define a high-level interface. Each function is added to the `Api` through a decorator. Moreover, it is job of the `Api` to provide middleware, IO marshaling logic, and a standard configuration interface and runtime environment.
 
-Besides the `Registry` class itself, there are two others that work in close concert with it. Here is an overview of their roles and responsibilities:
+Besides the `Api` class itself, there are two others that work in close concert with it. Here is an overview of their roles and responsibilities:
 
-##### 1. `Registry`
-The `Registry` manages a collection of `RegistryProxy` objects, each of which corresponds to a decorated function, and implements key data transformation methods.
+##### 1. `Api`
+The `Api` manages a collection of `Proxy` objects, each of which corresponds to a decorated function, and implements key data transformation methods.
 
-##### 2. `RegistryDecorator`
-Calling a `Registry` object like a function creates a `RegistryDecorator`, which in turn, wraps the decorated function in a `RegistryProxy` and adds it to the `Registry`.
+##### 2. `ApiDecorator`
+Calling a `Api` object like a function creates a `ApiDecorator`, which in turn, wraps the decorated function in a `Proxy` and adds it to the `Api`.
 
-##### 3. `RegistryProxy`
-Each `RegistryProxy` is a callable object, which delegates calls to one of the decorated functions, executing middleware and IO marshaling.
+##### 3. `Proxy`
+Each `Proxy` is a callable object, which delegates calls to one of the decorated functions, executing middleware and IO marshaling.
 
 ---
 These three classes can be illusstrated in a short example.
@@ -38,9 +38,9 @@ These three classes can be illusstrated in a short example.
 ```python
 # file: example.py
 
-from pybiz.api.cli import CliRegistry
+from pybiz.api.cli import CliApi
 
-cli = CliRegistry()
+cli = CliApi()
 
 @cli()                              # See Comment 1.
 def echo(message):
@@ -54,12 +54,12 @@ if __name__ == '__main__':          # See Comment 3.
 ```
 
 ###### Comments
-1. Builds a RegistryDecorator, which builds a RegistryProxy and adds it to `cli`.
-2. Proves that the `echo` function was registered as a `RegistryProxy`.
+1. Builds a ApiDecorator, which builds a Proxy and adds it to `cli`.
+2. Proves that the `echo` function was registered as a `Proxy`.
 3. Defines the program point of entry.
 
 ---
-When we run this program, specifying the name of the `echo` command, followed by its arguments, the `CliRegistry` executes the corresponding `RegistryProxy`, which in turn executes the plain `echo` function it wraps, in between middleware and IO.
+When we run this program, specifying the name of the `echo` command, followed by its arguments, the `CliApi` executes the corresponding `Proxy`, which in turn executes the plain `echo` function it wraps, in between middleware and IO.
 
 This is what running the CLI program would look like:
 
@@ -69,19 +69,19 @@ $ example echo 'spam'
 ```
 
 ## Decorator and Proxy Objects
-Functions are registered by using a `Registry` instance as a decorator. The end result of registering a function is a `RegistryProxy` object, which can access the arguments passed into the decorator, provided any were passed.
+Functions are registered by using a `Api` instance as a decorator. The end result of registering a function is a `Proxy` object, which can access the arguments passed into the decorator, provided any were passed.
 
 Consider the following example:
 
 ```python
-web = WebServiceRegistry()
+web = WebServiceApi()
 
 @web(method='GET', path='/test')
 def test():
   pass
 ```
 
-Here, `web` is our `Registry` instance. By using it as a decorator, a `RegistryDecorator` is created, which in turn creates a `RegistryProxy`. The `RegistryDecorator` holds references to both positional and keyword arguments -- namely, `method` and `path` in our example -- which can be accessed via `FunctionProxy` like so,
+Here, `web` is our `Api` instance. By using it as a decorator, a `ApiDecorator` is created, which in turn creates a `Proxy`. The `ApiDecorator` holds references to both positional and keyword arguments -- namely, `method` and `path` in our example -- which can be accessed via `FunctionProxy` like so,
 
 ```python
 proxy = web.proxies['test']
@@ -90,13 +90,13 @@ assert not proxy.decorator.args
 assert proxy.decorator.kwargs == {'method': 'GET', 'path': '/test'}
 ```
 
-This comes into play when derive the base `RegistryProxy` to create something that looks and behaves more like an `HttpRoute` or `CliCommand` object, for example. To illustrate, we might do
+This comes into play when derive the base `Proxy` to create something that looks and behaves more like an `HttpRoute` or `CliCommand` object, for example. To illustrate, we might do
 
 ```python
-class HttpDecorator(RegistryDecorator):
+class HttpDecorator(ApiDecorator):
   pass
 
-class HttpRoute(RegistryProxy):
+class HttpRoute(Proxy):
 
   @property
   def method(self):
@@ -107,25 +107,25 @@ class HttpRoute(RegistryProxy):
     return self.decorator.kwargs.get('path')
 ```
 
-You can indepdently override which `RegistryDecorator` and `RegistryProxy` types are used by a `Registry` type by overriding the `decorator_type` and `proxy_type` instance properties.
+You can indepdently override which `ApiDecorator` and `Proxy` types are used by a `Api` type by overriding the `decorator_type` and `proxy_type` instance properties.
 
 ```python
-# inside class HttpRegistry(Registry):
+# inside class HttpApi(Api):
 
 @property
-def decorator_type(self) -> Type[RegistryDecorator]:
+def decorator_type(self) -> Type[ApiDecorator]:
     return HttpDecorator
 
 @property
-def proxy_type(self) -> Type[RegistryProxy]:
+def proxy_type(self) -> Type[Proxy]:
     return HttpRoute
 ```
 
 ## Walkthru
-We will walk through the creation and use of a fictitous `Registry` class, which defines a CLI application for processing YAML files. We will look at how functions are registered as "commands" and are run from the shell. Let's imagine that the Python package for this project is called `yamlatrix`
+We will walk through the creation and use of a fictitous `Api` class, which defines a CLI application for processing YAML files. We will look at how functions are registered as "commands" and are run from the shell. Let's imagine that the Python package for this project is called `yamlatrix`
 
-### Step 1: Implementing `Registry`
-At a basic level, deriving the abstract `Registry` base class involves implementing the `on_request`, `on_response`, `on_decorate`, and `start` abstract base methods.
+### Step 1: Implementing `Api`
+At a basic level, deriving the abstract `Api` base class involves implementing the `on_request`, `on_response`, `on_decorate`, and `start` abstract base methods.
 
 In overview,
 
@@ -144,10 +144,10 @@ import yaml
 import json
 import argparse
 
-from pybiz.api.registry import Registry
+from pybiz.api.api import Api
 
 
-class YamlProcessor(Registry):
+class YamlProcessor(Api):
     def on_request(self, proxy, *args, **kwargs):
         """
         Read the input YAML file into a `data` argument and load the
@@ -211,7 +211,7 @@ class YamlProcessor(Registry):
 - `on_decorate` logs something, for example.
 
 ### Step 2: Registering Functions
-After defining our `Registry` class, we can create an instance and register some functions via decorator. Here are three such functions.
+After defining our `Api` class, we can create an instance and register some functions via decorator. Here are three such functions.
 
 ```python
 # file: api.py
@@ -287,8 +287,8 @@ $ yamlatrix jsonify example.yaml
 $ cat example.json
 ```
 ## Available Implementations
-Pybiz comes packaged with a handful of useful `Registry` implementations that cover a range of applications. In this section, we will briefly look at each one.
+Pybiz comes packaged with a handful of useful `Api` implementations that cover a range of applications. In this section, we will briefly look at each one.
 
 ### Command Line Interface (CLI) Application
 - Module: `pybiz.api.cli`
-- Registry: `CliRegistry`
+- Api: `CliApi`

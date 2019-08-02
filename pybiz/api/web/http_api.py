@@ -3,17 +3,17 @@ import requests
 
 from collections import defaultdict
 
-from ..registry import Registry, RegistryProxy, RegistryDecorator
+from ..base import Api, Proxy, ApiDecorator
 
 
-class HttpRegistry(Registry):
+class Http(Api):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.routes = defaultdict(dict)
 
     @property
     def decorator_type(self):
-        return HttpRegistryDecorator
+        return HttpDecorator
 
     @property
     def proxy_type(self):
@@ -32,9 +32,9 @@ class HttpRegistry(Registry):
         return HttpClient(self, scheme, host, port)
 
 
-class HttpRegistryDecorator(RegistryDecorator):
+class HttpDecorator(ApiDecorator):
     def __init__(self,
-        registry,
+        api,
         http_method: str,
         url_path: str,
         schemas: dict=None,
@@ -46,7 +46,7 @@ class HttpRegistryDecorator(RegistryDecorator):
         **kwargs
     ):
         super().__init__(
-            registry,
+            api,
             on_decorate=on_decorate,
             on_request=on_request,
             on_response=on_response,
@@ -59,16 +59,16 @@ class HttpRegistryDecorator(RegistryDecorator):
 
     def __call__(self, func):
         """
-        We wrap each registered func in a RegistryProxy and store it in a table
+        We wrap each registered func in a Proxy and store it in a table
         that lets us look it up by url_path and http_method for use in routing
         requests.
         """
         route = super().__call__(func)
-        self.registry.routes[self.url_path][self.http_method] = route
+        self.api.routes[self.url_path][self.http_method] = route
         return route
 
 
-class HttpRoute(RegistryProxy):
+class HttpRoute(Proxy):
     """
     Stores metadata related to the "target" callable, which in the Http context
     is the endpoint of some URL route.
@@ -92,13 +92,13 @@ class HttpRoute(RegistryProxy):
 
 
 class HttpClient(object):
-    def __init__(self, registry: HttpRegistry, scheme, host, port):
-        self._registry = registry
+    def __init__(self, api: Http, scheme, host, port):
+        self._api = api
         self._handlers = {}
         self._host = host
         self._port = port
         self._scheme = scheme
-        for http_method2route in self._registry.routes.values():
+        for http_method2route in self._api.routes.values():
             for http_method, route in http_method2route.items():
                 self._handlers[route.name] = self._build_handler(
                     http_method, route

@@ -1,16 +1,5 @@
-from .registry import Registry, RegistryProxy, RegistryDecorator
-from .async_server_registry import AsyncServerRegistry, AsyncRegistryProxy
-from .repl_registry import ReplRegistry, ReplFunction
-from .cli_registry import CliRegistry, CliCommand
-from .web import (
-    HttpRegistry, HttpServerRegistry,
-    WsgiServiceRegistry, WebsocketServerRegistry
-)
-
-Repl = ReplRegistry
-Cli = CliRegistry
-AsyncServer = AsyncServerRegistry
-Http = HttpRegistry
-HttpServer = HttpServerRegistry
-WsgiService = WsgiServiceRegistry
-WebsocketServer = WebsocketServerRegistry
+from .base import Api, Proxy, ApiDecorator
+from .async_server_api import AsyncServer, AsyncProxy
+from .repl_api import Repl, ReplFunction
+from .cli_api import Cli, CliCommand
+from .web import Http, HttpServer, WsgiService, WebsocketServer

@@ -6,18 +6,21 @@ from typing import List, Type, Dict, Tuple, Text
 
 from pybiz.util.json_encoder import JsonEncoder
 
-from ..async_server_registry import AsyncServerRegistry
+from ..async_server_api import AsyncServer
 
 
-class WebsocketServerRegistry(AsyncServerRegistry):
+class WebsocketServer(AsyncServer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._host = None
+        self._port = None
 
-    def on_bootstrap(self, host: Text = None, port: int = None):
-        super().on_bootstrap(server=websockets.serve(self.serve, host, port))
-
-    def on_start(self):
-        self.server = websockets.serve(self.serve, self.host, self.port)
+    def on_bootstrap(self, host: Text, port: int):
+        self._host = host
+        self._port = port
+        super().on_bootstrap(
+            server=websockets.serve(self.serve, self.host, self.port)
+        )
 
     def on_request(self, proxy, socket, request: Dict) -> Tuple[Tuple, Dict]:
         args = tuple()

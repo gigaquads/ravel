@@ -49,13 +49,13 @@ class GraphQLSelector(BizAttribute):
 
     def on_bootstrap(self):
         if self._target_func is not None:
-            self._target_func.__globals__.update(self.registry.types.biz)
+            self._target_func.__globals__.update(self.api.types.biz)
         if self._select_func is not None:
-            self._select_func.__globals__.update(self.registry.types.biz)
+            self._select_func.__globals__.update(self.api.types.biz)
         if self._where_func is not None:
-            self._where_func.__globals__.update(self.registry.types.biz)
+            self._where_func.__globals__.update(self.api.types.biz)
         if self._order_by_func is not None:
-            self._order_by_func.__globals__.update(self.registry.types.biz)
+            self._order_by_func.__globals__.update(self.api.types.biz)
 
         self._target_biz_type = self._target_func(MagicMock())
 

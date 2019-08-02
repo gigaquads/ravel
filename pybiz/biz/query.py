@@ -209,7 +209,7 @@ class QueryLoader(object):
         sub_queries = []
         for v in data['sub_queries'].values():
             child_biz_type_name = v['target']['type']
-            child_biz_type = biz_type.registry.types.biz[child_biz_type_name]
+            child_biz_type = biz_type.api.types.biz[child_biz_type_name]
             sub_queries.append(self.load(child_biz_type, v))
 
         targets = sub_queries.copy()

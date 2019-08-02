@@ -5,9 +5,9 @@ from typing import Text, Dict, List
 from appyratus.cli import CliProgram, PositionalArg
 
 
-class RegistryRouter(CliProgram):
+class ApiRouter(CliProgram):
     """
-    # Registry Router
+    # Api Router
     Program convenience for routing commands to multiple
     registries through a single command-line interface
     """
@@ -21,8 +21,8 @@ class RegistryRouter(CliProgram):
     ):
         """
         # Init
-        Do not merge unknown args into the args dict, as the registry router
-        only cares about the registry field and nothing else.
+        Do not merge unknown args into the args dict, as the api router
+        only cares about the api field and nothing else.
         """
         super().__init__(merge_unknown=False, *args, **kwargs)
         self._manifest = manifest
@@ -31,69 +31,69 @@ class RegistryRouter(CliProgram):
     def args(self):
         """
         # Args
-        A list of arguments in use by the registry router.  The first
-        argument being the registry that the CLI request will be
+        A list of arguments in use by the api router.  The first
+        argument being the api that the CLI request will be
         routed to
         """
         return [
-            PositionalArg(name='registry', usage='the registry to utilize')
+            PositionalArg(name='api', usage='the api to utilize')
         ]
 
     def perform(self, program: 'CliProgram'):
         """
         # Perform routing
-        Route to the registry provided in the CLI's first argument
+        Route to the api provided in the CLI's first argument
         """
-        registry_name = self.cli_args.registry
-        registry = self.get_registry(registry_name)
-        if not registry:
-            raise Exception(f'Unable to locate registry "{registry_name}"')
-        registry_method = getattr(self, f'run_{registry_name}', None)
-        if callable(registry_method):
-            return registry_method(registry)
+        api_name = self.cli_args.api
+        api = self.get_api(api_name)
+        if not api:
+            raise Exception(f'Unable to locate api "{api_name}"')
+        api_method = getattr(self, f'run_{api_name}', None)
+        if callable(api_method):
+            return api_method(api)
         else:
-            self.registry_lifecycle(registry=registry)
+            self.api_lifecycle(api=api)
 
-    def get_registry(self, name: Text):
+    def get_api(self, name: Text):
         """
-        # Get registry
+        # Get api
         First by registries dictionary (provided when initialized)
         And if not there, then an attribute on this your router class
         """
         if not self._registries:
-            registry_dict = {}
+            api_dict = {}
         else:
-            registry_dict = self._registries.get(name)
-        registry_attr = getattr(self, name, None)
-        if registry_dict:
-            return registry_dict
-        elif registry_attr:
-            return registry_attr()
+            api_dict = self._registries.get(name)
+        api_attr = getattr(self, name, None)
+        if api_dict:
+            return api_dict
+        elif api_attr:
+            return api_attr()
 
-    def registry_lifecycle(
+    def api_lifecycle(
         self,
-        registry: 'Registry',
+        api: 'Api',
         manifest: Text = None,
         bootstrap_kwargs: Dict = None,
         start_kwargs: Dict = None
     ):
         """
-        Registry lifecycle
+        Api lifecycle
         Perform necessary bootstrapping with manifest and then fire it up
         """
-        registry.bootstrap(
+        api.bootstrap(
             manifest=manifest or self._manifest, **(bootstrap_kwargs or {})
         )
-        registry.start(**(start_kwargs or {}))
-        return registry
+        api.start(**(start_kwargs or {}))
+        return api
 
-    def run_cli(self, cli_registry: 'CliRegistry'):
+    def run_cli(self, cli_api: 'CliApi'):
         """
         # Run Cli
-        A special implementation for the cli registry to provide this program's
-        unknown cli args to the cli registry program.
+        A special implementation for the cli api to provide this program's
+        unknown cli args to the cli api program.
         """
-        return self.registry_lifecycle(
-            registry=cli_registry,
+        return self.api_lifecycle(
+            api=cli_api,
             bootstrap_kwargs={'cli_args': self._unknown_cli_args}
         )

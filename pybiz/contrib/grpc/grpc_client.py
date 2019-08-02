@@ -11,27 +11,27 @@ from pybiz.schema import fields, Schema, Field
 
 
 class GrpcClient(object):
-    def __init__(self, registry: 'GrpcRegistry'):
-        assert registry.is_bootstrapped
+    def __init__(self, api: 'GrpcApi'):
+        assert api.is_bootstrapped
 
-        self._address = registry.grpc.options.client_address
-        self._registry = registry
+        self._address = api.grpc.options.client_address
+        self._api = api
 
         print('Connecting to {}'.format(self._address))
 
-        if registry.grpc.options.secure_channel:
+        if api.grpc.options.secure_channel:
             self._channel = grpc.secure_channel(
                 self._address, grpc.ssl_channel_credentials()
             )
         else:
             self._channel = grpc.insecure_channel(self._address)
 
-        GrpcRegistryStub = registry.grpc.pb2_grpc.GrpcRegistryStub
+        GrpcApiStub = api.grpc.pb2_grpc.GrpcApiStub
 
-        self._grpc_stub = GrpcRegistryStub(self._channel)
+        self._grpc_stub = GrpcApiStub(self._channel)
         self._funcs = {
             k: self._build_func(p)
-            for k, p in registry.proxies.items()
+            for k, p in api.proxies.items()
         }
 
     def __getattr__(self, func_name: Text):
@@ -39,7 +39,7 @@ class GrpcClient(object):
 
     def _build_func(self, proxy):
         key = StringUtils.camel(proxy.name)
-        request_type = getattr(self._registry.grpc.pb2, f'{key}Request')
+        request_type = getattr(self._api.grpc.pb2, f'{key}Request')
         send_request = getattr(self._grpc_stub, proxy.name)
 
         def func(**kwargs):

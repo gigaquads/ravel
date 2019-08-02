@@ -14,7 +14,7 @@ from appyratus.utils import StringUtils
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
 
-from pybiz.api.middleware import RegistryMiddleware
+from pybiz.api.middleware import ApiMiddleware
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.schema import fields, Field
 

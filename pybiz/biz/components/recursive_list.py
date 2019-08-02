@@ -240,9 +240,9 @@ class RecursiveList(BizObject):
 
 
 if __name__ == '__main__':
-    from pybiz.api import ReplRegistry
+    from pybiz.api import ReplApi
 
-    repl = ReplRegistry()
+    repl = ReplApi()
 
     class RecursiveList(RecursiveList):
         name = fields.String()

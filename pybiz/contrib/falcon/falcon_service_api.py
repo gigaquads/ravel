@@ -9,14 +9,14 @@ from typing import Dict
 from appyratus.memoize import memoized_property
 from appyratus.env import Environment
 
-from pybiz.api.web import WsgiServiceRegistry
+from pybiz.api.web import WsgiService
 from pybiz.util.json_encoder import JsonEncoder
 
 from .resource import ResourceManager
 from .media import JsonHandler
 
 
-class FalconServiceRegistry(WsgiServiceRegistry):
+class FalconService(WsgiService):
 
     env = Environment()
 

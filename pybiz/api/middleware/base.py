@@ -5,7 +5,7 @@ from typing import Dict, Tuple, Set, Type
 from appyratus.memoize import memoized_property
 
 
-class RegistryMiddleware(object):
+class ApiMiddleware(object):
     def __init__(self, *args, **kwargs):
         self._is_bootstrapped = False
         
@@ -15,8 +15,8 @@ class RegistryMiddleware(object):
             f'bootstrapped={self._is_bootstrapped})>'
         )
 
-    def bootstrap(self, registry: 'Registry'):
-        self._registry = registry
+    def bootstrap(self, api: 'Api'):
+        self._api = api
         self.on_bootstrap()
         self._is_bootstrapped = True
 
@@ -28,44 +28,44 @@ class RegistryMiddleware(object):
         return self._is_bootstrapped
 
     @property
-    def registry(self) -> 'Registry':
-        return self._registry
+    def api(self) -> 'Api':
+        return self._api
 
     @memoized_property
-    def registry_types(self) -> Tuple[Type['Registry']]:
+    def api_types(self) -> Tuple[Type['Api']]:
         """
-        Return a tuple of Registry class objects for which this middleware
+        Return a tuple of Api class objects for which this middleware
         applies.
         """
-        from pybiz.api.registry import Registry
+        from pybiz.api.api import Api
 
-        return (Registry, )
+        return (Api, )
 
     def pre_request(
         self,
-        proxy: 'RegistryProxy',
+        proxy: 'Proxy',
         args: Tuple,
         kwargs: Dict
     ):
         """
         In pre_request, args and kwargs are in the raw form before being
-        processed by registry.on_request.
+        processed by api.on_request.
         """
 
     def on_request(
         self,
-        proxy: 'RegistryProxy',
+        proxy: 'Proxy',
         args: Tuple,
         kwargs: Dict
     ):
         """
         In on_request, args and kwargs are in the form output by
-        registry.on_request.
+        api.on_request.
         """
 
     def post_request(
         self,
-        proxy: 'RegistryObject',
+        proxy: 'ApiObject',
         raw_args: Tuple,
         raw_kwargs: Dict,
         args: Tuple,
@@ -75,5 +75,5 @@ class RegistryMiddleware(object):
     ):
         """
         In post_request, args and kwargs are in the form output by
-        registry.on_request.
+        api.on_request.
         """

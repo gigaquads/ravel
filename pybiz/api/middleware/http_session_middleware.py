@@ -1,10 +1,10 @@
 from typing import Dict, Tuple, Type, Text
 from inspect import Parameter
 
-from .base import RegistryMiddleware
+from .base import ApiMiddleware
 
 
-class HttpSessionMiddleware(RegistryMiddleware):
+class HttpSessionMiddleware(ApiMiddleware):
     """
     This middleware will try to extract a session ID from an HTTP cookie header
     and load the corresponding Session business object into the raw kwargs
@@ -17,14 +17,14 @@ class HttpSessionMiddleware(RegistryMiddleware):
         self._cookie_name = cookie_name
 
     @property
-    def registry_types(self) -> Tuple[Type['Registry']]:
-        from pybiz.api.http import HttpRegistry
+    def api_types(self) -> Tuple[Type['Api']]:
+        from pybiz.api.http import HttpApi
 
-        return (HttpRegistry, )
+        return (HttpApi, )
 
     def pre_request(
         self,
-        proxy: 'RegistryProxy',
+        proxy: 'Proxy',
         raw_args: Tuple,
         raw_kwargs: Dict
     ):

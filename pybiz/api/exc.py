@@ -1,11 +1,11 @@
 from pybiz.exc import PybizError
 
 
-class RegistryError(PybizError):
+class ApiError(PybizError):
     pass
 
 
-class RegistryProxyError(PybizError):
+class ProxyError(PybizError):
     def __init__(self, errors=None, *args, **kwargs):
         super().__init__('error proxying request')
         self.errors = errors

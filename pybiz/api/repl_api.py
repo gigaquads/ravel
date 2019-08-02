@@ -4,12 +4,12 @@ from typing import Dict, List, Text
 
 from IPython.terminal.embed import InteractiveShellEmbed
 
-from .registry import Registry, RegistryDecorator, RegistryProxy
+from .base import Api, ApiDecorator, Proxy
 
 
-class ReplRegistry(Registry):
+class Repl(Api):
     """
-    Repl is a Registry that collects all registered functions and
+    Repl is a Api that collects all registered functions and
     injects them into an interactive Python shell, or REPL. This is useful for
     experimenting with an API from a command-line interface.
     """
@@ -83,7 +83,7 @@ class ReplRegistry(Registry):
         return super().on_response(proxy, result, *args, **kwargs)
 
 
-class ReplFunction(RegistryProxy):
+class ReplFunction(Proxy):
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
 

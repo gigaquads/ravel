@@ -42,7 +42,7 @@ class DaoBinding(object):
 
 class DaoBinder(object):
     """
-    Stores and manages a global registry, entailing which BizObject class is
+    Stores and manages a global api, entailing which BizObject class is
     associated with which Dao class.
     """
 

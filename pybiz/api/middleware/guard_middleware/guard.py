@@ -18,7 +18,7 @@ class Guard(object):
     """
     Subclasses of Guard must implement guard, which determines
     whether a given request is authorized, by inspecting arguments passed into
-    a corresponding RegistryProxy at runtime.
+    a corresponding Proxy at runtime.
 
     Positional and keyword argument names declared in the guard
     method are plucked from the incoming arguments dynamically (following the
@@ -53,7 +53,7 @@ class Guard(object):
 
     def execute(self, context: Dict, *args, **kwargs) -> bool:
         """
-        Determine whether RegistryProxy request is authorized by performing any
+        Determine whether Proxy request is authorized by performing any
         necessary authorization check here. Each subclass must explicitly
         declare which arguments are required. For example,
 
@@ -63,7 +63,7 @@ class Guard(object):
                 return user.owns(post)
         ```
 
-        This implementation expects to be used with a RegistryProxy with "user"
+        This implementation expects to be used with a Proxy with "user"
         and "post" arguments, for instance:
 
         ```python3

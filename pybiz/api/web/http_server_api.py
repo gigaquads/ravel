@@ -7,10 +7,10 @@ from urllib.parse import urlparse, parse_qs
 
 from pybiz.util.json_encoder import JsonEncoder
 
-from .http_registry import HttpRegistry, HttpRoute
+from .http_api import Http, HttpRoute
 
 
-class HttpServerRegistry(HttpRegistry):
+class HttpServer(Http):
     """
     An HTTP server, using the HTTPServer from the standard library. It sends and
     receives JSON data.

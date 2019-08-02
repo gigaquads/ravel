@@ -136,13 +136,13 @@ class Manifest(object):
         self._register_dao_types()
         return self
 
-    def bootstrap(self, registry: 'Registry'):
+    def bootstrap(self, api: 'Api'):
         for biz_type in self.types.biz.values():
             if not (biz_type.is_abstract or biz_type.is_bootstrapped):
                 console.debug(
                     f'bootstrapping "{biz_type.__name__}" BizObject...'
                 )
-                biz_type.bootstrap(registry=registry)
+                biz_type.bootstrap(api=api)
                 dao = biz_type.get_dao()
                 dao_type = dao.__class__
                 if not dao_type.is_bootstrapped():
@@ -152,7 +152,7 @@ class Manifest(object):
                     )
                     strap = self.bootstraps.get(dao_type_name)
                     kwargs = strap.params if strap else {}
-                    dao_type.bootstrap(registry=registry, **kwargs)
+                    dao_type.bootstrap(api=api, **kwargs)
 
         console.debug(
             f'finished bootstrapped Dao and BizObject classes'
@@ -160,11 +160,11 @@ class Manifest(object):
 
         # inject the following into each proxy target's lexical scope:
         # all other proxies, all BizObject and Dao classes.
-        for proxy in registry.proxies.values():
+        for proxy in api.proxies.values():
             proxy.target.__globals__.update(self.types.biz)
             proxy.target.__globals__.update(self.types.dao)
             proxy.target.__globals__.update({
-                p.name: p.target for p in registry.proxies.values()
+                p.name: p.target for p in api.proxies.values()
             })
 
     def bind(self):

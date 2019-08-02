@@ -38,7 +38,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     is_abstract = False
 
     binder = DaoBinder.get_instance()  # TODO: Make into property
-    registry = None
+    api = None
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -106,10 +106,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return f'<{name}({id_str}){dirty}>'
 
     @classmethod
-    def bootstrap(cls, registry: 'Registry', **kwargs):
-        cls.registry = registry
+    def bootstrap(cls, api: 'Api', **kwargs):
+        cls.api = api
         for biz_attr in cls.attributes.values():
-            biz_attr.bootstrap(registry)
+            biz_attr.bootstrap(api)
         cls.on_bootstrap()
         cls.is_bootstrapped = True
 

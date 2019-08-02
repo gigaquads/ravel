@@ -1,33 +1,21 @@
 import inspect
+
 from pprint import pprint
 
 from IPython.terminal.embed import InteractiveShellEmbed
-from appyratus.cli import (
-    CliProgram,
-    OptionalArg,
-    PositionalArg,
-    Subparser,
-)
+
+from appyratus.cli import CliProgram, OptionalArg, PositionalArg, Subparser
 from appyratus.files import Yaml
-from appyratus.utils import (
-    StringUtils,
-    SysUtils,
-)
-from pybiz.util.misc_functions import (
-    is_bizlist,
-    is_bizobj,
-)
+from appyratus.utils import StringUtils, SysUtils
 
-from .registry import (
-    Registry,
-    RegistryDecorator,
-    RegistryProxy,
-)
+from pybiz.util.misc_functions import is_bizlist, is_bizobj
+
+from .base import Api, ApiDecorator, Proxy
 
 
-class CliRegistry(Registry):
+class Cli(Api):
     """
-    This Registry subclass will create a CliProgram (command-line
+    This Api subclass will create a CliProgram (command-line
     interace) out of the registered functions.
     """
 
@@ -100,7 +88,7 @@ class CliRegistry(Registry):
         response = super().on_response(proxy, result, *args, **kwargs)
         dumped_result = _dump_result_obj(response)
         if self._echo:
-            
+
             output_format = getattr(self._cli_program.cli_args, 'format', None)
             formatted_result = _format_result_data(dumped_result, output_format)
             if isinstance(formatted_result, str):
@@ -126,7 +114,7 @@ def _dump_result_obj(obj):
         return obj
 
 
-class CliCommand(RegistryProxy):
+class CliCommand(Proxy):
     """
     CliCommand represents a top-level CliProgram Subparser.
     """
