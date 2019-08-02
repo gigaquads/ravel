@@ -22,8 +22,11 @@ class QueryExecutor(object):
     def execute(self, query: 'Query'):
         biz_type = query.biz_type
 
-        if query.params.where and len(query.params.where) > 1:
-            predicate = reduce(lambda x, y: x & y, query.params.where)
+        if query.params.where:
+            if len(query.params.where) > 1:
+                predicate = reduce(lambda x, y: x & y, query.params.where)
+            else:
+                predicate = query.params.where[0]
         else:
             predicate = (biz_type._id != None)
 
@@ -196,26 +199,6 @@ class QueryLoader(object):
 
     def __init__(self):
         self._schema = QueryLoader.Schema()
-
-    def dump(self, query):
-        return {
-            'alias': query.alias,
-            'limit': query.params.limit,
-            'offset': query.params.offset,
-            'order_by': [x.dump() for x in query.params.order_by],
-            'where': (
-                [x.dump() for x in query.params.where] if
-                query.params.where is not None
-                else None
-            ),
-            'target': {
-                'type': query.biz_type.__name__,
-                'fields': query.params.fields,
-                'attributes': {
-                    k: self.dump(v) for k, v in query.params.attributes.items()
-                }
-            }
-        }
 
     def load(self, biz_type, data):
         data, errors = self._schema.process(data)
@@ -430,8 +413,23 @@ class Query(AbstractQuery):
     def show(self):
         self._printer.print_query(query=self)
 
-    def dump(self) -> Dict:
-        return self._loader.dump(self)
+    def dump(self):
+        return {
+            'class': self.__class__.__name__,
+            'alias': self.alias,
+            'limit': self.params.limit,
+            'offset': self.params.offset,
+            'order_by': [x.dump() for x in self.params.order_by],
+            'where': [x.dump() for x in (self.params.where or [])],
+            'target': {
+                'type': self.biz_type.__name__,
+                'fields': self.params.fields,
+                'attributes': {
+                    k: v.dump() for k, v
+                    in self.params.attributes.items()
+                }
+            }
+        }
 
     @classmethod
     def load(cls, biz_type: Type['BizObject'], data: Dict) -> 'Query':
@@ -560,3 +558,14 @@ class BizAttributeQuery(AbstractQuery):
 
     def execute(self, source: 'BizObject'):
         return self._biz_attr.execute(source, **self._params)
+
+    def dump(self) -> Dict:
+        record = self.params.copy()
+        record['class'] = self.__class__.__name__
+        record['alias'] = self.alias
+        record['target'] = {
+            'attribute': self.biz_attr.name,
+            'type': self.biz_attr.biz_type,
+        }
+        return record
+

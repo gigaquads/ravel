@@ -108,7 +108,10 @@ class Registry(object):
         Add a RegistryProxy to this registry.
         """
         if proxy.name not in self._proxies:
-            console.debug(f'{self} registered proxy: {proxy}')
+            console.debug(
+                f'registering "{proxy.name}" with '
+                f'{self.__class__.__name__}...'
+            )
             self._proxies[proxy.name] = proxy
         else:
             raise RegistryError(
@@ -129,7 +132,7 @@ class Registry(object):
             console.warning(f'{self} already bootstrapped. skipping...')
             return self
 
-        console.debug(f'bootstrapping {self}')
+        console.debug(f'bootstrapping "{self.__class__.__name__}" Registry...')
 
         # merge additional namespace data into namespace accumulator
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
@@ -164,7 +167,7 @@ class Registry(object):
         self.on_bootstrap(*args, **kwargs)
         self._is_bootstrapped = True
 
-        console.debug(f'finished bootstrapping {self}')
+        console.debug(f'finished bootstrapping {self.__class__.__name__}')
 
         return self
 
@@ -173,7 +176,7 @@ class Registry(object):
         Enter the main loop in whatever program context your Registry is
         being used, like in a web framework or a REPL.
         """
-        console.info(f'starting {self}')
+        console.info(f'starting {self.__class__.__name__}...')
         self._is_started = True
         return self.on_start()
 

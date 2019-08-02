@@ -62,6 +62,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def select(cls, *keys) -> 'Query':
+        if not keys:
+            keys = tuple(cls.schema.fields.keys())
         return Query(cls).select(*keys)
 
     def __init__(self, data=None, **more_data):

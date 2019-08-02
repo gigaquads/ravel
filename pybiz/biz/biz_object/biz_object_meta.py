@@ -212,5 +212,5 @@ class BizObjectMeta(type):
 
     @staticmethod
     def venusian_callback(scanner, name, biz_type):
-        console.info(f'venusian detected {biz_type.__name__}')
+        console.info(f'venusian scan found "{biz_type.__name__}" BizObject')
         scanner.biz_types.setdefault(name, biz_type)

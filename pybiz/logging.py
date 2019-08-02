@@ -70,8 +70,8 @@ class ConsoleLoggerInterface(LoggerInterface):
         self._style = style or 'json'
 
     def process_message(self, level: Text, message: Text, data: Dict) -> Text:
-        when = TimeUtils.utc_now().strftime('%m/%d/%Y @ %H:%M:%S,%f')
-        level = level.upper()
+        when = TimeUtils.utc_now().strftime('%m/%d/%Y %H:%M:%S')
+        level = level.upper()[0]
 
         if data:
             data = self._json.decode(self._json.encode(data))
@@ -84,7 +84,7 @@ class ConsoleLoggerInterface(LoggerInterface):
         else:
             dumped_data = None
 
-        display_string = f'{when} - ({level}) - {self._name} >>> {message}'
+        display_string = f'{when} ({level}) {self._name} - {message}'
         if dumped_data:
             display_string += f'\n\n{dumped_data}\n'
         return display_string

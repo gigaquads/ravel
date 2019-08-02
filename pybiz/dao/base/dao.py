@@ -9,6 +9,8 @@ from abc import ABCMeta, abstractmethod
 
 from appyratus.env import Environment
 
+from pybiz.util.loggers import console
+
 from .dao_history import DaoHistory, DaoEvent
 
 
@@ -22,6 +24,7 @@ class DaoMeta(ABCMeta):
 
         def callback(scanner, name, dao_type):
             scanner.dao_types.setdefault(name, dao_type)
+            console.info(f'venusian scan found "{dao_type.__name__}" Dao')
 
         venusian.attach(cls, callback, category='dao')
 

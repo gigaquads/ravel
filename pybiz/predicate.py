@@ -32,10 +32,10 @@ OP_CODE_2_DISPLAY_STRING = {
     OP_CODE.LT: '<=',
     OP_CODE.GEQ: '>=',
     OP_CODE.LEQ: '<=',
-    OP_CODE.INCLUDING: 'IN',
-    OP_CODE.EXCLUDING: 'NOT IN',
-    OP_CODE.AND: 'AND',
-    OP_CODE.OR: 'OR',
+    OP_CODE.INCLUDING: 'in',
+    OP_CODE.EXCLUDING: 'not in',
+    OP_CODE.AND: '&&',
+    OP_CODE.OR: '||',
 }
 
 TYPE_BOOLEAN = 1
@@ -63,8 +63,7 @@ class Predicate(object):
         instance, by pybiz gRPC instrumentation, for passing these objects over
         the line.
         """
-        pickled = codecs.encode(pickle.dumps(self), "base64").decode()
-        return '#' + pickled + '#'
+        return codecs.encode(pickle.dumps(self), "base64").decode()
 
     @classmethod
     def parse(biz_type: Type['BizObject'], source: Text) -> 'Predicate':
@@ -115,8 +114,8 @@ class ConditionalPredicate(Predicate):
 
     def __str__(self):
         if self.fprop:
-            host_name = self.fprop.biz_type.__name__
-            lhs = host_name + '.' + self.fprop.field.name
+            biz_type_name = self.fprop.biz_type.__name__
+            lhs = f'{biz_type_name}.{self.fprop.field.name}'
         else:
             lhs = '[NULL]'
 

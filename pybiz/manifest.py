@@ -137,19 +137,26 @@ class Manifest(object):
         return self
 
     def bootstrap(self, registry: 'Registry'):
-        for type_name, dao_type in self.types.dao.items():
-            strap = self.bootstraps.get(type_name)
-            if strap is not None:
-                console.debug(
-                    f'bootstrapping Dao type: {dao_type.__name__}'
-                )
-                dao_type.bootstrap(registry=registry, **strap.params)
         for biz_type in self.types.biz.values():
             if not (biz_type.is_abstract or biz_type.is_bootstrapped):
                 console.debug(
-                    f'bootstrapping BizObject type: {biz_type.__name__}'
+                    f'bootstrapping "{biz_type.__name__}" BizObject...'
                 )
                 biz_type.bootstrap(registry=registry)
+                dao = biz_type.get_dao()
+                dao_type = dao.__class__
+                if not dao_type.is_bootstrapped():
+                    dao_type_name = dao_type.__name__
+                    console.debug(
+                        f'bootstrapping "{dao_type_name}" Dao...'
+                    )
+                    strap = self.bootstraps.get(dao_type_name)
+                    kwargs = strap.params if strap else {}
+                    dao_type.bootstrap(registry=registry, **kwargs)
+
+        console.debug(
+            f'finished bootstrapped Dao and BizObject classes'
+        )
 
         # inject the following into each proxy target's lexical scope:
         # all other proxies, all BizObject and Dao classes.
@@ -238,13 +245,13 @@ class Manifest(object):
                 if issubclass(v, BizObject) and v is not BizObject:
                     self.types.biz[k] = v
                     console.debug(
-                        f'detected BizObject type in '
+                        f'detected BizObject class in '
                         f'namespace dict: {v.__name__}'
                     )
                 elif issubclass(v, Dao):
                     self.types.dao[k] = v
                     console.debug(
-                        f'detected Dao type in namespace '
+                        f'detected Dao class in namespace '
                         f'dict: {v.__name__}'
                     )
 
@@ -258,7 +265,7 @@ class Manifest(object):
 
         def on_error(name):
             from pybiz.util.loggers import console
-            
+
             exc_str = traceback.format_exc()
             console.debug(
                 message=f'venusian scan failed for {name}',

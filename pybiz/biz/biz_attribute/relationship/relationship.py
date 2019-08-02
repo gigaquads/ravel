@@ -110,8 +110,8 @@ class Relationship(BizAttribute):
         self.readonly = readonly
 
         # Default relationship-level query params:
-        self.select = select
-        self.order_by = normalize_to_tuple(order_by)
+        self.select = select if select else set()
+        self.order_by = normalize_to_tuple(order_by) if order_by else tuple()
         self.offset = offset
         self.limit = limit
 
@@ -187,7 +187,17 @@ class Relationship(BizAttribute):
 
         # determine in advance what the "target" BizObject
         # class is that this relationship queries.
-        self.target_biz_type = self.joins[-1](MagicMock())[1].biz_type
+        try:
+            self.target_biz_type = self.joins[-1](MagicMock())[1].biz_type
+        except IndexError:
+            console.error(
+                message='badly formed "join" argument',
+                data={
+                    'relationship': self.name,
+                    'biz_type': self.biz_type.__name__,
+                }
+            )
+            raise
 
         # by default, the relationship will load all
         # required AND all "foreign key" fields.
@@ -220,7 +230,13 @@ class Relationship(BizAttribute):
         select = select if select is not None else self.select
         limit = limit if limit is not None else self.limit
         offset = offset if offset is not None else self.offset
-        order_by = order_by if order_by else self.order_by
+
+        if not order_by and self.order_by:
+            order_by = [
+                func(source) for func in self.order_by
+            ]
+        else:
+            order_by = None
 
         # Apply the "query_simple" method when this relationship is being loaded
         # on a single BizObject; otherwise, apply "query_batch" if it is being
