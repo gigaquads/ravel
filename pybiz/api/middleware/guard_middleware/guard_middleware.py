@@ -17,7 +17,7 @@ class GuardMiddleware(ApiMiddleware):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def on_request(self, proxy: 'Proxy', args: Tuple, kwargs: Dict):
+    def on_request(self, proxy: 'ApiProxy', args: Tuple, kwargs: Dict):
         """
         In on_request, args and kwargs are in the form output by
         api.on_request.

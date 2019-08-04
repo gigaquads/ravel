@@ -3,7 +3,7 @@ import requests
 
 from collections import defaultdict
 
-from ..base import Api, Proxy, ApiDecorator
+from ..base import Api, ApiProxy, ApiDecorator
 
 
 class Http(Api):
@@ -59,7 +59,7 @@ class HttpDecorator(ApiDecorator):
 
     def __call__(self, func):
         """
-        We wrap each registered func in a Proxy and store it in a table
+        We wrap each registered func in a ApiProxy and store it in a table
         that lets us look it up by url_path and http_method for use in routing
         requests.
         """
@@ -68,7 +68,7 @@ class HttpDecorator(ApiDecorator):
         return route
 
 
-class HttpRoute(Proxy):
+class HttpRoute(ApiProxy):
     """
     Stores metadata related to the "target" callable, which in the Http context
     is the endpoint of some URL route.

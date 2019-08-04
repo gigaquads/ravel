@@ -12,7 +12,7 @@ from pybiz.util.loggers import console
 
 from ..exc import ApiError
 from .api_decorator import ApiDecorator
-from .api_proxy import Proxy
+from .api_proxy import ApiProxy
 from .api_argument_loader import ApiArgumentLoader
 
 
@@ -68,8 +68,8 @@ class Api(object):
         return ApiDecorator
 
     @property
-    def proxy_type(self) -> Type[Proxy]:
-        return Proxy
+    def proxy_type(self) -> Type[ApiProxy]:
+        return ApiProxy
 
     @property
     def manifest(self) -> Manifest:
@@ -80,7 +80,7 @@ class Api(object):
         return self._middleware
 
     @property
-    def proxies(self) -> Dict[Text, Proxy]:
+    def proxies(self) -> Dict[Text, ApiProxy]:
         return self._proxies
 
     @property
@@ -105,7 +105,7 @@ class Api(object):
 
     def register(self, proxy):
         """
-        Add a Proxy to this api.
+        Add a ApiProxy to this api.
         """
         if proxy.name not in self._proxies:
             console.debug(
@@ -159,13 +159,14 @@ class Api(object):
             console.debug(f'bootstrapping {mware}')
             mware.bootstrap(api=self)
 
+        # execute custom lifecycle hook provided by this subclass
+        self.on_bootstrap(*args, **kwargs)
+
+        self._is_bootstrapped = True
+
         # init the arg loader, which is responsible for replacing arguments
         # passed in as ID's with their respective BizObjects
         self._arg_loader = ApiArgumentLoader(self)
-
-        # execute custom lifecycle hook provided by this subclass
-        self.on_bootstrap(*args, **kwargs)
-        self._is_bootstrapped = True
 
         console.debug(f'finished bootstrapping {self.__class__.__name__}')
 
@@ -183,7 +184,7 @@ class Api(object):
     def on_bootstrap(self, *args, **kwargs):
         pass
 
-    def on_decorate(self, proxy: 'Proxy'):
+    def on_decorate(self, proxy: 'ApiProxy'):
         """
         We come here whenever a function is decorated by this api. Here we
         can add the decorated function to, say, a web framework as a route.

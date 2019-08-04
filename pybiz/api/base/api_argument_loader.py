@@ -1,9 +1,13 @@
+from inspect import Parameter
+from collections import defaultdict
 from typing import (
     List, Dict, ForwardRef, Text, Tuple, Set, Type,
     _GenericAlias as GenericAlias
 )
 
-from pybiz.util.misc_functions import is_bizobj, is_sequence
+from pybiz.util.misc_functions import (
+    is_bizobj, is_sequence, extract_biz_info_from_annotation
+)
 
 
 class ApiArgumentLoader(object):
@@ -37,27 +41,53 @@ class ApiArgumentLoader(object):
     `User` BizObject schema and is converted into the corresponding BizObject.
     """
 
-    def __init__(self, api: 'Api'):
-        self.biz_types = api.types.biz
+    class ArgumentSpec(object):
+        def __init__(
+            self, position: int, arg_name: Text,
+            many: bool, biz_type: Type['BizObject']
+        ):
+            self.position = position
+            self.arg_name = arg_name
+            self.many = many
+            self.biz_type = biz_type
 
-    def load(self, proxy: 'Proxy', args: Tuple, kwargs: Dict) -> Tuple:
+    def __init__(self, api: 'Api'):
+        self._biz_types = api.types.biz
+        self._proxy_2_specs = defaultdict(list)
+        for proxy in api.proxies.values():
+            for idx, param in enumerate(proxy.signature.parameters.values()):
+                ann = param.annotation
+                many, biz_type_name = extract_biz_info_from_annotation(ann)
+                biz_type = self._biz_types.get(biz_type_name)
+                if biz_type is not None:
+                    position = (
+                        idx if param.default == Parameter.empty else None
+                    )
+                    spec = ApiArgumentLoader.ArgumentSpec(
+                        idx, param.name, many, biz_type
+                    )
+                    self._proxy_2_specs[proxy].append(spec)
+
+    def load(self, proxy: 'ApiProxy', args: Tuple, kwargs: Dict) -> Tuple:
         """
         Replace args and kwargs with corresponding BizThing and return them
         """
-        loaded_args = []
-        loaded_kwargs = {}
+        loaded_args = list(args)
+        loaded_kwargs = kwargs.copy()
 
-        for idx, param in enumerate(proxy.signature.parameters.values()):
-            many, biz_type_name = self.extract_biz_type_info(param.annotation)
-            biz_type = self.biz_types.get(biz_type_name)
-            if idx < len(args):
-                arg = args[idx]
-                loaded_arg = self.load_param(many, biz_type, arg)
-                loaded_args.append(loaded_arg)
+        for spec in self._proxy_2_specs[proxy]:
+            if spec.position is not None:
+                unloaded = args[spec.position]
+                partition = loaded_args
+                key = spec.position
             else:
-                kwarg = kwargs.get(param.name)
-                loaded_kwarg = self.load_param(many, biz_type, kwarg)
-                loaded_kwargs[param.name] = loaded_kwarg
+                unloaded = kwargs.get(spec.arg_name)
+                partition = loaded_kwargs
+                key = spec.arg_name
+
+            partition[key] = self.load_param(
+                spec.many, spec.biz_type, unloaded
+            )
 
         return (loaded_args, loaded_kwargs)
 
@@ -76,6 +106,10 @@ class ApiArgumentLoader(object):
             if is_bizobj(preloaded):
                 return preloaded
             elif isinstance(preloaded, dict):
+                if 'id' in preloaded:
+                    preloaded['_id'] = preloaded.pop('id')
+                if 'rev' in preloaded:
+                    preloaded['_rev'] = preloaded.pop('rev')
                 return biz_type(preloaded)
             else:
                 return biz_type.get(_id=preloaded)
@@ -90,28 +124,3 @@ class ApiArgumentLoader(object):
                 )
             else:
                 return biz_type.get_many(_ids=preloaded)
-
-    def extract_biz_type_info(self, annotation) -> Tuple[bool, Text]:
-        """
-        Return a tuple of metadata pertaining to `obj`, which is some object
-        used in a type annotation, passed in by the caller.
-        """
-        key = None
-        many = False
-
-        if isinstance(annotation, str):
-            key = annotation.split('.')[-1]
-        elif isinstance(obj, type):
-            key = annotation.__name__.split('.')[-1]
-        elif isinstance(annotation, ForwardRef):
-            key = annotation.__forward_arg__
-        elif (
-            (isinstance(annotation, GenericAlias)) and
-            (annotation._name in {'List', 'Tuple', 'Set'})
-        ):
-            if annotation.__args__:
-                arg = annotation.__args__[0]
-                key = self.extract_biz_type_info(arg)[1]
-                many = True
-
-        return (many, key)

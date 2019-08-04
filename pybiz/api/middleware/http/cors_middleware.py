@@ -36,7 +36,7 @@ class CorsMiddleware(ApiMiddleware):
         return (FalconServiceApi, )
 
     def post_request(
-        self, proxy: 'Proxy', raw_args: Tuple, raw_kwargs: Dict,
+        self, proxy: 'ApiProxy', raw_args: Tuple, raw_kwargs: Dict,
         *args, **kwargs
     ):
         request, response = raw_args

@@ -23,13 +23,13 @@ In Pybiz, each `Api` manages a collection of Python functions that together defi
 Besides the `Api` class itself, there are two others that work in close concert with it. Here is an overview of their roles and responsibilities:
 
 ##### 1. `Api`
-The `Api` manages a collection of `Proxy` objects, each of which corresponds to a decorated function, and implements key data transformation methods.
+The `Api` manages a collection of `ApiProxy` objects, each of which corresponds to a decorated function, and implements key data transformation methods.
 
 ##### 2. `ApiDecorator`
-Calling a `Api` object like a function creates a `ApiDecorator`, which in turn, wraps the decorated function in a `Proxy` and adds it to the `Api`.
+Calling a `Api` object like a function creates a `ApiDecorator`, which in turn, wraps the decorated function in a `ApiProxy` and adds it to the `Api`.
 
-##### 3. `Proxy`
-Each `Proxy` is a callable object, which delegates calls to one of the decorated functions, executing middleware and IO marshaling.
+##### 3. `ApiProxy`
+Each `ApiProxy` is a callable object, which delegates calls to one of the decorated functions, executing middleware and IO marshaling.
 
 ---
 These three classes can be illusstrated in a short example.
@@ -54,12 +54,12 @@ if __name__ == '__main__':          # See Comment 3.
 ```
 
 ###### Comments
-1. Builds a ApiDecorator, which builds a Proxy and adds it to `cli`.
-2. Proves that the `echo` function was registered as a `Proxy`.
+1. Builds a ApiDecorator, which builds a ApiProxy and adds it to `cli`.
+2. Proves that the `echo` function was registered as a `ApiProxy`.
 3. Defines the program point of entry.
 
 ---
-When we run this program, specifying the name of the `echo` command, followed by its arguments, the `CliApi` executes the corresponding `Proxy`, which in turn executes the plain `echo` function it wraps, in between middleware and IO.
+When we run this program, specifying the name of the `echo` command, followed by its arguments, the `CliApi` executes the corresponding `ApiProxy`, which in turn executes the plain `echo` function it wraps, in between middleware and IO.
 
 This is what running the CLI program would look like:
 
@@ -68,8 +68,8 @@ $ example echo 'spam'
 > SPAM
 ```
 
-## Decorator and Proxy Objects
-Functions are registered by using a `Api` instance as a decorator. The end result of registering a function is a `Proxy` object, which can access the arguments passed into the decorator, provided any were passed.
+## Decorator and ApiProxy Objects
+Functions are registered by using a `Api` instance as a decorator. The end result of registering a function is a `ApiProxy` object, which can access the arguments passed into the decorator, provided any were passed.
 
 Consider the following example:
 
@@ -81,7 +81,7 @@ def test():
   pass
 ```
 
-Here, `web` is our `Api` instance. By using it as a decorator, a `ApiDecorator` is created, which in turn creates a `Proxy`. The `ApiDecorator` holds references to both positional and keyword arguments -- namely, `method` and `path` in our example -- which can be accessed via `FunctionProxy` like so,
+Here, `web` is our `Api` instance. By using it as a decorator, a `ApiDecorator` is created, which in turn creates a `ApiProxy`. The `ApiDecorator` holds references to both positional and keyword arguments -- namely, `method` and `path` in our example -- which can be accessed via `FunctionProxy` like so,
 
 ```python
 proxy = web.proxies['test']
@@ -90,13 +90,13 @@ assert not proxy.decorator.args
 assert proxy.decorator.kwargs == {'method': 'GET', 'path': '/test'}
 ```
 
-This comes into play when derive the base `Proxy` to create something that looks and behaves more like an `HttpRoute` or `CliCommand` object, for example. To illustrate, we might do
+This comes into play when derive the base `ApiProxy` to create something that looks and behaves more like an `HttpRoute` or `CliCommand` object, for example. To illustrate, we might do
 
 ```python
 class HttpDecorator(ApiDecorator):
   pass
 
-class HttpRoute(Proxy):
+class HttpRoute(ApiProxy):
 
   @property
   def method(self):
@@ -107,7 +107,7 @@ class HttpRoute(Proxy):
     return self.decorator.kwargs.get('path')
 ```
 
-You can indepdently override which `ApiDecorator` and `Proxy` types are used by a `Api` type by overriding the `decorator_type` and `proxy_type` instance properties.
+You can indepdently override which `ApiDecorator` and `ApiProxy` types are used by a `Api` type by overriding the `decorator_type` and `proxy_type` instance properties.
 
 ```python
 # inside class HttpApi(Api):
@@ -117,7 +117,7 @@ def decorator_type(self) -> Type[ApiDecorator]:
     return HttpDecorator
 
 @property
-def proxy_type(self) -> Type[Proxy]:
+def proxy_type(self) -> Type[ApiProxy]:
     return HttpRoute
 ```
 

@@ -1,6 +1,6 @@
 import inspect
 
-from typing import Dict, Tuple, Set, Type
+from typing import Dict, Tuple, Set, Type, List
 
 from appyratus.memoize import memoized_property
 
@@ -8,7 +8,7 @@ from appyratus.memoize import memoized_property
 class ApiMiddleware(object):
     def __init__(self, *args, **kwargs):
         self._is_bootstrapped = False
-        
+
     def __repr__(self):
         return (
             f'<Middleware({self.__class__.__name__}, '
@@ -41,37 +41,21 @@ class ApiMiddleware(object):
 
         return (Api, )
 
-    def pre_request(
-        self,
-        proxy: 'Proxy',
-        args: Tuple,
-        kwargs: Dict
-    ):
+    def pre_request(self, proxy: 'ApiProxy', args: List, kwargs: Dict):
         """
         In pre_request, args and kwargs are in the raw form before being
         processed by api.on_request.
         """
 
-    def on_request(
-        self,
-        proxy: 'Proxy',
-        args: Tuple,
-        kwargs: Dict
-    ):
+    def on_request(self, proxy: 'ApiProxy', args: List, kwargs: Dict):
         """
         In on_request, args and kwargs are in the form output by
         api.on_request.
         """
 
     def post_request(
-        self,
-        proxy: 'ApiObject',
-        raw_args: Tuple,
-        raw_kwargs: Dict,
-        args: Tuple,
-        kwargs: Dict,
-        result,
-        exc: Exception = None
+        self, proxy: 'ApiObject', raw_args: List, raw_kwargs: Dict,
+        args: List, kwargs: Dict, result, exc: Exception = None
     ):
         """
         In post_request, args and kwargs are in the form output by

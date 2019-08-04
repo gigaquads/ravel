@@ -1,6 +1,10 @@
 from uuid import UUID
 from importlib import import_module
-from typing import Dict, Set, Text, List
+from typing import (
+    List, Dict, ForwardRef, Text, Tuple, Set, Type,
+    _GenericAlias as GenericAlias
+)
+
 from copy import deepcopy
 
 from pybiz.constants import (
@@ -98,3 +102,29 @@ def normalize_to_tuple(obj):
             return tuple(obj)
         return (obj, )
     return tuple()
+
+
+def extract_biz_info_from_annotation(annotation) -> Tuple[bool, Text]:
+    """
+    Return a tuple of metadata pertaining to `obj`, which is some object
+    used in a type annotation, passed in by the caller.
+    """
+    key = None
+    many = False
+
+    if isinstance(annotation, str):
+        key = annotation.split('.')[-1]
+    elif isinstance(annotation, type):
+        key = annotation.__name__.split('.')[-1]
+    elif isinstance(annotation, ForwardRef):
+        key = annotation.__forward_arg__
+    elif (
+        (isinstance(annotation, GenericAlias)) and
+        (annotation._name in {'List', 'Tuple', 'Set'})
+    ):
+        if annotation.__args__:
+            arg = annotation.__args__[0]
+            key = extract_biz_info_from_annotation(arg)[1]
+            many = True
+
+    return (many, key)

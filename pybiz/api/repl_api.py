@@ -4,7 +4,7 @@ from typing import Dict, List, Text
 
 from IPython.terminal.embed import InteractiveShellEmbed
 
-from .base import Api, ApiDecorator, Proxy
+from .base import Api, ApiDecorator, ApiProxy
 
 
 class Repl(Api):
@@ -83,7 +83,7 @@ class Repl(Api):
         return super().on_response(proxy, result, *args, **kwargs)
 
 
-class ReplFunction(Proxy):
+class ReplFunction(ApiProxy):
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
 

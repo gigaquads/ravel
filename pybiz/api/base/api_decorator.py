@@ -5,7 +5,7 @@ class ApiDecorator(object):
         self.args = args
         self.kwargs = kwargs
 
-    def __call__(self, func) -> 'Proxy':
+    def __call__(self, func) -> 'ApiProxy':
         proxy = self.api.proxy_type(func, self)
         self.api.register(proxy)
         self.api.on_decorate(proxy)

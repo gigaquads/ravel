@@ -10,7 +10,7 @@ from appyratus.utils import StringUtils, SysUtils
 
 from pybiz.util.misc_functions import is_bizlist, is_bizobj
 
-from .base import Api, ApiDecorator, Proxy
+from .base import Api, ApiDecorator, ApiProxy
 
 
 class Cli(Api):
@@ -114,7 +114,7 @@ def _dump_result_obj(obj):
         return obj
 
 
-class CliCommand(Proxy):
+class CliCommand(ApiProxy):
     """
     CliCommand represents a top-level CliProgram Subparser.
     """

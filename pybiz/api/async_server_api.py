@@ -17,7 +17,7 @@ class AsyncServer(Api):
         self.loop = None
 
     @property
-    def proxy_type(self) -> Type['Proxy']:
+    def proxy_type(self) -> Type['ApiProxy']:
         return AsyncProxy
 
     def on_bootstrap(self, server):
