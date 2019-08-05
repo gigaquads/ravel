@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Type, Text, List
+from typing import Dict, Tuple, Type, Text, List, Callable
 from inspect import Parameter
 
 import pybiz.api.web
@@ -17,19 +17,21 @@ class CookieSessionMiddleware(ApiMiddleware):
         self,
         session_type_name: Text = 'Session',
         session_arg_name: Text = 'session',
+        request_getter: Callable = None,
         cookie_name='sid',
     ):
         super().__init__()
         self._session_type_name = session_type_name
         self._cookie_name = cookie_name
         self._arg_name = session_arg_name
+        self._request_getter = request_getter or self.get_request
 
     @property
     def api_types(self) -> Tuple[Type['Api']]:
         return (pybiz.api.web.Http, )
 
-    def on_request(self, proxy: 'ApiProxy', args: List, kwargs: Dict):
-        request = self.get_request()
+    def pre_request(self, proxy: 'ApiProxy', raw_args: List, raw_kwargs: Dict):
+        request = self._request_getter(raw_args, raw_kwargs)
         if request is None:
             return
 
@@ -44,11 +46,14 @@ class CookieSessionMiddleware(ApiMiddleware):
         # first try to bind session to a kwarg, if present, O(1). Otherwise,
         # scan the positional arugments, O(N)
         if sess_param.default != Parameter.empty:
-            raw_kwargs[session] = self.get_session(session_id)
+            raw_kwargs[self._arg_name] = self.get_session(session_id)
         else:
-            for idx, name in enumerate(proxy.signature.parameter):
-                if name == session_arg_name:
-                    raw_args[idx] = self.get_session(session_id)
+            for name in proxy.signature.parameters:
+                if name == self._arg_name:
+                    try:
+                        raw_kwargs[name] = self.get_session(session_id)
+                    except:
+                        import ipdb; ipdb.set_trace()
                     break
 
     def get_request(self, raw_args, raw_kwargs):

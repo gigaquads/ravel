@@ -1,3 +1,5 @@
+import uuid
+
 from typing import Text, Tuple, List, Type
 
 from pybiz.util.misc_functions import is_bizobj
@@ -17,9 +19,7 @@ class FieldProperty(property):
         super().__init__(fget=self.fget, fset=self.fset, fdel=self.fdel)
         self._field = field
         self._biz_type = biz_type
-
-    def _build_predicate(self, op, other):
-        return ConditionalPredicate(op, self, other)
+        self._hash = uuid.uuid4().int
 
     def __repr__(self):
         type_name = None
@@ -34,6 +34,12 @@ class FieldProperty(property):
             type_name + '.' if type_name else '',
             field_name or ''
         )
+
+    def __hash__(self):
+        return self._hash
+
+    def _build_predicate(self, op, other):
+        return ConditionalPredicate(op, self, other)
 
     def __eq__(self, other: Predicate) -> Predicate:
         return self._build_predicate(OP_CODE.EQ, other)
@@ -104,13 +110,15 @@ class FieldProperty(property):
 
     def fset(self, bizobj, value):
         key = self.field.name
-        if not (value is None and self.field.nullable):
+        if value is not None:
             value, error = self.field.process(value)
             if error:
                 raise ValueError(
                     f'error setting {key} to {value}: {error}'
                 )
             bizobj.internal.record[key] = value
+        elif self.field.nullable:
+            bizobj.internal.record[key] = None
         else:
             raise AttributeError(key)
 
@@ -122,4 +130,3 @@ class FieldProperty(property):
             )
         else:
             bizobj.internal.record.pop(key, None)
-

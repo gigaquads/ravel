@@ -41,7 +41,7 @@ class ApiMiddleware(object):
 
         return (Api, )
 
-    def pre_request(self, proxy: 'ApiProxy', args: List, kwargs: Dict):
+    def pre_request(self, proxy: 'ApiProxy', raw_args: List, raw_kwargs: Dict):
         """
         In pre_request, args and kwargs are in the raw form before being
         processed by api.on_request.

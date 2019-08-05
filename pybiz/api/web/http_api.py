@@ -85,8 +85,9 @@ class HttpRoute(ApiProxy):
         return '<{}({})>'.format(
             self.__class__.__name__,
             ', '.join([
-                'method={}'.format(self.decorator.http_method.upper()),
-                'path={}'.format(self.decorator.url_path),
+                f'name="{self.name}"',
+                f'method={self.decorator.http_method.upper()}',
+                f'path={self.decorator.url_path}',
             ])
         )
 

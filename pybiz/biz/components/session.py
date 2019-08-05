@@ -11,20 +11,21 @@ from .user import User
 class Session(BizObject):
     is_active = fields.Bool(nullable=False, default=True)
     logged_out_at = fields.DateTime(nullable=True)
-    user_id = fields.Field(required=True, nullable=True, private=True)
-    user = Relationship(lambda self: (Session.user_id, self.user_type()._id))
+    owner_id = fields.Field(required=True, nullable=True, private=True)
+    owner = Relationship(
+        join=lambda self: (Session.owner_id, self.get_user_type()._id)
+    )
 
     @staticmethod
     def __abstract__():
         return True
 
     @classmethod
-    def user_type(cls) -> Type[User]:
+    def get_user_type(cls) -> Type[User]:
         user_type = cls.api.types.biz.get('User')
         if user_type is None:
             raise NotImplementedError('return a User subclass')
         return user_type
-
 
     def logout(self):
         if self.is_active:

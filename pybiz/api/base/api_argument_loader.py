@@ -75,19 +75,23 @@ class ApiArgumentLoader(object):
         loaded_args = list(args)
         loaded_kwargs = kwargs.copy()
 
-        for spec in self._proxy_2_specs[proxy]:
-            if spec.position is not None:
-                unloaded = args[spec.position]
-                partition = loaded_args
-                key = spec.position
-            else:
-                unloaded = kwargs.get(spec.arg_name)
-                partition = loaded_kwargs
-                key = spec.arg_name
+        try:
+            for spec in self._proxy_2_specs[proxy]:
+                if spec.position is not None and spec.position < len(args) - 1:
+                    unloaded = args[spec.position]
+                    partition = loaded_args
+                    key = spec.position
+                else:
+                    unloaded = kwargs.get(spec.arg_name)
+                    partition = loaded_kwargs
+                    key = spec.arg_name
 
-            partition[key] = self.load_param(
-                spec.many, spec.biz_type, unloaded
-            )
+                partition[key] = self.load_param(
+                    spec.many, spec.biz_type, unloaded
+                )
+        except:
+            import ipdb; ipdb.set_trace()
+            pass
 
         return (loaded_args, loaded_kwargs)
 
@@ -116,11 +120,13 @@ class ApiArgumentLoader(object):
         elif is_sequence(preloaded):
             if isinstance(preloaded, set):
                 preloaded = list(preloaded)
-            elif is_bizobj(preloaded[0]):
+            if is_bizobj(preloaded[0]):
                 return biz_type.BizList(preloaded)
             elif isinstance(preloaded[0], dict):
                 return biz_type.BizList(
-                    biz_type(data) for data in preloaded
+                    biz_type(record).clean() if record.get('id') is not None
+                    else biz_type(record)
+                        for record in preloaded
                 )
             else:
                 return biz_type.get_many(_ids=preloaded)

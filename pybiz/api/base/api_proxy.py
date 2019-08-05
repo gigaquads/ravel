@@ -123,7 +123,7 @@ class ApiProxy(object):
         """
         error = ApiProxy.Error(exc)
         console.error(
-            message=f'{self}.target ({self.name}) failed',
+            message=f'{self} failed',
             data=error.to_dict()
         )
         return error
