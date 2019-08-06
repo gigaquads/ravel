@@ -6,7 +6,7 @@ from copy import deepcopy, copy
 from typing import List, Dict, Text, Type, Tuple, Set
 from collections import defaultdict
 
-from appyratus.utils import DictObject
+from appyratus.utils import DictObject, DictUtils
 
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
@@ -65,6 +65,23 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if not keys:
             keys = tuple(cls.schema.fields.keys())
         return Query(cls).select(*keys)
+
+    @classmethod
+    def fake(cls, fields: Set[Text] = None) -> 'BizObject':
+        field_names, children = set(), {}
+        if fields:
+            unflattened = DictUtils.unflatten_keys({k: None for k in fields})
+            for k, v in unflattened.items():
+                if v is None:
+                    field_names.add(k)
+                else:
+                    children[k] = v
+        data = cls.schema.fake(fields=field_names)
+        for k, v in children.items():
+            rel = cls.attributes.relationships.get(k)
+            if rel:
+                data[k] = rel.target_biz_type.fake(v)
+        return cls(data=data)
 
     def __init__(self, data=None, **more_data):
         self.internal = DictObject({
