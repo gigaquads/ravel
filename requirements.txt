@@ -13,6 +13,7 @@ grpcio_tools
 btrees
 falcon
 websockets
+sqlalchemy
 
 pytest
 mock
