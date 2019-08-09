@@ -61,13 +61,20 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return cls.binder.get_dao_instance(cls)
 
     @classmethod
-    def select(cls, *keys) -> 'Query':
+    def select(cls, *select) -> 'Query':
+        """
+        Initialize and return a Query with cls as the target class.
+        """
         if not keys:
             keys = tuple(cls.schema.fields.keys())
-        return Query(cls).select(*keys)
+        return Query(cls).select(*select)
 
     @classmethod
-    def fake(cls, fields: Set[Text] = None) -> 'BizObject':
+    def generate(cls, fields: Set[Text] = None) -> 'BizObject':
+        """
+        Recursively generate a fixture for this BizObject class and any related
+        objects as well.
+        """
         field_names, children = set(), {}
         if fields:
             unflattened = DictUtils.unflatten_keys({k: None for k in fields})
@@ -76,11 +83,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                     field_names.add(k)
                 else:
                     children[k] = v
-        data = cls.schema.fake(fields=field_names)
+
+        data = cls.schema.generate(fields=field_names)
         for k, v in children.items():
             rel = cls.attributes.relationships.get(k)
             if rel:
-                data[k] = rel.target_biz_type.fake(v)
+                data[k] = rel.target_biz_type.generate(v)
+
         return cls(data=data)
 
     def __init__(self, data=None, **more_data):

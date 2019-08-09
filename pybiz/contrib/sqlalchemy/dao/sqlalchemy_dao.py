@@ -44,7 +44,7 @@ class SqlalchemyDao(Dao):
     )
 
     @classmethod
-    def get_default_adapters(cls, dialect: Dialect) -> List[Field.TypeAdapter]:
+    def get_default_adapters(cls, dialect: Dialect) -> List[Field.Adapter]:
         adapters = [
             fields.Field.adapt(
                 on_adapt=lambda field: sa.Text,
@@ -85,7 +85,7 @@ class SqlalchemyDao(Dao):
         return adapters
 
     @classmethod
-    def get_postgresql_default_adapters(cls) -> List[Field.TypeAdapter]:
+    def get_postgresql_default_adapters(cls) -> List[Field.Adapter]:
         pg_types = sa.dialects.postgresql
 
         def on_adapt_list(field):
@@ -121,7 +121,7 @@ class SqlalchemyDao(Dao):
         ]
 
     @classmethod
-    def get_mysql_default_adapters(cls) -> List[Field.TypeAdapter]:
+    def get_mysql_default_adapters(cls) -> List[Field.Adapter]:
         return [
             fields.Dict.adapt(on_adapt=lambda field: sa.JSON),
             fields.Nested.adapt(on_adapt=lambda field: sa.JSON),
@@ -134,7 +134,7 @@ class SqlalchemyDao(Dao):
         ]
 
     @classmethod
-    def get_sqlite_default_adapters(cls) -> List[Field.TypeAdapter]:
+    def get_sqlite_default_adapters(cls) -> List[Field.Adapter]:
         adapters = [
             field_type.adapt(
                 on_adapt=lambda field: sa.Text,
@@ -154,7 +154,7 @@ class SqlalchemyDao(Dao):
         )
         return adapters
 
-    def __init__(self, adapters: List[Field.TypeAdapter] = None):
+    def __init__(self, adapters: List[Field.Adapter] = None):
         super().__init__()
         self._custom_adapters = adapters or []
         self._table = None
