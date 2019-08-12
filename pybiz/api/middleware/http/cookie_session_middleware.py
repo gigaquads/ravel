@@ -63,7 +63,7 @@ class CookieSessionMiddleware(ApiMiddleware):
         return request.cookies.get(self._cookie_name)
 
     def get_session(self, session_id):
-        session_type = self.api.types.biz.get(self._session_type_name)
+        session_type = self.api.biz.get(self._session_type_name)
         if session_type is not None:
             return session_type.get(session_id)
         return None

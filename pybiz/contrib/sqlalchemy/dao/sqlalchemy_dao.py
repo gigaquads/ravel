@@ -44,7 +44,7 @@ class SqlalchemyDao(Dao):
     )
 
     @classmethod
-    def get_default_adapters(cls, dialect: Dialect) -> List[Field.TypeAdapter]:
+    def get_default_adapters(cls, dialect: Dialect) -> List[Field.Adapter]:
         adapters = [
             fields.Field.adapt(
                 on_adapt=lambda field: sa.Text,
@@ -85,7 +85,7 @@ class SqlalchemyDao(Dao):
         return adapters
 
     @classmethod
-    def get_postgresql_default_adapters(cls) -> List[Field.TypeAdapter]:
+    def get_postgresql_default_adapters(cls) -> List[Field.Adapter]:
         pg_types = sa.dialects.postgresql
 
         def on_adapt_list(field):
@@ -103,7 +103,7 @@ class SqlalchemyDao(Dao):
                 fields.Dict: pg_types.JSONB,
                 fields.Nested: pg_types.JSONB,
             }.get(type(field.nested), sa.Text))
-            
+
         return [
             fields.Uuid.adapt(on_adapt=lambda field: pg_types.UUID),
             fields.Dict.adapt(on_adapt=lambda field: pg_types.JSONB),
@@ -121,7 +121,7 @@ class SqlalchemyDao(Dao):
         ]
 
     @classmethod
-    def get_mysql_default_adapters(cls) -> List[Field.TypeAdapter]:
+    def get_mysql_default_adapters(cls) -> List[Field.Adapter]:
         return [
             fields.Dict.adapt(on_adapt=lambda field: sa.JSON),
             fields.Nested.adapt(on_adapt=lambda field: sa.JSON),
@@ -134,7 +134,7 @@ class SqlalchemyDao(Dao):
         ]
 
     @classmethod
-    def get_sqlite_default_adapters(cls) -> List[Field.TypeAdapter]:
+    def get_sqlite_default_adapters(cls) -> List[Field.Adapter]:
         adapters = [
             field_type.adapt(
                 on_adapt=lambda field: sa.Text,
@@ -154,7 +154,7 @@ class SqlalchemyDao(Dao):
         )
         return adapters
 
-    def __init__(self, adapters: List[Field.TypeAdapter] = None):
+    def __init__(self, adapters: List[Field.Adapter] = None):
         super().__init__()
         self._custom_adapters = adapters or []
         self._table = None
@@ -333,7 +333,7 @@ class SqlalchemyDao(Dao):
         select_stmt = sa.select(columns)
 
         id_col_name = self.biz_type.schema.fields['_id'].source
-        id_col = getattr(self.table.c, id_col_name) 
+        id_col = getattr(self.table.c, id_col_name)
 
         if prepared_ids:
             select_stmt = select_stmt.where(id_col.in_(prepared_ids))

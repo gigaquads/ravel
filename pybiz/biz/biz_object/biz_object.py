@@ -253,10 +253,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def delete_all(cls) -> None:
         cls.get_dao().delete_all()
 
-    def create(self) -> 'BizObject':
+    def create(self, data: Dict = None) -> 'BizObject':
+        if data:
+            self.merge(data)
+
         prepared_record = self.internal.record.copy()
         self.insert_defaults(prepared_record)
         prepared_record.pop('_rev', None)
+
         prepared_record, errors = self.schema.process(prepared_record)
         if errors:
             console.error(
@@ -267,8 +271,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 message=f'could not create {self.__class__.__name__} object',
                 data=errors
             )
+
         created_record = self.get_dao().create(prepared_record)
         self.internal.record.update(created_record)
+
         return self.clean()
 
     def update(self, data: Dict = None, **more_data) -> 'BizObject':
@@ -427,14 +433,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return self.get_dao()
 
     @property
-    def raw(self) -> 'DirtyDict':
-        return self.internal.record
-
-    @property
-    def memoized(self) -> Dict:
-        return self.internal.memoized
-
-    @property
     def dirty_data(self) -> Dict:
         dirty_keys = self.dirty
         return {k: self.internal.record[k] for k in dirty_keys}
@@ -474,32 +472,29 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         return clone.clean()
 
-    def merge(self, obj=None, **more_data) -> 'BizObject':
+    def merge(self, source=None, **source_kwargs) -> 'BizObject':
         """
         Merge another dict or BizObject's data dict into the data dict of this
         BizObject. Not called "update" because that would be confused as the
         name of the CRUD method.
         """
-        if not (obj or more_data):
+        if not (source or source_kwargs):
             return self
 
-        if is_bizobj(obj):
-            assert isinstance(obj, self.__class__)
-            dirty_keys = obj.internal.record.keys()
-            for k, v in obj.internal.record.items():
+        if is_bizobj(source):
+            assert isinstance(source, self.__class__)
+            for k, v in source.internal.record.items():
                 setattr(self, k, v)
-            for k, v in obj.internal.memoized.items():
+            for k, v in source.internal.memoized.items():
                 setattr(self, k, v)
-        elif isinstance(obj, dict):
-            obj = self.schema.translate_source(obj)
-            dirty_keys = obj.keys()
-            for k, v in obj.items():
+        elif isinstance(source, dict):
+            source = self.schema.translate_source(source)
+            for k, v in source.items():
                 if k in self.schema.fields or k in self.attributes:
                     setattr(self, k, v)
 
-        if more_data:
-            self.merge(obj=more_data)
-            more_data = self.schema.translate_source(obj)
+        if source_kwargs:
+            self.merge(source=source_kwargs)
 
         return self
 
