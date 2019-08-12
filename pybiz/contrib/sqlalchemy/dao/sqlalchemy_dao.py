@@ -103,7 +103,7 @@ class SqlalchemyDao(Dao):
                 fields.Dict: pg_types.JSONB,
                 fields.Nested: pg_types.JSONB,
             }.get(type(field.nested), sa.Text))
-            
+
         return [
             fields.Uuid.adapt(on_adapt=lambda field: pg_types.UUID),
             fields.Dict.adapt(on_adapt=lambda field: pg_types.JSONB),
@@ -333,7 +333,7 @@ class SqlalchemyDao(Dao):
         select_stmt = sa.select(columns)
 
         id_col_name = self.biz_type.schema.fields['_id'].source
-        id_col = getattr(self.table.c, id_col_name) 
+        id_col = getattr(self.table.c, id_col_name)
 
         if prepared_ids:
             select_stmt = select_stmt.where(id_col.in_(prepared_ids))

@@ -20,17 +20,20 @@ class Api(object):
     def __init__(self, middleware: List['ApiMiddleware'] = None):
         self._decorators = []
         self._proxies = {}
-        self._api = DictObject(self._proxies)
-        self._manifest = None
+        self._biz = None  # set in bootstrap
+        self._manifest = None  # set in bootstrap
+        self._arg_loader = None  # set in bootstrap
         self._is_bootstrapped = False
         self._is_started = False
         self._json_encoder = JsonEncoder()
         self._namespace = {}
-        self._arg_loader = None
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.api_types)
         ])
+
+    def __contains__(self, proxy_name: Text):
+        return proxy_name in self._proxies
 
     def __repr__(self):
         return (
@@ -100,6 +103,10 @@ class Api(object):
         return self._api
 
     @property
+    def biz(self) -> DictObject:
+        return self._biz
+
+    @property
     def is_bootstrapped(self):
         return self._is_bootstrapped
 
@@ -153,6 +160,8 @@ class Api(object):
         self._manifest.process(namespace=self._namespace)
         self._manifest.bootstrap(api=self)
         self._manifest.bind()
+
+        self._biz = DictObject(self._manifest.types.biz)
 
         # bootstrap the middlware
         for mware in self.middleware:
