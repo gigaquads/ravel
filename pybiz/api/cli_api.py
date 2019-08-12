@@ -127,35 +127,63 @@ class CliCommand(ApiProxy):
 
     def _build_subparser_kwargs(self, func, decorator):
         parser_kwargs = decorator.kwargs.get('parser') or {}
-        cli_args = self._build_cli_args(func)
+        decorator_args = decorator.kwargs.get('args')
+        cli_args = self._build_cli_args(func, decorator_args)
         name = StringUtils.dash(parser_kwargs.get('name') or self.program_name)
-        return dict(
-            parser_kwargs, **dict(
-                name=name,
-                args=cli_args,
-                perform=self,
-            )
-        )
+        return dict(parser_kwargs, **dict(
+            name=name,
+            args=cli_args,
+            perform=self,
+        ))
 
-    def _build_cli_args(self, func):
+    def _build_cli_args(self, func, custom_args: list = None):
         required_args = []
         optional_args = []
         args = []
-        for k, param in self.signature.parameters.items():
-            arg = None
+        # custom arguments like ones provided from a decorator should take
+        # precedent over signature-generated arguments.  we will
+        if not custom_args:
+            custom_args = []
+        custom_args_by_name = {a.name: a for a in custom_args}
+        params = self.signature.parameters
+        # collect params by first character, in order to identify collisions
+        params_by_char = {}
+        for k, param in params.items():
+            kchar = k[0]
+            if kchar not in params_by_char:
+                params_by_char[kchar] = []
+            params_by_char[kchar].append(k)
+        # now process the signature params
+        for k, param in params.items():
+            # determine dtype
             if param.annotation is inspect._empty:
                 dtype = None
             else:
                 dtype = param.annotation
+            # conditionally set the dtype too if it was not provided in the
+            # decorated arg, and that it exists throug the param annotation
+            arg = custom_args_by_name.get(k)
+            if arg:
+                if not arg.dtype and dtype:
+                    arg.dtype = dtype
+                args.append(arg)
+                continue
+            # optional short flag can cause collisions with params beginning
+            # with the same character, so only use the short flag
+            relative_params = params_by_char.get(k[0])
+            use_optional_short_flag = len(relative_params) == 1
+            # normal signature argument processing
+            arg = None
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
                     arg = PositionalArg(name=k, dtype=dtype)
                 else:
-                    arg = OptionalArg(name=k, dtype=dtype)
+                    arg = OptionalArg(name=k, dtype=dtype, short_flag=use_optional_short_flag)
             elif param.kind == inspect.Parameter.POSITIONAL_ONLY:
                 arg = PositionalArg(name=k, dtype=dtype)
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
-                arg = OptionalArg(name=k, dtype=dtype)
+                arg = OptionalArg(name=k, dtype=dtype, short_flag=use_optional_short_flag)
             if arg is not None:
                 args.append(arg)
+
         return args
