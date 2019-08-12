@@ -77,7 +77,7 @@ class ApiArgumentLoader(object):
 
         try:
             for spec in self._proxy_2_specs[proxy]:
-                if spec.position is not None and spec.position < len(args) - 1:
+                if spec.position is not None and spec.position < len(args):
                     unloaded = args[spec.position]
                     partition = loaded_args
                     key = spec.position

@@ -199,6 +199,12 @@ class Relationship(BizAttribute):
             )
             raise
 
+        for func in self.order_by:
+            spec = func(MagicMock())
+            # TODO: instead of making it required. Just tell the relationship
+            # to add it to selector list in execute. 
+            self.target_biz_type.schema.fields[spec.key].required = True
+
         # by default, the relationship will load all
         # required AND all "foreign key" fields.
         if not self.select:
@@ -231,12 +237,14 @@ class Relationship(BizAttribute):
         limit = limit if limit is not None else self.limit
         offset = offset if offset is not None else self.offset
 
-        if not order_by and self.order_by:
+        if order_by:
+            order_by = [
+                x(source) if callable(x) else x for x in order_by
+            ]
+        elif self.order_by:
             order_by = [
                 func(source) for func in self.order_by
             ]
-        else:
-            order_by = None
 
         # Apply the "query_simple" method when this relationship is being loaded
         # on a single BizObject; otherwise, apply "query_batch" if it is being

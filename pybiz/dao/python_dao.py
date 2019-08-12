@@ -149,6 +149,7 @@ class PythonDao(Dao):
         offset: int = None,
         **kwargs
     ) -> List:
+
         def union(sequences):
             if sequences:
                 if len(sequences) == 1:

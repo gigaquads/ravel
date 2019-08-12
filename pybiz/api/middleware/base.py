@@ -37,7 +37,7 @@ class ApiMiddleware(object):
         Return a tuple of Api class objects for which this middleware
         applies.
         """
-        from pybiz.api.api import Api
+        from pybiz.api.base import Api
 
         return (Api, )
 

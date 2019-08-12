@@ -61,13 +61,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return cls.binder.get_dao_instance(cls)
 
     @classmethod
-    def select(cls, *select) -> 'Query':
+    def select(cls, *selectors) -> 'Query':
         """
         Initialize and return a Query with cls as the target class.
         """
-        if not keys:
-            keys = tuple(cls.schema.fields.keys())
-        return Query(cls).select(*select)
+        if not selectors:
+            selectors = tuple(cls.schema.fields.keys())
+        return Query(cls).select(*selectors)
 
     @classmethod
     def generate(cls, fields: Set[Text] = None) -> 'BizObject':
