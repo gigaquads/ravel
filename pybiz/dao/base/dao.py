@@ -37,7 +37,7 @@ class Dao(object, metaclass=DaoMeta):
 
     env = Environment()
 
-    def __init__(self, history=False, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         self._history = DaoHistory(dao=self)
         self._is_bound = False
         self._biz_type = None

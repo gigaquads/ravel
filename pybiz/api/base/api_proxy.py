@@ -83,7 +83,7 @@ class ApiProxy(object):
         raw_result = None
         if error is None:
             try:
-                # self.target is the wrapped function. we call it here!
+                #  self.target is the wrapped function. we call it here!
                 raw_result = self.target(*args, **kwargs)
             except Exception as exc:
                 error = self.handle_target_exception(exc)

@@ -21,6 +21,7 @@ class Api(object):
         self._decorators = []
         self._proxies = {}
         self._biz = None  # set in bootstrap
+        self._dal = None  # set in bootstrap
         self._manifest = None  # set in bootstrap
         self._arg_loader = None  # set in bootstrap
         self._is_bootstrapped = False
@@ -107,6 +108,10 @@ class Api(object):
         return self._biz
 
     @property
+    def dal(self) -> DictObject:
+        return self._dal
+
+    @property
     def is_bootstrapped(self):
         return self._is_bootstrapped
 
@@ -162,6 +167,7 @@ class Api(object):
         self._manifest.bind()
 
         self._biz = DictObject(self._manifest.types.biz)
+        self._dal = DictObject(self._manifest.types.dao)
 
         # bootstrap the middlware
         for mware in self.middleware:

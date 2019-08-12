@@ -61,13 +61,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return cls.binder.get_dao_instance(cls)
 
     @classmethod
-    def select(cls, *select) -> 'Query':
+    def select(cls, *selectors) -> 'Query':
         """
         Initialize and return a Query with cls as the target class.
         """
-        if not keys:
-            keys = tuple(cls.schema.fields.keys())
-        return Query(cls).select(*select)
+        if not selectors:
+            selectors = tuple(cls.schema.fields.keys())
+        return Query(cls).select(*selectors)
 
     @classmethod
     def generate(cls, fields: Set[Text] = None) -> 'BizObject':
@@ -79,16 +79,20 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if fields:
             unflattened = DictUtils.unflatten_keys({k: None for k in fields})
             for k, v in unflattened.items():
-                if v is None:
+                if k == '*':
+                    field_names |= cls.schema.fields.keys()
+                elif k in cls.schema.fields:
                     field_names.add(k)
-                else:
-                    children[k] = v
+                elif k in cls.attributes:
+                    attr = cls.attributes.by_name(k)
+                    if attr.category == 'relationship':
+                        children[k] = v
 
         data = cls.schema.generate(fields=field_names)
         for k, v in children.items():
-            rel = cls.attributes.relationships.get(k)
-            if rel:
-                data[k] = rel.target_biz_type.generate(v)
+            attr = cls.attributes.by_name(k)
+            if attr.category == 'relationship':
+                data[k] = attr.target_biz_type.generate(v)
 
         return cls(data=data)
 
