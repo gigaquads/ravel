@@ -123,6 +123,7 @@ class Relationship(BizAttribute):
         self.on_del = normalize_to_tuple(on_del)
 
         self._is_bootstrapped = False
+        self._order_by_fields = {}
 
     def __repr__(self):
         if self.target_biz_type:
@@ -201,9 +202,8 @@ class Relationship(BizAttribute):
 
         for func in self.order_by:
             spec = func(MagicMock())
-            # TODO: instead of making it required. Just tell the relationship
-            # to add it to selector list in execute. 
-            self.target_biz_type.schema.fields[spec.key].required = True
+            field = self.target_biz_type.schema.fields[spec.key]
+            self._order_by_fields[field.name] = field
 
         # by default, the relationship will load all
         # required AND all "foreign key" fields.
@@ -236,6 +236,11 @@ class Relationship(BizAttribute):
         select = select if select is not None else self.select
         limit = limit if limit is not None else self.limit
         offset = offset if offset is not None else self.offset
+
+        if not isinstance(select, set):
+            select = set(select)
+        if self._order_by_fields:
+            select |= self._order_by_fields.keys()
 
         if order_by:
             order_by = [
