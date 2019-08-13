@@ -32,6 +32,9 @@ class PythonDao(Dao):
 
     def __init__(self):
         super().__init__()
+        self.reset()
+
+    def reset(self):
         self.lock = RLock()
         self.indexes = defaultdict(BTree)
         self.id_counter = 1
@@ -39,7 +42,12 @@ class PythonDao(Dao):
         self.records = {}
         self.ignored_indexes = set()
 
+    @classmethod
+    def on_bootstrap(cls):
+        pass
+
     def on_bind(self, biz_type: Type['BizObject'], **kwargs):
+        self.reset()
         for k, v in biz_type.schema.fields.items():
             if isinstance(v, (fields.Dict, fields.Nested, Schema)):
                 self.ignored_indexes.add(k)
