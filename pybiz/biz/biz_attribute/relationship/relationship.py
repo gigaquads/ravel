@@ -123,7 +123,8 @@ class Relationship(BizAttribute):
         self.on_del = normalize_to_tuple(on_del)
 
         self._is_bootstrapped = False
-        self._order_by_fields = {}
+        self._order_by_keys = set()
+        self._foreign_keys = set()
 
     def __repr__(self):
         if self.target_biz_type:
@@ -183,8 +184,8 @@ class Relationship(BizAttribute):
             # the BizObjects loaded through this relationship have all required
             # field data to satisfy their own Relationships' join conditions.
             mocked_retval = func(MagicMock())
-            mocked_retval[0].field.meta['pybiz_is_fk'] = True
-            mocked_retval[1].field.meta['pybiz_is_fk'] = True
+            self._foreign_keys.add(mocked_retval[0].field.name)
+            self._foreign_keys.add(mocked_retval[1].field.name)
 
         # determine in advance what the "target" BizObject
         # class is that this relationship queries.
@@ -203,14 +204,19 @@ class Relationship(BizAttribute):
         for func in self.order_by:
             spec = func(MagicMock())
             field = self.target_biz_type.schema.fields[spec.key]
-            self._order_by_fields[field.name] = field
+            self._order_by_keys.add(field.name)
 
         # by default, the relationship will load all
         # required AND all "foreign key" fields.
         if not self.select:
             self.select = {
-                k: None for k, f in self.target_biz_type.schema.fields.items()
-                if (f.meta.get('pybiz_is_fk', False) or f.required)
+                k: None for k, f
+                in self.target_biz_type.schema.fields.items()
+                if (
+                    f.required
+                    or f.name in self._foreign_keys
+                    or f.name in self._order_by_keys
+                   )
             }
 
         self._is_bootstrapped = True
@@ -221,7 +227,7 @@ class Relationship(BizAttribute):
 
     def execute(
         self,
-        source,
+        source: 'BizThing',
         select: Set = None,
         where: Set = None,
         order_by: Tuple = None,
@@ -232,24 +238,32 @@ class Relationship(BizAttribute):
         Recursively execute this Relationship on a caller BizObject or BizList,
         loading the related BizObject(s).
         """
-        # override default query parameters if provided as arguments here
-        select = select if select is not None else self.select
-        limit = limit if limit is not None else self.limit
-        offset = offset if offset is not None else self.offset
+        # override default limit and offset
+        limit = max(limit, 1) if limit is not None else self.limit
+        offset = max(offset, 0) if offset is not None else self.offset
 
+        # update the selector set with the field names deemed required at a
+        # minimum during bootstrap -- namely, those fields referenced in
+        # order_by and "where" conditions.
         if not isinstance(select, set):
             select = set(select)
-        if self._order_by_fields:
-            select |= self._order_by_fields.keys()
+        if select:
+            select.update(self.select)
+        else:
+            select = self.select
 
+        # compute the sequence of OrderBy objects from the supplied callables.
+        # and add referenced field names to selector set
+        computed_order_by = []
+        order_by = order_by or self.order_by
         if order_by:
-            order_by = [
-                x(source) if callable(x) else x for x in order_by
-            ]
-        elif self.order_by:
-            order_by = [
-                func(source) for func in self.order_by
-            ]
+            for obj in order_by:
+                if callable(obj):
+                    order_by_spec = obj(source)
+                else:
+                    order_by_spec = obj
+                computed_order_by.append(order_by_spec)
+                select.add(order_by_spec.key)
 
         # Apply the "query_simple" method when this relationship is being loaded
         # on a single BizObject; otherwise, apply "query_batch" if it is being
@@ -262,7 +276,7 @@ class Relationship(BizAttribute):
             source,
             select=select,
             where=where,
-            order_by=order_by,
+            order_by=computed_order_by,
             offset=offset,
             limit=limit,
         )
