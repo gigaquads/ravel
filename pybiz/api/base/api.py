@@ -21,7 +21,8 @@ class Api(object):
         self._decorators = []
         self._proxies = {}
         self._biz = None  # set in bootstrap
-        self._dal = None  # set in bootstrap
+        self._dao = None  # set in bootstrap
+        self._method = None  # set in bootstrap
         self._manifest = None  # set in bootstrap
         self._arg_loader = None  # set in bootstrap
         self._is_bootstrapped = False
@@ -100,16 +101,16 @@ class Api(object):
         return self._manifest.types
 
     @property
-    def api(self) -> DictObject:
-        return self._api
-
-    @property
     def biz(self) -> DictObject:
         return self._biz
 
     @property
-    def dal(self) -> DictObject:
-        return self._dal
+    def method(self) -> DictObject:
+        return self._method
+
+    @property
+    def data(self) -> DictObject:
+        return self._data
 
     @property
     def is_bootstrapped(self):
@@ -135,12 +136,13 @@ class Api(object):
         self,
         manifest: Manifest = None,
         namespace: Dict = None,
+        rebootstrap: bool = False,
         *args, **kwargs
     ):
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
-        if self.is_bootstrapped:
+        if self.is_bootstrapped and not rebootstrap:
             console.warning(f'{self} already bootstrapped. skipping...')
             return self
 
@@ -164,10 +166,11 @@ class Api(object):
         self._manifest.load()
         self._manifest.process(namespace=self._namespace)
         self._manifest.bootstrap(api=self)
-        self._manifest.bind()
+        self._manifest.bind(rebind=rebootstrap)
 
         self._biz = DictObject(self._manifest.types.biz)
-        self._dal = DictObject(self._manifest.types.dao)
+        self._data = DictObject(self._manifest.types.dao)
+        self._method = DictObject(self._proxies)
 
         # bootstrap the middlware
         for mware in self.middleware:
