@@ -11,43 +11,43 @@ from pybiz.schema import fields, Schema, Field
 
 
 class GrpcClient(object):
-    def __init__(self, api: 'GrpcApi'):
-        assert api.is_bootstrapped
+    def __init__(self, app: 'GrpcApplication'):
+        assert app.is_bootstrapped
 
-        self._address = api.grpc.options.client_address
-        self._api = api
+        self._address = app.grpc.options.client_address
+        self._app = app
 
         print('Connecting to {}'.format(self._address))
 
-        if api.grpc.options.secure_channel:
+        if app.grpc.options.secure_channel:
             self._channel = grpc.secure_channel(
                 self._address, grpc.ssl_channel_credentials()
             )
         else:
             self._channel = grpc.insecure_channel(self._address)
 
-        GrpcApiStub = api.grpc.pb2_grpc.GrpcApiStub
+        GrpcApplicationStub = app.grpc.pb2_grpc.GrpcApplicationStub
 
-        self._grpc_stub = GrpcApiStub(self._channel)
+        self._grpc_stub = GrpcApplicationStub(self._channel)
         self._funcs = {
             k: self._build_func(p)
-            for k, p in api.proxies.items()
+            for k, p in app.endpoints.items()
         }
 
     def __getattr__(self, func_name: Text):
         return self._funcs[func_name]
 
-    def _build_func(self, proxy):
-        key = StringUtils.camel(proxy.name)
-        request_type = getattr(self._api.grpc.pb2, f'{key}Request')
-        send_request = getattr(self._grpc_stub, proxy.name)
+    def _build_func(self, endpoint):
+        key = StringUtils.camel(endpoint.name)
+        request_type = getattr(self._app.grpc.pb2, f'{key}Request')
+        send_request = getattr(self._grpc_stub, endpoint.name)
 
         def func(**kwargs):
             # prepare and send the request
             request = request_type(**kwargs)
             response = send_request(request)
             # translate the native proto response message to a plain dict
-            data = self._extract_fields(response, proxy.response_schema)
+            data = self._extract_fields(response, endpoint.response_schema)
             return data
 
         return func

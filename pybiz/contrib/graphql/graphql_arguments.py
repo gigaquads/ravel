@@ -3,7 +3,7 @@ import threading
 
 from typing import Dict, Set, Text, List, Type, Tuple
 
-from pybiz.biz.order_by import OrderBy
+from pybiz.biz.query import OrderBy
 from pybiz.predicate import PredicateParser
 
 RE_ORDER_BY = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)

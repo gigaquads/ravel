@@ -2,7 +2,7 @@
 
 ### Table of Contents
 - [Introduction](#introduction)
-- [Api Applications](./api.md)
+- [Application Applications](./api.md)
 - [Middleware](./middleware.md)
 
 ---
@@ -21,4 +21,4 @@ def get_user(user_id):
 
 In this example, we have registered `get_user` with three distinct interfaces: a command-line interface (CLI) application, a web server, and a gRPC service. Note that, in doing so, we made no reference to anything related to CLI, HTTP, or RPC in the arguments or body of the function.
 
-All three decorators derive from a common abstract base type, the `Api` class. Because they do, they conveniently share the same configuration interface and lifecycle methods, allowing a greater ease in running applications in different environments for different purposes. In the sections that follow, we will look at this and related classes in detail.
+All three decorators derive from a common abstract base type, the `Application` class. Because they do, they conveniently share the same configuration interface and lifecycle methods, allowing a greater ease in running applications in different environments for different purposes. In the sections that follow, we will look at this and related classes in detail.

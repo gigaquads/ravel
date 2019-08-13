@@ -13,7 +13,7 @@ from mock import MagicMock
 from appyratus.memoize import memoized_property
 from appyratus.schema.fields import Field
 
-from pybiz.exc import RelationshipArgumentError, RelationshipError
+from pybiz.exceptions import RelationshipArgumentError, RelationshipError
 from pybiz.util.misc_functions import (
     normalize_to_tuple,
     is_bizobj,
@@ -179,7 +179,7 @@ class Relationship(BizAttribute):
         for func in self.joins:
             # add all BizObject classes to the lexical scope of
             # each callable to prevent import errors/cycles
-            func.__globals__.update(self.api.manifest.types.biz)
+            func.__globals__.update(self.app.manifest.types.biz)
 
             # "pybiz_is_fk" is used by Query when it decides which fields to
             # load at a baseline, in order to ensure that all relationships of

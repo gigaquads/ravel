@@ -21,7 +21,7 @@ class PybizFalconError(HTTPError):
 
     def to_dict(self):
         return {
-            'code': self.api_status,
+            'code': self.app_status,
             'status': self.http_status,
             'message': self.message,
             'data': self.data,

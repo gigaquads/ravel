@@ -1,6 +1,6 @@
 import pybiz
 
-startrek = pybiz.Api()
+startrek = pybiz.Application()
 
 
 class Officer(pybiz.BizObject):

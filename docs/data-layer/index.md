@@ -172,17 +172,17 @@ Generally speaking, setting up the `SqlalchemyDao` for use in an Pybiz applicati
 We can use middleware for this, doing something like this:
 
 ```python
-class SqlalchemyTransactionMiddleware(ApiMiddleware):
+class SqlalchemyTransactionMiddleware(ApplicationMiddleware):
   def __init__(self, profile: Text):
     self.profile = SqlalchemyDao.profiles[profile]
     self.profile.initialize()
     self.session = None
 
-  def pre_request(self, proxy, args, kwargs):
+  def pre_request(self, endpoint, args, kwargs):
     self.profile.connect()
     self.session = self.profile.begin()
 
-  def post_request(self, proxy, args, kwargs, result):
+  def post_request(self, endpoint, args, kwargs, result):
     if self.session is None:
       return
     try:

@@ -30,7 +30,7 @@ class CacheDaoExecutor(ThreadPoolExecutor):
         self.dao = dao
 
     def initializer(self):
-        self.dao.be.bootstrap(self.dao.be.api)
+        self.dao.be.bootstrap(self.dao.be.app)
         self.dao.be.bind(self.dao.be.biz_type)
 
     def enqueue(self, method: Text, args=None, kwargs=None):
@@ -97,8 +97,8 @@ class CacheDao(Dao):
 
     @property
     def binder(self):
-        if self.api and self.api.is_bootstrapped:
-            binder = self.api.manifest.binder
+        if self.app and self.app.is_bootstrapped:
+            binder = self.app.manifest.binder
         else:
             binder = DaoBinder.get_instance()
         return binder

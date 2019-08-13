@@ -1,2 +1,2 @@
-from .falcon_service_api import FalconService
+from .falcon_service import FalconService
 from .resource import Resource

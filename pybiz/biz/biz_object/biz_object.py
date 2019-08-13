@@ -18,7 +18,7 @@ from pybiz.util.misc_functions import (
 )
 from pybiz.util.loggers import console
 from pybiz.util.dirty import DirtyDict
-from pybiz.exc import ValidationError, BizObjectError
+from pybiz.exceptions import ValidationError, BizObjectError
 
 from ..query import Query
 from ..dump import NestingDumper, SideLoadingDumper
@@ -39,7 +39,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     is_abstract = False
 
     binder = DaoBinder.get_instance()  # TODO: Make into property
-    api = None
+    app = None
 
     @classmethod
     def __schema__(cls) -> Type['Schema']:
@@ -137,10 +137,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return f'<{name}({id_str}){dirty}>'
 
     @classmethod
-    def bootstrap(cls, api: 'Api', **kwargs):
-        cls.api = api
+    def bootstrap(cls, app: 'Application', **kwargs):
+        cls.app = app
         for biz_attr in cls.attributes.values():
-            biz_attr.bootstrap(api)
+            biz_attr.bootstrap(app)
         cls.on_bootstrap()
         cls.is_bootstrapped = True
 

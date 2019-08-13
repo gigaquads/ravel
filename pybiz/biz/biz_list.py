@@ -1,7 +1,7 @@
 from typing import Type, List, Set, Tuple, Text, Dict
 
 from pybiz.constants import IS_BIZLIST_ANNOTATION
-from pybiz.exc import RelationshipError
+from pybiz.exceptions import RelationshipError
 from pybiz.util.misc_functions import repr_biz_id
 
 from .biz_thing import BizThing

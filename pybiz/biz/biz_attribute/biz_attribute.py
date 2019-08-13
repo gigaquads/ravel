@@ -22,7 +22,7 @@ class BizAttribute(object):
 
         # vars set by bootstrap:
         self._is_bootstrapped = False
-        self._api = None
+        self._app = None
         self._biz_type = None
 
     def __repr__(self):
@@ -92,11 +92,11 @@ class BizAttribute(object):
         return self._biz_type
 
     @property
-    def api(self):
-        return self._api
+    def app(self):
+        return self._app
 
-    def bootstrap(self, api: 'Api'):
-        self._api = api
+    def bootstrap(self, app: 'Application'):
+        self._app = app
         self.on_bootstrap()
         self._is_bootstrapped = True
 

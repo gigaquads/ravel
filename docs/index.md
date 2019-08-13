@@ -36,11 +36,11 @@ via decorator. See [Application Interface Layer](./interface-layer/index.md) for
 In our example, we will register the same two functions `signup` and `login` functions for use in both a JSON web server and interactive IPython shell, or REPL.
 
 ```python
-from pybiz.api.repl import ReplApi
-from pybiz.api.web.http_server import HttpServerApi
+from pybiz.app.repl import ReplApplication
+from pybiz.app.web.http_server import HttpServerApplication
 
-repl = ReplApi()
-http = HttpServerApi()
+repl = ReplApplication()
+http = HttpServerApplication()
 
 
 @repl()
@@ -69,11 +69,11 @@ import sys
 from example import repl, http
 
 
-api = sys.argv[1]
+app = sys.argv[1]
 
-if api == 'http':
+if app == 'http':
   app = http
-elif api == 'repl':
+elif app == 'repl':
   app = repl
 
 app.manifest.process()

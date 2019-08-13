@@ -5,9 +5,9 @@ from typing import Text, Dict, List
 from appyratus.cli import CliProgram, PositionalArg
 
 
-class ApiRouter(CliProgram):
+class ApplicationRouter(CliProgram):
     """
-    # Api Router
+    # Application Router
     Program convenience for routing commands to multiple
     registries through a single command-line interface
     """
@@ -21,8 +21,8 @@ class ApiRouter(CliProgram):
     ):
         """
         # Init
-        Do not merge unknown args into the args dict, as the api router
-        only cares about the api field and nothing else.
+        Do not merge unknown args into the args dict, as the app router
+        only cares about the app field and nothing else.
         """
         super().__init__(merge_unknown=False, *args, **kwargs)
         self._manifest = manifest
@@ -31,69 +31,69 @@ class ApiRouter(CliProgram):
     def args(self):
         """
         # Args
-        A list of arguments in use by the api router.  The first
-        argument being the api that the CLI request will be
+        A list of arguments in use by the app router.  The first
+        argument being the app that the CLI request will be
         routed to
         """
         return [
-            PositionalArg(name='api', usage='the api to utilize')
+            PositionalArg(name='app', usage='the Application to utilize')
         ]
 
     def perform(self, program: 'CliProgram'):
         """
         # Perform routing
-        Route to the api provided in the CLI's first argument
+        Route to the app provided in the CLI's first argument
         """
-        api_name = self.cli_args.api
-        api = self.get_api(api_name)
-        if not api:
-            raise Exception(f'Unable to locate api "{api_name}"')
-        api_method = getattr(self, f'run_{api_name}', None)
-        if callable(api_method):
-            return api_method(api)
+        app_name = self.cli_args.app
+        app = self.get_app(app_name)
+        if not app:
+            raise Exception(f'Unable to locate app "{app_name}"')
+        app_method = getattr(self, f'run_{app_name}', None)
+        if callable(app_method):
+            return app_method(app)
         else:
-            self.api_lifecycle(api=api)
+            self.app_lifecycle(app=app)
 
-    def get_api(self, name: Text):
+    def get_app(self, name: Text):
         """
-        # Get api
+        # Get app
         First by registries dictionary (provided when initialized)
         And if not there, then an attribute on this your router class
         """
         if not self._registries:
-            api_dict = {}
+            app_dict = {}
         else:
-            api_dict = self._registries.get(name)
-        api_attr = getattr(self, name, None)
-        if api_dict:
-            return api_dict
-        elif api_attr:
-            return api_attr()
+            app_dict = self._registries.get(name)
+        app_attr = getattr(self, name, None)
+        if app_dict:
+            return app_dict
+        elif app_attr:
+            return app_attr()
 
-    def api_lifecycle(
+    def app_lifecycle(
         self,
-        api: 'Api',
+        app: 'Application',
         manifest: Text = None,
         bootstrap_kwargs: Dict = None,
         start_kwargs: Dict = None
     ):
         """
-        Api lifecycle
+        Application lifecycle
         Perform necessary bootstrapping with manifest and then fire it up
         """
-        api.bootstrap(
+        app.bootstrap(
             manifest=manifest or self._manifest, **(bootstrap_kwargs or {})
         )
-        api.start(**(start_kwargs or {}))
-        return api
+        app.start(**(start_kwargs or {}))
+        return app
 
-    def run_cli(self, cli_api: 'CliApi'):
+    def run_cli(self, cli_app: 'CliApplication'):
         """
         # Run Cli
-        A special implementation for the cli api to provide this program's
-        unknown cli args to the cli api program.
+        A special implementation for the CLI app to provide this program's
+        unknown CLI args to the CLI app program.
         """
-        return self.api_lifecycle(
-            api=cli_api,
+        return self.app_lifecycle(
+            app=cli_app,
             bootstrap_kwargs={'cli_args': self._unknown_cli_args}
         )

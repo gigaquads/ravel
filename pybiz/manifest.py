@@ -15,7 +15,7 @@ from appyratus.utils import DictUtils, DictObject
 from appyratus.files import Yaml, Json
 from appyratus.env import Environment
 
-from pybiz.exc import ManifestError
+from pybiz.exceptions import ManifestError
 from pybiz.util.misc_functions import import_object
 from pybiz.util.loggers import console
 from pybiz.dao import DaoBinder
@@ -136,13 +136,13 @@ class Manifest(object):
         self._register_dao_types()
         return self
 
-    def bootstrap(self, api: 'Api'):
+    def bootstrap(self, app: 'Application'):
         for biz_type in self.types.biz.values():
             if not (biz_type.is_abstract or biz_type.is_bootstrapped):
                 console.debug(
                     f'bootstrapping "{biz_type.__name__}" BizObject...'
                 )
-                biz_type.bootstrap(api=api)
+                biz_type.bootstrap(app=app)
                 dao = biz_type.get_dao()
                 dao_type = dao.__class__
                 if not dao_type.is_bootstrapped():
@@ -152,19 +152,19 @@ class Manifest(object):
                     )
                     strap = self.bootstraps.get(dao_type_name)
                     kwargs = strap.params if strap else {}
-                    dao_type.bootstrap(api=api, **kwargs)
+                    dao_type.bootstrap(app=app, **kwargs)
 
         console.debug(
             f'finished bootstrapped Dao and BizObject classes'
         )
 
-        # inject the following into each proxy target's lexical scope:
-        # all other proxies, all BizObject and Dao classes.
-        for proxy in api.proxies.values():
-            proxy.target.__globals__.update(self.types.biz)
-            proxy.target.__globals__.update(self.types.dao)
-            proxy.target.__globals__.update({
-                p.name: p.target for p in api.proxies.values()
+        # inject the following into each endpoint target's lexical scope:
+        # all other endpoints, all BizObject and Dao classes.
+        for endpoint in app.endpoints.values():
+            endpoint.target.__globals__.update(self.types.biz)
+            endpoint.target.__globals__.update(self.types.dao)
+            endpoint.target.__globals__.update({
+                p.name: p.target for p in app.endpoints.values()
             })
 
     def bind(self, rebind=False):
@@ -258,7 +258,7 @@ class Manifest(object):
     def _scan_venusian(self):
         """
         Use venusian simply to scan the endpoint packages/modules, causing the
-        endpoint callables to register themselves with the Api instance.
+        endpoint callables to register themselves with the Application instance.
         """
         import pybiz.dao
         import pybiz.contrib

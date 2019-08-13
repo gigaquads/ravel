@@ -1,7 +1,7 @@
 import pytest
 import pybiz
 
-from pybiz.test.domains.startrek import startrek as startrek_api
+from pybiz.test.domains.startrek import startrek as startrek_app
 
 
 @pytest.fixture(scope='session')
@@ -13,7 +13,7 @@ def startrek_manfiest():
 
 @pytest.fixture(scope='function')
 def startrek(startrek_manfiest):
-    return startrek_api.bootstrap(
+    return startrek_app.bootstrap(
         manifest=startrek_manfiest,
         rebootstrap=True
     )

@@ -1,5 +1,7 @@
 import uuid
 
+import pybiz.biz
+
 from typing import Text, Tuple, List, Type
 
 from pybiz.util.misc_functions import is_bizobj
@@ -10,8 +12,6 @@ from pybiz.predicate import (
     BooleanPredicate,
     OP_CODE,
 )
-
-from .order_by import OrderBy
 
 
 class FieldProperty(property):
@@ -77,11 +77,11 @@ class FieldProperty(property):
 
     @property
     def asc(self) -> 'OrderBy':
-        return OrderBy(self.field.source, desc=False)
+        return pybiz.biz.OrderBy(self.field.source, desc=False)
 
     @property
     def desc(self) -> 'OrderBy':
-        return OrderBy(self.field.source, desc=True)
+        return pybiz.biz.OrderBy(self.field.source, desc=True)
 
     def fget(self, bizobj):
         # try to lazy load the field value
