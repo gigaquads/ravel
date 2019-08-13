@@ -110,7 +110,7 @@ class DaoBinder(object):
 
         return None
 
-    def bind(self, biz_types: Set[Type['BizObject']] = None):
+    def bind(self, biz_types: Set[Type['BizObject']] = None, rebind=False):
         if not biz_types:
             biz_types = [v.biz_type for v in self._bindings.values()]
         elif not is_sequence(biz_types):
@@ -118,9 +118,9 @@ class DaoBinder(object):
         for biz_type in biz_types:
             if not biz_type.is_abstract:
                 biz_type.binder = self  # this is used in BizObject.get_dao()
-                self.get_dao_instance(biz_type)
+                self.get_dao_instance(biz_type, rebind=rebind)
 
-    def get_dao_instance(self, biz_type: Type['BizObject'], bind=False) -> Dao:
+    def get_dao_instance(self, biz_type: Type['BizObject'], rebind=False) -> Dao:
         if isinstance(biz_type, str):
             binding = self._bindings.get(biz_type)
         else:
@@ -135,7 +135,7 @@ class DaoBinder(object):
             binding = self.register(biz_type, base_dao_type)
 
         # call bind only if it already hasn't been called
-        if bind or not binding.is_bound:
+        if rebind or not binding.is_bound:
             binding.bind(binder=self)
 
         return binding.dao_instance
