@@ -1,21 +1,22 @@
 import pytest
 import pybiz
 
+from pybiz.test.domains.startrek import startrek as startrek_api
+
+
+@pytest.fixture(scope='session')
+def startrek_manfiest():
+    return {
+        'package': 'pybiz.test.domains.startrek',
+    }
+
 
 @pytest.fixture(scope='function')
-def startrek():
-    api = pybiz.Api()
-
-    @api()
-    def get_officer(officer: 'Officer') -> 'Person':
-        return officer
-
-    api.bootstrap({'package': 'pybiz.test.domains.startrek'})
-
-    for biz_type in api.biz.to_dict().values():
-        biz_type.get_dao().delete_all()
-
-    return api
+def startrek(startrek_manfiest):
+    return startrek_api.bootstrap(
+        manifest=startrek_manfiest,
+        rebootstrap=True
+    )
 
 
 @pytest.fixture(scope='function')

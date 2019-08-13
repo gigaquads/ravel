@@ -1,5 +1,7 @@
 import pybiz
 
+startrek = pybiz.Api()
+
 
 class Officer(pybiz.BizObject):
     first_name = pybiz.String()
@@ -21,3 +23,8 @@ class Ship(pybiz.BizObject):
         order_by=lambda self: Officer.first_name.asc,
         many=True
     )
+
+
+@startrek()
+def get_officer(officer: 'Officer') -> 'Person':
+    return officer
