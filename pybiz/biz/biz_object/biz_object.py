@@ -32,7 +32,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     BizList = None
 
     schema = None
-    relationships = {}
+    relationships = {}  # XXX: deprecated. use cls.attributes
+    base_selectors = set()
 
     is_bootstrapped = False
     is_abstract = False
@@ -180,6 +181,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         order_by: Tuple[Text] = None,
         offset: int = None,
         limit: int = None,
+        execute=True,
         first=False,
     ):
         """
@@ -198,7 +200,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if offset is not None:
             query.offset(offset)
 
-        return query.execute(first=first)
+        if not execute:
+            return query
+        else:
+            return query.execute(first=first)
 
     @classmethod
     def get(cls, _id, select=None) -> 'BizObject':

@@ -319,18 +319,30 @@ class Query(AbstractQuery):
     _executor = QueryExecutor()
     _printer  = QueryPrinter()
 
-    def __init__(self, biz_type: Type['BizType'], alias: Text = None):
+    def __init__(
+        self,
+        biz_type: Type['BizType'],
+        alias: Text = None,
+        select: Set = None,
+        order_by: Tuple = None,
+        limit: int = None,
+        offset: int = None,
+    ):
         super().__init__(alias=alias)
 
         self._biz_type = biz_type
         self._params = Query.Parameters()
 
-        # by default, select at least all fields used by any relationship
-        # declared on the biz_type.
-        self._params.fields.update({
-            f.name: None for f in biz_type.schema.fields.values()
-            if (f.meta.get('pybiz_is_fk', False) or f.required)
-        })
+        self.select(biz_type.base_selectors)
+
+        if offset is not None:
+            self.offset(offset)
+        if limit is not None:
+            self.limit(limit)
+        if order_by is not None:
+            self.order_by(order_by)
+        if select is not None:
+            self.select(select)
 
     def __getitem__(self, key):
         return getattr(self._params, key)

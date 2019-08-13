@@ -56,14 +56,15 @@ class Join(object):
         if where:
             computed_where_predicate &= reduce(lambda x, y: x & y, where)
 
-        results = self.target_fprop.biz_type.query(
+        query = self.target_fprop.biz_type.query(
             select=select,
             where=computed_where_predicate,
             offset=offset,
             limit=limit,
             order_by=order_by,
+            execute=False
         )
-        return results
+        return query
 
     @property
     def where_predicate(self):
@@ -123,6 +124,7 @@ class Relationship(BizAttribute):
         self.on_del = normalize_to_tuple(on_del)
 
         self._is_bootstrapped = False
+        self._is_first_execution = True
         self._order_by_keys = set()
         self._foreign_keys = set()
 
@@ -183,9 +185,8 @@ class Relationship(BizAttribute):
             # load at a baseline, in order to ensure that all relationships of
             # the BizObjects loaded through this relationship have all required
             # field data to satisfy their own Relationships' join conditions.
-            mocked_retval = func(MagicMock())
-            self._foreign_keys.add(mocked_retval[0].field.name)
-            self._foreign_keys.add(mocked_retval[1].field.name)
+            join_info = func(MagicMock())
+            self._foreign_keys.add(join_info[0].field.name)
 
         # determine in advance what the "target" BizObject
         # class is that this relationship queries.
@@ -218,6 +219,12 @@ class Relationship(BizAttribute):
                     or f.name in self._order_by_keys
                    )
             }
+
+        # Now we update the global set of "base" selectors declared on the
+        # target BizObject type. This is done in order to ensure that all fields
+        # referenced by a relationship are eagerly loaded whenever this type of
+        # object is queried.
+        self.target_biz_type.base_selectors.update(self.select)
 
         self._is_bootstrapped = True
 
@@ -272,7 +279,8 @@ class Relationship(BizAttribute):
             self._query_simple if is_bizobj(source)
             else self._query_batch
         )
-        return perform_query(
+
+        biz_thing = perform_query(
             source,
             select=select,
             where=where,
@@ -280,6 +288,11 @@ class Relationship(BizAttribute):
             offset=offset,
             limit=limit,
         )
+
+        if self._is_first_execution:
+            self._is_first_execution = False
+
+        return biz_thing
 
     def _query_simple(
         self,
@@ -302,13 +315,21 @@ class Relationship(BizAttribute):
                 # only pass in the query params to the last join in the join
                 # sequence, as this is the one that truly applies to the
                 # "target" BizObject type being queried.
-                target = join.query(
+                query = join.query(
                     select=select,
                     where=where,
                     limit=limit,
                     offset=offset,
                     order_by=order_by
                 )
+                if self._is_first_execution:
+                    for predicate in query.params.where:
+                        self.target_biz_type.base_selectors.update(
+                            f.name for f in predicate.fields
+                        )
+                if self._is_first_execution:
+                    self._update_base_selectors_with_predicate_fields(query)
+                target = query.execute()
             else:
                 target = join.query(select=select)
 
@@ -357,13 +378,16 @@ class Relationship(BizAttribute):
             # the source objects. Below, we perform logic to determine which
             # source object to zip up with which target BizObject(s)
             if func is self.joins[-1]:
-                targets = join.query(
+                query = join.query(
                     select=select,
                     where=where,
                     order_by=order_by,
                     limit=limit,
                     offset=offset,
                 )
+                if self._is_first_execution:
+                    self._update_base_selectors_with_predicate_fields(query)
+                targets = query.execute()
             else:
                 targets = join.query()
 
@@ -420,6 +444,13 @@ class Relationship(BizAttribute):
                 self._get_terminal_nodes(tree, bizobj, target_biz_type, acc)
         return acc
 
+    def _update_base_selectors_with_predicate_fields(self, query):
+        for predicate in query.params.where:
+            self.target_biz_type.base_selectors.update(
+                f.name for f in predicate.fields
+            )
+
+
 
 class RelationshipProperty(BizAttributeProperty):
 
@@ -427,25 +458,33 @@ class RelationshipProperty(BizAttributeProperty):
     def relationship(self):
         return self.biz_attr
 
-    def select(self, *targets) -> 'Query':
+    def select(self, *selectors) -> 'Query':
+        """
+        Return a Query object targeting this property's Relationship BizObject
+        type, initializing the Query parameters to those set in the
+        Relationship's constructor. The "where" conditions are computed during
+        Relationship.execute().
+        """
         rel = self.relationship
-        query = pybiz.biz.Query(rel.target_biz_type, rel.name)
-        return (
-            query
-                .select(targets)
-                .order_by(rel.order_by)
-                .limit(rel.limit)
-                .offset(rel.offset)
-            )
+        return pybiz.biz.Query(
+            biz_type=rel.target_biz_type,
+            alias=rel.name,
+            select=selectors,
+            order_by=rel.order_by,
+            limit=rel.limit,
+            offset=rel.offset,
+        )
 
     def fget(self, source):
         """
         Return the memoized BizObject instance or list.
         """
         rel = self.relationship
-        default = rel.target_biz_type.BizList([], rel, source) if rel.many else None
-        fields_to_load = set(rel.target_biz_type.schema.fields.keys())
-        value = super().fget(source, select=fields_to_load) or default
+        selectors = set(rel.target_biz_type.schema.fields.keys())
+        default = (
+            rel.target_biz_type.BizList([], rel, source) if rel.many else None
+        )
+        value = super().fget(source, select=selectors) or default
         for cb_func in rel.on_get:
             cb_func(source, value)
         return value

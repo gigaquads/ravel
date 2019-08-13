@@ -12,7 +12,7 @@ class TestQueryBasics(object):
     @mark.integration
     def test_query_by_id_via_select(cls, startrek, captain_picard):
         Officer = startrek.biz.Officer
-        
+
         captain_picard.create()
         query = Officer.select().where(Officer._id == captain_picard._id)
         officer = query.execute(first=True)
@@ -68,12 +68,13 @@ class TestQueryBasics(object):
             Officer._id == captain_picard._id
         ).execute(first=True)
 
-        assert officer.species == captain_picard.species
-        assert officer._id == captain_picard._id
-        assert officer._rev == captain_picard._rev
+        assert officer.internal.record['species'] == captain_picard.species
+        assert officer.internal.record['_id'] == captain_picard._id
+        assert officer.internal.record['_rev'] == captain_picard._rev
+        assert officer.internal.record['first_name'] == captain_picard.first_name
 
         for k, v in officer.internal.record.items():
-            if k not in {'_id', '_rev', 'species'}:
+            if k not in {'_id', '_rev', 'species', 'first_name'}:
                 assert v is None
 
     @mark.integration

@@ -56,6 +56,7 @@ class Predicate(object):
 
     def __init__(self, code):
         self.code = code
+        self.fields = set()
 
     def serialize(self) -> Text:
         """
@@ -105,6 +106,7 @@ class ConditionalPredicate(Predicate):
         self.op = op
         self.fprop = prop
         self.value = value
+        self.fields.add(self.fprop.field)
 
     def __repr__(self):
         return '<{}({})>'.format(
@@ -156,6 +158,8 @@ class BooleanPredicate(Predicate):
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
+        self.fields.add(self.lhs.fprop.field)
+        self.fields.add(self.rhs.fprop.field)
 
     def __or__(self, other):
         return BooleanPredicate(OP_CODE.OR, self, other)
@@ -294,5 +298,3 @@ class PredicateParser(object):
         self._grammar.root.parseString(source)
         predicate = self._stack[-1]
         return predicate
-
-
