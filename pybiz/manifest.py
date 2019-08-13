@@ -167,8 +167,8 @@ class Manifest(object):
                 p.name: p.target for p in api.proxies.values()
             })
 
-    def bind(self):
-        self.binder.bind()
+    def bind(self, rebind=False):
+        self.binder.bind(rebind=rebind)
 
     def _discover_pybiz_types(self, namespace: Dict):
         # package name for venusian scan
