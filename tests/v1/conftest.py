@@ -1,3 +1,4 @@
+import uuid
 import pytest
 import pybiz
 
@@ -45,3 +46,11 @@ def enterprise_crew(startrek, the_enterprise, captain_picard, lieutenant_worf):
 @pytest.fixture(scope='function')
 def the_enterprise(startrek):
     return startrek.biz.Ship(name='Enterprise')
+
+
+@pytest.fixture(scope='function')
+def the_enterprise_with_crew(the_enterprise, enterprise_crew):
+    the_enterprise._id = uuid.uuid4()
+    enterprise_crew.merge(ship_id=the_enterprise._id)
+    the_enterprise.crew = enterprise_crew
+    return the_enterprise

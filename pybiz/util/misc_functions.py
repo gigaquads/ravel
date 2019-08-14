@@ -47,9 +47,9 @@ def repr_biz_id(bizobj: 'BizObject') -> Text:
     if _id is None:
         return '?'
     elif isinstance(_id, str):
-        return _id[:7]
+        return _id
     elif isinstance(_id, UUID):
-        return _id.hex[:7]
+        return _id.hex
     else:
         return repr(_id)
 

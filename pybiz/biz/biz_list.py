@@ -52,7 +52,12 @@ class BizListTypeBuilder(object):
             for target in biz_list:
                 setattr(target, key, value)
 
-        return property(fget=fget, fset=fset)
+        def fdel(biz_list):
+            for target in biz_list:
+                if hasattr(target, key):
+                    delattr(target, key)
+
+        return property(fget=fget, fset=fset, fdel=fdel)
 
 
 class BizList(BizThing):
@@ -100,18 +105,10 @@ class BizList(BizThing):
         return iter(self._targets)
 
     def __repr__(self):
-        id_parts = []
-        for bizobj in self._targets:
-            id_str = repr_biz_id(bizobj)
-            if bizobj is not None:
-                dirty_flag = '*' if bizobj.dirty else ''
-            else:
-                dirty_flag = ''
-            id_parts.append(f'{id_str}{dirty_flag}')
-        ids = ', '.join(id_parts)
+        dirty_count = sum(1 for x in self if x and x.dirty)
         return (
             f'<BizList(type={self.biz_type.__name__}, '
-            f'size={len(self)}, [{ids}])>'
+            f'size={len(self)}, dirty={dirty_count})>'
         )
 
     def __add__(self, other):
@@ -129,6 +126,26 @@ class BizList(BizThing):
             raise ValueError(str(other))
         return clone
 
+    @property
+    def relationship(self) -> 'BizObject':
+        return self._relationship
+
+    @relationship.setter
+    def relationship(self, relationship: 'Relationship'):
+        if self._relationship is not None:
+            raise ValueError('relationship is readonly')
+        self._relationship = relationship
+
+    @property
+    def source(self) -> 'BizObject':
+        return self._source
+
+    @source.setter
+    def source(self, source: 'BizObject'):
+        if self._source is not None:
+            raise ValueError('source is readonly')
+        self._source = source
+
     def create(self):
         self.biz_type.create_many(self._targets)
         return self
@@ -136,6 +153,17 @@ class BizList(BizThing):
     def update(self, data: Dict = None, **more_data):
         self.biz_type.update_many(self, data=data, **more_data)
         return self
+
+    def save(self):
+        to_create = []
+        to_update = []
+        for bizobj in self._targets:
+            if bizobj and bizobj._id is None or '_id' in bizobj.dirty:
+                to_create.append(bizobj)
+            else:
+                to_update.append(bizobj)
+        self.biz_type.create_many(to_create)
+        self.biz_type.update_many(to_update)
 
     def merge(self, obj=None, **more_data):
         for obj in self._targets:

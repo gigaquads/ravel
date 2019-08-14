@@ -118,11 +118,11 @@ class Query(AbstractQuery):
         self._add_targets(targets)
         return self
 
-    def where(self, *predicates: 'Predicate', append=True) -> 'Query':
+    def where(self, *predicates: 'Predicate', **kwargs) -> 'Query':
         """
         Append or replace "where"-expression Predicates.
         """
-        if predicates is None:
+        if not (predicates or kwargs):
             self._params.where = None
         else:
             additional_predicates = []
@@ -131,13 +131,18 @@ class Query(AbstractQuery):
                     additional_predicates.extend(obj)
                 else:
                     additional_predicates.append(obj)
+
+            for k, v in kwargs.items():
+                equality_predicate = (getattr(self.biz_type, k) == v)
+                additional_predicates.append(equality_predicate)
+
             additional_predicates = tuple(additional_predicates)
+
             if self._params.where is None:
                 self._params.where = tuple()
-            if append:
-                self._params.where += additional_predicates
-            else:
-                self._params.where = additional_predicates
+
+            self._params.where = additional_predicates
+
         return self
 
     def limit(self, limit: int) -> 'Query':

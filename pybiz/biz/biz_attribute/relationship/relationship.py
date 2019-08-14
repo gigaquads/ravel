@@ -487,10 +487,25 @@ class RelationshipProperty(BizAttributeProperty):
         default = (
             rel.target_biz_type.BizList([], rel, source) if rel.many else None
         )
-        value = super().fget(source, select=selectors) or default
+
+        # get or lazy load the BizThing
+        biz_thing = super().fget(source, select=selectors)
+        if not biz_thing:
+            biz_thing = default
+
+        # if the data was lazy loaded for the first time and returns a BizList,
+        # we want to set the source and relationship properties on it.
+        if rel.many:
+            if biz_thing.source is None:
+                biz_thing.source = source
+            if biz_thing.relationship is None:
+                biz_thing.relationship = rel
+
+        # perform callbacks set on Relationship ctor
         for cb_func in rel.on_get:
-            cb_func(source, value)
-        return value
+            cb_func(source, biz_thing)
+
+        return biz_thing
 
     def fset(self, source, target):
         """
@@ -503,9 +518,9 @@ class RelationshipProperty(BizAttributeProperty):
             raise RelationshipError(f'{rel} is read-only')
 
         if target is None and rel.many:
-            target = rel.target_biz_type.BizList([], rel, target)
+            target = rel.target_biz_type.BizList([], rel, self)
         elif is_sequence(target):
-            target = rel.target_biz_type.BizList(target, rel, target)
+            target = rel.target_biz_type.BizList(target, rel, self)
 
         is_scalar = not isinstance(target, pybiz.biz.BizList)
         expect_scalar = not rel.many

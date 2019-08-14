@@ -207,18 +207,11 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def get(cls, _id, select=None) -> 'BizObject':
-        try:
-            return cls.query(
-                select=select,
-                where=(cls._id == _id),
-                first=True
-            )
-        except NotImplementedError:
-            console.warning(
-                'falling back on dao.fetch because dao.query'
-                'is not implemented. ignoring parameters'
-            )
-            return cls.get_dao().fetch(_id)
+        return cls.query(
+            select=select,
+            where=(cls._id == _id),
+            first=True
+        )
 
     @classmethod
     def get_many(
@@ -230,22 +223,15 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         order_by=None,
     ) -> 'BizList':
         """
-        Return a list or _id mapping of BizObjects.
+        Return a list of BizObjects in the store.
         """
-        try:
-            return cls.query(
-                select=select,
-                where=cls._id.including(_ids),
-                order_by=order_by,
-                offset=offset,
-                limit=limit,
-            )
-        except NotImplementedError:
-            console.warning(
-                'falling back on dao.fetch_all because dao.query'
-                'is not implemented. ignoring parameters'
-            )
-            return cls.get_dao().fetch_many(_ids)
+        return cls.query(
+            select=select,
+            where=cls._id.including(_ids),
+            order_by=order_by,
+            offset=offset,
+            limit=limit,
+        )
 
     @classmethod
     def get_all(
@@ -254,6 +240,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         offset: int = None,
         limit: int = None,
     ) -> 'BizList':
+        """
+        Return a list of all BizObjects in the store.
+        """
         return cls.query(
             select=select,
             where=cls._id != None,
@@ -443,6 +432,12 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 bizobj.clean()
 
         return cls.BizList(bizobjs)
+
+    def save(self):
+        if self._id is None or '_id' in self.dirty:
+            self.create()
+        else:
+            self.update()
 
     @classmethod
     def insert_defaults(cls, record: Dict) -> None:

@@ -69,6 +69,7 @@ class Manifest(object):
             2. self.bindings
             3. self.bootstraps
         """
+        base_data = self.data
         if not (self.data or self.path):
             return self
 
@@ -93,7 +94,10 @@ class Manifest(object):
         # replace env $var names with values from env
         self._expand_environment_vars(self.env, self.data)
 
-        console.info('manifest', data=self.data)
+        console.debug(
+            message='manifest loaded!',
+            data={'manifest': self.data}
+        )
 
         self.package = self.data.get('package')
 
@@ -101,11 +105,7 @@ class Manifest(object):
             biz = binding_data['biz']
             dao = binding_data.get('dao', 'PythonDao')
             params = binding_data.get('params', {})
-            binding = ManifestBinding(
-                biz=biz,
-                dao=dao,
-                params=params,
-            )
+            binding = ManifestBinding(biz=biz, dao=dao, params=params)
             self.bindings.append(binding)
 
         # create self.bootstraps
