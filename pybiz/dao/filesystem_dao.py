@@ -122,7 +122,7 @@ class FilesystemDao(Dao):
 
     def fetch(self, _id, fields=None) -> Dict:
         records = self.fetch_many([_id], fields=fields)
-        return records.get(_id) if records else None
+        return records.get(_id) if records else {}
 
     def fetch_many(self, _ids: List, fields: List = None, ignore_cache=False) -> Dict:
         if not _ids:

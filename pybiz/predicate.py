@@ -270,7 +270,6 @@ class PredicateParser(object):
 
     def _on_parse_conditional_predicate(self, source: Text, loc: int, tokens: Tuple):
         # TODO: further process "value" as list or other dtype
-        op = 'eq'  # TODO
         fprop = getattr(self._biz_type, tokens['field'])
         value = tokens['value']
         if RE_STRING.match(value):

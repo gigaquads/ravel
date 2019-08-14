@@ -56,6 +56,8 @@ class Join(object):
         if where:
             computed_where_predicate &= reduce(lambda x, y: x & y, where)
 
+        select.add(self.target_fname)
+
         query = self.target_fprop.biz_type.query(
             select=select,
             where=computed_where_predicate,
@@ -311,6 +313,7 @@ class Relationship(BizAttribute):
 
         for func in self.joins:
             join = Join(source, *func(source))
+
             if func is self.joins[-1]:
                 # only pass in the query params to the last join in the join
                 # sequence, as this is the one that truly applies to the

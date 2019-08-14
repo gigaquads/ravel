@@ -7,6 +7,10 @@ class Task(pybiz.BizObject):
     name = pybiz.String(nullable=False)
     list_id = pybiz.Field(private=True)
     position = pybiz.Int(nullable=False)
+    status =  pybiz.Enum(
+        pybiz.String(), values=('todo', 'doing', 'done'),
+        default='todo', nullable=False
+    )
 
 
 class TaskList(pybiz.BizObject):
@@ -25,7 +29,7 @@ def new_list(tasks: TaskList) -> TaskList:
 
 
 @app()
-def get_list(task: TaskList) -> TaskList:
+def get_list(tasks: TaskList) -> TaskList:
     return tasks.load({'*', 'tasks.*'})
 
 
