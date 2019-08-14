@@ -3,7 +3,7 @@ from inspect import Parameter
 
 import pybiz.app.web
 
-from ..base import ApplicationMiddleware
+from ..application_middleware import ApplicationMiddleware
 
 
 class CookieSessionMiddleware(ApplicationMiddleware):

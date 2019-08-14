@@ -6,7 +6,7 @@ from appyratus.memoize import memoized_property
 
 from pybiz.util.loggers import console
 
-from .base import ApplicationMiddleware
+from .application_middleware import ApplicationMiddleware
 
 
 class DaoHistoryMiddleware(ApplicationMiddleware):

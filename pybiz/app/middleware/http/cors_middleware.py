@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Type, Text
 from inspect import Parameter
 from pybiz.contrib.falcon.constants import HTTP_METHODS
 
-from ..base import ApplicationMiddleware
+from ..application_middleware import ApplicationMiddleware
 
 DEFAULT_ALLOW_ORIGIN = '*'
 DEFAULT_ALLOW_METHODS = HTTP_METHODS

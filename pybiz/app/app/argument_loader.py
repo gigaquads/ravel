@@ -74,7 +74,6 @@ class ApplicationArgumentLoader(object):
         """
         loaded_args = list(args)
         loaded_kwargs = kwargs.copy()
-
         try:
             for spec in self._endpoint_2_specs[endpoint]:
                 if spec.position is not None and spec.position < len(args):

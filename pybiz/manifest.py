@@ -143,7 +143,7 @@ class Manifest(object):
                     f'bootstrapping "{biz_type.__name__}" BizObject...'
                 )
                 biz_type.bootstrap(app=app)
-                dao = biz_type.get_dao()
+                dao = biz_type.get_dao(bind=False)
                 dao_type = dao.__class__
                 if not dao_type.is_bootstrapped():
                     dao_type_name = dao_type.__name__

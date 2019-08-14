@@ -120,7 +120,9 @@ class DaoBinder(object):
                 biz_type.binder = self  # this is used in BizObject.get_dao()
                 self.get_dao_instance(biz_type, rebind=rebind)
 
-    def get_dao_instance(self, biz_type: Type['BizObject'], rebind=False) -> Dao:
+    def get_dao_instance(
+        self, biz_type: Type['BizObject'], bind=True, rebind=False
+    ) -> Dao:
         if isinstance(biz_type, str):
             binding = self._bindings.get(biz_type)
         else:
@@ -135,7 +137,13 @@ class DaoBinder(object):
             binding = self.register(biz_type, base_dao_type)
 
         # call bind only if it already hasn't been called
-        if rebind or not binding.is_bound:
+        if rebind or ((not binding.is_bound) and bind):
+            console.debug(
+                message=(
+                    f'binding {binding.dao_instance.__class__.__name__} '
+                    f'singleton to {binding.biz_type.__name__} class...'
+                )
+            )
             binding.bind(binder=self)
 
         return binding.dao_instance

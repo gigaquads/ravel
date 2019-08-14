@@ -25,6 +25,7 @@ class FilesystemDao(Dao):
     env = Environment()
     root = None
     paths = None
+    using_cache = True
 
     def __init__(
         self,
@@ -32,7 +33,8 @@ class FilesystemDao(Dao):
         extensions: Set[Text] = None,  # TODO: change into a single one
     ):
         super().__init__()
-        self.paths = DictObject({})
+        self._paths = DictObject({})
+        self._cache_dao = PythonDao()
 
         # convert the ftype string arg into a File class ref
         if not ftype:
@@ -51,13 +53,24 @@ class FilesystemDao(Dao):
         if extensions:
             self.extensions.update(extensions)
 
+    @property
+    def paths(self):
+        return self._paths
+
     @classmethod
-    def on_bootstrap(cls, ftype: Text = None, root: Text = None):
+    def on_bootstrap(
+        cls, ftype: Text = None, root: Text = None, using_cache: bool = None
+     ):
         cls.ftype = import_object(ftype) if ftype else Yaml
         cls.root = root or cls.root
+        if using_cache is not None:
+            cls.using_cache = using_cache
         assert cls.root
 
-    def on_bind(self, biz_type, root: Text = None, ftype: BaseFile = None):
+    def on_bind(
+        self, biz_type, root: Text = None, ftype: BaseFile = None,
+        using_cache: bool = None
+    ):
         """
         Ensure the data dir exists for this BizObject type.
         """
@@ -70,6 +83,15 @@ class FilesystemDao(Dao):
         )
         os.makedirs(self.paths.records, exist_ok=True)
 
+        if using_cache is not None:
+            self.using_cache = using_cache
+        if self.using_cache:
+            self._cache_dao.bootstrap(biz_type.app)
+            self._cache_dao.bind(biz_type)
+            self._cache_dao.create_many(
+                self.fetch_all(ignore_cache=True).values()
+            )
+
     def create_id(self, record):
         return record.get('_id', uuid.uuid4().hex)
 
@@ -80,11 +102,16 @@ class FilesystemDao(Dao):
         _id = self.create_id(record)
         record = self.update(_id, record)
         record['_id'] = _id
+        if self.using_cache:
+            self._cache_dao.create(record)
         return record
 
     def create_many(self, records):
+        created_records = []
         for record in records:
-            self.create(record)
+            created_records.append(self.create(record))
+        if self.using_cache:
+            self._cache_dao.create_many(created_records)
 
     def count(self) -> int:
         running_count = 0
@@ -97,9 +124,16 @@ class FilesystemDao(Dao):
         records = self.fetch_many([_id], fields=fields)
         return records.get(_id) if records else None
 
-    def fetch_many(self, _ids: List, fields: List = None) -> Dict:
+    def fetch_many(self, _ids: List, fields: List = None, ignore_cache=False) -> Dict:
         if not _ids:
             _ids = self._fetch_all_ids()
+
+        if not ignore_cache:
+            cached_records = self._cache_dao.fetch_many(_ids)
+            if cached_records:
+                _ids -= cached_records.keys()
+        else:
+            cached_records = {}
 
         fields = fields if isinstance(fields, set) else set(fields or [])
         if not fields:
@@ -118,10 +152,12 @@ class FilesystemDao(Dao):
             else:
                 records['_id'] = None
 
+        self._cache_dao.create_many(records.values())
+        records.update(cached_records)
         return records
 
-    def fetch_all(self, fields: Set[Text] = None) -> Dict:
-        return self.fetch_many(None, fields=fields)
+    def fetch_all(self, fields: Set[Text] = None, ignore_cache=False) -> Dict:
+        return self.fetch_many(None, fields=fields, ignore_cache=ignore_cache)
 
     def update(self, _id, data: Dict) -> Dict:
         if not self.exists(_id):
@@ -147,6 +183,10 @@ class FilesystemDao(Dao):
             record['_rev'] += 1
 
         self.ftype.to_file(file_path=fpath, data=record)
+
+        if self.using_cache:
+            self._cache_dao.update(_id, record)
+
         return record
 
     def update_many(self, _ids: List, updates: List = None) -> Dict:
@@ -157,6 +197,8 @@ class FilesystemDao(Dao):
 
     def delete(self, _id) -> None:
         fpath = self.mkpath(_id)
+        if self.using_cache:
+            self._cache_dao.delete(_id)
         os.unlink(fpath)
 
     def delete_many(self, _ids: List) -> None:
@@ -167,8 +209,10 @@ class FilesystemDao(Dao):
         _ids = self._fetch_all_ids()
         self.delete_many(_ids)
 
-    def query(self, predicate: 'Predicate', **kwargs):
-        return []  # not implemented
+    def query(self, *args, **kwargs):
+        if self.using_cache:
+            return self._cache_dao.query(*args, **kwargs)
+        raise NotImplementedError()
 
     def mkpath(self, fname: Text) -> Text:
         fname = self.ftype.format_file_name(fname)

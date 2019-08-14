@@ -55,11 +55,11 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return PythonDao
 
     @classmethod
-    def get_dao(cls) -> 'Dao':
+    def get_dao(cls, bind=True) -> 'Dao':
         """
         Get the global Dao reference associated with this class.
         """
-        return cls.binder.get_dao_instance(cls)
+        return cls.binder.get_dao_instance(cls, bind=bind)
 
     @classmethod
     def select(cls, *selectors) -> 'Query':
@@ -207,11 +207,18 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def get(cls, _id, select=None) -> 'BizObject':
-        return cls.query(
-            select=select,
-            where=(cls._id == _id),
-            first=True
-        )
+        try:
+            return cls.query(
+                select=select,
+                where=(cls._id == _id),
+                first=True
+            )
+        except NotImplementedError:
+            console.warning(
+                'falling back on dao.fetch because dao.query'
+                'is not implemented. ignoring parameters'
+            )
+            return cls.get_dao().fetch(_id)
 
     @classmethod
     def get_many(
@@ -225,13 +232,20 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         Return a list or _id mapping of BizObjects.
         """
-        return cls.query(
-            select=select,
-            where=cls._id.including(_ids),
-            order_by=order_by,
-            offset=offset,
-            limit=limit,
-        )
+        try:
+            return cls.query(
+                select=select,
+                where=cls._id.including(_ids),
+                order_by=order_by,
+                offset=offset,
+                limit=limit,
+            )
+        except NotImplementedError:
+            console.warning(
+                'falling back on dao.fetch_all because dao.query'
+                'is not implemented. ignoring parameters'
+            )
+            return cls.get_dao().fetch_many(_ids)
 
     @classmethod
     def get_all(

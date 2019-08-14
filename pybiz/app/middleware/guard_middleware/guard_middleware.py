@@ -3,7 +3,7 @@ from typing import Dict, Tuple
 from pybiz.exceptions import NotAuthorized
 from pybiz.util.misc_functions import is_sequence
 
-from ..base import ApplicationMiddleware
+from ..application_middleware import ApplicationMiddleware
 from .guard import Guard, GuardFailed
 
 
