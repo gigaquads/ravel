@@ -52,7 +52,7 @@ class TestBizBasics(object):
         })
         # ensure only the first_name field is returned (besides _id and _rev)
         assert officer.first_name == captain_picard.first_name
-        for k in officer.internal.record:
+        for k in officer.internal.state:
             if k not in {'_id', '_rev', 'first_name'}:
                 assert officer[k] is None
 
@@ -85,15 +85,15 @@ class TestBizBasics(object):
         ])
 
         for officer in people:
-            assert officer.internal.record['_id'] is not None
-            assert officer.internal.record['_rev'] is not None
+            assert officer.internal.state['_id'] is not None
+            assert officer.internal.state['_rev'] is not None
 
     @mark.integration
     def test_ensure_id_and_rev_always_returned(cls, startrek, captain_picard):
         captain_picard.create()
         officer = startrek.biz.Officer.get(captain_picard._id, select={})
-        assert officer.internal.record['_id'] == captain_picard._id
-        assert officer.internal.record['_rev'] is not None
+        assert officer.internal.state['_id'] == captain_picard._id
+        assert officer.internal.state['_rev'] is not None
 
     @mark.integration
     def test_ensure_default_field_values_generated_on_create(cls, startrek):

@@ -90,10 +90,16 @@ class BizList(BizThing):
         self._source = source
 
     def __getitem__(self, key: int) -> 'BizObject':
+        """
+        Get one or a slice of a BizList. A slice returns another BizList.
+        """
         if isinstance(key, int):
             return self._targets[key]
-        else:
-            return getattr(self._targets, key)
+        elif isinstance(key, slice):
+            return self.biz_type.BizList(
+                self._targets[key], self._relationship, self._source
+            )
+        raise IndexError(key)
 
     def __len__(self):
         return len(self._targets)
@@ -181,26 +187,26 @@ class BizList(BizThing):
         return self
 
     def delete(self):
-        self.biz_type.delete_many([
+        self.biz_type.delete_many({
             target._id for target in self._targets
             if (target and target._id)
-        ])
+        })
         return self
 
     def load(self, fields: Set[Text] = None):
         # TODO: add a depth=None kwarg like in BizObject.load
-        if not fields:
-            fields = set(self.biz_type.schema.fields.keys())
-        elif isinstance(fields, str):
-            fields = {fields}
+        if not selectors:
+            selectors = set(self.biz_type.schema.fields.keys())
+        elif isinstance(selectors, str):
+            selectors = {selectors}
 
         _ids = [obj._id for obj in self if obj._id is not None]
-        results = self.biz_type.get_many(_ids, fields)
+        results = self.biz_type.get_many(_ids, selectors)
 
         for stale, fresh in zip(self, results):
             if stale._id is not None:
                 stale.merge(fresh)
-                stale.clean(fresh.internal.record.keys())
+                stale.clean(fresh.internal.state.keys())
 
         return self
 
@@ -215,12 +221,12 @@ class BizList(BizThing):
         self._targets.append(target)
         return self
 
-    def extend(self, bizobjs):
-        self._perform_on_add(bizobjs)
-        self._targets.extend(bizobjs)
+    def extend(self, targets: List['BizObject']):
+        self._perform_on_add(targets)
+        self._targets.extend(targets)
         return self
 
-    def insert(self, index, target):
+    def insert(self, index: int, target: 'BizObject'):
         self._perform_on_add([target])
         self._targets.insert(index, target)
         return self
@@ -231,10 +237,16 @@ class BizList(BizThing):
                 raise RelationshipError(
                     f'{self._relationship} is read-only'
                 )
-            if target:
+            do_callbacks = False
+            if target is not None:
+                try:
+                    del self._targets[self._id.index(target._id)]
+                    do_callbacks = True
+                except ValueError:
+                    pass
+            if do_callbacks:
                 for cb_func in self._relationship.on_rem:
                     cb_func(self._source, target)
-            del self._targets[self._id.index(target._id)]
 
     def pop(self, default=None):
         if self._targets:

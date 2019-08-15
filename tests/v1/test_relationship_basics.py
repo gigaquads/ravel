@@ -52,7 +52,7 @@ class TestRelationshipBasics(object):
             assert ship._id == the_enterprise_with_crew._id
 
     @mark.integration
-    def test_relationship_on_add_callbacks(
+    def test_relationship_on_add_callback_for_append(
         cls, startrek, the_enterprise, captain_picard,
     ):
         the_enterprise.save()
@@ -68,3 +68,105 @@ class TestRelationshipBasics(object):
         assert is_bizlist(ship.crew)
         assert len(ship.crew) == 1
         assert ship.crew[0]._id == captain_picard._id
+
+    @mark.integration
+    def test_relationship_on_add_callback_for_extend(
+        cls, startrek, the_enterprise, captain_picard,
+    ):
+        the_enterprise.save()
+        captain_picard.save()
+
+        assert is_bizlist(the_enterprise.crew)
+        assert len(the_enterprise.crew) == 0
+
+        the_enterprise.crew.extend([captain_picard])
+
+        ship = startrek.biz.Ship.get(the_enterprise._id)
+
+        assert is_bizlist(ship.crew)
+        assert len(ship.crew) == 1
+        assert ship.crew[0]._id == captain_picard._id
+
+    @mark.integration
+    def test_relationship_on_add_callback_for_insert(
+        cls, startrek, the_enterprise, captain_picard,
+    ):
+        the_enterprise.save()
+        captain_picard.save()
+
+        assert is_bizlist(the_enterprise.crew)
+        assert len(the_enterprise.crew) == 0
+
+        the_enterprise.crew.insert(0, captain_picard)
+
+        ship = startrek.biz.Ship.get(the_enterprise._id)
+
+        assert is_bizlist(ship.crew)
+        assert len(ship.crew) == 1
+        assert ship.crew[0]._id == captain_picard._id
+
+    @mark.integration
+    def test_relationship_on_rem_callback_on_pop(
+        cls, startrek, the_enterprise, captain_picard,
+    ):
+        the_enterprise.save()
+        captain_picard.save()
+
+        the_enterprise.crew.append(captain_picard)
+
+        ship = startrek.biz.Ship.get(the_enterprise._id)
+
+        assert is_bizlist(ship.crew)
+        assert len(ship.crew) == 1
+        assert ship.crew[0]._id == captain_picard._id
+
+        ship.crew.pop()
+        ship = startrek.biz.Ship.get(the_enterprise._id)
+
+        assert is_bizlist(ship.crew)
+        assert len(ship.crew) == 0
+
+    @mark.integration
+    def test_relationship_on_rem_callback_on_remove(
+        cls, startrek, the_enterprise, captain_picard,
+    ):
+        the_enterprise.save()
+        captain_picard.save()
+
+        the_enterprise.crew.append(captain_picard)
+
+        ship = startrek.biz.Ship.get(the_enterprise._id)
+
+        assert is_bizlist(ship.crew)
+        assert len(ship.crew) == 1
+        assert ship.crew[0]._id == captain_picard._id
+
+        ship.crew.remove(captain_picard)
+        ship = startrek.biz.Ship.get(the_enterprise._id)
+
+        assert is_bizlist(ship.crew)
+        assert len(ship.crew) == 0
+
+    @mark.unit
+    def test_slicing_produces_another_bizlist(cls, startrek, enterprise_crew):
+        enterprise_crew.save()
+        sliced = enterprise_crew[:1]
+        assert isinstance(sliced, startrek.biz.Officer.BizList)
+        assert sliced.source is None
+        assert sliced[0]._id == enterprise_crew[0]._id
+        assert sliced.relationship is None
+        assert not sliced[0].dirty
+
+
+    @mark.unit
+    def test_concat_returns_new_bizlist(cls, enterprise_crew):
+        enterprise_crew.save()
+        concated = enterprise_crew + enterprise_crew
+        assert concated is not enterprise_crew
+        assert len(concated) == len(enterprise_crew) * 2
+        assert concated[:2]._id == concated[2:]._id
+        assert concated.source is None
+        assert concated.relationship is None
+
+        for officer in concated:
+            assert not officer.dirty

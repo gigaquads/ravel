@@ -19,10 +19,10 @@ class TestQueryBasics(object):
 
         # ensure that, when no selectors specified in select(), all field names
         # are queried by default
-        assert officer.internal.record.keys() - Officer.schema.fields.keys() == set()
+        assert officer.internal.state.keys() - Officer.schema.fields.keys() == set()
 
         # ensure that we got the expected object.
-        for k, v in captain_picard.internal.record.items():
+        for k, v in captain_picard.internal.state.items():
             assert officer[k] == v
 
     @mark.integration
@@ -34,10 +34,10 @@ class TestQueryBasics(object):
 
         # ensure that, when no selectors specified in select(), all field names
         # are queried by default
-        assert officer.internal.record.keys() - Officer.schema.fields.keys() == set()
+        assert officer.internal.state.keys() - Officer.schema.fields.keys() == set()
 
         # ensure that we got the expected object.
-        for k, v in captain_picard.internal.record.items():
+        for k, v in captain_picard.internal.state.items():
             assert officer[k] == v
 
     @mark.integration
@@ -49,10 +49,10 @@ class TestQueryBasics(object):
 
         # ensure that, when no selectors specified in select(), all field names
         # are queried by default
-        assert officer.internal.record.keys() - Officer.schema.fields.keys() == set()
+        assert officer.internal.state.keys() - Officer.schema.fields.keys() == set()
 
         # ensure that we got the expected object.
-        for k, v in captain_picard.internal.record.items():
+        for k, v in captain_picard.internal.state.items():
             assert officer[k] == v
 
     @mark.integration
@@ -68,12 +68,12 @@ class TestQueryBasics(object):
             Officer._id == captain_picard._id
         ).execute(first=True)
 
-        assert officer.internal.record['species'] == captain_picard.species
-        assert officer.internal.record['_id'] == captain_picard._id
-        assert officer.internal.record['_rev'] == captain_picard._rev
-        assert officer.internal.record['first_name'] == captain_picard.first_name
+        assert officer.internal.state['species'] == captain_picard.species
+        assert officer.internal.state['_id'] == captain_picard._id
+        assert officer.internal.state['_rev'] == captain_picard._rev
+        assert officer.internal.state['first_name'] == captain_picard.first_name
 
-        for k, v in officer.internal.record.items():
+        for k, v in officer.internal.state.items():
             if k not in {'_id', '_rev', 'species', 'first_name'}:
                 assert v is None
 

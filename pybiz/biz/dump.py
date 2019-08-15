@@ -18,7 +18,7 @@ class Dumper(object):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
                         fields or (
-                            target.internal.record.keys()
+                            target.internal.state.keys()
                             | target.internal.memoized.keys()
                         )
                     )
@@ -27,7 +27,7 @@ class Dumper(object):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
                         fields or (
-                            target.internal.record.keys()
+                            target.internal.state.keys()
                             | target.internal.memoized.keys()
                         )
                     )
@@ -94,7 +94,7 @@ class NestingDumper(Dumper):
                 # k corresponds to a field data element
                 if not field.meta.get('private', False):
                     # only dump "public" fields
-                    v = target.internal.record[k]
+                    v = target.internal.state[k]
                     if is_sequence(v):
                         v = copy.deepcopy(v)
                     record[k] = v

@@ -90,7 +90,7 @@ class RecursiveList(BizObject):
     def copy(self, fields: Set[Text] = None, recursive=False):
         def copy_one(node, parent_id, fields):
             return self.__class__(
-                data={k: node.internal.record[k] for k in fields},
+                data={k: node.internal.state[k] for k in fields},
                 parent_id=parent_id,
             ).create()
 
