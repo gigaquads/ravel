@@ -101,7 +101,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         self.internal = DictObject({
             'hash': int(uuid.uuid4().hex, 16),
             'state': DirtyDict(),
-            'memoized': {},
+            'cache': {},
         })
         self.merge(dict(data or {}, **more_data))
 
@@ -512,7 +512,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             assert isinstance(source, self.__class__)
             for k, v in source.internal.state.items():
                 setattr(self, k, v)
-            for k, v in source.internal.memoized.items():
+            for k, v in source.internal.cache.items():
                 setattr(self, k, v)
         elif isinstance(source, dict):
             source = self.schema.translate_source(source)
@@ -566,8 +566,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for k in keys:
             if k in self.internal.state:
                 self.internal.state.pop(k, None)
-            elif k in self.internal.memoized:
-                self.internal.memoized.pop(k, None)
+            elif k in self.internal.cache:
+                self.internal.cache.pop(k, None)
 
     def is_loaded(self, keys: Set[Text]) -> bool:
         """
@@ -575,7 +575,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         keys = {keys} if isinstance(keys, str) else keys
         for k in keys:
-            if not (k in self.internal.state or k in self.internal.memoized):
+            if not (k in self.internal.state or k in self.internal.cache):
                 return False
         return True
 

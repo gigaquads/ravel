@@ -137,16 +137,16 @@ class BizAttributeProperty(property):
 
     def fget(self, bizobj: 'BizObject', *execute_args, **execute_kwargs):
         key = self.biz_attr.name
-        is_loaded = key in bizobj.internal.memoized
+        is_loaded = key in bizobj.internal.cache
         if (not is_loaded) and self.biz_attr.lazy:
             value = self.biz_attr.execute(
                 bizobj, *execute_args, **execute_kwargs
             )
-            bizobj.internal.memoized[key] = value
-        return bizobj.internal.memoized.get(key)
+            bizobj.internal.cache[key] = value
+        return bizobj.internal.cache.get(key)
 
     def fset(self, bizobj: 'BizObject', value):
-        bizobj.internal.memoized[self.biz_attr.name] = value
+        bizobj.internal.cache[self.biz_attr.name] = value
 
     def fdel(self, bizobj: 'BizObject'):
-        bizobj.internal.memoized.pop(self.biz_attr.name, None)
+        bizobj.internal.cache.pop(self.biz_attr.name, None)

@@ -19,7 +19,7 @@ class Dumper(object):
                     k: None for k in (
                         fields or (
                             target.internal.state.keys()
-                            | target.internal.memoized.keys()
+                            | target.internal.cache.keys()
                         )
                     )
                 })
@@ -28,7 +28,7 @@ class Dumper(object):
                     k: None for k in (
                         fields or (
                             target.internal.state.keys()
-                            | target.internal.memoized.keys()
+                            | target.internal.cache.keys()
                         )
                     )
                 })
