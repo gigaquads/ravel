@@ -50,3 +50,21 @@ class TestRelationshipBasics(object):
             ship = officer.internal.memoized.get('ship')
             assert ship is not None
             assert ship._id == the_enterprise_with_crew._id
+
+    @mark.integration
+    def test_relationship_on_add_callbacks(
+        cls, startrek, the_enterprise, captain_picard,
+    ):
+        the_enterprise.save()
+        captain_picard.save()
+
+        assert is_bizlist(the_enterprise.crew)
+        assert len(the_enterprise.crew) == 0
+
+        the_enterprise.crew.append(captain_picard)
+
+        ship = startrek.biz.Ship.get(the_enterprise._id)
+
+        assert is_bizlist(ship.crew)
+        assert len(ship.crew) == 1
+        assert ship.crew[0]._id == captain_picard._id

@@ -245,6 +245,6 @@ class BizList(BizThing):
         if self._relationship and self._relationship.on_add:
             if self._relationship.readonly:
                 raise RelationshipError(f'{self._relationship} is read-only')
-            for target in bizobjs:
+            for target in targets:
                 for cb_func in self._relationship.on_add:
-                    cb_func(self._source, targets)
+                    cb_func(self._source, target)
