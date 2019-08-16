@@ -56,13 +56,9 @@ class CliApplication(Application):
         Collect subparsers and build cli program
         """
         self._cli_args = cli_args
-        subparsers = [
-            c.subparser for c in self.endpoints.values() if c.subparser
-        ]
+        subparsers = [c.subparser for c in self.endpoints.values() if c.subparser]
         self._cli_program = CliProgram(
-            subparsers=subparsers,
-            cli_args=self._cli_args,
-            **self._cli_program_kwargs
+            subparsers=subparsers, cli_args=self._cli_args, **self._cli_program_kwargs
         )
 
     def on_start(self):
@@ -165,22 +161,6 @@ class CliCommand(Endpoint):
                 dtype = None
             else:
                 dtype = param.annotation
-
-            # conditionally set the dtype too if it was not provided in the
-            # decorated arg, and that it exists throug the param annotation
-            arg = custom_args_by_name.get(k)
-            if arg:
-                if not arg.dtype and dtype:
-                    arg.dtype = dtype
-                args.append(arg)
-                continue
-            # optional short flag can cause collisions with params beginning
-            # with the same character, so only use the short flag
-            relative_params = params_by_char.get(k[0])
-            use_optional_short_flag = len(relative_params) == 1
-            # normal signature argument processing
-            arg = None
-
             arg_params = {
                 'name': k,
                 'dtype': dtype,
