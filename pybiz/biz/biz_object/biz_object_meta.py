@@ -58,8 +58,8 @@ class BizObjectTypeBuilder(object):
             setattr(biz_type, biz_attr.name, biz_attr_prop)
 
         biz_type.relationships = {
-            rel.name: rel for rel in
-            biz_type.attributes.by_category('relationship')
+            name: rel for name, rel in
+            biz_type.attributes.by_category('relationship').items()
         }
 
         biz_type.selectable_attribute_names = set()
@@ -154,7 +154,7 @@ class BizObjectTypeBuilder(object):
 class BizAttributeManager(object):
     def __init__(self, *args, **kwargs):
         self._name_2_biz_attr = {}
-        self._category_2_biz_attr = defaultdict(list)
+        self._category_map = defaultdict(dict)
         self._ordered_biz_attrs = []
 
     def __iter__(self):
@@ -184,14 +184,14 @@ class BizAttributeManager(object):
     def register(self, name, attr: 'BizAttribute'):
         attr.name = name
         self._name_2_biz_attr[name] = attr
-        self._category_2_biz_attr[attr.category].append(attr)
+        self._category_map[attr.category][name] = attr
         bisect.insort(self._ordered_biz_attrs, attr)
 
     def by_name(self, name: Text) -> 'BizAttribute':
         return self._name_2_biz_attr.get(name, None)
 
-    def by_category(self, category: Text) -> List['BizAttribute']:
-        return self._category_2_biz_attr.get(category, set())
+    def by_category(self, category: Text) -> Dict[Text, 'BizAttribute']:
+        return self._category_map[category]
 
 
 class BizObjectMeta(type):

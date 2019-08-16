@@ -54,3 +54,12 @@ def the_enterprise_with_crew(the_enterprise, enterprise_crew):
     enterprise_crew.merge(ship_id=the_enterprise._id)
     the_enterprise.crew = enterprise_crew
     return the_enterprise
+
+
+@pytest.fixture(scope='function')
+def missions(startrek):
+    Mission = startrek.biz.Mission
+    return Mission.BizList([
+        Mission(name="Defeat the borg", description="Infiltrate unimatrix 01"),
+        Mission(name="Escape Delta Quadrant", description="Steal transwarp drive"),
+    ])

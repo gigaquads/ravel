@@ -1,6 +1,6 @@
 from typing import Text, Dict, Callable, Type, Tuple
 
-from pybiz.schema import Schema
+from pybiz.schema import Field
 from pybiz.util.misc_functions import is_sequence, normalize_to_tuple
 from pybiz.util.loggers import console
 
@@ -12,7 +12,7 @@ class View(BizAttribute):
         self,
         load: Callable,
         transform: Callable = None,
-        schema: Schema = None,
+        field: Field = None,
         on_set: Tuple[Callable] = None,
         on_get: Tuple[Callable] = None,
         on_del: Tuple[Callable] = None,
@@ -22,7 +22,7 @@ class View(BizAttribute):
         super().__init__(*args, **kwargs)
         self._load = load
         self._transform = transform
-        self._schema = schema
+        self._field = field
         self._on_get = normalize_to_tuple(on_get) if on_get else tuple()
         self._on_set = normalize_to_tuple(on_set) if on_set else tuple()
         self._on_del = normalize_to_tuple(on_del) if on_del else tuple()
@@ -36,8 +36,8 @@ class View(BizAttribute):
         return 'view'
 
     @property
-    def schema(self) -> Schema:
-        return self._schema
+    def field(self) -> Field:
+        return self._field
 
     @property
     def on_get(self) -> Tuple[Callable]:
@@ -58,6 +58,10 @@ class View(BizAttribute):
         data = self._load(caller, *args, **kwargs)
         if self._transform is not None:
             data = self._transform(caller, data, *args, **kwargs)
+            if self._field is not None:
+                data, errors = self._field.process(data)
+                if errors:
+                    raise ValueError('validation error')  # TODO: raise validation error
         return data
 
 
@@ -71,10 +75,11 @@ class ViewProperty(BizAttributeProperty):
         value = super().fget(source)
         for func in self.biz_attr.on_get:
             func(source, value)
+        return value
 
     def fset(self, source: 'BizObject', value):
-        if self.biz_attr.schema is not None:
-            value, errors = self.biz_attr.schema.process(value)
+        if self.biz_attr.field is not None:
+            value, errors = self.biz_attr.field.process(value)
             if errors:
                 # TODO: raise proper exception
                 console.error(

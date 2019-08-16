@@ -2,18 +2,11 @@ import pytest
 import pybiz
 
 from appyratus.test import mark
+from pybiz.biz.biz_attribute.relationship import RelationshipProperty
+from pybiz.biz.biz_attribute.view import ViewProperty
 
 
 class TestBizBasics(object):
-    """
-    TODO:
-    - [] passing data into update, update_many merges and saves
-    - [] passing data into create, create_many merges and saves
-    - [] delete, delete_many results in None when fetched afterwards
-    - [x] "get" methods always return at least _id and _rev
-    - [x] "get_many" returns expected
-    - [x] defaults are generated on create
-    """
 
     @mark.integration
     def test_single_object_creates(cls, startrek, captain_picard):
@@ -127,3 +120,30 @@ class TestBizBasics(object):
 
         assert officer._id == captain_picard._id
         assert officer.first_name == captain_picard.first_name
+
+    @mark.unit
+    def test_has_expected_biz_attributes(cls, startrek):
+        assert 'missions' in startrek.biz.Ship.attributes
+        assert 'crew' in startrek.biz.Ship.attributes
+        assert 'mission_names' in startrek.biz.Ship.attributes
+        assert 'mission_count' in startrek.biz.Ship.attributes
+        assert 'mission_count_with_field' in startrek.biz.Ship.attributes
+
+    @mark.unit
+    def test_has_expected_biz_attribute_categories(cls, startrek):
+        rel_names = startrek.biz.Ship.attributes.by_category('relationship').keys()
+        view_names = startrek.biz.Ship.attributes.by_category('view').keys()
+        assert {'missions', 'crew'} == rel_names
+        assert {
+            'mission_names',
+            'mission_count',
+            'mission_count_with_field'
+        } == view_names
+
+    @mark.unit
+    def test_has_expected_biz_attribute_properties(cls, startrek):
+        assert isinstance(startrek.biz.Ship.crew, RelationshipProperty)
+        assert isinstance(startrek.biz.Ship.missions, RelationshipProperty)
+        assert isinstance(startrek.biz.Ship.mission_names, ViewProperty)
+        assert isinstance(startrek.biz.Ship.mission_count, ViewProperty)
+        assert isinstance(startrek.biz.Ship.mission_count_with_field, ViewProperty)

@@ -38,7 +38,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     is_bootstrapped = False
     is_abstract = False
 
-    binder = DaoBinder.get_instance()  # TODO: Make into property
+    binder = DaoBinder.get_instance()  # TODO: put this on the Application class
     app = None
 
     @classmethod
@@ -438,6 +438,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             self.create()
         else:
             self.update()
+        return self
 
     @classmethod
     def insert_defaults(cls, record: Dict) -> None:

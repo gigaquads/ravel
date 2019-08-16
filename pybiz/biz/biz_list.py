@@ -170,6 +170,7 @@ class BizList(BizThing):
                 to_update.append(bizobj)
         self.biz_type.create_many(to_create)
         self.biz_type.update_many(to_update)
+        return self
 
     def merge(self, obj=None, **more_data):
         for obj in self._targets:
