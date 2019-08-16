@@ -1,10 +1,16 @@
 import inspect
 
 from pprint import pprint
-
+from typing import List
 from IPython.terminal.embed import InteractiveShellEmbed
-
-from appyratus.cli import CliProgram, OptionalArg, PositionalArg, Subparser
+from appyratus.cli import (
+    CliProgram,
+    OptionalArg,
+    PositionalArg,
+    ListArg,
+    FlagArg,
+    Subparser,
+)
 from appyratus.files import Yaml
 from appyratus.utils import StringUtils, SysUtils
 
@@ -97,11 +103,13 @@ class CliApplication(Application):
                 pprint(formatted_result)
         return dumped_result
 
+
 def _format_result_data(data, output_format):
     if output_format == 'yaml':
         return Yaml.from_data(data)
     else:
         return data
+
 
 def _dump_result_obj(obj):
     if is_bizobj(obj) or is_bizlist(obj):
@@ -127,8 +135,8 @@ class CliCommand(Endpoint):
 
     def _build_subparser_kwargs(self, func, decorator):
         parser_kwargs = decorator.kwargs.get('parser') or {}
-        decorator_args = decorator.kwargs.get('args')
-        cli_args = self._build_cli_args(func, decorator_args)
+        custom_args = decorator.kwargs.get('args') or []
+        cli_args = self._build_cli_args(func, custom_args)
         name = StringUtils.dash(parser_kwargs.get('name') or self.program_name)
         return dict(parser_kwargs, **dict(
             name=name,
@@ -136,30 +144,28 @@ class CliCommand(Endpoint):
             perform=self,
         ))
 
-    def _build_cli_args(self, func, custom_args: list = None):
+    def _build_cli_args(self, func, custom_args: List = None):
+        if custom_args is None:
+            custom_args = []
         required_args = []
         optional_args = []
         args = []
-        # custom arguments like ones provided from a decorator should take
-        # precedent over signature-generated arguments.  we will
-        if not custom_args:
-            custom_args = []
         custom_args_by_name = {a.name: a for a in custom_args}
-        params = self.signature.parameters
-        # collect params by first character, in order to identify collisions
-        params_by_char = {}
-        for k, param in params.items():
-            kchar = k[0]
-            if kchar not in params_by_char:
-                params_by_char[kchar] = []
-            params_by_char[kchar].append(k)
-        # now process the signature params
-        for k, param in params.items():
-            # determine dtype
+        for k, param in self.signature.parameters.items():
+            if k in custom_args_by_name.keys():
+                # if a custom argument was passed into the decorator, then this
+                # should take precedent over the inferred arg created in this
+                # iteration
+                args.append(custom_args_by_name[k])
+                continue
+
+            arg = None
+            arg_class = None
             if param.annotation is inspect._empty:
                 dtype = None
             else:
                 dtype = param.annotation
+
             # conditionally set the dtype too if it was not provided in the
             # decorated arg, and that it exists throug the param annotation
             arg = custom_args_by_name.get(k)
@@ -174,15 +180,27 @@ class CliCommand(Endpoint):
             use_optional_short_flag = len(relative_params) == 1
             # normal signature argument processing
             arg = None
+
+            arg_params = {
+                'name': k,
+                'dtype': dtype,
+            }
+
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
-                    arg = PositionalArg(name=k, dtype=dtype)
+                    arg_class = PositionalArg
                 else:
-                    arg = OptionalArg(name=k, dtype=dtype, short_flag=use_optional_short_flag)
+                    arg_class = OptionalArg
             elif param.kind == inspect.Parameter.POSITIONAL_ONLY:
-                arg = PositionalArg(name=k, dtype=dtype)
+                arg_class = PositionalArg
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
-                arg = OptionalArg(name=k, dtype=dtype, short_flag=use_optional_short_flag)
+                arg_class = OptionalArg
+            if 'List' in str(dtype):
+                arg_class = ListArg
+            elif 'bool' in str(dtype):
+                arg_class = FlagArg
+            if arg_class:
+                arg = arg_class(**arg_params)
             if arg is not None:
                 args.append(arg)
 
