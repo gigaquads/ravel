@@ -24,9 +24,9 @@ class ApplicationRouter(CliProgram):
         Do not merge unknown args into the args dict, as the app router
         only cares about the app field and nothing else.
         """
-        super().__init__(merge_unknown=False, *args, **kwargs)
         self._manifest = manifest
-        self._applications = applications
+        self._apps = applications or {}
+        super().__init__(merge_unknown=False, *args, **kwargs)
 
     def args(self):
         """
@@ -35,8 +35,11 @@ class ApplicationRouter(CliProgram):
         argument being the app that the CLI request will be
         routed to
         """
+        app_names = ', '.join([r for r in self._apps.keys()])
         return [
-            PositionalArg(name='app', usage='the Application to utilize')
+            PositionalArg(
+                name='app', usage=f'the app to utilize [{app_names}]'
+            )
         ]
 
     def perform(self, program: 'CliProgram'):
@@ -60,10 +63,10 @@ class ApplicationRouter(CliProgram):
         First by applications dictionary (provided when initialized)
         And if not there, then an attribute on this your router class
         """
-        if not self._applications:
+        if not self._apps:
             app_dict = {}
         else:
-            app_dict = self._applications.get(name)
+            app_dict = self._apps.get(name)
         app_attr = getattr(self, name, None)
         if app_dict:
             return app_dict
@@ -94,6 +97,5 @@ class ApplicationRouter(CliProgram):
         unknown CLI args to the CLI app program.
         """
         return self.app_lifecycle(
-            app=cli_app,
-            bootstrap_kwargs={'cli_args': self._unknown_cli_args}
+            app=cli_app, bootstrap_kwargs={'cli_args': self._unknown_cli_args}
         )

@@ -13,8 +13,8 @@ grpcio_tools
 btrees
 falcon
 websockets
-<<<<<<< HEAD
 faker
+sqlalchemy
 redis
 pytest
 mock
