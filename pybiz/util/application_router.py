@@ -9,13 +9,13 @@ class ApplicationRouter(CliProgram):
     """
     # Application Router
     Program convenience for routing commands to multiple
-    registries through a single command-line interface
+    applications through a single command-line interface
     """
 
     def __init__(
         self,
         manifest: 'Manifest' = None,
-        registries: List = None,
+        applications: List = None,
         *args,
         **kwargs
     ):
@@ -26,7 +26,7 @@ class ApplicationRouter(CliProgram):
         """
         super().__init__(merge_unknown=False, *args, **kwargs)
         self._manifest = manifest
-        self._registries = registries
+        self._applications = applications
 
     def args(self):
         """
@@ -57,13 +57,13 @@ class ApplicationRouter(CliProgram):
     def get_app(self, name: Text):
         """
         # Get app
-        First by registries dictionary (provided when initialized)
+        First by applications dictionary (provided when initialized)
         And if not there, then an attribute on this your router class
         """
-        if not self._registries:
+        if not self._applications:
             app_dict = {}
         else:
-            app_dict = self._registries.get(name)
+            app_dict = self._applications.get(name)
         app_attr = getattr(self, name, None)
         if app_dict:
             return app_dict

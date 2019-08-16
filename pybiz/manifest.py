@@ -45,7 +45,9 @@ class Manifest(object):
         self.env = env or Environment()
         self.binder = binder or DaoBinder.get_instance()
         self.types = DictObject({
-            'dao': {'PythonDao': PythonDao},
+            'dao': {
+                'PythonDao': PythonDao
+            },
             'biz': {},
         })
         self.scanner = Scanner(
@@ -75,15 +77,12 @@ class Manifest(object):
 
         # try to load manifest file from a YAML or JSON file
         if self.path is not None:
-            console.debug(
-                message='loading manifest file',
-                data={'path': self.path}
-            )
+            console.debug(message='loading manifest file', data={'path': self.path})
             ext = os.path.splitext(self.path)[1].lstrip('.').lower()
             if ext in Yaml.extensions():
-                file_data = Yaml.load_file(self.path)
+                file_data = Yaml.read(self.path)
             elif ext in Json.extensions():
-                file_data = Json.load_file(self.path)
+                file_data = Json.read(self.path)
 
             # merge contents of file with data dict arg
             self.data = DictUtils.merge(file_data, self.data)
@@ -94,10 +93,7 @@ class Manifest(object):
         # replace env $var names with values from env
         self._expand_environment_vars(self.env, self.data)
 
-        console.debug(
-            message='manifest loaded!',
-            data={'manifest': self.data}
-        )
+        console.debug(message='manifest loaded!', data={'manifest': self.data})
 
         self.package = self.data.get('package')
 
@@ -139,33 +135,28 @@ class Manifest(object):
     def bootstrap(self, app: 'Application'):
         for biz_type in self.types.biz.values():
             if not (biz_type.is_abstract or biz_type.is_bootstrapped):
-                console.debug(
-                    f'bootstrapping "{biz_type.__name__}" BizObject...'
-                )
+                console.debug(f'bootstrapping "{biz_type.__name__}" BizObject...')
                 biz_type.bootstrap(app=app)
                 dao = biz_type.get_dao(bind=False)
                 dao_type = dao.__class__
                 if not dao_type.is_bootstrapped():
                     dao_type_name = dao_type.__name__
-                    console.debug(
-                        f'bootstrapping "{dao_type_name}" Dao...'
-                    )
+                    console.debug(f'bootstrapping "{dao_type_name}" Dao...')
                     strap = self.bootstraps.get(dao_type_name)
                     kwargs = strap.params if strap else {}
                     dao_type.bootstrap(app=app, **kwargs)
 
-        console.debug(
-            f'finished bootstrapped Dao and BizObject classes'
-        )
+        console.debug(f'finished bootstrapped Dao and BizObject classes')
 
         # inject the following into each endpoint target's lexical scope:
         # all other endpoints, all BizObject and Dao classes.
         for endpoint in app.endpoints.values():
             endpoint.target.__globals__.update(self.types.biz)
             endpoint.target.__globals__.update(self.types.dao)
-            endpoint.target.__globals__.update({
-                p.name: p.target for p in app.endpoints.values()
-            })
+            endpoint.target.__globals__.update(
+                {p.name: p.target
+                 for p in app.endpoints.values()}
+            )
 
     def bind(self, rebind=False):
         self.binder.bind(rebind=rebind)
@@ -269,9 +260,7 @@ class Manifest(object):
             exc_str = traceback.format_exc()
             console.debug(
                 message=f'venusian scan failed for {name}',
-                data={
-                    'trace': exc_str.split('\n')
-                }
+                data={'trace': exc_str.split('\n')}
             )
 
         console.debug('venusian scan for BizType and Dao types initiated')

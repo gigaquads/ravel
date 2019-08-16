@@ -32,12 +32,11 @@ class CorsMiddleware(ApplicationMiddleware):
 
     @property
     def app_types(self) -> Tuple[Type['Application']]:
-        from pybiz.contrib.falcon import FalconServiceApplication
-        return (FalconServiceApplication, )
+        from pybiz.contrib.falcon import FalconService
+        return (FalconService, )
 
     def post_request(
-        self, endpoint: 'Endpoint', raw_args: Tuple, raw_kwargs: Dict,
-        *args, **kwargs
+        self, endpoint: 'Endpoint', raw_args: Tuple, raw_kwargs: Dict, *args, **kwargs
     ):
         request, response = raw_args
         response.set_headers(
