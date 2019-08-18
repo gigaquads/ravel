@@ -14,8 +14,11 @@ from pybiz.manifest import Manifest
 from pybiz.logging import ConsoleLoggerInterface
 from pybiz.dao import Dao
 from pybiz.app import (
-    Application, EndpointDecorator, Endpoint,
-    Repl, CliApplication,
+    Application,
+    EndpointDecorator,
+    Endpoint,
+    Repl,
+    CliApplication,
 )
 
 from pybiz.schema import *

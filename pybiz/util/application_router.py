@@ -9,19 +9,23 @@ class ApplicationRouter(CliProgram):
     """
     # Application Router
     Program convenience for routing commands to multiple
-    apps through a single command-line interface
+    applications through a single command-line interface
     """
 
     def __init__(
-        self, manifest: 'Manifest' = None, apps: List = None, *args, **kwargs
+        self,
+        manifest: 'Manifest' = None,
+        applications: List = None,
+        *args,
+        **kwargs
     ):
         """
         # Init
         Do not merge unknown args into the args dict, as the app router
         only cares about the app field and nothing else.
         """
-        self._apps = apps or {}
         self._manifest = manifest
+        self._apps = applications or {}
         super().__init__(merge_unknown=False, *args, **kwargs)
 
     def args(self):
@@ -56,7 +60,7 @@ class ApplicationRouter(CliProgram):
     def get_app(self, name: Text):
         """
         # Get app
-        First by apps dictionary (provided when initialized)
+        First by applications dictionary (provided when initialized)
         And if not there, then an attribute on this your router class
         """
         if not self._apps:
