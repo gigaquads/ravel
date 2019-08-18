@@ -61,5 +61,10 @@ class Mission(pybiz.BizObject):
 
 
 @startrek()
-def get_officer(officer: 'Officer') -> 'Person':
+def get_officer(officer: Officer) -> Officer:
     return officer
+
+
+@startrek()
+def get_ship(ship: Ship = None) -> Ship:
+    return ship

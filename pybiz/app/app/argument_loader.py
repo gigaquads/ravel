@@ -74,23 +74,20 @@ class ApplicationArgumentLoader(object):
         """
         loaded_args = list(args)
         loaded_kwargs = kwargs.copy()
-        try:
-            for spec in self._endpoint_2_specs[endpoint]:
-                if spec.position is not None and spec.position < len(args):
-                    unloaded = args[spec.position]
-                    partition = loaded_args
-                    key = spec.position
-                else:
-                    unloaded = kwargs.get(spec.arg_name)
-                    partition = loaded_kwargs
-                    key = spec.arg_name
 
-                partition[key] = self.load_param(
-                    spec.many, spec.biz_class, unloaded
-                )
-        except:
-            import ipdb; ipdb.set_trace()
-            pass
+        for spec in self._endpoint_2_specs[endpoint]:
+            if spec.position is not None and spec.position < len(args):
+                unloaded = args[spec.position]
+                partition = loaded_args
+                key = spec.position
+            else:
+                unloaded = kwargs.get(spec.arg_name)
+                partition = loaded_kwargs
+                key = spec.arg_name
+
+            partition[key] = self.load_param(
+                spec.many, spec.biz_class, unloaded
+            )
 
         return (loaded_args, loaded_kwargs)
 
