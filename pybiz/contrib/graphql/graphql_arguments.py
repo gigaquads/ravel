@@ -15,13 +15,13 @@ class GraphQLArguments(object):
     _thread_local.predicate_parser = PredicateParser()
 
     @classmethod
-    def parse(cls, biz_type, node) -> 'GraphQLArguments':
+    def parse(cls, biz_class, node) -> 'GraphQLArguments':
         args = {
             arg.name: arg.value for arg in
             getattr(node, 'arguments', ())
         }
         return cls(
-            where=cls._parse_where(biz_type, args.pop('where', None)),
+            where=cls._parse_where(biz_class, args.pop('where', None)),
             order_by=cls._parse_order_by(args.pop('order_by', None)),
             offset=cls._parse_offset(args.pop('offset', None)),
             limit=cls._parse_limit(args.pop('limit', None)),
@@ -60,14 +60,14 @@ class GraphQLArguments(object):
     @classmethod
     def _parse_where(
         cls,
-        biz_type: Type['BizObject'],
+        biz_class: Type['BizObject'],
         predicate_strings: List[Text],
     ) -> List['Predicate']:
         parser = cls._thread_local.predicate_parser
         if isinstance(predicate_strings, str):
             predicate_strings = [predicate_strings]
         return [
-            parser.parse(biz_type, pred_str)
+            parser.parse(biz_class, pred_str)
             for pred_str in (predicate_strings or [])
         ]
 

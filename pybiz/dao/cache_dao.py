@@ -31,7 +31,7 @@ class CacheDaoExecutor(ThreadPoolExecutor):
 
     def initializer(self):
         self.dao.be.bootstrap(self.dao.be.app)
-        self.dao.be.bind(self.dao.be.biz_type)
+        self.dao.be.bind(self.dao.be.biz_class)
 
     def enqueue(self, method: Text, args=None, kwargs=None):
         def task(dao, event):
@@ -66,7 +66,7 @@ class CacheDao(Dao):
 
     def on_bind(
         self,
-        biz_type: Type['BizObject'],
+        biz_class: Type['BizObject'],
         prefetch=None,
         mode: CacheMode = None,
         front: Dict = None,
@@ -79,12 +79,12 @@ class CacheDao(Dao):
         back = back or self.be_params
 
         self.fe = self._setup_inner_dao(
-            biz_type,
+            biz_class,
             front['dao'],
             front.get('params', {}),
         )
         self.be = self._setup_inner_dao(
-            biz_type,
+            biz_class,
             back['dao'],
             back.get('params', {}),
         )
@@ -105,19 +105,19 @@ class CacheDao(Dao):
 
     def _setup_inner_dao(
         self,
-        biz_type: Type['BizType'],
-        dao_type_name: Text,
+        biz_class: Type['BizType'],
+        dao_class_name: Text,
         bind_params: Dict = None
     ):
         # fetch the dao type from the DaoBinder
-        dao_type = self.binder.get_dao_type(dao_type_name.split('.')[-1])
-        if dao_type is None:
-            raise Exception(f'{dao_type} not registered')
+        dao_class = self.binder.get_dao_class(dao_class_name.split('.')[-1])
+        if dao_class is None:
+            raise Exception(f'{dao_class} not registered')
 
         # create an instance of this dao and bind it
-        dao = dao_type()
+        dao = dao_class()
         if not dao.is_bound:
-            dao.bind(biz_type, **(bind_params or {}))
+            dao.bind(biz_class, **(bind_params or {}))
 
         return dao
 
@@ -185,7 +185,7 @@ class CacheDao(Dao):
         if be_records:
             # TODO: prune the be_records to fields
             if fields:
-                all_fields = set(self.biz_type.schema.fields.keys())
+                all_fields = set(self.biz_class.schema.fields.keys())
                 fields_to_remove = all_fields - fields
                 for be_rec in remove_keys(
                     be_records.values(), fields_to_remove, in_place=True
@@ -204,7 +204,7 @@ class CacheDao(Dao):
         ids_fe = {rec['_id'] for rec in fe_records}
 
         # TODO: update predicate to fetch records with stale revs too
-        predicate = self.biz_type._id.excluding(ids_fe) & predicate
+        predicate = self.biz_class._id.excluding(ids_fe) & predicate
         be_records = self.be.query(predicate=predicate, **kwargs)
 
         # do batch FE operations

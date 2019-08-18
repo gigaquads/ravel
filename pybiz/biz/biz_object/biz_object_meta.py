@@ -40,33 +40,33 @@ class BizObjectTypeBuilder(object):
         namespace['base_selectors'] = set()
         return namespace
 
-    def on_init(self, name, biz_type):
-        biz_type.Schema = self._build_schema_type(name, biz_type)
+    def on_init(self, name, biz_class):
+        biz_class.Schema = self._build_schema_class(name, biz_class)
 
-        biz_type.schema = biz_type.Schema()
-        biz_type.schema.pybiz_internal = True
-        biz_type.defaults = self._extract_defaults(biz_type)
+        biz_class.schema = biz_class.Schema()
+        biz_class.schema.pybiz_internal = True
+        biz_class.defaults = self._extract_defaults(biz_class)
 
-        for field in biz_type.schema.fields.values():
+        for field in biz_class.schema.fields.values():
             if not getattr(field, 'pybiz_internal', False):
-                field_prop = FieldProperty(biz_type, field)
-                setattr(biz_type, field.name, field_prop)
+                field_prop = FieldProperty(biz_class, field)
+                setattr(biz_class, field.name, field_prop)
 
-        for biz_attr in biz_type.attributes.values():
-            biz_attr.bind(biz_type)
+        for biz_attr in biz_class.attributes.values():
+            biz_attr.bind(biz_class)
             biz_attr_prop = biz_attr.build_property()
-            setattr(biz_type, biz_attr.name, biz_attr_prop)
+            setattr(biz_class, biz_attr.name, biz_attr_prop)
 
-        biz_type.relationships = {
+        biz_class.relationships = {
             name: rel for name, rel in
-            biz_type.attributes.by_category('relationship').items()
+            biz_class.attributes.by_category('relationship').items()
         }
 
-        biz_type.selectable_attribute_names = set()
-        biz_type.selectable_attribute_names.update(biz_type.schema.fields.keys())
-        biz_type.selectable_attribute_names.update(biz_type.attributes.keys())
+        biz_class.selectable_attribute_names = set()
+        biz_class.selectable_attribute_names.update(biz_class.schema.fields.keys())
+        biz_class.selectable_attribute_names.update(biz_class.attributes.keys())
 
-        biz_type.BizList = self.biz_list_type_builder.build(biz_type)
+        biz_class.BizList = self.biz_list_type_builder.build(biz_class)
 
     def _compute_is_abstract(self, namespace):
         if ABSTRACT_MAGIC_METHOD in namespace:
@@ -75,31 +75,31 @@ class BizObjectTypeBuilder(object):
             return is_abstract()
         return False
 
-    def _build_schema_type(self, name, biz_type):
+    def _build_schema_class(self, name, biz_class):
         # use the schema class override if defined
-        obj = biz_type.__schema__()
+        obj = biz_class.__schema__()
         if obj:
             if isinstance(obj, str):
                 class_name = obj
-                schema_type = import_object(class_name)
+                schema_class = import_object(class_name)
             elif isinstance(obj, type) and issubclass(obj, Schema):
-                schema_type = obj
+                schema_class = obj
             else:
                 raise ValueError(str(obj))
         else:
-            schema_type = None
+            schema_class = None
 
-        fields = copy.deepcopy(schema_type.fields) if schema_type else {}
+        fields = copy.deepcopy(schema_class.fields) if schema_class else {}
 
         # "inherit" fields of parent BizObject.Schema
-        inherited_schema_type = getattr(biz_type, 'Schema', None)
-        if inherited_schema_type is not None:
-            for k, v in inherited_schema_type.fields.items():
+        inherited_schema_class = getattr(biz_class, 'Schema', None)
+        if inherited_schema_class is not None:
+            for k, v in inherited_schema_class.fields.items():
                 fields.setdefault(k, copy.deepcopy(v))
 
         # collect and field declared on this BizObject class
         is_field = lambda x: isinstance(x, Field)
-        for k, v in inspect.getmembers(biz_type, predicate=is_field):
+        for k, v in inspect.getmembers(biz_class, predicate=is_field):
             fields[k] = v
 
         # bless each bizobj with mandatory built-in Fields
@@ -112,12 +112,12 @@ class BizObjectTypeBuilder(object):
 
         return Schema.factory(f'{name}Schema', fields)
 
-    def _extract_defaults(self, biz_type: Type['BizObject']) -> Dict:
+    def _extract_defaults(self, biz_class: Type['BizObject']) -> Dict:
         # start with inherited defaults
-        defaults = copy.deepcopy(getattr(biz_type, 'defaults', {}))
+        defaults = copy.deepcopy(getattr(biz_class, 'defaults', {}))
 
         # add any new defaults from the schema
-        for k, field in biz_type.schema.fields.items():
+        for k, field in biz_class.schema.fields.items():
             if field.default is not None:
                 defaults[k] = field.default
                 field.default = None
@@ -203,13 +203,13 @@ class BizObjectMeta(type):
             ns = BizObjectMeta.builder.on_new(name, bases, ns)
         return type.__new__(cls, name, bases, ns)
 
-    def __init__(biz_type, name, bases, ns):
-        type.__init__(biz_type, name, bases, ns)
+    def __init__(biz_class, name, bases, ns):
+        type.__init__(biz_class, name, bases, ns)
         if name != 'BizObject':
-            BizObjectMeta.builder.on_init(name, biz_type)
-            venusian.attach(biz_type, biz_type.venusian_callback, category='biz')
+            BizObjectMeta.builder.on_init(name, biz_class)
+            venusian.attach(biz_class, biz_class.venusian_callback, category='biz')
 
     @staticmethod
-    def venusian_callback(scanner, name, biz_type):
-        console.info(f'venusian scan found "{biz_type.__name__}" BizObject')
-        scanner.biz_types.setdefault(name, biz_type)
+    def venusian_callback(scanner, name, biz_class):
+        console.info(f'venusian scan found "{biz_class.__name__}" BizObject')
+        scanner.biz_classs.setdefault(name, biz_class)

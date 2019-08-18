@@ -10,7 +10,7 @@ from ..biz_list import BizList
 
 class QueryExecutor(object):
     def execute(self, query: 'Query'):
-        biz_type = query.biz_type
+        biz_class = query.biz_class
 
         if query.params.where:
             if len(query.params.where) > 1:
@@ -18,9 +18,9 @@ class QueryExecutor(object):
             else:
                 predicate = query.params.where[0]
         else:
-            predicate = (biz_type._id != None)
+            predicate = (biz_class._id != None)
 
-        records = biz_type.get_dao().query(
+        records = biz_class.get_dao().query(
             predicate=predicate,
             fields=query.params.fields,
             order_by=query.params.order_by,
@@ -28,17 +28,17 @@ class QueryExecutor(object):
             offset=query.params.offset,
         )
 
-        targets = biz_type.BizList(biz_type(x) for x in records)
+        targets = biz_class.BizList(biz_class(x) for x in records)
         return self._execute_recursive(query, targets).clean()
 
     def _execute_recursive(self, query: 'Query', sources: List['BizObject']):
         # the class whose relationships we are executing:
-        biz_type = query.biz_type
+        biz_class = query.biz_class
 
         # now sort attribute names by their BizAttribute priority.
         ordered_items = []
         for biz_attr_name, sub_query in query.params.attributes.items():
-            biz_attr = biz_type.attributes.by_name(biz_attr_name)
+            biz_attr = biz_class.attributes.by_name(biz_attr_name)
             bisect.insort(ordered_items, (biz_attr, sub_query))
 
         # execute each BizAttribute on each BizObject individually. a nice to

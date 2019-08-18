@@ -15,13 +15,13 @@ class CookieSessionMiddleware(ApplicationMiddleware):
 
     def __init__(
         self,
-        session_type_name: Text = 'Session',
+        session_class_name: Text = 'Session',
         session_arg_name: Text = 'session',
         request_getter: Callable = None,
         cookie_name='sid',
     ):
         super().__init__()
-        self._session_type_name = session_type_name
+        self._session_class_name = session_class_name
         self._cookie_name = cookie_name
         self._arg_name = session_arg_name
         self._request_getter = request_getter or self.get_request
@@ -63,7 +63,7 @@ class CookieSessionMiddleware(ApplicationMiddleware):
         return request.cookies.get(self._cookie_name)
 
     def get_session(self, session_id):
-        session_type = self.app.biz.get(self._session_type_name)
-        if session_type is not None:
-            return session_type.get(session_id)
+        session_class = self.app.biz.get(self._session_class_name)
+        if session_class is not None:
+            return session_class.get(session_id)
         return None

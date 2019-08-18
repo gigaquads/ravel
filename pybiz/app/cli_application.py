@@ -48,7 +48,7 @@ class CliApplication(Application):
         }
 
     @property
-    def endpoint_type(self):
+    def endpoint_class(self):
         return CliCommand
 
     def on_bootstrap(self, cli_args=None):

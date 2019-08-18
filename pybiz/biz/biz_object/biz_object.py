@@ -93,7 +93,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for k, v in children.items():
             attr = cls.attributes.by_name(k)
             if attr.category == 'relationship':
-                data[k] = attr.target_biz_type.generate(v)
+                data[k] = attr.target_biz_class.generate(v)
 
         return cls(data=data)
 

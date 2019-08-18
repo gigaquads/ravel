@@ -39,12 +39,12 @@ class GrpcClient(object):
 
     def _build_func(self, endpoint):
         key = StringUtils.camel(endpoint.name)
-        request_type = getattr(self._app.grpc.pb2, f'{key}Request')
+        request_class = getattr(self._app.grpc.pb2, f'{key}Request')
         send_request = getattr(self._grpc_stub, endpoint.name)
 
         def func(**kwargs):
             # prepare and send the request
-            request = request_type(**kwargs)
+            request = request_class(**kwargs)
             response = send_request(request)
             # translate the native proto response message to a plain dict
             data = self._extract_fields(response, endpoint.response_schema)

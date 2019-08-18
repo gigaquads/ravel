@@ -20,7 +20,7 @@ class Repl(Application):
         self._namespace = {}
 
     @property
-    def endpoint_type(self):
+    def endpoint_class(self):
         return ReplFunction
 
     @property

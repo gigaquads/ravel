@@ -15,18 +15,18 @@ from pybiz.predicate import (
 
 
 class FieldProperty(property):
-    def __init__(self, biz_type: Type['BizObject'], field: 'Field'):
+    def __init__(self, biz_class: Type['BizObject'], field: 'Field'):
         super().__init__(fget=self.fget, fset=self.fset, fdel=self.fdel)
         self._field = field
-        self._biz_type = biz_type
+        self._biz_class = biz_class
         self._hash = uuid.uuid4().int
 
     def __repr__(self):
         type_name = None
         field_name = None
 
-        if self.biz_type:
-            type_name = self.biz_type.__name__
+        if self.biz_class:
+            type_name = self.biz_class.__name__
         if self.field:
             field_name = self.field.name
 
@@ -68,8 +68,8 @@ class FieldProperty(property):
         return self._build_predicate(OP_CODE.EXCLUDING, others)
 
     @property
-    def biz_type(self):
-        return self._biz_type
+    def biz_class(self):
+        return self._biz_class
 
     @property
     def field(self):

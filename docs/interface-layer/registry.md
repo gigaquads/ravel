@@ -107,17 +107,17 @@ class HttpRoute(Endpoint):
     return self.decorator.kwargs.get('path')
 ```
 
-You can indepdently override which `EndpointDecorator` and `Endpoint` types are used by a `Application` type by overriding the `decorator_type` and `endpoint_type` instance properties.
+You can indepdently override which `EndpointDecorator` and `Endpoint` types are used by a `Application` type by overriding the `decorator_class` and `endpoint_class` instance properties.
 
 ```python
 # inside class HttpApplication(Application):
 
 @property
-def decorator_type(self) -> Type[EndpointDecorator]:
+def decorator_class(self) -> Type[EndpointDecorator]:
     return HttpDecorator
 
 @property
-def endpoint_type(self) -> Type[Endpoint]:
+def endpoint_class(self) -> Type[Endpoint]:
     return HttpRoute
 ```
 

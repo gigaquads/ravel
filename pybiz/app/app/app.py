@@ -64,16 +64,16 @@ class Application(object):
         ```
         """
         # build and the decorator
-        decorator = self.decorator_type(self, *args, **kwargs)
+        decorator = self.decorator_class(self, *args, **kwargs)
         self.decorators.append(decorator)
         return decorator
 
     @property
-    def decorator_type(self) -> Type[EndpointDecorator]:
+    def decorator_class(self) -> Type[EndpointDecorator]:
         return EndpointDecorator
 
     @property
-    def endpoint_type(self) -> Type[Endpoint]:
+    def endpoint_class(self) -> Type[Endpoint]:
         return Endpoint
 
     @property

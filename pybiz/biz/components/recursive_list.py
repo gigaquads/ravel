@@ -36,14 +36,14 @@ class RecursiveList(BizObject):
 
     parent = Relationship(
         conditions=lambda rel, self: (
-            rel.biz_type, rel.biz_type._id == self.parent_id
+            rel.biz_class, rel.biz_class._id == self.parent_id
         ),
         readonly=True,
     )
 
     children = Relationship(
         conditions=lambda rel, self: (
-            rel.biz_type, rel.biz_type.parent_id == self._id
+            rel.biz_class, rel.biz_class.parent_id == self._id
         ),
         ordering=lambda cls: cls.position.asc,
         readonly=True,
@@ -52,9 +52,9 @@ class RecursiveList(BizObject):
 
     siblings = Relationship(
         conditions=lambda rel, self: (
-            rel.biz_type,
-            (rel.biz_type.parent_id == self.parent_id) &
-            (rel.biz_type._id != self._id)
+            rel.biz_class,
+            (rel.biz_class.parent_id == self.parent_id) &
+            (rel.biz_class._id != self._id)
         ),
         ordering=lambda cls: cls.position.asc,
         readonly=True,
@@ -63,18 +63,18 @@ class RecursiveList(BizObject):
 
     previous = Relationship(
         conditions=lambda rel, self: (
-            rel.biz_type,
-            (rel.biz_type.parent_id == self.parent_id) &
-            (rel.biz_type.position == (self.position - 1))
+            rel.biz_class,
+            (rel.biz_class.parent_id == self.parent_id) &
+            (rel.biz_class.position == (self.position - 1))
         ),
         readonly=True,
     )
 
     following = Relationship(
         conditions=lambda rel, self: (
-            rel.biz_type,
-            (rel.biz_type.parent_id == self.parent_id) &
-            (rel.biz_type.position == (self.position + 1))
+            rel.biz_class,
+            (rel.biz_class.parent_id == self.parent_id) &
+            (rel.biz_class.position == (self.position + 1))
         ),
         readonly=True,
     )

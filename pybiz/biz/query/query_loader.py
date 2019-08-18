@@ -25,7 +25,7 @@ class QueryLoader(object):
     def __init__(self):
         self._schema = QueryLoader.Schema()
 
-    def load(self, biz_type, data):
+    def load(self, biz_class, data):
         data, errors = self._schema.process(data)
         if errors:
             # TODO: raise custom exceptions
@@ -33,9 +33,9 @@ class QueryLoader(object):
 
         sub_queries = []
         for v in data['sub_queries'].values():
-            child_biz_type_name = v['target']['type']
-            child_biz_type = biz_type.app.biz[child_biz_type_name]
-            sub_queries.append(self.load(child_biz_type, v))
+            child_biz_class_name = v['target']['type']
+            child_biz_class = biz_class.app.biz[child_biz_class_name]
+            sub_queries.append(self.load(child_biz_class, v))
 
         targets = sub_queries.copy()
         targets += list(data['target']['fields'].keys())
@@ -43,7 +43,7 @@ class QueryLoader(object):
 
         order_by = [OrderBy.load(x) for x in data['order_by']]
 
-        query = pybiz.biz.Query(biz_type=biz_type, alias=data['alias'])
+        query = pybiz.biz.Query(biz_class=biz_class, alias=data['alias'])
         query.select(targets)
         query.order_by(order_by)
         query.limit(data['limit'])
@@ -51,19 +51,19 @@ class QueryLoader(object):
 
         if data['where']:
             query.where([
-                Predicate.load(biz_type, x) for x in data['where']
+                Predicate.load(biz_class, x) for x in data['where']
             ])
 
         return query
 
     @classmethod
     def from_keys(
-        cls, biz_type: Type['BizObject'], keys: Set[Text]=None, tree=None
+        cls, biz_class: Type['BizObject'], keys: Set[Text]=None, tree=None
     ) -> 'Query':
         """
         Create a Query from a list of dotted field paths.
         """
-        query = pybiz.biz.Query(biz_type)
+        query = pybiz.biz.Query(biz_class)
 
         if tree is None:
             assert keys
@@ -72,7 +72,7 @@ class QueryLoader(object):
         if '*' in tree:
             del tree['*']
             tree.update({
-                k: None for k, v in biz_type.schema.fields.items()
+                k: None for k, v in biz_class.schema.fields.items()
                 if not v.meta.get('private', False)
             })
         elif not tree:
@@ -80,8 +80,8 @@ class QueryLoader(object):
 
         for k, v in tree.items():
             if isinstance(v, dict):
-                rel = biz_type.relationships[k]
-                sub_query = cls.from_keys(rel.target_biz_type, tree=v)
+                rel = biz_class.relationships[k]
+                sub_query = cls.from_keys(rel.target_biz_class, tree=v)
                 sub_query.alias = rel.name
                 query._add_target(sub_query, None)
             else:

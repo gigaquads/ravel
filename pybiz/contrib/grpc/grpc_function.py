@@ -46,10 +46,10 @@ class GrpcFunction(Endpoint):
         return message_type_source_blocks
 
     def generate_protobuf_function_declaration(self) -> Text:
-        req_msg_type = self._msg_name_prefix + 'Request'
-        resp_msg_type = self._msg_name_prefix + 'Response'
+        req_msg_class = self._msg_name_prefix + 'Request'
+        resp_msg_class = self._msg_name_prefix + 'Response'
         return (
-            f'rpc {self.name}({req_msg_type}) '
-            f'returns ({resp_msg_type})'
+            f'rpc {self.name}({req_msg_class}) '
+            f'returns ({resp_msg_class})'
             f' {{}}'
         )

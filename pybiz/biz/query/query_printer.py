@@ -20,7 +20,7 @@ class QueryPrinter(object):
         """
         Return a pretty printed string of the query in Pybiz query langauge.
         """
-        biz_type_name = query.biz_type.__name__
+        biz_class_name = query.biz_class.__name__
 
         # we collect all substrings of the final format string in three
         # different lists below. Formatting differs slightly for substrings
@@ -37,9 +37,9 @@ class QueryPrinter(object):
         field_names += list(query.params.fields.keys())
         field_names.sort()
 
-        pre_sub_query_substrs.append(f'FROM {biz_type_name} SELECT')
+        pre_sub_query_substrs.append(f'FROM {biz_class_name} SELECT')
         for k in field_names:
-            field = query.biz_type.schema.fields[k]
+            field = query.biz_class.schema.fields[k]
             pre_sub_query_substrs.append(
                 f' - {k}: {field.__class__.__name__}'
             )
@@ -47,8 +47,8 @@ class QueryPrinter(object):
         # recursively render sub_queries corresponding to selected Relationships
         for name, sub_query in sorted(query.params.attributes.items()):
             if isinstance(sub_query, Query):
-                type_name = sub_query.biz_type.__name__
-                rel = query.biz_type.attributes.by_name(name)
+                type_name = sub_query.biz_class.__name__
+                rel = query.biz_class.attributes.by_name(name)
                 if rel and rel.many:
                     type_name = f'[{type_name}]'
                 sub_query_substr = self.format_query(sub_query, indent=indent+5)
@@ -56,7 +56,7 @@ class QueryPrinter(object):
                 sub_query_substrs.append(sub_query_substr)
                 sub_query_substrs.append(f'{" " * indent}   )')
             elif isinstance(sub_query, BizAttributeQuery):
-                type_name = sub_query.biz_attr.biz_type.__name__
+                type_name = sub_query.biz_attr.biz_class.__name__
                 sub_query_substr = self.format_biz_attr_query(
                     sub_query, indent=indent+5
                 )

@@ -62,15 +62,15 @@ class SqlalchemyDao(Dao):
             ),
         ]
         adapters.extend(
-            field_type.adapt(on_adapt=lambda field: sa.Text)
-            for field_type in {
+            field_class.adapt(on_adapt=lambda field: sa.Text)
+            for field_class in {
                 fields.String, fields.FormatString,
                 fields.UuidString, fields.DateTimeString
             }
         )
         adapters.extend(
-            field_type.adapt(on_adapt=lambda field: sa.BigInteger)
-            for field_type in {
+            field_class.adapt(on_adapt=lambda field: sa.BigInteger)
+            for field_class in {
                 fields.Int, fields.Uint32, fields.Uint64,
                 fields.Sint32, fields.Sint64
             }
@@ -136,12 +136,12 @@ class SqlalchemyDao(Dao):
     @classmethod
     def get_sqlite_default_adapters(cls) -> List[Field.Adapter]:
         adapters = [
-            field_type.adapt(
+            field_class.adapt(
                 on_adapt=lambda field: sa.Text,
                 on_encode=lambda x: cls.json_encoder.encode(x),
                 on_decode=lambda x: cls.json_encoder.decode(x),
             )
-            for field_type in {
+            for field_class in {
                 fields.Dict, fields.List, fields.Nested
             }
         ]
@@ -201,20 +201,20 @@ class SqlalchemyDao(Dao):
         )
 
     def on_bind(
-        self, biz_type: Type['BizObject'], table: Text = None, schema: Text = None, **kwargs
+        self, biz_class: Type['BizObject'], table: Text = None, schema: Text = None, **kwargs
     ):
-        field_type_2_adapter = {
-            adapter.field_type: adapter for adapter in
+        field_class_2_adapter = {
+            adapter.field_class: adapter for adapter in
             self.get_default_adapters(self.dialect) + self._custom_adapters
         }
         self._adapters = {
-            field_name: field_type_2_adapter[type(field)]
-            for field_name, field in self.biz_type.schema.fields.items()
-            if type(field) in field_type_2_adapter
+            field_name: field_class_2_adapter[type(field)]
+            for field_name, field in self.biz_class.schema.fields.items()
+            if type(field) in field_class_2_adapter
         }
         self._builder = SqlalchemyTableBuilder(self)
         self._table = self._builder.build_table(name=table, schema=schema)
-        self._id_column = getattr(self._table.c, biz_type.f['_id'].source)
+        self._id_column = getattr(self._table.c, biz_class.f['_id'].source)
 
     def query(
         self,
@@ -225,10 +225,10 @@ class SqlalchemyDao(Dao):
         order_by=None,  # TODO: implement order_by
         **kwargs,
     ):
-        fields = fields or self.biz_type.schema.fields.keys()
+        fields = fields or self.biz_class.schema.fields.keys()
         fields.update({
-            self.biz_type.schema.fields['_id'].source,
-            self.biz_type.schema.fields['_rev'].source,
+            self.biz_class.schema.fields['_id'].source,
+            self.biz_class.schema.fields['_rev'].source,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]
@@ -322,17 +322,17 @@ class SqlalchemyDao(Dao):
                 fields = set(fields)
         else:
             fields = {
-                f.source for f in self.biz_type.schema.fields.values()
+                f.source for f in self.biz_class.schema.fields.values()
             }
         fields.update({
-            self.biz_type.schema.fields['_id'].source,
-            self.biz_type.schema.fields['_rev'].source,
+            self.biz_class.schema.fields['_id'].source,
+            self.biz_class.schema.fields['_rev'].source,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]
         select_stmt = sa.select(columns)
 
-        id_col_name = self.biz_type.schema.fields['_id'].source
+        id_col_name = self.biz_class.schema.fields['_id'].source
         id_col = getattr(self.table.c, id_col_name)
 
         if prepared_ids:
@@ -474,7 +474,7 @@ class SqlalchemyDao(Dao):
 
         # add a trigger to each table to auto-increment
         # the _rev column on update.
-        id_col_name = cls.biz_type.f['_id'].source
+        id_col_name = cls.biz_class.f['_id'].source
         for table in meta.tables.values():
             engine.execute(f'''
                 create trigger incr_{table.name}_rev_on_update
