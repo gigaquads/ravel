@@ -133,7 +133,6 @@ class Manifest(object):
         return self
 
     def bootstrap(self, app: 'Application'):
-<<<<<<< HEAD
         for biz_class in self.types.biz.values():
             if not (biz_class.is_abstract or biz_class.is_bootstrapped):
                 console.debug(
@@ -148,18 +147,6 @@ class Manifest(object):
                         f'bootstrapping "{dao_class_name}" Dao...'
                     )
                     strap = self.bootstraps.get(dao_class_name)
-=======
-        for biz_type in self.types.biz.values():
-            if not (biz_type.is_abstract or biz_type.is_bootstrapped):
-                console.debug(f'bootstrapping "{biz_type.__name__}" BizObject...')
-                biz_type.bootstrap(app=app)
-                dao = biz_type.get_dao(bind=False)
-                dao_type = dao.__class__
-                if not dao_type.is_bootstrapped():
-                    dao_type_name = dao_type.__name__
-                    console.debug(f'bootstrapping "{dao_type_name}" Dao...')
-                    strap = self.bootstraps.get(dao_type_name)
->>>>>>> bdec1c5a81bad02f9e3bbd4c494c069b380f763b
                     kwargs = strap.params if strap else {}
                     dao_class.bootstrap(app=app, **kwargs)
 
