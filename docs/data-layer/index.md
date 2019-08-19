@@ -4,13 +4,13 @@ Business objects implement a CRUD interface, which means that data needs to be s
 ## DAO Initialization
 There are two main places where initialization logic can take place. The first place is the constructor. The second is a method, called `bind`, which Pybiz invokes internally when initializing a new `Bizobject` class. The `bind` method associates each `BizObject` class with a singleton instance of some `Dao`.
 
-When overriding this method, be sure to call `super().bind(biz_type)`.
+When overriding this method, be sure to call `super().bind(biz_class)`.
 
 Here is the base bind method:
 
 ```python
-def bind(self, biz_type: Type[BizObject]) -> None:
-  self.biz_type = biz_type
+def bind(self, biz_class: Type[BizObject]) -> None:
+  self.biz_class = biz_class
 ```
 
 From `bind`, you can inspect the `BizObject` class with which the `Dao` instance is being bound to initialize any schema or storage configuration for this kind of business object.

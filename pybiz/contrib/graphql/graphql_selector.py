@@ -28,11 +28,11 @@ class GraphQLSelector(BizAttribute):
         self._offset = offset
         self._limit = limit
         self._first = bool(first)
-        self._target_biz_type = None
+        self._target_biz_class = None
 
         if not select:
             self._select_func = lambda caller: (
-                self._target_biz_type.schema.fields.keys()
+                self._target_biz_class.schema.fields.keys()
             )
 
     @property
@@ -44,8 +44,8 @@ class GraphQLSelector(BizAttribute):
         return 'graphql_selector'
 
     @property
-    def target_biz_type(self):
-        return self._target_biz_type
+    def target_biz_class(self):
+        return self._target_biz_class
 
     def on_bootstrap(self):
         if self._target_func is not None:
@@ -57,7 +57,7 @@ class GraphQLSelector(BizAttribute):
         if self._order_by_func is not None:
             self._order_by_func.__globals__.update(self.app.types.biz)
 
-        self._target_biz_type = self._target_func(MagicMock())
+        self._target_biz_class = self._target_func(MagicMock())
 
     def execute(self, caller: 'BizObject', *args, **kwargs):
         query = self._build_query(caller, **kwargs)
@@ -67,7 +67,7 @@ class GraphQLSelector(BizAttribute):
     def _build_query(self, caller: 'BizObject', **kwargs) -> 'Query':
         query = (
             pybiz.biz.Query(
-                self._target_biz_type,
+                self._target_biz_class,
                 alias=self.name,
             ).select(
                 self._select_func(caller)

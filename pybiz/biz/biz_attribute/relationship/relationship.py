@@ -40,8 +40,8 @@ class Join(object):
         self.source_fprop = source_fprop
         self.source_fname = source_fprop.field.name
         self.target_fname = target_fprop.field.name
-        self.target_biz_type = self.target_fprop.biz_type
-        self.source_biz_type = self.source_fprop.biz_type
+        self.target_biz_class = self.target_fprop.biz_class
+        self.source_biz_class = self.source_fprop.biz_class
 
     def query(
         self,
@@ -58,7 +58,7 @@ class Join(object):
 
         select.add(self.target_fname)
 
-        query = self.target_fprop.biz_type.query(
+        query = self.target_fprop.biz_class.query(
             select=select,
             where=computed_where_predicate,
             offset=offset,
@@ -109,7 +109,7 @@ class Relationship(BizAttribute):
         self.joins = normalize_to_tuple(join)
         self.behaviors = normalize_to_tuple(behavior)
         self.many = many
-        self.target_biz_type = None
+        self.target_biz_class = None
         self.readonly = readonly
 
         # Default relationship-level query params:
@@ -131,9 +131,9 @@ class Relationship(BizAttribute):
         self._foreign_keys = set()
 
     def __repr__(self):
-        if self.target_biz_type:
-            target_type_name = self.target_biz_type.__name__
-            source_type_name = self.biz_type.__name__
+        if self.target_biz_class:
+            target_type_name = self.target_biz_class.__name__
+            source_type_name = self.biz_class.__name__
         else :
             target_type_name = '?'
             source_type_name = '?'
@@ -193,20 +193,20 @@ class Relationship(BizAttribute):
         # determine in advance what the "target" BizObject
         # class is that this relationship queries.
         try:
-            self.target_biz_type = self.joins[-1](MagicMock())[1].biz_type
+            self.target_biz_class = self.joins[-1](MagicMock())[1].biz_class
         except IndexError:
             console.error(
                 message='badly formed "join" argument',
                 data={
                     'relationship': self.name,
-                    'biz_type': self.biz_type.__name__,
+                    'biz_class': self.biz_class.__name__,
                 }
             )
             raise
 
         for func in self.order_by:
             spec = func(MagicMock())
-            field = self.target_biz_type.schema.fields[spec.key]
+            field = self.target_biz_class.schema.fields[spec.key]
             self._order_by_keys.add(field.name)
 
         # by default, the relationship will load all
@@ -214,7 +214,7 @@ class Relationship(BizAttribute):
         if not self.select:
             self.select = {
                 k: None for k, f
-                in self.target_biz_type.schema.fields.items()
+                in self.target_biz_class.schema.fields.items()
                 if (
                     f.required
                     or f.name in self._foreign_keys
@@ -226,7 +226,7 @@ class Relationship(BizAttribute):
         # target BizObject type. This is done in order to ensure that all fields
         # referenced by a relationship are eagerly loaded whenever this type of
         # object is queried.
-        self.target_biz_type.base_selectors.update(self.select)
+        self.target_biz_class.base_selectors.update(self.select)
 
         self._is_bootstrapped = True
 
@@ -327,7 +327,7 @@ class Relationship(BizAttribute):
                 )
                 if self._is_first_execution:
                     for predicate in query.params.where:
-                        self.target_biz_type.base_selectors.update(
+                        self.target_biz_class.base_selectors.update(
                             f.name for f in predicate.fields
                         )
                 if self._is_first_execution:
@@ -357,7 +357,7 @@ class Relationship(BizAttribute):
         Recursively load this relationship on a BizList caller.
         """
         if is_sequence(sources):
-            sources = self.biz_type.BizList(sources)
+            sources = self.biz_class.BizList(sources)
 
         original_sources = sources
 
@@ -412,20 +412,20 @@ class Relationship(BizAttribute):
                     tree[bizobj].extend(mapped_targets)
 
             # Make targest the new sources for the next iteration
-            sources = join.target_biz_type.BizList(distinct_targets)
+            sources = join.target_biz_class.BizList(distinct_targets)
 
         # Now we compute `results`, which is a list of either BizObjects or
         # BizLists (for a many=True relationship). The caller of query() now
         # must zip up the source and result objects.
         results = []
-        terminal_biz_type = join_objs[-1].target_biz_type
+        terminal_biz_class = join_objs[-1].target_biz_class
         for source in original_sources:
             resolved_targets = self._get_terminal_nodes(
-                tree, source, terminal_biz_type, []
+                tree, source, terminal_biz_class, []
             )
             if self.many:
                 results.append(
-                    terminal_biz_type.BizList( resolved_targets, self, source)
+                    terminal_biz_class.BizList( resolved_targets, self, source)
                 )
             else:
                 results.append(
@@ -434,22 +434,22 @@ class Relationship(BizAttribute):
 
         return results
 
-    def _get_terminal_nodes(self, tree, parent, target_biz_type, acc):
+    def _get_terminal_nodes(self, tree, parent, target_biz_class, acc):
         """
         Follow a path in the tree dict to determine which BizObjects were loaded
         for the given parent source BizObject.
         """
         children = tree[parent]
-        if not children and isinstance(parent, target_biz_type):
+        if not children and isinstance(parent, target_biz_class):
             acc.append(parent)
         else:
             for bizobj in children:
-                self._get_terminal_nodes(tree, bizobj, target_biz_type, acc)
+                self._get_terminal_nodes(tree, bizobj, target_biz_class, acc)
         return acc
 
     def _update_base_selectors_with_predicate_fields(self, query):
         for predicate in query.params.where:
-            self.target_biz_type.base_selectors.update(
+            self.target_biz_class.base_selectors.update(
                 f.name for f in predicate.fields
             )
 
@@ -470,7 +470,7 @@ class RelationshipProperty(BizAttributeProperty):
         """
         rel = self.relationship
         return pybiz.biz.Query(
-            biz_type=rel.target_biz_type,
+            biz_class=rel.target_biz_class,
             alias=rel.name,
             select=selectors,
             order_by=rel.order_by,
@@ -483,9 +483,9 @@ class RelationshipProperty(BizAttributeProperty):
         Return the memoized BizObject instance or list.
         """
         rel = self.relationship
-        selectors = set(rel.target_biz_type.schema.fields.keys())
+        selectors = set(rel.target_biz_class.schema.fields.keys())
         default = (
-            rel.target_biz_type.BizList([], rel, source) if rel.many else None
+            rel.target_biz_class.BizList([], rel, source) if rel.many else None
         )
 
         # get or lazy load the BizThing
@@ -518,9 +518,9 @@ class RelationshipProperty(BizAttributeProperty):
             raise RelationshipError(f'{rel} is read-only')
 
         if target is None and rel.many:
-            target = rel.target_biz_type.BizList([], rel, self)
+            target = rel.target_biz_class.BizList([], rel, self)
         elif is_sequence(target):
-            target = rel.target_biz_type.BizList(target, rel, self)
+            target = rel.target_biz_class.BizList(target, rel, self)
 
         is_scalar = not isinstance(target, pybiz.biz.BizList)
         expect_scalar = not rel.many

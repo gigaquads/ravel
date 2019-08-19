@@ -22,15 +22,15 @@ class DaoMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
-        def callback(scanner, name, dao_type):
-            scanner.dao_types.setdefault(name, dao_type)
-            console.info(f'venusian scan found "{dao_type.__name__}" Dao')
+        def callback(scanner, name, dao_class):
+            scanner.dao_classs.setdefault(name, dao_class)
+            console.info(f'venusian scan found "{dao_class.__name__}" Dao')
 
         venusian.attach(cls, callback, category='dao')
 
         # wrap each DAO interface method in a decorator that appends
         # to the instance's DaoHistory when set.
-        DaoHistory.decorate(dao_type=cls)
+        DaoHistory.decorate(dao_class=cls)
 
 
 class Dao(object, metaclass=DaoMeta):
@@ -40,14 +40,14 @@ class Dao(object, metaclass=DaoMeta):
     def __init__(self, *args, **kwargs):
         self._history = DaoHistory(dao=self)
         self._is_bound = False
-        self._biz_type = None
+        self._biz_class = None
         self._app = None
 
     def __repr__(self):
         if self.is_bound:
             return (
                 f'<{self.__class__.__name__}'
-                f'({self.biz_type.__name__})>'
+                f'({self.biz_class.__name__})>'
             )
         else:
             return (f'<{self.__class__.__name__}>')
@@ -57,8 +57,8 @@ class Dao(object, metaclass=DaoMeta):
         return self._is_bound
 
     @property
-    def biz_type(self):
-        return self._biz_type
+    def biz_class(self):
+        return self._biz_class
 
     @property
     def app(self):
@@ -79,10 +79,10 @@ class Dao(object, metaclass=DaoMeta):
                 results.append(result)
         return results
 
-    def bind(self, biz_type: Type['BizObject'], **kwargs):
-        self._biz_type = biz_type
+    def bind(self, biz_class: Type['BizObject'], **kwargs):
+        self._biz_class = biz_class
         self._is_bound = True
-        self.on_bind(biz_type, **kwargs)
+        self.on_bind(biz_class, **kwargs)
 
     @classmethod
     def bootstrap(cls, app: 'Application' = None, **kwargs):
@@ -103,7 +103,7 @@ class Dao(object, metaclass=DaoMeta):
     def on_bootstrap(cls, **kwargs):
         pass
 
-    def on_bind(cls, biz_type: Type['BizObject'], **kwargs):
+    def on_bind(cls, biz_class: Type['BizObject'], **kwargs):
         pass
 
     @classmethod

@@ -16,21 +16,21 @@ class BizListTypeBuilder(object):
     can be get and set in batch.
     """
 
-    def build(self, biz_type):
+    def build(self, biz_class):
         """
         Create a BizList subclass, specialized for the given BizObject type.
         """
-        derived_name = f'{biz_type.__name__}BizList'
-        derived_attrs = {IS_BIZLIST_ANNOTATION: True, 'biz_type': biz_type}
-        derived_type = type(derived_name, (BizList, ), derived_attrs)
+        derived_name = f'{biz_class.__name__}BizList'
+        derived_attrs = {IS_BIZLIST_ANNOTATION: True, 'biz_class': biz_class}
+        biz_list_subclass = type(derived_name, (BizList, ), derived_attrs)
 
         # create "batch" accessor properties for
         # selectable BizObject attributes
-        for name in biz_type.selectable_attribute_names:
+        for name in biz_class.selectable_attribute_names:
             prop = self._build_property(name)
-            setattr(derived_type, name, prop)
+            setattr(biz_list_subclass, name, prop)
 
-        return derived_type
+        return biz_list_subclass
 
     def _build_property(self, key):
         """
@@ -38,9 +38,9 @@ class BizListTypeBuilder(object):
         associated with the BizList subclass.
         """
         def fget(biz_list):
-            rel = biz_list.biz_type.relationships.get(key)
+            rel = biz_list.biz_class.relationships.get(key)
             if (rel is not None) and (not rel.many):
-                return rel.target_biz_type.BizList([
+                return rel.target_biz_class.BizList([
                     getattr(x, key, None) for x in biz_list
                 ])
             else:
@@ -96,7 +96,7 @@ class BizList(BizThing):
         if isinstance(key, int):
             return self._targets[key]
         elif isinstance(key, slice):
-            return self.biz_type.BizList(
+            return self.biz_class.BizList(
                 self._targets[key], self._relationship, self._source
             )
         raise IndexError(key)
@@ -113,7 +113,7 @@ class BizList(BizThing):
     def __repr__(self):
         dirty_count = sum(1 for x in self if x and x.dirty)
         return (
-            f'<BizList(type={self.biz_type.__name__}, '
+            f'<BizList(type={self.biz_class.__name__}, '
             f'size={len(self)}, dirty={dirty_count})>'
         )
 
@@ -153,11 +153,11 @@ class BizList(BizThing):
         self._source = source
 
     def create(self):
-        self.biz_type.create_many(self._targets)
+        self.biz_class.create_many(self._targets)
         return self
 
     def update(self, data: Dict = None, **more_data):
-        self.biz_type.update_many(self, data=data, **more_data)
+        self.biz_class.update_many(self, data=data, **more_data)
         return self
 
     def save(self):
@@ -168,8 +168,8 @@ class BizList(BizThing):
                 to_create.append(bizobj)
             else:
                 to_update.append(bizobj)
-        self.biz_type.create_many(to_create)
-        self.biz_type.update_many(to_update)
+        self.biz_class.create_many(to_create)
+        self.biz_class.update_many(to_update)
         return self
 
     def merge(self, obj=None, **more_data):
@@ -188,7 +188,7 @@ class BizList(BizThing):
         return self
 
     def delete(self):
-        self.biz_type.delete_many({
+        self.biz_class.delete_many({
             target._id for target in self._targets
             if (target and target._id)
         })
@@ -197,12 +197,12 @@ class BizList(BizThing):
     def load(self, fields: Set[Text] = None):
         # TODO: add a depth=None kwarg like in BizObject.load
         if not selectors:
-            selectors = set(self.biz_type.schema.fields.keys())
+            selectors = set(self.biz_class.schema.fields.keys())
         elif isinstance(selectors, str):
             selectors = {selectors}
 
         _ids = [obj._id for obj in self if obj._id is not None]
-        results = self.biz_type.get_many(_ids, selectors)
+        results = self.biz_class.get_many(_ids, selectors)
 
         for stale, fresh in zip(self, results):
             if stale._id is not None:

@@ -62,7 +62,7 @@ class FilesystemDao(Dao):
         cls.root = root or cls.root
         assert cls.root
 
-    def on_bind(self, biz_type, root: Text = None, ftype: BaseFile = None):
+    def on_bind(self, biz_class, root: Text = None, ftype: BaseFile = None):
         """
         Ensure the data dir exists for this BizObject type.
         """
@@ -71,12 +71,12 @@ class FilesystemDao(Dao):
 
         self.paths.root = root or self.root
         self.paths.records = os.path.join(
-            self.paths.root, StringUtils.snake(biz_type.__name__)
+            self.paths.root, StringUtils.snake(biz_class.__name__)
         )
         os.makedirs(self.paths.records, exist_ok=True)
 
-        self._cache_dao.bootstrap(biz_type.app)
-        self._cache_dao.bind(biz_type)
+        self._cache_dao.bootstrap(biz_class.app)
+        self._cache_dao.bind(biz_class)
         self._cache_dao.create_many(
             self.fetch_all(ignore_cache=True).values()
         )
@@ -124,7 +124,7 @@ class FilesystemDao(Dao):
 
         fields = fields if isinstance(fields, set) else set(fields or [])
         if not fields:
-            fields = set(self.biz_type.schema.fields.keys())
+            fields = set(self.biz_class.schema.fields.keys())
         fields |= {'_id', '_rev'}
 
         records = {}
@@ -151,7 +151,7 @@ class FilesystemDao(Dao):
             # this is here, because update in this dao is can be used like #
             # upsert, but in the BizObject class, insert_defaults is only called
             # on create, not update.
-            self.biz_type.insert_defaults(data)
+            self.biz_class.insert_defaults(data)
 
         fpath = self.mkpath(_id)
         base_record = self.ftype.read(fpath)

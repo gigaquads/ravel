@@ -18,8 +18,8 @@ class DaoHistoryMiddleware(ApplicationMiddleware):
         self._echo_verbose = verbose
 
     def on_bootstrap(self):
-        for biz_type in self.app.biz.values():
-            dao = biz_type.get_dao()
+        for biz_class in self.app.biz.values():
+            dao = biz_class.get_dao()
             self._dao_instances.append(dao)
             dao.history.start()
 

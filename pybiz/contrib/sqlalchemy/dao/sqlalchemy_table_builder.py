@@ -24,7 +24,7 @@ from .dialect import Dialect
 class SqlalchemyTableBuilder(object):
     def __init__(self, dao: 'SqlalchemyDao'):
         self._dialect = dao.dialect
-        self._biz_type = dao.biz_type
+        self._biz_class = dao.biz_class
         self._adapters = dao.adapters
         self._metadata = deepcopy(dao.get_metadata())
 
@@ -39,12 +39,12 @@ class SqlalchemyTableBuilder(object):
     def build_table(self, name=None, schema=None) -> sa.Table:
         columns = [
             self.build_column(field)
-            for field in self._biz_type.schema.fields.values()
+            for field in self._biz_class.schema.fields.values()
         ]
         if name is not None:
             table_name = name
         else:
-            table_name = StringUtils.snake(self._biz_type.__name__)
+            table_name = StringUtils.snake(self._biz_class.__name__)
         if schema is not None:
             self._metadata.schema = schema
         table = sa.Table(table_name, self._metadata, *columns)

@@ -44,27 +44,27 @@ class ApplicationArgumentLoader(object):
     class ArgumentSpec(object):
         def __init__(
             self, position: int, arg_name: Text,
-            many: bool, biz_type: Type['BizObject']
+            many: bool, biz_class: Type['BizObject']
         ):
             self.position = position
             self.arg_name = arg_name
             self.many = many
-            self.biz_type = biz_type
+            self.biz_class = biz_class
 
     def __init__(self, app: 'Application'):
-        self._biz_types = app.types.biz
+        self._biz_classs = app.types.biz
         self._endpoint_2_specs = defaultdict(list)
         for endpoint in app.endpoints.values():
             for idx, param in enumerate(endpoint.signature.parameters.values()):
                 ann = param.annotation
-                many, biz_type_name = extract_biz_info_from_annotation(ann)
-                biz_type = self._biz_types.get(biz_type_name)
-                if biz_type is not None:
+                many, biz_class_name = extract_biz_info_from_annotation(ann)
+                biz_class = self._biz_classs.get(biz_class_name)
+                if biz_class is not None:
                     position = (
                         idx if param.default == Parameter.empty else None
                     )
                     spec = ApplicationArgumentLoader.ArgumentSpec(
-                        idx, param.name, many, biz_type
+                        idx, param.name, many, biz_class
                     )
                     self._endpoint_2_specs[endpoint].append(spec)
 
@@ -74,27 +74,24 @@ class ApplicationArgumentLoader(object):
         """
         loaded_args = list(args)
         loaded_kwargs = kwargs.copy()
-        try:
-            for spec in self._endpoint_2_specs[endpoint]:
-                if spec.position is not None and spec.position < len(args):
-                    unloaded = args[spec.position]
-                    partition = loaded_args
-                    key = spec.position
-                else:
-                    unloaded = kwargs.get(spec.arg_name)
-                    partition = loaded_kwargs
-                    key = spec.arg_name
 
-                partition[key] = self.load_param(
-                    spec.many, spec.biz_type, unloaded
-                )
-        except:
-            import ipdb; ipdb.set_trace()
-            pass
+        for spec in self._endpoint_2_specs[endpoint]:
+            if spec.position is not None and spec.position < len(args):
+                unloaded = args[spec.position]
+                partition = loaded_args
+                key = spec.position
+            else:
+                unloaded = kwargs.get(spec.arg_name)
+                partition = loaded_kwargs
+                key = spec.arg_name
+
+            partition[key] = self.load_param(
+                spec.many, spec.biz_class, unloaded
+            )
 
         return (loaded_args, loaded_kwargs)
 
-    def load_param(self, many: bool, biz_type: Type['BizObject'], preloaded):
+    def load_param(self, many: bool, biz_class: Type['BizObject'], preloaded):
         """
         Convert the given parameter "preloaded" into its corresponding
         BizThing.
@@ -103,7 +100,7 @@ class ApplicationArgumentLoader(object):
         - If it is a list of IDs, return a BizList.
         - If it is a dict, replace it with a corresponding BizObject instance.
         """
-        if not (preloaded and biz_type):
+        if not (preloaded and biz_class):
             return preloaded
         elif not many:
             if is_bizobj(preloaded):
@@ -113,19 +110,19 @@ class ApplicationArgumentLoader(object):
                     preloaded['_id'] = preloaded.pop('id')
                 if 'rev' in preloaded:
                     preloaded['_rev'] = preloaded.pop('rev')
-                return biz_type(preloaded)
+                return biz_class(preloaded)
             else:
-                return biz_type.get(_id=preloaded)
+                return biz_class.get(_id=preloaded)
         elif is_sequence(preloaded):
             if isinstance(preloaded, set):
                 preloaded = list(preloaded)
             if is_bizobj(preloaded[0]):
-                return biz_type.BizList(preloaded)
+                return biz_class.BizList(preloaded)
             elif isinstance(preloaded[0], dict):
-                return biz_type.BizList(
-                    biz_type(record).clean() if record.get('id') is not None
-                    else biz_type(record)
+                return biz_class.BizList(
+                    biz_class(record).clean() if record.get('id') is not None
+                    else biz_class(record)
                         for record in preloaded
                 )
             else:
-                return biz_type.get_many(_ids=preloaded)
+                return biz_class.get_many(_ids=preloaded)

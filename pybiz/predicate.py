@@ -67,7 +67,7 @@ class Predicate(object):
         return codecs.encode(pickle.dumps(self), "base64").decode()
 
     @classmethod
-    def parse(biz_type: Type['BizObject'], source: Text) -> 'Predicate':
+    def parse(biz_class: Type['BizObject'], source: Text) -> 'Predicate':
         parser
 
     @staticmethod
@@ -88,11 +88,11 @@ class Predicate(object):
         raise NotImplementedError()
 
     @classmethod
-    def load(cls, biz_type: Type['BizObject'], data: Dict):
+    def load(cls, biz_class: Type['BizObject'], data: Dict):
         if data['code'] == TYPE_CONDITIONAL:
-            return ConditionalPredicate.load(biz_type, data)
+            return ConditionalPredicate.load(biz_class, data)
         elif data['code'] == TYPE_BOOLEAN:
-            return BooleanPredicate.load(biz_type, data)
+            return BooleanPredicate.load(biz_class, data)
 
 
 class ConditionalPredicate(Predicate):
@@ -116,8 +116,8 @@ class ConditionalPredicate(Predicate):
 
     def __str__(self):
         if self.fprop:
-            biz_type_name = self.fprop.biz_type.__name__
-            lhs = f'{biz_type_name}.{self.fprop.field.name}'
+            biz_class_name = self.fprop.biz_class.__name__
+            lhs = f'{biz_class_name}.{self.fprop.field.name}'
         else:
             lhs = '[NULL]'
 
@@ -142,8 +142,8 @@ class ConditionalPredicate(Predicate):
         }
 
     @classmethod
-    def load(cls, biz_type: Type['BizObject'], data: Dict):
-        field_prop = getattr(biz_type, data['field'])
+    def load(cls, biz_class: Type['BizObject'], data: Dict):
+        field_prop = getattr(biz_class, data['field'])
         return cls(data['op'], field_prop, data['value'])
 
 
@@ -201,11 +201,11 @@ class BooleanPredicate(Predicate):
         }
 
     @classmethod
-    def load(cls, biz_type: Type['BizObject'], data: Dict):
+    def load(cls, biz_class: Type['BizObject'], data: Dict):
         return cls(
             data['op'],
-            Predicate.load(biz_type, data['lhs']),
-            Predicate.load(biz_type, data['rhs']),
+            Predicate.load(biz_class, data['lhs']),
+            Predicate.load(biz_class, data['rhs']),
         )
 
 
@@ -215,7 +215,7 @@ class PredicateParser(object):
 
     def __init__(self):
         self._stack = []
-        self._biz_type = None
+        self._biz_class = None
         self._init_grammar()
 
     def _init_grammar(self):
@@ -270,7 +270,7 @@ class PredicateParser(object):
 
     def _on_parse_conditional_predicate(self, source: Text, loc: int, tokens: Tuple):
         # TODO: further process "value" as list or other dtype
-        fprop = getattr(self._biz_type, tokens['field'])
+        fprop = getattr(self._biz_class, tokens['field'])
         value = tokens['value']
         if RE_STRING.match(value):
             value = value[1:-1]
@@ -291,8 +291,8 @@ class PredicateParser(object):
         elif tokens['op'] == '||':
             self._stack.append(lhs | rhs)
 
-    def parse(self, biz_type, source: Text) -> 'Predicate':
-        self._biz_type = biz_type
+    def parse(self, biz_class, source: Text) -> 'Predicate':
+        self._biz_class = biz_class
         self._stack.clear()
         self._grammar.root.parseString(source)
         predicate = self._stack[-1]

@@ -23,12 +23,12 @@ class BizAttribute(object):
         # vars set by bootstrap:
         self._is_bootstrapped = False
         self._app = None
-        self._biz_type = None
+        self._biz_class = None
 
     def __repr__(self):
         name = f'{self.name}:' if self.name else ''
-        biz_attr_type = self.__class__.__name__
-        return f'<BizAttribute({name}{biz_attr_type})>'
+        biz_attr_class = self.__class__.__name__
+        return f'<BizAttribute({name}{biz_attr_class})>'
 
     def __lt__(self, other):
         return self.order_key < other.order_key
@@ -88,8 +88,8 @@ class BizAttribute(object):
         return self._is_bootstrapped
 
     @property
-    def biz_type(self) -> Type['BizObject']:
-        return self._biz_type
+    def biz_class(self) -> Type['BizObject']:
+        return self._biz_class
 
     @property
     def app(self):
@@ -103,12 +103,12 @@ class BizAttribute(object):
     def on_bootstrap(self):
         pass
 
-    def bind(self, biz_type: Type['BizObject']):
+    def bind(self, biz_class: Type['BizObject']):
         """
         This is called by the BizObject metaclass when associating its set of
         BizAttribute objects with the owner BizObject class.
         """
-        self._biz_type = biz_type
+        self._biz_class = biz_class
 
     def execute(self, source: 'BizObject', *args, **kwargs):
         return
@@ -121,8 +121,8 @@ class BizAttributeProperty(property):
 
     def __repr__(self):
         name = f'{self.biz_attr.name}: ' if self.biz_attr.name else ''
-        biz_attr_type = self.biz_attr.__class__.__name__
-        return f'<BizAttributeProperty({name}{biz_attr_type})>'
+        biz_attr_class = self.biz_attr.__class__.__name__
+        return f'<BizAttributeProperty({name}{biz_attr_class})>'
 
     def select(self, *args, **kwargs) -> 'BizAttributeQuery':
         return pybiz.biz.query.BizAttributeQuery(

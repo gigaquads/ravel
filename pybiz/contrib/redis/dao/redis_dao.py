@@ -32,7 +32,7 @@ class RedisDao(Dao):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.encoder = JsonEncoder()
-        self.field_2_index_type = {
+        self.field_2_index_class = {
             fields.String: StringIndex,
             fields.Int: NumericIndex,
             fields.Float: NumericIndex,
@@ -49,20 +49,20 @@ class RedisDao(Dao):
         cls.db = db if db is not None else (cls.env.REDIS_DB or cls.db)
         cls.redis = RedisClient(host=cls.host, port=cls.port, db=cls.db)
 
-    def on_bind(self, biz_type: Type['BizObject'], **kwargs):
-        self.type_name = StringUtils.snake(biz_type.__name__).lower()
+    def on_bind(self, biz_class: Type['BizObject'], **kwargs):
+        self.type_name = StringUtils.snake(biz_class.__name__).lower()
         self.records = HashSet(self.redis, self.type_name)
         self.revs = HashSet(self.redis, f'{self.type_name}_revisions')
         self.indexes = self._bind_indexes()
 
     def _bind_indexes(self):
         indexes = {}
-        for k, field in self.biz_type.schema.fields.items():
+        for k, field in self.biz_class.schema.fields.items():
             index_name = f'{self.type_name}:{k.lower()}'
-            index_type = self.field_2_index_type.get(field.__class__)
-            if index_type is None:
-                index_type = StringIndex
-            indexes[k] = index_type(self.redis, index_name)
+            index_class = self.field_2_index_class.get(field.__class__)
+            if index_class is None:
+                index_class = StringIndex
+            indexes[k] = index_class(self.redis, index_name)
         return indexes
 
     def exists(self, _id) -> bool:
@@ -195,7 +195,7 @@ class RedisDao(Dao):
         records = []
 
         if _ids:
-            _id_field = self.biz_type.schema.fields['_id']
+            _id_field = self.biz_class.schema.fields['_id']
             json_records = self.records.get_many(_ids)
             rev_strs = self.revs.get_many(_ids)
             for json_record, rev_str in zip(json_records, rev_strs):

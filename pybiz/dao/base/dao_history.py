@@ -82,12 +82,12 @@ class DaoHistory(object):
         return self._events
 
     @classmethod
-    def decorate(cls, dao_type: Type['Dao']):
+    def decorate(cls, dao_class: Type['Dao']):
         method_names = cls.read_method_names | cls.write_method_names
         for method_name in method_names:
-            func = getattr(dao_type, method_name)
+            func = getattr(dao_class, method_name)
             decorator = cls._build_dao_interface_method_decorator(func)
-            setattr(dao_type, method_name, decorator)
+            setattr(dao_class, method_name, decorator)
 
     @classmethod
     def _build_dao_interface_method_decorator(cls, func):

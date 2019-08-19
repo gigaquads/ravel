@@ -66,7 +66,7 @@ class Query(AbstractQuery):
 
     def __init__(
         self,
-        biz_type: Type['BizType'],
+        biz_class: Type['BizType'],
         alias: Text = None,
         select: Set = None,
         order_by: Tuple = None,
@@ -75,10 +75,10 @@ class Query(AbstractQuery):
     ):
         super().__init__(alias=alias)
 
-        self._biz_type = biz_type
+        self._biz_class = biz_class
         self._params = Query.Parameters()
 
-        self.select(biz_type.base_selectors)
+        self.select(biz_class.base_selectors)
 
         if offset is not None:
             self.offset(offset)
@@ -96,12 +96,12 @@ class Query(AbstractQuery):
         return setattr(self._params, key, value)
 
     def __repr__(self):
-        biz_type_name = self.biz_type.__name__ if self.biz_type else ''
+        biz_class_name = self.biz_class.__name__ if self.biz_class else ''
         if self.alias:
             alias_substr = f', alias="{self.alias}"'
         else:
             alias_substr = ''
-        return f'<Query({biz_type_name}{alias_substr})>'
+        return f'<Query({biz_class_name}{alias_substr})>'
 
     def execute(self, first=False):
         targets = self._executor.execute(query=self)
@@ -133,7 +133,7 @@ class Query(AbstractQuery):
                     additional_predicates.append(obj)
 
             for k, v in kwargs.items():
-                equality_predicate = (getattr(self.biz_type, k) == v)
+                equality_predicate = (getattr(self.biz_class, k) == v)
                 additional_predicates.append(equality_predicate)
 
             additional_predicates = tuple(additional_predicates)
@@ -184,7 +184,7 @@ class Query(AbstractQuery):
             'order_by': [x.dump() for x in self.params.order_by],
             'where': [x.dump() for x in (self.params.where or [])],
             'target': {
-                'type': self.biz_type.__name__,
+                'type': self.biz_class.__name__,
                 'fields': self.params.fields,
                 'attributes': {
                     k: v.dump() for k, v
@@ -194,18 +194,18 @@ class Query(AbstractQuery):
         }
 
     @classmethod
-    def load(cls, biz_type: Type['BizObject'], data: Dict) -> 'Query':
-        return cls._loader.load(biz_type, data)
+    def load(cls, biz_class: Type['BizObject'], data: Dict) -> 'Query':
+        return cls._loader.load(biz_class, data)
 
     @classmethod
-    def from_keys(cls, biz_type: Type['BizObject'], keys: Set[Text] = None):
+    def from_keys(cls, biz_class: Type['BizObject'], keys: Set[Text] = None):
         if not keys:
-            keys = biz_type.schema.fields.keys()
-        return cls._loader.from_keys(biz_type, keys=keys)
+            keys = biz_class.schema.fields.keys()
+        return cls._loader.from_keys(biz_class, keys=keys)
 
     @property
-    def biz_type(self) -> Type['BizObject']:
-        return self._biz_type
+    def biz_class(self) -> Type['BizObject']:
+        return self._biz_class
 
     @property
     def params(self) -> Parameters:
@@ -225,7 +225,7 @@ class Query(AbstractQuery):
         """
         Add a new query target to this Query. A target can be a FieldProperty,
         RelationshipProperty, ViewProperty, or more generically, any
-        BizAttribute declared on self.biz_type, the targeted BizObject class.
+        BizAttribute declared on self.biz_class, the targeted BizObject class.
         The target can also just be the string name of one of these things.
         Finally, a target can also be an already-formed Query object.
         """
@@ -236,31 +236,31 @@ class Query(AbstractQuery):
         # resolve pybiz type from string target variable
         try:
             if isinstance(target, str):
-                target = getattr(self._biz_type, target)
+                target = getattr(self._biz_class, target)
         except AttributeError:
             raise AttributeError(
-                f'{self._biz_type} has no attribute "{target}"'
+                f'{self._biz_class} has no attribute "{target}"'
             )
 
         # add the target to the appropriate collection
         if isinstance(target, FieldProperty):
-            assert target.biz_type is self.biz_type
+            assert target.biz_class is self.biz_class
             key = target.field.name
             targets = self._params.fields
         elif isinstance(target, BizAttributeProperty):
-            assert target.biz_attr.biz_type is self.biz_type
+            assert target.biz_attr.biz_class is self.biz_class
             biz_attr = target.biz_attr
             key = biz_attr.name
             targets = self._params.attributes
             if biz_attr.category == 'relationship':
-                params = Query.from_keys(biz_type=biz_attr.target_biz_type)
+                params = Query.from_keys(biz_class=biz_attr.target_biz_class)
         elif isinstance(target, BizAttributeQuery):
-            assert target.alias in self.biz_type.attributes
+            assert target.alias in self.biz_class.attributes
             key = target.alias
             targets = self._params.attributes
             params = target
         elif isinstance(target, Query):
-            assert target.alias in self.biz_type.attributes
+            assert target.alias in self.biz_class.attributes
             key = target.alias
             targets = self._params.attributes
             params = target
@@ -287,8 +287,8 @@ class BizAttributeQuery(AbstractQuery):
         self._params = {}
 
     def __repr__(self):
-        biz_type_name = (
-            self._biz_attr.biz_type.__name__
+        biz_class_name = (
+            self._biz_attr.biz_class.__name__
             if self.biz_attr else ''
         )
         if self.alias:
@@ -296,7 +296,7 @@ class BizAttributeQuery(AbstractQuery):
         else:
             alias_substr = ''
 
-        return f'<BizAttributeQuery({biz_type_name}{alias_substr})>'
+        return f'<BizAttributeQuery({biz_class_name}{alias_substr})>'
 
     def __getattr__(self, param_name):
         """
@@ -322,6 +322,6 @@ class BizAttributeQuery(AbstractQuery):
         record['alias'] = self.alias
         record['target'] = {
             'attribute': self.biz_attr.name,
-            'type': self.biz_attr.biz_type,
+            'type': self.biz_attr.biz_class,
         }
         return record

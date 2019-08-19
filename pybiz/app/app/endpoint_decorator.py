@@ -6,7 +6,7 @@ class EndpointDecorator(object):
         self.kwargs = kwargs
 
     def __call__(self, func) -> 'Endpoint':
-        endpoint = self.app.endpoint_type(func, self)
+        endpoint = self.app.endpoint_class(func, self)
         self.app.register(endpoint)
         self.app.on_decorate(endpoint)
         return endpoint

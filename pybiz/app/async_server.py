@@ -17,7 +17,7 @@ class AsyncServer(Application):
         self.loop = None
 
     @property
-    def endpoint_type(self) -> Type['Endpoint']:
+    def endpoint_class(self) -> Type['Endpoint']:
         return AsyncEndpoint
 
     def on_bootstrap(self, server):

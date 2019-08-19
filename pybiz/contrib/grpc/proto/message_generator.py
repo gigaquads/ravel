@@ -41,8 +41,8 @@ class MessageGenerator(object):
             #fields.Regexp: ScalarFieldAdapter('string'),
         }
         # upsert into default adapters dict from the `adapters` kwarg
-        for field_type, adapter in (adapters or {}).items():
-            self.adapters[field_type] = adapter
+        for field_class, adapter in (adapters or {}).items():
+            self.adapters[field_class] = adapter
         # associate the generator with each adapter.
         for adapter in self.adapters.values():
             adapter.bind(self)
@@ -55,7 +55,7 @@ class MessageGenerator(object):
 
     def emit(
         self,
-        schema_type: Type['Schema'],
+        schema_class: Type['Schema'],
         type_name: Text = None,
         depth=1
     ) -> Text:
@@ -63,20 +63,20 @@ class MessageGenerator(object):
         Recursively generate a protocol buffer message type declaration string
         from a given Schema class.
         """
-        if isinstance(schema_type, type):
-            type_name = type_name or schema_type.__name__
-        elif isinstance(schema_type, Schema):
-            type_name = type_name or schema_type.__class__.__name__
+        if isinstance(schema_class, type):
+            type_name = type_name or schema_class.__name__
+        elif isinstance(schema_class, Schema):
+            type_name = type_name or schema_class.__class__.__name__
         else:
             raise ValueError(
-                'unrecognized schema type: "{}"'.format(schema_type)
+                'unrecognized schema type: "{}"'.format(schema_class)
             )
 
         field_no2field = {}
         prepared_data = []
         field_decls = []
 
-        for f in schema_type.fields.values():
+        for f in schema_class.fields.values():
             # compute the "field number"
             field_no = f.meta.get('field_no', sys.maxsize)
 
@@ -98,7 +98,7 @@ class MessageGenerator(object):
         nested_message_types = [
             self.emit(nested_schema, depth=depth + 1)
             for nested_schema in {
-                s.__class__ for s in schema_type.children
+                s.__class__ for s in schema_class.children
             }
         ]
 

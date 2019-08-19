@@ -30,7 +30,7 @@ DAO_TYPES = dict([(k, v) for k, v in DAO_TYPES.items() if v is not None])
 DAO_INSTANCES = dict([(k, v()) for k, v in DAO_TYPES.items()])
 
 
-def new_biz_type(fields=None, name=None):
+def new_biz_class(fields=None, name=None):
     name = name or 'CrashDummy'
     return type(name, (BizObject, ), fields or {'name': String()})
 
@@ -43,12 +43,12 @@ def bootstrap_all():
 
 
 def bind_all(fields=None):
-    DAO_INSTANCES['py'].bind(new_biz_type(fields=fields))
-    DAO_INSTANCES['fs'].bind(new_biz_type(fields=fields))
+    DAO_INSTANCES['py'].bind(new_biz_class(fields=fields))
+    DAO_INSTANCES['fs'].bind(new_biz_class(fields=fields))
     if DAO_INSTANCES['sa']:
-        DAO_INSTANCES['sa'].bind(new_biz_type(fields=fields))
+        DAO_INSTANCES['sa'].bind(new_biz_class(fields=fields))
     if DAO_INSTANCES['redis']:
-        DAO_INSTANCES['redis'].bind(new_biz_type(fields=fields))
+        DAO_INSTANCES['redis'].bind(new_biz_class(fields=fields))
 
 
 def setup_tests():
