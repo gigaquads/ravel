@@ -11,9 +11,11 @@ from collections import defaultdict
 
 from mock import MagicMock
 from appyratus.memoize import memoized_property
-from appyratus.schema.fields import Field
+from appyratus.schema import EqualityConstraint, RangeConstraint
 
+from pybiz.schema import Field, fields
 from pybiz.exceptions import RelationshipArgumentError, RelationshipError
+from pybiz.predicate import TYPE_BOOLEAN, TYPE_CONDITIONAL, OP_CODE
 from pybiz.util.misc_functions import (
     normalize_to_tuple,
     is_bizobj,
@@ -234,6 +236,81 @@ class Relationship(BizAttribute):
             for behavior in self.behaviors:
                 behavior.on_post_bootstrap(self)
 
+    def generate(
+        self,
+        source: 'BizThing',
+        select: Set = None,
+        where: Set = None,
+        order_by: Tuple = None,
+        offset: int = None,
+        limit: int = None,
+    ):
+        # TODO: put this in a common method shared with execute -----------+
+        limit = max(limit, 1) if limit is not None else self.limit
+        offset = max(offset, 0) if offset is not None else self.offset
+        if select is None:
+            select = set()
+        elif not isinstance(select, set):
+            select = set(select)
+        if select:
+            select.update(self.select)
+        else:
+            # TODO: find out why self.select is a dict here
+            select = set(self.select)
+
+        computed_order_by = []
+        order_by = order_by or self.order_by
+        if order_by:
+            for obj in order_by:
+                if callable(obj):
+                    order_by_spec = obj(source)
+                else:
+                    order_by_spec = obj
+                computed_order_by.append(order_by_spec)
+                select.add(order_by_spec.key)
+        # ----------------------------------------------------------------+
+
+        root = source
+        target = None
+
+        for func in self.joins:
+            join = Join(source, *func(source))
+            # TODO: set ID's used in relationship joins
+
+            if func is self.joins[-1]:
+                # only pass in the query params to the last join in the join
+                # sequence, as this is the one that truly applies to the
+                # "target" BizObject type being queried.
+                query = join.query(
+                    select=select,
+                    where=where,
+                    limit=limit,
+                    offset=offset,
+                    order_by=order_by
+                )
+                if self._is_first_execution:
+                    for predicate in query.params.where:
+                        self.target_biz_class.base_selectors.update(
+                            f.name for f in predicate.fields
+                        )
+                if self._is_first_execution:
+                    self._update_base_selectors_with_predicate_fields(query)
+
+            else:
+                query = join.query(select=select, execute=False)
+
+            target = query.generate()
+            source = target
+
+        # return the related BizObject or BizList we just loaded
+        if not self.many:
+            return target[0] if target else None
+        else:
+            return target
+
+    
+
+
     def execute(
         self,
         source: 'BizThing',
@@ -334,7 +411,7 @@ class Relationship(BizAttribute):
                     self._update_base_selectors_with_predicate_fields(query)
                 target = query.execute()
             else:
-                target = join.query(select=select)
+                target = join.query(select=select, execute=True)
 
             source = target
 
@@ -392,7 +469,7 @@ class Relationship(BizAttribute):
                     self._update_base_selectors_with_predicate_fields(query)
                 targets = query.execute()
             else:
-                targets = join.query()
+                targets = join.query(execute=True)
 
             # adjust data structures that we used to determine, in the end,
             # which original_source objects are to be zipped up with which

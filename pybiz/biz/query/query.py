@@ -1,5 +1,6 @@
 import random
 
+from functools import reduce
 from typing import List, Dict, Set, Text, Type, Tuple
 
 from pybiz.util.misc_functions import is_sequence
@@ -107,8 +108,15 @@ class Query(AbstractQuery):
         return f'<Query({biz_class_name}{alias_substr})>'
 
     def generate(self):
+        constraints = None
+        if self._params.where:
+            if len(self._params.where) > 1:
+                pred = reduce(lambda x, y: x & y, self._params.where)
+            else:
+                pred = self._params.where[0]
+            constraints = pred.compute_constraints()
 
-        def generate_base_biz_list(query, count=None):
+        def generate_base_biz_list(query, count=None, constraints=None):
             biz_list = query._biz_class.BizList()
             if count is None:
                 count_upper_bound = query._params.limit or random.randint(1, 32)
@@ -117,28 +125,32 @@ class Query(AbstractQuery):
             # generate field values for this Query's BizObject class
             for i in range(count):
                 biz_obj = query._biz_class.generate(
-                    fields=query._params.fields.keys()
+                    fields=query._params.fields.keys(),
+                    constraints=constraints,
                 )
                 biz_list.append(biz_obj)
             return biz_list
 
-        generated_biz_list = generate_base_biz_list(self)
+        generated_biz_list = generate_base_biz_list(self, None, constraints)
 
-        for attr_name, subquery in self._params.attributes.items():
-            if isinstance(subquery, Query):
-                rel = self.biz_class.attributes.by_name(attr_name)
-                if rel.many:
-                    pass
-                else:
-                    generated_biz_list.merge([
-                       {rel.name: biz_obj}
-                       for biz_obj in generate_base_biz_list(
-                            subquery, count=len(generated_biz_list)
-                        )
-                    ])
+        # recurse on relationships
+        for biz_obj in generated_biz_list:
+            for k, v in self._params.attributes.items():
+                rel = self.biz_class.relationships.get(k)
+                subquery = v
+                if rel is not None:
+                    related = subquery.execute(
+                        first=not rel.many, generative=True
+                    )
+                    setattr(biz_obj, k, related)
+
+        # TODO: recurse on non Relationship BizAttributes
+
         return generated_biz_list
 
     def execute(self, first=False, generative=False):
+        from functools import reduce
+
         if generative:
             targets = self.generate()
         else:

@@ -71,7 +71,11 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return Query(cls).select(*selectors)
 
     @classmethod
-    def generate(cls, fields: Set[Text] = None) -> 'BizObject':
+    def generate(
+        cls,
+        fields: Set[Text] = None,
+        constraints: Dict = None,
+    ) -> 'BizObject':
         """
         Recursively generate a fixture for this BizObject class and any related
         objects as well.
@@ -89,10 +93,15 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                     if attr.category == 'relationship':
                         children[k] = v
 
-        data = cls.schema.generate(fields=field_names)
+        data = cls.schema.generate(
+            fields=field_names,
+            constraints=constraints
+        )
+
         for k, v in children.items():
             attr = cls.attributes.by_name(k)
             if attr.category == 'relationship':
+                # TODO: support nested constraints for BizAttributes
                 data[k] = attr.target_biz_class.generate(v)
 
         return cls(data=data)

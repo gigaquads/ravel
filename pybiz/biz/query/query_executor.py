@@ -49,7 +49,7 @@ class QueryExecutor(object):
                 relationship = biz_attr
                 targets = relationship.execute(
                     sources,
-                    select=sub_query.params.fields,
+                    select=set(sub_query.params.fields.keys()),
                     where=sub_query.params.where,
                     order_by=sub_query.params.order_by,
                     limit=sub_query.params.limit,

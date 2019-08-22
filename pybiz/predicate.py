@@ -10,6 +10,7 @@ from threading import local
 from pyparsing import Literal, Regex, Forward, Optional, Word
 from appyratus.enum import Enum
 from appyratus.utils import DictObject
+from appyratus.schema import RangeConstraint, EqualityConstraint
 
 
 OP_CODE = Enum(
@@ -94,6 +95,49 @@ class Predicate(object):
         elif data['code'] == TYPE_BOOLEAN:
             return BooleanPredicate.load(biz_class, data)
 
+    def compute_constraints(self) -> 'Constraint':
+        constraints = defaultdict(dict)
+        self._compute_constraint(self, constraints)
+        return constraints
+
+    def _compute_constraint(self, predicate, constraints):
+        if predicate.code == TYPE_BOOLEAN:
+            self._compute_constraint(predicate.lhs, constraints)
+            self._compute_constraint(predicate.rhs, constraints)
+        elif predicate.code == TYPE_CONDITIONAL:
+            field = predicate.fprop.field
+            if predicate.op == OP_CODE.EQ:
+                constraints[field.name] = EqualityConstraint(
+                    value=predicate.value,
+                    is_negative=False
+                )
+            elif predicate.op == OP_CODE.NEQ:
+                constraints[field.name] = EqualityConstraint(
+                    value=predicate.value,
+                    is_negative=True
+                )
+            # TODO: INCLUDING and EXCLUDING predicates
+
+            con = constraints.setdefault(field.name, RangeConstraint())
+            if not con.is_equality_constraint:
+                if predicate.op == OP_CODE.LEQ:
+                    con.upper_value = predicate.value
+                    con.is_upper_inclusive = True
+                elif predicate.op == OP_CODE.LT:
+                    con.upper_value = predicate.value
+                    con.is_upper_inclusive = False
+                elif predicate.op == OP_CODE.GEQ:
+                    con.lower_value = predicate.value
+                    con.is_lower_inclusive = True
+                elif predicate.op == OP_CODE.GT:
+                    con.lower_value = predicate.value
+                    con.is_lower_inclusive = False
+        else:
+            raise ValueError(
+                f'unrecogized predicate type: {predicate.code}'
+            )
+        return constraints
+
 
 class ConditionalPredicate(Predicate):
     """
@@ -158,8 +202,10 @@ class BooleanPredicate(Predicate):
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
-        self.fields.add(self.lhs.fprop.field)
-        self.fields.add(self.rhs.fprop.field)
+        if lhs.code == TYPE_CONDITIONAL:
+            self.fields.add(lhs.fprop.field)
+        if rhs.code == TYPE_CONDITIONAL:
+            self.fields.add(rhs.fprop.field)
 
     def __or__(self, other):
         return BooleanPredicate(OP_CODE.OR, self, other)

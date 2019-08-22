@@ -6,6 +6,8 @@ from appyratus.schema import Schema
 
 import pybiz.biz.query
 
+from pybiz.biz.biz_thing import BizThing
+
 
 class BizAttribute(object):
     def __init__(
@@ -112,6 +114,9 @@ class BizAttribute(object):
 
     def execute(self, source: 'BizObject', *args, **kwargs):
         return
+
+    def generate(self, source: 'BizObject') -> BizThing:
+        pass
 
 
 class BizAttributeProperty(property):
