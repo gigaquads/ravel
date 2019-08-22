@@ -1,7 +1,7 @@
 from inspect import Parameter
 from collections import defaultdict
 from typing import (
-    List, Dict, ForwardRef, Text, Tuple, Set, Type,
+    List, Dict, ForwardRef, Text, Tuple, Set, Type, Callable,
     _GenericAlias as GenericAlias
 )
 
@@ -51,7 +51,10 @@ class ApplicationArgumentLoader(object):
             self.many = many
             self.biz_class = biz_class
 
-    def __init__(self, app: 'Application'):
+    def __init__(self, app: 'Application', on_load: Callable = None):
+        self._on_load = (
+            on_load or (lambda spec, raw_value, loaded_value: loaded_value)
+        )
         self._biz_classs = app.types.biz
         self._endpoint_2_specs = defaultdict(list)
         for endpoint in app.endpoints.values():
@@ -77,18 +80,28 @@ class ApplicationArgumentLoader(object):
 
         for spec in self._endpoint_2_specs[endpoint]:
             if spec.position is not None and spec.position < len(args):
-                unloaded = args[spec.position]
-                partition = loaded_args
+                raw_arg_value = args[spec.position]
+                loaded_args_or_kwargs = loaded_args
                 key = spec.position
             else:
-                unloaded = kwargs.get(spec.arg_name)
-                partition = loaded_kwargs
+                raw_arg_value = kwargs.get(spec.arg_name)
+                loaded_args_or_kwargs = loaded_kwargs
                 key = spec.arg_name
 
-            partition[key] = self.load_param(
-                spec.many, spec.biz_class, unloaded
-            )
+            # Note that "key" is either a position integer offset
+            # of the name of a keyword argument.
 
+            loaded_arg_value = self.load_param(
+                spec.many, spec.biz_class, raw_arg_value
+            )
+            # store a reference to the raw argument value on the loaded BizThing
+            # so that it can still be accessed inside the app.
+            if loaded_arg_value is not None:
+                loaded_arg_value.internal.loaded_from_argument = raw_arg_value
+
+            loaded_args_or_kwargs[key] = self._on_load(
+                spec, raw_arg_value, loaded_arg_value
+            )
         return (loaded_args, loaded_kwargs)
 
     def load_param(self, many: bool, biz_class: Type['BizObject'], preloaded):

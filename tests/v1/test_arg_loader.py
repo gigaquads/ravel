@@ -76,12 +76,19 @@ class TestApplicationBasics(object):
         assert kwargs['ship']._id == the_enterprise._id
 
     @mark.integration
-    def test_kw_arg_is_loaded_from_bizobj_2(cls, startrek, the_enterprise):
-        the_enterprise.create()
+    def test_kw_arg_is_nullified_if_arg_not_resolved(cls, startrek):
         args, kwargs = startrek.argument_loader.load(
-            endpoint=startrek.api.get_ship,
-            args=(the_enterprise, ),
+            endpoint=startrek.api.get_officer,
+            args=tuple('invalid-id'),
             kwargs={}
         )
-        assert isinstance(kwargs['ship'], startrek.biz.Ship)
-        assert kwargs['ship']._id == the_enterprise._id
+        assert args[0] is None
+        
+    @mark.integration
+    def test_kw_arg_is_nullified_if_kwarg_not_resolved(cls, startrek):
+        args, kwargs = startrek.argument_loader.load(
+            endpoint=startrek.api.get_ship,
+            args=tuple(),
+            kwargs={'ship': 'invalid-id'}
+        )
+        assert kwargs['ship'] is None

@@ -85,9 +85,11 @@ class BizList(BizThing):
         the BizObject which owns the Relationship, and the `relationship` is
         the, well, Relationship through which the BizList was loaded.
         """
+        # TODO: Move private attrs into an "internal" DictObject
         self._relationship = relationship
         self._targets = list(objects or [])
         self._source = source
+        self._loaded_from_argument = None
 
     def __getitem__(self, key: int) -> 'BizObject':
         """
@@ -151,6 +153,14 @@ class BizList(BizThing):
         if self._source is not None:
             raise ValueError('source is readonly')
         self._source = source
+
+    @property
+    def loaded_from_argument(self):
+        return self._loaded_from_argument
+
+    @loaded_from_argument.setter
+    def loaded_from_argument(self, value):
+        self._loaded_from_argument = value
 
     def create(self):
         self.biz_class.create_many(self._targets)
