@@ -517,10 +517,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             for k, v in source.internal.cache.items():
                 setattr(self, k, v)
         elif isinstance(source, dict):
+            original_source = source
             source = self.schema.translate_source(source)
             for k, v in source.items():
                 if k in self.schema.fields or k in self.attributes:
                     setattr(self, k, v)
+            for k in original_source.keys() - source.keys():
+                setattr(self, k, original_source[k])
 
         if source_kwargs:
             self.merge(source=source_kwargs)

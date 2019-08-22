@@ -2,7 +2,7 @@ from typing import Type, List, Set, Tuple, Text, Dict
 
 from pybiz.constants import IS_BIZLIST_ANNOTATION
 from pybiz.exceptions import RelationshipError
-from pybiz.util.misc_functions import repr_biz_id
+from pybiz.util.misc_functions import repr_biz_id, is_sequence, is_bizlist
 
 from .biz_thing import BizThing
 
@@ -183,8 +183,17 @@ class BizList(BizThing):
         return self
 
     def merge(self, obj=None, **more_data):
-        for obj in self._targets:
-            obj.merge(obj, **more_data)
+        if is_sequence(obj) or is_bizlist(obj):
+            assert len(obj) == len(self._targets)
+            obj_arr = obj
+            for biz_obj, obj_to_merge in zip(self._targets, obj_arr):
+                biz_obj.merge(obj_to_merge)
+            if more_data:
+                for biz_obj in self._targets:
+                    biz_obj.merge(more_data)
+        else:
+            for biz_obj in self._targets:
+                biz_obj.merge(obj, **more_data)
         return self
 
     def mark(self, keys=None):

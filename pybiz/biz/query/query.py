@@ -1,3 +1,5 @@
+import random
+
 from typing import List, Dict, Set, Text, Type, Tuple
 
 from pybiz.util.misc_functions import is_sequence
@@ -60,6 +62,7 @@ class Query(AbstractQuery):
             self.limit = None
             self.offset = None
 
+
     _loader = QueryLoader()
     _executor = QueryExecutor()
     _printer  = QueryPrinter()
@@ -103,8 +106,44 @@ class Query(AbstractQuery):
             alias_substr = ''
         return f'<Query({biz_class_name}{alias_substr})>'
 
-    def execute(self, first=False):
-        targets = self._executor.execute(query=self)
+    def generate(self):
+
+        def generate_base_biz_list(query, count=None):
+            biz_list = query._biz_class.BizList()
+            if count is None:
+                count_upper_bound = query._params.limit or random.randint(1, 32)
+                count = random.randint(1, count_upper_bound)
+
+            # generate field values for this Query's BizObject class
+            for i in range(count):
+                biz_obj = query._biz_class.generate(
+                    fields=query._params.fields.keys()
+                )
+                biz_list.append(biz_obj)
+            return biz_list
+
+        generated_biz_list = generate_base_biz_list(self)
+
+        for attr_name, subquery in self._params.attributes.items():
+            if isinstance(subquery, Query):
+                rel = self.biz_class.attributes.by_name(attr_name)
+                if rel.many:
+                    pass
+                else:
+                    generated_biz_list.merge([
+                       {rel.name: biz_obj}
+                       for biz_obj in generate_base_biz_list(
+                            subquery, count=len(generated_biz_list)
+                        )
+                    ])
+        return generated_biz_list
+
+    def execute(self, first=False, generative=False):
+        if generative:
+            targets = self.generate()
+        else:
+            targets = self._executor.execute(query=self)
+
         if first:
             return targets[0] if targets else None
         else:
