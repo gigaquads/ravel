@@ -107,14 +107,14 @@ class Query(AbstractQuery):
             alias_substr = ''
         return f'<Query({biz_class_name}{alias_substr})>'
 
-    def generate(self):
-        constraints = None
+    def generate(self, constraints: Dict = None):
+        constraints = constraints or {}
         if self._params.where:
             if len(self._params.where) > 1:
                 pred = reduce(lambda x, y: x & y, self._params.where)
             else:
                 pred = self._params.where[0]
-            constraints = pred.compute_constraints()
+            constraints.update(pred.compute_constraints())
 
         def generate_base_biz_list(query, count=None, constraints=None):
             biz_list = query._biz_class.BizList()
@@ -139,8 +139,13 @@ class Query(AbstractQuery):
                 rel = self.biz_class.relationships.get(k)
                 subquery = v
                 if rel is not None:
-                    related = subquery.execute(
-                        first=not rel.many, generative=True
+                    related = rel.generate(
+                        source=biz_obj,
+                        select=set(subquery._params.fields.keys()),
+                        where=subquery._params.where,
+                        order_by=subquery._params.order_by,
+                        offset=subquery._params.offset,
+                        limit=subquery._params.limit,
                     )
                     setattr(biz_obj, k, related)
 

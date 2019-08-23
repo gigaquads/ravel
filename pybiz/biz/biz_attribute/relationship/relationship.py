@@ -299,7 +299,14 @@ class Relationship(BizAttribute):
             else:
                 query = join.query(select=select, execute=False)
 
-            target = query.generate()
+            # compute constraints for the generation of the target query
+            # based on the id columns specified in the join condition.
+            constraints = {}
+            constraints[join.target_fname] = EqualityConstraint(
+                value=getattr(source, join.source_fname)
+            )
+
+            target = query.generate(constraints=constraints)
             source = target
 
         # return the related BizObject or BizList we just loaded
@@ -331,6 +338,8 @@ class Relationship(BizAttribute):
         # update the selector set with the field names deemed required at a
         # minimum during bootstrap -- namely, those fields referenced in
         # order_by and "where" conditions.
+        if select is None:
+            select = set()
         if not isinstance(select, set):
             select = set(select)
         if select:

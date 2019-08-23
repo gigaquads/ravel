@@ -8,7 +8,7 @@ class User(pybiz.BizObject):
     email = pybiz.String()
     age = pybiz.Uint()
     password = pybiz.String()
-    account_id = pybiz.Field()
+    account_id = pybiz.UuidString()
     account = pybiz.Relationship(lambda source: (User.account_id, Account._id))
 
 
@@ -26,6 +26,7 @@ if __name__ == '__main__':
             User.email,
             User.password,
             User.age,
+            User.account_id,
             User.account.select(
                 Account.name,
                 Account.size
