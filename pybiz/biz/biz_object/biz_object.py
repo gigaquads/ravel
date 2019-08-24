@@ -109,9 +109,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def __init__(self, data=None, **more_data):
         self.internal = DictObject({
             'hash': int(uuid.uuid4().hex, 16),
-            'state': DirtyDict(),
             'loaded_from_argument': None,
-            'cache': {},
+            'state': DirtyDict(),
+            'biz_attr_state': {},
         })
         self.merge(dict(data or {}, **more_data))
 
@@ -453,7 +453,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             self.update()
 
         for rel in self.relationships.values():
-            biz_thing = self.internal.cache.get(rel.name)
+            biz_thing = self.internal.biz_attr_state.get(rel.name)
             if biz_thing:
                 biz_thing.save(depth=depth-1)
 
@@ -532,7 +532,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             assert isinstance(source, self.__class__)
             for k, v in source.internal.state.items():
                 setattr(self, k, v)
-            for k, v in source.internal.cache.items():
+            for k, v in source.internal.biz_attr_state.items():
                 setattr(self, k, v)
         elif isinstance(source, dict):
             original_source = source
@@ -589,8 +589,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for k in keys:
             if k in self.internal.state:
                 self.internal.state.pop(k, None)
-            elif k in self.internal.cache:
-                self.internal.cache.pop(k, None)
+            elif k in self.internal.biz_attr_state:
+                self.internal.biz_attr_state.pop(k, None)
 
     def is_loaded(self, keys: Set[Text]) -> bool:
         """
@@ -598,7 +598,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         keys = {keys} if isinstance(keys, str) else keys
         for k in keys:
-            if not (k in self.internal.state or k in self.internal.cache):
+            if not (k in self.internal.state or k in self.internal.biz_attr_state):
                 return False
         return True
 

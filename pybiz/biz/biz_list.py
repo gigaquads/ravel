@@ -89,7 +89,7 @@ class BizList(BizThing):
         self._relationship = relationship
         self._targets = list(objects or [])
         self._source = source
-        self._loaded_from_argument = None
+        self._arg = None
 
     def __getitem__(self, key: int) -> 'BizObject':
         """
@@ -155,12 +155,12 @@ class BizList(BizThing):
         self._source = source
 
     @property
-    def loaded_from_argument(self):
-        return self._loaded_from_argument
+    def arg(self):
+        return self._arg
 
-    @loaded_from_argument.setter
-    def loaded_from_argument(self, value):
-        self._loaded_from_argument = value
+    @arg.setter
+    def arg(self, value):
+        self._arg = value
 
     def create(self):
         self.biz_class.create_many(self._targets)
@@ -190,7 +190,7 @@ class BizList(BizThing):
         # TODO: optimize this to batch saves and updates here
         for rel in self.biz_class.relationships.values():
             for bizobj in self._targets:
-                biz_thing = bizobj.internal.cache.get(rel.name)
+                biz_thing = bizobj.internal.attributes.get(rel.name)
                 if biz_thing:
                     biz_thing.save(depth=depth-1)
 

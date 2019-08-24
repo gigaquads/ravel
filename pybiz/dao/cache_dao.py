@@ -11,7 +11,7 @@ from appyratus.enum import EnumValueStr
 from pybiz.util.misc_functions import remove_keys, import_object
 
 from .base import Dao, DaoEvent
-from .dao_binder import DaoBinder
+from .dao_binder import BizObjectBinder
 
 
 class CacheMode(EnumValueStr):
@@ -67,26 +67,23 @@ class CacheDao(Dao):
     def on_bind(
         self,
         biz_class: Type['BizObject'],
-        prefetch=None,
+        prefetch=False,
         mode: CacheMode = None,
         front: Dict = None,
         back: Dict = None,
     ):
         if prefetch is not None:
             self.prefetch = prefetch
+
         self.mode = mode or self.mode
         front = front or self.fe_params
         back = back or self.be_params
 
         self.fe = self._setup_inner_dao(
-            biz_class,
-            front['dao'],
-            front.get('params', {}),
+            biz_class, front['dao'], front.get('params', {}),
         )
         self.be = self._setup_inner_dao(
-            biz_class,
-            back['dao'],
-            back.get('params', {}),
+            biz_class, back['dao'], back.get('params', {}),
         )
 
         if self.prefetch:
@@ -97,11 +94,7 @@ class CacheDao(Dao):
 
     @property
     def binder(self):
-        if self.app and self.app.is_bootstrapped:
-            binder = self.app.manifest.binder
-        else:
-            binder = DaoBinder.get_instance()
-        return binder
+        return self.app.binder if self.app is not None else None
 
     def _setup_inner_dao(
         self,
@@ -109,7 +102,7 @@ class CacheDao(Dao):
         dao_class_name: Text,
         bind_params: Dict = None
     ):
-        # fetch the dao type from the DaoBinder
+        # fetch the dao type from the BizObjectBinder
         dao_class = self.binder.get_dao_class(dao_class_name.split('.')[-1])
         if dao_class is None:
             raise Exception(f'{dao_class} not registered')

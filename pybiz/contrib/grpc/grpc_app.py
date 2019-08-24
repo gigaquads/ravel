@@ -116,7 +116,7 @@ class Grpc(Application):
         self.grpc.pb2_grpc = import_module(pb2_grpc_mod_path, pkg_path)
 
         # build a lookup table of protobuf response Message types
-        self.grpc.response_classs = {
+        self.grpc.response_classes = {
             endpoint: getattr(
                 self.grpc.pb2, f'{StringUtils.camel(endpoint.name)}Response'
             )
@@ -150,7 +150,7 @@ class Grpc(Application):
         Map the return dict from the endpoint to the expected outgoing protobuf
         response Message object.
         """
-        response_class = self.grpc.response_classs[endpoint]
+        response_class = self.grpc.response_classes[endpoint]
         response = response_class()
 
         if result:

@@ -17,13 +17,13 @@ class TestRelationshipBasics(object):
 
         ship = startrek.biz.Ship.get(the_enterprise_with_crew._id)
 
-        assert 'crew' not in ship.internal.cache
+        assert 'crew' not in ship.internal.attributes
 
         ship.crew  # cause lazy loading
 
         # ensure we get the expected related data back
-        assert is_bizlist(ship.internal.cache['crew'])
-        assert len(ship.internal.cache['crew']) == len(
+        assert is_bizlist(ship.internal.attributes['crew'])
+        assert len(ship.internal.attributes['crew']) == len(
             the_enterprise_with_crew.crew
         )
 
@@ -41,13 +41,13 @@ class TestRelationshipBasics(object):
         ).execute()
 
         for officer in officers:
-            assert 'ship' not in officer.internal.cache
+            assert 'ship' not in officer.internal.attributes
 
         # lazy load all ship relationships via BizList bulk property
         officers.ship
 
         for officer in officers:
-            ship = officer.internal.cache.get('ship')
+            ship = officer.internal.attributes.get('ship')
             assert ship is not None
             assert ship._id == the_enterprise_with_crew._id
 

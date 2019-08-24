@@ -12,7 +12,7 @@ from pybiz.util.loggers import console
 
 from .exceptions import ApplicationError
 from .endpoint_decorator import EndpointDecorator
-from .argument_loader import ApplicationArgumentLoader
+from .loader import ApplicationArgumentLoader
 from .endpoint import Endpoint
 
 
@@ -29,6 +29,7 @@ class Application(object):
         self._is_started = False
         self._json_encoder = JsonEncoder()
         self._namespace = {}
+        self._binder = BizObjectBinder()
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.app_types)
@@ -93,8 +94,12 @@ class Application(object):
         return self._decorators
 
     @property
-    def argument_loader(self):
+    def loader(self) -> 'ApplicationArgumentLoader':
         return self._arg_loader
+
+    @property
+    def binder(self) -> 'BizObjectBinder':
+        return self._binder
 
     @property
     def types(self) -> DictObject:
@@ -109,8 +114,8 @@ class Application(object):
         return self._api
 
     @property
-    def data(self) -> DictObject:
-        return self._data
+    def dal(self) -> DictObject:
+        return self._dal
 
     @property
     def is_bootstrapped(self):
@@ -169,7 +174,7 @@ class Application(object):
         self._manifest.bind(rebind=rebootstrap)
 
         self._biz = DictObject(self._manifest.types.biz)
-        self._data = DictObject(self._manifest.types.dao)
+        self._dal = DictObject(self._manifest.types.dao)
         self._api = DictObject(self._endpoints)
 
         # bootstrap the middlware

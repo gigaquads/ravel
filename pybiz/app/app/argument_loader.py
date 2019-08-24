@@ -55,13 +55,13 @@ class ApplicationArgumentLoader(object):
         self._on_load = (
             on_load or (lambda spec, raw_value, loaded_value: loaded_value)
         )
-        self._biz_classs = app.types.biz
+        self._biz_classes = app.types.biz
         self._endpoint_2_specs = defaultdict(list)
         for endpoint in app.endpoints.values():
             for idx, param in enumerate(endpoint.signature.parameters.values()):
                 ann = param.annotation
                 many, biz_class_name = extract_biz_info_from_annotation(ann)
-                biz_class = self._biz_classs.get(biz_class_name)
+                biz_class = self._biz_classes.get(biz_class_name)
                 if biz_class is not None:
                     position = (
                         idx if param.default == Parameter.empty else None
@@ -97,7 +97,7 @@ class ApplicationArgumentLoader(object):
             # store a reference to the raw argument value on the loaded BizThing
             # so that it can still be accessed inside the app.
             if loaded_arg_value is not None:
-                loaded_arg_value.internal.loaded_from_argument = raw_arg_value
+                loaded_arg_value.internal.arg = raw_arg_value
 
             loaded_args_or_kwargs[key] = self._on_load(
                 spec, raw_arg_value, loaded_arg_value

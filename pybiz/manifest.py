@@ -18,7 +18,7 @@ from appyratus.env import Environment
 from pybiz.exceptions import ManifestError
 from pybiz.util.misc_functions import import_object
 from pybiz.util.loggers import console
-from pybiz.dao import DaoBinder
+from pybiz.dao import BizObjectBinder
 
 
 class Manifest(object):
@@ -33,26 +33,26 @@ class Manifest(object):
         path: Text = None,
         data: Dict = None,
         env: Environment = None,
-        binder: DaoBinder = None,
+        binder: BizObjectBinder = None,
     ):
         from pybiz.dao import PythonDao
 
         self.data = data or {}
         self.path = path
+        self.app = None
         self.package = None
         self.bindings = []
         self.bootstraps = {}
         self.env = env or Environment()
-        self.binder = binder or DaoBinder.get_instance()
-        self.types = DictObject({
-            'dao': {
+         DictObject({
+            'dal': {
                 'PythonDao': PythonDao
             },
             'biz': {},
         })
         self.scanner = Scanner(
-            biz_classs=self.types.biz,
-            dao_classs=self.types.dao,
+            biz_classes=self.types.biz,
+            dao_classes=self.types.dal,
             env=self.env,
         )
 
@@ -128,11 +128,13 @@ class Manifest(object):
         include this contents of this dict in its scan for BizObject and Dao
         types.
         """
-        self._discover_pybiz_classs(namespace)
-        self._register_dao_classs()
+        self._discover_pybiz_classes(namespace)
+        self._register_dao_classes()
         return self
 
     def bootstrap(self, app: 'Application'):
+        self.app = app
+        
         for biz_class in self.types.biz.values():
             if not (biz_class.is_abstract or biz_class.is_bootstrapped):
                 console.debug(
@@ -163,9 +165,9 @@ class Manifest(object):
             )
 
     def bind(self, rebind=False):
-        self.binder.bind(rebind=rebind)
+        self.app.binder.bind(rebind=rebind)
 
-    def _discover_pybiz_classs(self, namespace: Dict):
+    def _discover_pybiz_classes(self, namespace: Dict):
         # package name for venusian scan
         self._scan_venusian()
         if namespace:
@@ -179,21 +181,21 @@ class Manifest(object):
         self.types.biz.pop('BizObject', None)
         self.types.dao.pop('Dao', None)
 
-    def _register_dao_classs(self):
+    def _register_dao_classes(self):
         """
         Associate each BizObject class with a corresponding Dao class.
         """
-        # register each binding declared in the manifest with the DaoBinder
+        # register each binding declared in the manifest with the BizObjectBinder
         for info in self.bindings:
             biz_class = self.types.biz.get(info.biz)
             if biz_class is None:
                 raise ManifestError(
-                    f'cannot register {info.biz} with DaoBinder because '
+                    f'cannot register {info.biz} with BizObjectBinder because '
                     f'the class was not found while processing the manifest'
                 )
             dao_class = self.types.dao[info.dao]
-            if not self.binder.is_registered(biz_class):
-                binding = self.binder.register(
+            if not self.app.binder.is_registered(biz_class):
+                binding = self.app.binder.register(
                     biz_class=biz_class,
                     dao_class=dao_class,
                     dao_bind_kwargs=info.params,
@@ -201,11 +203,12 @@ class Manifest(object):
                 self.types.dao[info.dao] = binding.dao_class
 
         # register all dao types *not* currently declared in a binding
-        # with the DaoBinder.
+        # with the BizObjectBinder.
         for type_name, dao_class in self.types.dao.items():
-            if not self.binder.get_dao_class(type_name):
-                self.binder.register(None, dao_class)
-                self.types.dao[type_name] = self.binder.get_dao_class(type_name)
+            if not self.app.binder.get_dao_class(type_name):
+                self.app.binder.register(None, dao_class)
+                registered_dao_class = self.app.binder.get_dao_class(type_name)
+                self.types.dao[type_name] = registered_dao_class
 
     def _scan_dotted_paths(self):
         # gather Dao and BizObject types in "bindings" section
