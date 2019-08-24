@@ -15,31 +15,53 @@ class User(pybiz.BizObject):
 class Account(pybiz.BizObject):
     name = pybiz.String()
     size = pybiz.Int()
-
+    users = pybiz.Relationship(lambda source: (Account._id, User.account_id), many=True)
 
 
 if __name__ == '__main__':
     app.bootstrap(namespace=globals())
 
-    users = (
-        User.select(
-            User.email,
-            User.password,
-            User.age,
-            User.account_id,
-            User.account.select(
-                Account.name,
-                Account.size
+    def query_users():
+        return (
+            User.select(
+                User.email,
+                User.password,
+                User.age,
+                User.account_id,
+                User.account.select(
+                    Account.name,
+                    Account.size
+                ).where(
+                    Account.size < 6,
+                    Account.size > 4
+                )
             ).where(
-                Account.size < 6,
-                Account.size > 4
+                User.email > 'foo@bar.baz',
+                User.age < 50
+            ).execute(
+                generative=True
             )
-        ).where(
-            User.email > 'foo@bar.baz',
-            User.age < 50
-        ).execute(
-            generative=True
         )
-    )
 
-    pprint(users.dump())
+    def query_account():
+        return (
+            Account.select(
+                Account.name,
+                Account.users.select(
+                    User.email,
+                    User.age,
+                ).where(
+                    User.age > 50
+                ).limit(
+                    10
+                )
+            ).where(
+                Account.name == 'Axial'
+            ).execute(
+                first=True,
+                generative=True,
+            )
+        )
+
+
+    pprint(query_account().dump())

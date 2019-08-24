@@ -188,7 +188,7 @@ class Relationship(BizAttribute):
     ):
         root = source
         target = None
-        params = self._prepare_query_params(
+        query_params = self._prepare_query_params(
             select, where, order_by, offset, limit
         )
 
@@ -201,11 +201,11 @@ class Relationship(BizAttribute):
             # final "join" query to execute, which is the one that resolves to
             # the final target BizObject type that defines the Relationship.
             if func is self.joins[-1]:
-                query = join.query(execute=False, **params)
+                query = join.query(**query_params)
                 if self._is_first_execution:
                     self._on_first_execution(query)
             else:
-                query = join.query(execute=False)
+                query = join.query()
 
             # The source BizObject sets the value of its "joined" field to on
             # the field of the target BizObjects returned from the following
@@ -258,66 +258,27 @@ class Relationship(BizAttribute):
         Recursively execute this Relationship on a caller BizObject or BizList,
         loading the related BizObject(s).
         """
-        # override default limit and offset
-        limit = max(limit, 1) if limit is not None else self.limit
-        offset = max(offset, 0) if offset is not None else self.offset
-
-        # update the selector set with the field names deemed required at a
-        # minimum during bootstrap -- namely, those fields referenced in
-        # order_by and "where" conditions.
-        if select is None:
-            select = set()
-        if not isinstance(select, set):
-            select = set(select)
-        if select:
-            select.update(self.select)
-        else:
-            select = self.select
-
-        # compute the sequence of OrderBy objects from the supplied callables.
-        # and add referenced field names to selector set
-        computed_order_by = []
-        order_by = order_by or self.order_by
-        if order_by:
-            for obj in order_by:
-                if callable(obj):
-                    order_by_spec = obj(source)
-                else:
-                    order_by_spec = obj
-                computed_order_by.append(order_by_spec)
-                select.add(order_by_spec.key)
-
         # Apply the "query_simple" method when this relationship is being loaded
         # on a single BizObject; otherwise, apply "query_batch" if it is being
         # loaded by a BizList (i.e. batch load)
-        perform_query = (
-            self._query_simple if is_bizobj(source)
-            else self._query_batch
+        query_func = (
+            self._query_simple if is_bizobj(source) else self._query_batch
+        )
+        # sanitize and compute kwargs for the eventual Query.execute() call
+        query_params = self._prepare_query_params(
+            select, where, order_by, offset, limit
         )
 
-        biz_thing = perform_query(
-            source,
-            select=select,
-            where=where,
-            order_by=computed_order_by,
-            offset=offset,
-            limit=limit,
-        )
+        # perform the query func, which returns the resolved and loaded
+        # target BizThing (A BizList or BizObject)
+        biz_thing = query_func(source, query_params)
 
         if self._is_first_execution:
             self._is_first_execution = False
 
         return biz_thing
 
-    def _query_simple(
-        self,
-        root: 'BizObject',
-        select: Set = None,
-        where: List = None,
-        limit: int = None,
-        offset: int = None,
-        order_by: Tuple['OrderBy'] = None,
-    ) -> 'BizObject':
+    def _query_simple(self, root: 'BizObject', params: Dict) -> 'BizThing':
         """
         Recursively load this relationship on a single BizObject caller.
         """
@@ -325,26 +286,21 @@ class Relationship(BizAttribute):
         target = None
 
         for func in self.joins:
-            join = RelationshipJoinExecutor(source, *func(source))
+            join_params = func(source)
+            join = RelationshipJoinExecutor(source, *join_params)
 
             if func is self.joins[-1]:
                 # only pass in the query params to the last join in the join
                 # sequence, as this is the one that truly applies to the
                 # "target" BizObject type being queried.
-                query = join.query(
-                    select=select,
-                    where=where,
-                    limit=limit,
-                    offset=offset,
-                    order_by=order_by
-                )
+                query = join.query(**params)
                 if self._is_first_execution:
                     self._on_first_execution(query)
-                target = query.execute()
             else:
-                target = join.query(select=select, execute=True)
+                query = join.query()
 
-            source = target
+            target = query.execute()  # target is a BizThing
+            source = target  # output becomes input for next iteration
 
         # return the related BizObject or BizList we just loaded
         if not self.many:
@@ -352,17 +308,9 @@ class Relationship(BizAttribute):
         else:
             return target
 
-    def _query_batch(
-        self,
-        sources: 'BizList',
-        select: Set = None,
-        where: Set = None,
-        order_by: Tuple['OrderBy'] = None,
-        limit: int = None,
-        offset: int = None,
-     ) -> 'BizList':
+    def _query_batch(self, sources: 'BizList', params: Dict) -> 'BizList':
         """
-        Recursively load this relationship on a BizList caller.
+        Recursively load this relationship on a BizList source caller.
         """
         if is_sequence(sources):
             sources = self.biz_class.BizList(sources)
@@ -374,33 +322,29 @@ class Relationship(BizAttribute):
         # BizObjects we zip up with which target BizObjects or BizLists.
         tree = defaultdict(list)
 
-        # `join_objs` just keeps in memory each RelationshipJoinExecutor object
+        # `executors` just keeps in memory each RelationshipJoinExecutor object
         # instantiated in the process of performing the querying process
-        join_objs = []
+        executors = []
 
         for func in self.joins:
             # the "join.query" here is configured to issue a query that loads
             # all data required by all source BizObjects' relationships, not
             # just one BizObject's relationship at a time.
-            join = RelationshipJoinExecutor(sources, *func(sources))
-            join_objs.append(join)
+            join_params = func(source)
+            join = RelationshipJoinExecutor(source, *join_params)
+            executors.append(join)
 
             # compute `targets` - the collection of ALL BizObjects related to
             # the source objects. Below, we perform logic to determine which
             # source object to zip up with which target BizObject(s)
             if func is self.joins[-1]:
-                query = join.query(
-                    select=select,
-                    where=where,
-                    order_by=order_by,
-                    limit=limit,
-                    offset=offset,
-                )
+                query = join.query(**params)
                 if self._is_first_execution:
                     self._on_first_execution(query)
-                targets = query.execute()
             else:
-                targets = join.query(execute=True)
+                query = join.query()
+
+            targets = query.execute()
 
             # adjust data structures that we used to determine, in the end,
             # which original_source objects are to be zipped up with which
@@ -426,7 +370,7 @@ class Relationship(BizAttribute):
         # BizLists (for a many=True relationship). The caller of query() now
         # must zip up the source and result objects.
         results = []
-        terminal_biz_class = join_objs[-1].target_biz_class
+        terminal_biz_class = executors[-1].target_biz_class
         for source in original_sources:
             resolved_targets = self._get_terminal_nodes(
                 tree, source, terminal_biz_class, []
@@ -456,6 +400,14 @@ class Relationship(BizAttribute):
         return acc
 
     def _on_first_execution(self, query):
+        """
+        Logic to run the first time either the execute or generate method runs.
+        """
+        # add any fields utilized in this Relationship's computed "where"
+        # Predicate to the base selectors of the target BizObject so that this
+        # (and any) Relationship that loads on a source BizObject, which
+        # inherits the relationship, always has any field value eagerly loaded
+        # beforehand.
         for predicate in query.params.where:
             self.target_biz_class.base_selectors.update(
                 f.name for f in predicate.fields
@@ -469,9 +421,15 @@ class Relationship(BizAttribute):
         offset: int = None,
         limit: int = None,
     ):
+        """
+        This cleans up the keyword arguments that eventually gets passed into a
+        Query object.
+        """
+        # set proper numeric bounds for limit and offset
         limit = max(limit, 1) if limit is not None else self.limit
         offset = max(offset, 0) if offset is not None else self.offset
 
+        # merge normalize `select` to a set
         if select is None:
             select = set()
         elif not isinstance(select, set):
@@ -479,6 +437,10 @@ class Relationship(BizAttribute):
         if select:
             select.update(self.select)
 
+        # compute OrderBy information and add any field referenced therein to
+        # the fields being selected so that no extra lazy loading needs to occur
+        # to acheive the ordering (in cases where ordering is performed by the
+        # Dao in Python)
         computed_order_by = []
         order_by = order_by or self.order_by
         if order_by:

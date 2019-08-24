@@ -107,7 +107,7 @@ class Query(AbstractQuery):
             alias_substr = ''
         return f'<Query({biz_class_name}{alias_substr})>'
 
-    def generate(self, constraints: Dict = None):
+    def generate(self, count: int = None, constraints: Dict = None):
         constraints = constraints or {}
         if self._params.where:
             if len(self._params.where) > 1:
@@ -119,7 +119,7 @@ class Query(AbstractQuery):
         def generate_base_biz_list(query, count=None, constraints=None):
             biz_list = query._biz_class.BizList()
             if count is None:
-                count_upper_bound = query._params.limit or random.randint(1, 32)
+                count_upper_bound = query._params.limit or random.randint(1, 10)
                 count = random.randint(1, count_upper_bound)
 
             # generate field values for this Query's BizObject class
@@ -131,7 +131,7 @@ class Query(AbstractQuery):
                 biz_list.append(biz_obj)
             return biz_list
 
-        generated_biz_list = generate_base_biz_list(self, None, constraints)
+        generated_biz_list = generate_base_biz_list(self, count, constraints)
 
         # recurse on relationships
         for biz_obj in generated_biz_list:
@@ -157,7 +157,7 @@ class Query(AbstractQuery):
         from functools import reduce
 
         if generative:
-            targets = self.generate()
+            targets = self.generate(count=1 if first else None)
         else:
             targets = self._executor.execute(query=self)
 
