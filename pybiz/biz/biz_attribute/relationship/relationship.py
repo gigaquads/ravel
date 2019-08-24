@@ -330,8 +330,8 @@ class Relationship(BizAttribute):
             # the "join.query" here is configured to issue a query that loads
             # all data required by all source BizObjects' relationships, not
             # just one BizObject's relationship at a time.
-            join_params = func(source)
-            join = RelationshipJoinExecutor(source, *join_params)
+            join_params = func(sources)
+            join = RelationshipJoinExecutor(sources, *join_params)
             executors.append(join)
 
             # compute `targets` - the collection of ALL BizObjects related to
