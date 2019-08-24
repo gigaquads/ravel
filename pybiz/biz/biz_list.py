@@ -170,16 +170,30 @@ class BizList(BizThing):
         self.biz_class.update_many(self, data=data, **more_data)
         return self
 
-    def save(self):
+    def save(self, depth=-1):
+        if not depth:
+            return self
+
         to_create = []
         to_update = []
+
         for bizobj in self._targets:
             if bizobj and bizobj._id is None or '_id' in bizobj.dirty:
                 to_create.append(bizobj)
             else:
                 to_update.append(bizobj)
+
         self.biz_class.create_many(to_create)
         self.biz_class.update_many(to_update)
+
+        # recursively save each bizobj's relationships
+        # TODO: optimize this to batch saves and updates here
+        for rel in self.biz_class.relationships.values():
+            for bizobj in self._targets:
+                biz_thing = bizobj.internal.cache.get(rel.name)
+                if biz_thing:
+                    biz_thing.save(depth=depth-1)
+
         return self
 
     def merge(self, obj=None, **more_data):

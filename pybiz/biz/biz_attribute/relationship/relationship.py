@@ -189,7 +189,7 @@ class Relationship(BizAttribute):
         root = source
         target = None
         query_params = self._prepare_query_params(
-            select, where, order_by, offset, limit
+            source, select, where, order_by, offset, limit
         )
 
         for func in self.joins:
@@ -266,7 +266,7 @@ class Relationship(BizAttribute):
         )
         # sanitize and compute kwargs for the eventual Query.execute() call
         query_params = self._prepare_query_params(
-            select, where, order_by, offset, limit
+            source, select, where, order_by, offset, limit
         )
 
         # perform the query func, which returns the resolved and loaded
@@ -415,6 +415,7 @@ class Relationship(BizAttribute):
 
     def _prepare_query_params(
         self,
+        source: 'BizThing',
         select: Set = None,
         where: Set = None,
         order_by: Tuple = None,

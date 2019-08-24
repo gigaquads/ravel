@@ -443,11 +443,20 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         return cls.BizList(bizobjs)
 
-    def save(self):
+    def save(self, depth=-1):
+        if not depth:
+            return self
+
         if self._id is None or '_id' in self.dirty:
             self.create()
         else:
             self.update()
+
+        for rel in self.relationships.values():
+            biz_thing = self.internal.cache.get(rel.name)
+            if biz_thing:
+                biz_thing.save(depth=depth-1)
+
         return self
 
     @classmethod
