@@ -10,7 +10,7 @@ from threading import local
 from pyparsing import Literal, Regex, Forward, Optional, Word
 from appyratus.enum import Enum
 from appyratus.utils import DictObject
-from appyratus.schema import RangeConstraint, EqualityConstraint
+from appyratus.schema import RangeConstraint, ConstantValueConstraint
 
 
 OP_CODE = Enum(
@@ -107,12 +107,12 @@ class Predicate(object):
         elif predicate.code == TYPE_CONDITIONAL:
             field = predicate.fprop.field
             if predicate.op == OP_CODE.EQ:
-                constraints[field.name] = EqualityConstraint(
+                constraints[field.name] = ConstantValueConstraint(
                     value=predicate.value,
                     is_negative=False
                 )
             elif predicate.op == OP_CODE.NEQ:
-                constraints[field.name] = EqualityConstraint(
+                constraints[field.name] = ConstantValueConstraint(
                     value=predicate.value,
                     is_negative=True
                 )

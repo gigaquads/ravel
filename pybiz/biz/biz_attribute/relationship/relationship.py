@@ -11,7 +11,7 @@ from collections import defaultdict
 
 from mock import MagicMock
 from appyratus.memoize import memoized_property
-from appyratus.schema import EqualityConstraint, RangeConstraint
+from appyratus.schema import ConstantValueConstraint, RangeConstraint
 
 from pybiz.schema import Field, fields
 from pybiz.exceptions import RelationshipArgumentError, RelationshipError
@@ -26,64 +26,6 @@ from pybiz.util.loggers import console
 
 from ..biz_attribute import BizAttribute, BizAttributeProperty
 from ...biz_thing import BizThing
-
-
-class Join(object):
-    def __init__(
-        self,
-        source: BizThing,
-        source_fprop: 'FieldProperty',
-        target_fprop: 'FieldProperty',
-        predicate: 'Predicate' = None
-    ):
-        self.source = source
-        self.predicate = predicate
-        self.target_fprop = target_fprop
-        self.source_fprop = source_fprop
-        self.source_fname = source_fprop.field.name
-        self.target_fname = target_fprop.field.name
-        self.target_biz_class = self.target_fprop.biz_class
-        self.source_biz_class = self.source_fprop.biz_class
-
-    def query(
-        self,
-        select=None,
-        where=None,
-        limit=None,
-        offset=None,
-        order_by=None,
-        **kwargs
-    ) -> 'BizList':
-        computed_where_predicate = self.where_predicate
-        if where:
-            computed_where_predicate &= reduce(lambda x, y: x & y, where)
-
-        select.add(self.target_fname)
-
-        query = self.target_fprop.biz_class.query(
-            select=select,
-            where=computed_where_predicate,
-            offset=offset,
-            limit=limit,
-            order_by=order_by,
-            execute=False
-        )
-        return query
-
-    @property
-    def where_predicate(self):
-        target_field_value = getattr(self.source, self.source_fprop.field.name)
-        where_predicate = None
-        if is_bizobj(self.source):
-            where_predicate = (self.target_fprop == target_field_value)
-        elif is_bizlist(self.source):
-            where_predicate = (self.target_fprop.including(target_field_value))
-        else:
-            raise TypeError('TODO: raise custom exception')
-        if self.predicate:
-            where_predicate &= self.predicate
-        return where_predicate
-
 
 
 class Relationship(BizAttribute):
@@ -141,7 +83,6 @@ class Relationship(BizAttribute):
             source_type_name = '?'
 
         source = f'source={source_type_name}'
-
         name = f'name={self.name}' if self.name else ''
 
         if self.many:
@@ -245,78 +186,64 @@ class Relationship(BizAttribute):
         offset: int = None,
         limit: int = None,
     ):
-        # TODO: put this in a common method shared with execute -----------+
-        limit = max(limit, 1) if limit is not None else self.limit
-        offset = max(offset, 0) if offset is not None else self.offset
-        if select is None:
-            select = set()
-        elif not isinstance(select, set):
-            select = set(select)
-        if select:
-            select.update(self.select)
-        else:
-            # TODO: find out why self.select is a dict here
-            select = set(self.select)
-
-        computed_order_by = []
-        order_by = order_by or self.order_by
-        if order_by:
-            for obj in order_by:
-                if callable(obj):
-                    order_by_spec = obj(source)
-                else:
-                    order_by_spec = obj
-                computed_order_by.append(order_by_spec)
-                select.add(order_by_spec.key)
-        # ----------------------------------------------------------------+
-
         root = source
         target = None
+        params = self._prepare_query_params(
+            select, where, order_by, offset, limit
+        )
 
         for func in self.joins:
-            join = Join(source, *func(source))
-            # TODO: set ID's used in relationship joins
+            join_params = func(source)
+            join = RelationshipJoinExecutor(source, *join_params)
 
+            # the parameters set on the Relationship ctor, merged or overrident
+            # with those passed in as kwargs here, are only passed into the
+            # final "join" query to execute, which is the one that resolves to
+            # the final target BizObject type that defines the Relationship.
             if func is self.joins[-1]:
-                # only pass in the query params to the last join in the join
-                # sequence, as this is the one that truly applies to the
-                # "target" BizObject type being queried.
-                query = join.query(
-                    select=select,
-                    where=where,
-                    limit=limit,
-                    offset=offset,
-                    order_by=order_by
-                )
+                query = join.query(execute=False, **params)
                 if self._is_first_execution:
-                    for predicate in query.params.where:
-                        self.target_biz_class.base_selectors.update(
-                            f.name for f in predicate.fields
-                        )
-                if self._is_first_execution:
-                    self._update_base_selectors_with_predicate_fields(query)
-
+                    self._on_first_execution(query)
             else:
-                query = join.query(select=select, execute=False)
+                query = join.query(execute=False)
 
-            # compute constraints for the generation of the target query
-            # based on the id columns specified in the join condition.
+            # The source BizObject sets the value of its "joined" field to on
+            # the field of the target BizObjects returned from the following
+            # recursive query.generate call.
+            #
+            # For example, if the Relationship looks like,
+            #
+            # ```python
+            # Relationship(lambda user: (User.account_id, Account._id))`
+            # ```
+            #
+            # Then the generated `Account` BizObject will inherit its `_id`
+            # value from `user.account_id`.
+            #
+            # A `Constraint` is from appyratus.schema, where it represents a
+            # certain kind of constraint placed on the return value from a given
+            # Field's `generate` method. An `ConstantValueConstraint` says that
+            # a constant value must be returned "equal" to the given value.
             constraints = {}
-            constraints[join.target_fname] = EqualityConstraint(
+            constraints[join.target_fname] = ConstantValueConstraint(
                 value=getattr(source, join.source_fname)
             )
 
+            # Now generate the fully-formed `Query`, which indirectly recurses
+            # on the selected Relationships referenced in subqueries therein.
             target = query.generate(constraints=constraints)
+
+            # output becomes input for next iteration...
             source = target
+
+        if self._is_first_execution:
+            self._is_first_execution = False
 
         # return the related BizObject or BizList we just loaded
         if not self.many:
             return target[0] if target else None
         else:
             return target
-
-    
-
 
     def execute(
         self,
@@ -398,7 +325,7 @@ class Relationship(BizAttribute):
         target = None
 
         for func in self.joins:
-            join = Join(source, *func(source))
+            join = RelationshipJoinExecutor(source, *func(source))
 
             if func is self.joins[-1]:
                 # only pass in the query params to the last join in the join
@@ -412,12 +339,7 @@ class Relationship(BizAttribute):
                     order_by=order_by
                 )
                 if self._is_first_execution:
-                    for predicate in query.params.where:
-                        self.target_biz_class.base_selectors.update(
-                            f.name for f in predicate.fields
-                        )
-                if self._is_first_execution:
-                    self._update_base_selectors_with_predicate_fields(query)
+                    self._on_first_execution(query)
                 target = query.execute()
             else:
                 target = join.query(select=select, execute=True)
@@ -452,7 +374,7 @@ class Relationship(BizAttribute):
         # BizObjects we zip up with which target BizObjects or BizLists.
         tree = defaultdict(list)
 
-        # `join_objs` just keeps in memory each Join object
+        # `join_objs` just keeps in memory each RelationshipJoinExecutor object
         # instantiated in the process of performing the querying process
         join_objs = []
 
@@ -460,7 +382,7 @@ class Relationship(BizAttribute):
             # the "join.query" here is configured to issue a query that loads
             # all data required by all source BizObjects' relationships, not
             # just one BizObject's relationship at a time.
-            join = Join(sources, *func(sources))
+            join = RelationshipJoinExecutor(sources, *func(sources))
             join_objs.append(join)
 
             # compute `targets` - the collection of ALL BizObjects related to
@@ -475,7 +397,7 @@ class Relationship(BizAttribute):
                     offset=offset,
                 )
                 if self._is_first_execution:
-                    self._update_base_selectors_with_predicate_fields(query)
+                    self._on_first_execution(query)
                 targets = query.execute()
             else:
                 targets = join.query(execute=True)
@@ -533,12 +455,105 @@ class Relationship(BizAttribute):
                 self._get_terminal_nodes(tree, bizobj, target_biz_class, acc)
         return acc
 
-    def _update_base_selectors_with_predicate_fields(self, query):
+    def _on_first_execution(self, query):
         for predicate in query.params.where:
             self.target_biz_class.base_selectors.update(
                 f.name for f in predicate.fields
             )
 
+    def _prepare_query_params(
+        self,
+        select: Set = None,
+        where: Set = None,
+        order_by: Tuple = None,
+        offset: int = None,
+        limit: int = None,
+    ):
+        limit = max(limit, 1) if limit is not None else self.limit
+        offset = max(offset, 0) if offset is not None else self.offset
+
+        if select is None:
+            select = set()
+        elif not isinstance(select, set):
+            select = set(select)
+        if select:
+            select.update(self.select)
+
+        computed_order_by = []
+        order_by = order_by or self.order_by
+        if order_by:
+            for obj in order_by:
+                if callable(obj):
+                    order_by_spec = obj(source)
+                else:
+                    order_by_spec = obj
+                computed_order_by.append(order_by_spec)
+                select.add(order_by_spec.key)
+
+        return {
+            'select': select,
+            'where': where,
+            'order_by': computed_order_by,
+            'offset': offset,
+            'limit': limit,
+        }
+
+
+class RelationshipJoinExecutor(object):
+    def __init__(
+        self,
+        source: BizThing,
+        source_fprop: 'FieldProperty',
+        target_fprop: 'FieldProperty',
+        predicate: 'Predicate' = None
+    ):
+        self.source = source
+        self.predicate = predicate
+        self.target_fprop = target_fprop
+        self.source_fprop = source_fprop
+        self.source_fname = source_fprop.field.name
+        self.target_fname = target_fprop.field.name
+        self.target_biz_class = self.target_fprop.biz_class
+        self.source_biz_class = self.source_fprop.biz_class
+
+    def query(
+        self,
+        select=None,
+        where=None,
+        limit=None,
+        offset=None,
+        order_by=None,
+        **kwargs
+    ) -> 'BizList':
+        computed_where_predicate = self.where_predicate
+        if where:
+            computed_where_predicate &= reduce(lambda x, y: x & y, where)
+
+        select.add(self.target_fname)
+
+        query = self.target_fprop.biz_class.query(
+            select=select,
+            where=computed_where_predicate,
+            offset=offset,
+            limit=limit,
+            order_by=order_by,
+            execute=False
+        )
+        return query
+
+    @property
+    def where_predicate(self):
+        target_field_value = getattr(self.source, self.source_fprop.field.name)
+        where_predicate = None
+        if is_bizobj(self.source):
+            where_predicate = (self.target_fprop == target_field_value)
+        elif is_bizlist(self.source):
+            where_predicate = (self.target_fprop.including(target_field_value))
+        else:
+            raise TypeError('TODO: raise custom exception')
+        if self.predicate:
+            where_predicate &= self.predicate
+        return where_predicate
 
 
 class RelationshipProperty(BizAttributeProperty):
