@@ -443,7 +443,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         return cls.BizList(bizobjs)
 
-    def save(self, depth=-1):
+    def save(self, depth=1):
         if not depth:
             return self
 

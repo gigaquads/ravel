@@ -170,7 +170,7 @@ class BizList(BizThing):
         self.biz_class.update_many(self, data=data, **more_data)
         return self
 
-    def save(self, depth=-1):
+    def save(self, depth=1):
         if not depth:
             return self
 
