@@ -11,7 +11,6 @@ from appyratus.enum import EnumValueStr
 from pybiz.util.misc_functions import remove_keys, import_object
 
 from .base import Dao, DaoEvent
-from .dao_binder import BizObjectBinder
 
 
 class CacheMode(EnumValueStr):
@@ -102,7 +101,7 @@ class CacheDao(Dao):
         dao_class_name: Text,
         bind_params: Dict = None
     ):
-        # fetch the dao type from the BizObjectBinder
+        # fetch the dao type from the ApplicationDaoBinder
         dao_class = self.binder.get_dao_class(dao_class_name.split('.')[-1])
         if dao_class is None:
             raise Exception(f'{dao_class} not registered')

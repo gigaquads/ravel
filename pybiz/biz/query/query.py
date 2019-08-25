@@ -3,15 +3,100 @@ import random
 from functools import reduce
 from typing import List, Dict, Set, Text, Type, Tuple
 
+from appyratus.enum import EnumValueStr
+
+import pybiz.biz
+
 from pybiz.util.misc_functions import is_sequence
 
 from ..field_property import FieldProperty
 from ..biz_list import BizList
-from ..biz_attribute import BizAttributeProperty
 from .order_by import OrderBy
 from .query_loader import QueryLoader
 from .query_executor import QueryExecutor
 from .query_printer import QueryPrinter
+
+
+class Backfill(EnumValueStr):
+    @staticmethod
+    def values():
+        return {
+            'persistent': 1,
+            'ephemeral': 2,
+        }
+
+
+class Backfiller(object):
+    def __init__(self, query: 'Query'):
+        self._query = query
+        self._params = self._query.params
+        self._biz_class = self._query.biz_class
+
+    def generate(
+        self,
+        constraints: Dict[Text, 'Constraint'] = None,
+        count: int = None,
+        save: bool = False,
+    ) -> 'BizList':
+        constraints = self._compute_field_value_constraints(constraints)
+        biz_list = self._generate_biz_list(count, constraints)
+        self._generate_biz_list_relationships(biz_list)
+        if save:
+            biz_list.save()
+        return biz_list
+
+    def _compute_field_value_constraints(self):
+        constraints = {}
+        if params.where:
+            if len(params.where) > 1:
+                predicate = reduce(lambda x, y: x & y, params.where)
+            else:
+                predicate = params.where[0]
+            constraints = predicate.compute_constraints()
+        return constraints
+
+    def _generate_biz_list(self, count, constraints):
+        if count is None:
+            params = self._query.params
+            count_upper_bound = params.limit or random.randint(1, 10)
+            count = random.randint(1, count_upper_bound)
+
+        biz_class = self._query.biz_class
+        biz_list = biz_class.BizList()
+
+        for _ in range(count):
+            biz_obj = biz_class.generate(
+                fields=set(params.fields.keys()),
+                constraints=constraints,
+            )
+            biz_list.append(biz_obj)
+
+        return biz_list
+
+    def _generate_biz_list_relationships(self, biz_list):
+        # recurse on relationships
+        params = self._query.params
+        biz_class = self._query.biz_class
+        for biz_obj in biz_list:
+            for k, v in params.attributes.items():
+                rel = self.biz_class.relationships.get(k)
+                subquery = v
+                if rel is not None:
+                    related = rel.generate(
+                        source=biz_obj,
+                        select=set(subquery._params.fields.keys()),
+                        where=subquery._params.where,
+                        order_by=subquery._params.order_by,
+                        offset=subquery._params.offset,
+                        limit=subquery._params.limit,
+                    )
+                    setattr(biz_obj, k, related)
+
+    def _generate_biz_list_other_biz_attrs(self, biz_list):
+        """
+        # TODO: recurse on non-Relationship BizAttributes
+        # This requires adding a generate to base BizAttribute
+        """
 
 
 class AbstractQuery(object):
@@ -81,6 +166,7 @@ class Query(AbstractQuery):
 
         self._biz_class = biz_class
         self._params = Query.Parameters()
+        self._backfiller = None
 
         self.select(biz_class.base_selectors)
 
@@ -107,70 +193,31 @@ class Query(AbstractQuery):
             alias_substr = ''
         return f'<Query({biz_class_name}{alias_substr})>'
 
-    def generate(self, count: int = None, constraints: Dict = None):
-        constraints = constraints or {}
-        if self._params.where:
-            if len(self._params.where) > 1:
-                pred = reduce(lambda x, y: x & y, self._params.where)
-            else:
-                pred = self._params.where[0]
-            constraints.update(pred.compute_constraints())
-
-        def generate_base_biz_list(query, count=None, constraints=None):
-            biz_list = query._biz_class.BizList()
-            if count is None:
-                count_upper_bound = query._params.limit or random.randint(1, 10)
-                count = random.randint(1, count_upper_bound)
-
-            # generate field values for this Query's BizObject class
-            for i in range(count):
-                biz_obj = query._biz_class.generate(
-                    fields=query._params.fields.keys(),
-                    constraints=constraints,
-                )
-                biz_list.append(biz_obj)
-            return biz_list
-
-        generated_biz_list = generate_base_biz_list(self, count, constraints)
-
-        # recurse on relationships
-        for biz_obj in generated_biz_list:
-            for k, v in self._params.attributes.items():
-                rel = self.biz_class.relationships.get(k)
-                subquery = v
-                if rel is not None:
-                    related = rel.generate(
-                        source=biz_obj,
-                        select=set(subquery._params.fields.keys()),
-                        where=subquery._params.where,
-                        order_by=subquery._params.order_by,
-                        offset=subquery._params.offset,
-                        limit=subquery._params.limit,
-                    )
-                    setattr(biz_obj, k, related)
-
-        # TODO: recurse on non Relationship BizAttributes
-
-        return generated_biz_list
-
-    def execute(self, first=False, generative=False):
-        from functools import reduce
-
-        if generative:
-            targets = self.generate(count=1 if first else None)
+    def execute(
+        self,
+        first: bool = False,
+        constraints: Dict[Text, 'Constraint'] = None,
+        backfill: Backfill = None,
+    ) -> 'BizThing':
+        if backfill is None:
+            biz_list = self._executor.execute(query=self)
         else:
-            targets = self._executor.execute(query=self)
+            if self._backfiller is None:
+                # lazily instantiate Backfiller here to avoid overhead of
+                # instantiating it in __init__ when not backfilling.
+                self._backfiller = Backfiller(query=self)
+            biz_list = self._backfiller.generate(
+                count=1 if first else None,
+                constraints=constraints,
+                backfill=backfill,
+            )
 
         if first:
-            return targets[0] if targets else None
+            return biz_list[0] if biz_list else None
         else:
-            return targets
+            return biz_list
 
-    def select(self, *targets: Tuple, append=True) -> 'Query':
-        if not append:
-            self._params.fields.clear()
-            self._params.sub_queries.clear()
-            self._params.attributes.clear()
+    def select(self, *targets) -> 'Query':
         self._add_targets(targets)
         return self
 
@@ -188,6 +235,8 @@ class Query(AbstractQuery):
                 else:
                     additional_predicates.append(obj)
 
+            # in this contact, kwargs are interpreted as Equality predicates,
+            # like user_id=1 would be interpreted as (User._id == 1)
             for k, v in kwargs.items():
                 equality_predicate = (getattr(self.biz_class, k) == v)
                 additional_predicates.append(equality_predicate)
@@ -303,19 +352,14 @@ class Query(AbstractQuery):
             assert target.biz_class is self.biz_class
             key = target.field.name
             targets = self._params.fields
-        elif isinstance(target, BizAttributeProperty):
+        elif isinstance(target, pybiz.biz.BizAttributeProperty):
             assert target.biz_attr.biz_class is self.biz_class
             biz_attr = target.biz_attr
             key = biz_attr.name
             targets = self._params.attributes
             if biz_attr.category == 'relationship':
                 params = Query.from_keys(biz_class=biz_attr.target_biz_class)
-        elif isinstance(target, BizAttributeQuery):
-            assert target.alias in self.biz_class.attributes
-            key = target.alias
-            targets = self._params.attributes
-            params = target
-        elif isinstance(target, Query):
+        elif isinstance(target, (Query, BizAttributeQuery)):
             assert target.alias in self.biz_class.attributes
             key = target.alias
             targets = self._params.attributes

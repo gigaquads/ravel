@@ -12,12 +12,14 @@ from pybiz.util.loggers import console
 
 from .exceptions import ApplicationError
 from .endpoint_decorator import EndpointDecorator
-from .loader import ApplicationArgumentLoader
+from .argument_loader import ApplicationArgumentLoader
+from .binder import ApplicationDaoBinder
 from .endpoint import Endpoint
 
 
 class Application(object):
     def __init__(self, middleware: List['ApplicationMiddleware'] = None):
+
         self._decorators = []
         self._endpoints = {}
         self._biz = None  # set in bootstrap
@@ -29,7 +31,7 @@ class Application(object):
         self._is_started = False
         self._json_encoder = JsonEncoder()
         self._namespace = {}
-        self._binder = BizObjectBinder()
+        self._binder = ApplicationDaoBinder()
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.app_types)
@@ -98,7 +100,7 @@ class Application(object):
         return self._arg_loader
 
     @property
-    def binder(self) -> 'BizObjectBinder':
+    def binder(self) -> 'ApplicationDaoBinder':
         return self._binder
 
     @property
@@ -169,12 +171,12 @@ class Application(object):
             self._manifest = manifest
 
         self._manifest.load()
-        self._manifest.process(namespace=self._namespace)
-        self._manifest.bootstrap(app=self)
+        self._manifest.process(app=self, namespace=self._namespace)
+        self._manifest.bootstrap()
         self._manifest.bind(rebind=rebootstrap)
 
         self._biz = DictObject(self._manifest.types.biz)
-        self._dal = DictObject(self._manifest.types.dao)
+        self._dal = DictObject(self._manifest.types.dal)
         self._api = DictObject(self._endpoints)
 
         # bootstrap the middlware

@@ -7,7 +7,7 @@ from .dao import SqlalchemyDao
 
 class SqlalchemyMiddleware(ApplicationMiddleware):
     def on_bootstrap(self):
-        self.SqlalchemyDao = self.app.types.dao['SqlalchemyDao']
+        self.SqlalchemyDao = self.app.types.dal['SqlalchemyDao']
 
     def pre_request(self, endpoint, raw_args: Tuple, raw_kwargs: Dict):
         """

@@ -1,11 +1,10 @@
 from typing import Dict, List, Type, Set, Text
 
-from pybiz.dao import Dao
 from pybiz.util.misc_functions import is_sequence
 from pybiz.util.loggers import console
 
 
-class DaoBinding(object):
+class BizBinding(object):
     def __init__(self, biz_class, dao_instance, dao_bind_kwargs=None):
         self.biz_class = biz_class
         self.dao_instance = dao_instance
@@ -14,7 +13,7 @@ class DaoBinding(object):
 
     def __repr__(self):
         return (
-            f'<DaoBinding({self.biz_class_name}, {self.dao_class_name}, '
+            f'<BizBinding({self.biz_class_name}, {self.dao_class_name}, '
             f'bound={self.is_bound})>'
         )
 
@@ -40,7 +39,7 @@ class DaoBinding(object):
         return self.biz_class.__name__
 
 
-class BizObjectBinder(object):
+class ApplicationDaoBinder(object):
     """
     Stores and manages a global app, entailing which BizObject class is
     associated with which Dao class.
@@ -52,7 +51,7 @@ class BizObjectBinder(object):
         self._named_biz_classes = {}
 
     def __repr__(self):
-        return f'<BizObjectBinder(bindings={len(self.bindings)})>'
+        return f'<ApplicationDaoBinder(bindings={len(self.bindings)})>'
 
     @classmethod
     def get_instance(cls):
@@ -67,7 +66,7 @@ class BizObjectBinder(object):
         return singleton
 
     @property
-    def bindings(self) -> List['DaoBinding']:
+    def bindings(self) -> List['BizBinding']:
         return list(self._bindings.values())
 
     @property
@@ -81,7 +80,7 @@ class BizObjectBinder(object):
     def register(
         self,
         biz_class: Type['BizObject'],
-        dao_class: Type[Dao],
+        dao_class: Type['Dao'],
         dao_bind_kwargs: Dict = None,
     ):
         dao_class_name = dao_class.__name__
@@ -89,7 +88,7 @@ class BizObjectBinder(object):
             dao_class = type(dao_class_name, (dao_class, ), {})
             self._named_dao_classes[dao_class_name] = dao_class
             console.debug(
-                f'registered Dao "{dao_class_name}" with BizObjectBinder'
+                f'registered Dao "{dao_class_name}" with ApplicationDaoBinder'
             )
 
         dao_instance = dao_class()
@@ -98,13 +97,13 @@ class BizObjectBinder(object):
             biz_class_name = biz_class.__name__
             biz_class.binder = self
             self._named_biz_classes[biz_class_name] = biz_class
-            self._bindings[biz_class_name] = binding = DaoBinding(
+            self._bindings[biz_class_name] = binding = BizBinding(
                 biz_class=biz_class,
                 dao_instance=dao_instance,
                 dao_bind_kwargs=dao_bind_kwargs,
             )
             console.debug(
-                f'registered BizObject "{biz_class_name}" with BizObjectBinder'
+                f'registered BizObject "{biz_class_name}" with ApplicationDaoBinder'
             )
             return binding
 
@@ -122,7 +121,7 @@ class BizObjectBinder(object):
 
     def get_dao_instance(
         self, biz_class: Type['BizObject'], bind=True, rebind=False
-    ) -> Dao:
+    ) -> 'Dao':
         if isinstance(biz_class, str):
             binding = self._bindings.get(biz_class)
         else:
@@ -148,7 +147,7 @@ class BizObjectBinder(object):
 
         return binding.dao_instance
 
-    def get_dao_class(self, dao_class_name: Text) -> Type[Dao]:
+    def get_dao_class(self, dao_class_name: Text) -> Type['Dao']:
         return self._named_dao_classes.get(dao_class_name)
 
     def is_registered(self, biz_class: Type['BizObject']) -> bool:

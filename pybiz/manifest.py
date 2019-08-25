@@ -18,7 +18,6 @@ from appyratus.env import Environment
 from pybiz.exceptions import ManifestError
 from pybiz.util.misc_functions import import_object
 from pybiz.util.loggers import console
-from pybiz.dao import BizObjectBinder
 
 
 class Manifest(object):
@@ -33,7 +32,6 @@ class Manifest(object):
         path: Text = None,
         data: Dict = None,
         env: Environment = None,
-        binder: BizObjectBinder = None,
     ):
         from pybiz.dao import PythonDao
 
@@ -44,7 +42,7 @@ class Manifest(object):
         self.bindings = []
         self.bootstraps = {}
         self.env = env or Environment()
-         DictObject({
+        self.types = DictObject({
             'dal': {
                 'PythonDao': PythonDao
             },
@@ -117,10 +115,7 @@ class Manifest(object):
 
         return self
 
-    def process(
-        self,
-        namespace: Dict = None,
-    ):
+    def process(self, app: 'Application', namespace: Dict = None):
         """
         Discover and prepare all BizObject and Dao classes for calling the
         bootstrap and bind lifecycle methods, according to the specification
@@ -128,19 +123,18 @@ class Manifest(object):
         include this contents of this dict in its scan for BizObject and Dao
         types.
         """
+        self.app = app
         self._discover_pybiz_classes(namespace)
         self._register_dao_classes()
         return self
 
-    def bootstrap(self, app: 'Application'):
-        self.app = app
-        
+    def bootstrap(self):
         for biz_class in self.types.biz.values():
             if not (biz_class.is_abstract or biz_class.is_bootstrapped):
                 console.debug(
                     f'bootstrapping "{biz_class.__name__}" BizObject...'
                 )
-                biz_class.bootstrap(app=app)
+                biz_class.bootstrap(app=self.app)
                 dao = biz_class.get_dao(bind=False)
                 dao_class = dao.__class__
                 if not dao_class.is_bootstrapped():
@@ -150,18 +144,18 @@ class Manifest(object):
                     )
                     strap = self.bootstraps.get(dao_class_name)
                     kwargs = strap.params if strap else {}
-                    dao_class.bootstrap(app=app, **kwargs)
+                    dao_class.bootstrap(app=self.app, **kwargs)
 
         console.debug(f'finished bootstrapped Dao and BizObject classes')
 
         # inject the following into each endpoint target's lexical scope:
         # all other endpoints, all BizObject and Dao classes.
-        for endpoint in app.endpoints.values():
+        for endpoint in self.app.endpoints.values():
             endpoint.target.__globals__.update(self.types.biz)
-            endpoint.target.__globals__.update(self.types.dao)
+            endpoint.target.__globals__.update(self.types.dal)
             endpoint.target.__globals__.update(
                 {p.name: p.target
-                 for p in app.endpoints.values()}
+                 for p in self.app.endpoints.values()}
             )
 
     def bind(self, rebind=False):
@@ -179,56 +173,56 @@ class Manifest(object):
 
         # remove base BizObject class from types dict
         self.types.biz.pop('BizObject', None)
-        self.types.dao.pop('Dao', None)
+        self.types.dal.pop('Dao', None)
 
     def _register_dao_classes(self):
         """
         Associate each BizObject class with a corresponding Dao class.
         """
-        # register each binding declared in the manifest with the BizObjectBinder
+        # register each binding declared in the manifest with the ApplicationDaoBinder
         for info in self.bindings:
             biz_class = self.types.biz.get(info.biz)
             if biz_class is None:
                 raise ManifestError(
-                    f'cannot register {info.biz} with BizObjectBinder because '
+                    f'cannot register {info.biz} with ApplicationDaoBinder because '
                     f'the class was not found while processing the manifest'
                 )
-            dao_class = self.types.dao[info.dao]
+            dao_class = self.types.dal[info.dao]
             if not self.app.binder.is_registered(biz_class):
                 binding = self.app.binder.register(
                     biz_class=biz_class,
                     dao_class=dao_class,
                     dao_bind_kwargs=info.params,
                 )
-                self.types.dao[info.dao] = binding.dao_class
+                self.types.dal[info.dao] = binding.dao_class
 
         # register all dao types *not* currently declared in a binding
-        # with the BizObjectBinder.
-        for type_name, dao_class in self.types.dao.items():
+        # with the ApplicationDaoBinder.
+        for type_name, dao_class in self.types.dal.items():
             if not self.app.binder.get_dao_class(type_name):
                 self.app.binder.register(None, dao_class)
                 registered_dao_class = self.app.binder.get_dao_class(type_name)
-                self.types.dao[type_name] = registered_dao_class
+                self.types.dal[type_name] = registered_dao_class
 
     def _scan_dotted_paths(self):
         # gather Dao and BizObject types in "bindings" section
-        # into self.types.dao and self.types.biz
+        # into self.types.dal and self.types.biz
         for binding in self.bindings:
             if binding.biz_module and binding.biz not in self.types.biz:
                 biz_class = import_object(f'{binding.biz_module}.{binding.biz}')
                 self.types.biz[binding.biz] = biz_class
-            if binding.dao_module and binding.dao not in self.types.dao:
+            if binding.dao_module and binding.dao not in self.types.dal:
                 dao_class = import_object(f'{binding.dao_module}.{binding.dao}')
-                self.types.dao[binding.dao] = dao_class
+                self.types.dal[binding.dao] = dao_class
 
-        # gather Dao types in "bootstraps" section into self.types.dao
+        # gather Dao types in "bootstraps" section into self.types.dal
         for dao_class_name, bootstrap in self.bootstraps.items():
             if '.' in bootstrap.dao:
                 dao_class_path = bootstrap.dao
-                if dao_class_name not in self.types.dao:
+                if dao_class_name not in self.types.dal:
                     dao_class = import_object(dao_class_path)
-                    self.types.dao[dao_class_name] = dao_class
-            elif bootstrap.dao not in self.types.dao:
+                    self.types.dal[dao_class_name] = dao_class
+            elif bootstrap.dao not in self.types.dal:
                 raise ManifestError(f'{bootstrap.dao} not found')
 
     def _scan_namespace(self, namespace: Dict):
@@ -247,7 +241,7 @@ class Manifest(object):
                         f'namespace dict: {v.__name__}'
                     )
                 elif issubclass(v, Dao):
-                    self.types.dao[k] = v
+                    self.types.dal[k] = v
                     console.debug(
                         f'detected Dao class in namespace '
                         f'dict: {v.__name__}'

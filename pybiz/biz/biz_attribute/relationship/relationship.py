@@ -373,7 +373,7 @@ class Relationship(BizAttribute):
         terminal_biz_class = executors[-1].target_biz_class
         for source in original_sources:
             resolved_targets = self._get_terminal_nodes(
-                tree, source, terminal_biz_class, []
+                tree, source, terminal_biz_class, [], 0
             )
             if self.many:
                 results.append(
@@ -386,17 +386,19 @@ class Relationship(BizAttribute):
 
         return results
 
-    def _get_terminal_nodes(self, tree, parent, target_biz_class, acc):
+    def _get_terminal_nodes(self, tree, parent, target_biz_class, acc, depth):
         """
         Follow a path in the tree dict to determine which BizObjects were loaded
         for the given parent source BizObject.
         """
         children = tree[parent]
-        if not children and isinstance(parent, target_biz_class):
+        if not children and depth == len(self.joins):
             acc.append(parent)
         else:
             for bizobj in children:
-                self._get_terminal_nodes(tree, bizobj, target_biz_class, acc)
+                self._get_terminal_nodes(
+                    tree, bizobj, target_biz_class, acc, depth+1
+                )
         return acc
 
     def _on_first_execution(self, query):

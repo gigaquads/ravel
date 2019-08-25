@@ -4,9 +4,8 @@ from typing import Text, Type, Dict, Callable
 
 from appyratus.schema import Schema
 
-import pybiz.biz.query
-
-from pybiz.biz.biz_thing import BizThing
+from ..biz_thing import BizThing
+from ..query import BizAttributeQuery
 
 
 class BizAttribute(object):
@@ -130,7 +129,7 @@ class BizAttributeProperty(property):
         return f'<BizAttributeProperty({name}{biz_attr_class})>'
 
     def select(self, *args, **kwargs) -> 'BizAttributeQuery':
-        return pybiz.biz.query.BizAttributeQuery(
+        return BizAttributeQuery(
             biz_attr=self.biz_attr,
             alias=self.biz_attr.name,
             *args, **kwargs
