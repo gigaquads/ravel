@@ -101,6 +101,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         self.internal = DictObject({
             'hash': int(uuid.uuid4().hex, 16),
             'state': DirtyDict(),
+            'loaded_from_argument': None,
             'cache': {},
         })
         self.merge(dict(data or {}, **more_data))
