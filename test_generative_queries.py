@@ -1,5 +1,7 @@
 from pprint import pprint
+
 import pybiz
+
 
 app = pybiz.Application()
 
@@ -49,6 +51,7 @@ if __name__ == '__main__':
                 Account.name,
                 Account.users.select(
                     User.email,
+                    User.password,
                     User.age,
                 ).where(
                     User.age > 50
@@ -59,9 +62,13 @@ if __name__ == '__main__':
                 Account.name == 'Axial'
             ).execute(
                 first=True,
-                generative=True,
+                backfill='persistent'
             )
         )
 
 
-    pprint(query_account().dump())
+    account = query_account()
+
+    pprint(account)
+    pprint(account.users)
+    pprint(account.dump())

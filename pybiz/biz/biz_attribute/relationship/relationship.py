@@ -185,6 +185,7 @@ class Relationship(BizAttribute):
         order_by: Tuple = None,
         offset: int = None,
         limit: int = None,
+        backfiller: 'Backfiller '= None,
     ):
         root = source
         target = None
@@ -231,7 +232,12 @@ class Relationship(BizAttribute):
 
             # Now generate the fully-formed `Query`, which indirectly recurses
             # on the selected Relationships referenced in subqueries therein.
-            target = query.generate(constraints=constraints)
+            target = query.executor.execute(
+                query=query,
+                backfiller=backfiller,
+                constraints=constraints,
+                first=False,
+            )
 
             # output becomes input for next iteration...
             source = target
@@ -299,7 +305,7 @@ class Relationship(BizAttribute):
             else:
                 query = join.query()
 
-            target = query.execute()  # target is a BizThing
+            target = query.execute().clean()  # target is a BizThing
             source = target  # output becomes input for next iteration
 
         # return the related BizObject or BizList we just loaded
@@ -344,7 +350,7 @@ class Relationship(BizAttribute):
             else:
                 query = join.query()
 
-            targets = query.execute()
+            targets = query.execute().clean()
 
             # adjust data structures that we used to determine, in the end,
             # which original_source objects are to be zipped up with which
