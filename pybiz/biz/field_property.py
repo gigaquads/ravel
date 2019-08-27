@@ -1,8 +1,8 @@
-import uuid
-
 import pybiz.biz
 
 from typing import Text, Tuple, List, Type
+
+from appyratus.schema.fields import Uuid
 
 from pybiz.util.misc_functions import is_bizobj
 from pybiz.util.loggers import console
@@ -19,7 +19,7 @@ class FieldProperty(property):
         super().__init__(fget=self.fget, fset=self.fset, fdel=self.fdel)
         self._field = field
         self._biz_class = biz_class
-        self._hash = uuid.uuid4().int
+        self._hash = Uuid.next_id().int
 
     def __repr__(self):
         type_name = None
@@ -113,9 +113,7 @@ class FieldProperty(property):
         if value is not None:
             value, error = self.field.process(value)
             if error:
-                raise ValueError(
-                    f'error setting {key} to {value}: {error}'
-                )
+                raise ValueError(f'error setting {key} to {value}: {error}')
             bizobj.internal.state[key] = value
         elif self.field.nullable:
             bizobj.internal.state[key] = None
@@ -125,8 +123,6 @@ class FieldProperty(property):
     def fdel(self, bizobj):
         key = self.field.name
         if self.field.required:
-            raise AttributeError(
-                f'cannot delete required field value: {key}'
-            )
+            raise AttributeError(f'cannot delete required field value: {key}')
         else:
             bizobj.internal.state.pop(key, None)

@@ -1,5 +1,3 @@
-import uuid
-
 import venusian
 
 from threading import local
@@ -8,6 +6,7 @@ from typing import Dict, List, Type, Set, Text, Tuple
 from abc import ABCMeta, abstractmethod
 
 from appyratus.env import Environment
+from appyratus.schema.fields import UuidString
 
 from pybiz.util.loggers import console
 

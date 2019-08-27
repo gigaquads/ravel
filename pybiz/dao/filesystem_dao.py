@@ -1,5 +1,4 @@
 import os
-import uuid
 import glob
 
 from typing import Text, List, Set, Dict, Tuple
@@ -8,6 +7,7 @@ from datetime import datetime
 
 from appyratus.env import Environment
 from appyratus.files import BaseFile, Yaml
+from appyratus.schema.fields import UuidString
 from appyratus.utils import (
     DictObject,
     DictUtils,
@@ -29,7 +29,7 @@ class FilesystemDao(Dao):
     def __init__(
         self,
         ftype: Text = None,
-        extensions: Set[Text] = None,  # TODO: change into a single one
+        extensions: Set[Text] = None,    # TODO: change into a single one
     ):
         super().__init__()
         self._paths = DictObject({})
@@ -77,12 +77,10 @@ class FilesystemDao(Dao):
 
         self._cache_dao.bootstrap(biz_class.app)
         self._cache_dao.bind(biz_class)
-        self._cache_dao.create_many(
-            self.fetch_all(ignore_cache=True).values()
-        )
+        self._cache_dao.create_many(self.fetch_all(ignore_cache=True).values())
 
     def create_id(self, record):
-        return record.get('_id', uuid.uuid4().hex)
+        return record.get('_id', UuidString.next_id())
 
     def exists(self, fname: Text) -> bool:
         return BaseFile.exists(self.mkpath(fname))

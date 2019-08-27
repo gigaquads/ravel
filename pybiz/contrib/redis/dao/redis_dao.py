@@ -1,7 +1,3 @@
-import uuid
-
-import ujson
-
 from typing import Type, Dict, List, Set, Text
 from collections import defaultdict
 from copy import deepcopy
@@ -276,9 +272,7 @@ class RedisDao(Dao):
                         include_lower=False
                     ))
             else:
-                raise ValueError(
-                    'unrecognized op: {}'.format(predicate.op)
-                )
+                raise ValueError('unrecognized op: {}'.format(predicate.op))
         elif isinstance(predicate, BooleanPredicate):
             ids_lhs = self.query_ids(predicate.lhs)
             if ids_lhs:
@@ -290,8 +284,6 @@ class RedisDao(Dao):
             elif predicate.op == OP_CODE.AND:
                 ids = ids_lhs & ids_rhs
             else:
-                raise ValueError(
-                    'unrecognized op: {}'.format(predicate.op)
-                )
+                raise ValueError('unrecognized op: {}'.format(predicate.op))
 
         return ids

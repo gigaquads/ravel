@@ -1,5 +1,3 @@
-import uuid
-
 import venusian
 
 from copy import deepcopy, copy
@@ -7,6 +5,7 @@ from typing import List, Dict, Text, Type, Tuple, Set
 from collections import defaultdict
 
 from appyratus.utils import DictObject, DictUtils
+from appyratus.schema.fields import UuidString
 
 from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
@@ -32,13 +31,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     BizList = None
 
     schema = None
-    relationships = {}  # XXX: deprecated. use cls.attributes
+    relationships = {}    # XXX: deprecated. use cls.attributes
     base_selectors = set()
 
     is_bootstrapped = False
     is_abstract = False
 
-    binder = DaoBinder.get_instance()  # TODO: put this on the Application class
+    binder = DaoBinder.get_instance()    # TODO: put this on the Application class
     app = None
 
     @classmethod
@@ -98,12 +97,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return cls(data=data)
 
     def __init__(self, data=None, **more_data):
-        self.internal = DictObject({
-            'hash': int(uuid.uuid4().hex, 16),
-            'state': DirtyDict(),
-            'loaded_from_argument': None,
-            'cache': {},
-        })
+        self.internal = DictObject(
+            {
+                'hash': int(UuidString.next_id(), 16),
+                'state': DirtyDict(),
+                'loaded_from_argument': None,
+                'cache': {},
+            }
+        )
         self.merge(dict(data or {}, **more_data))
 
     def __hash__(self):
@@ -188,9 +189,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         Alternate syntax for building Query objects manually.
         """
-        query = Query.from_keys(
-            cls, keys=(select or cls.schema.fields.keys())
-        )
+        query = Query.from_keys(cls, keys=(select or cls.schema.fields.keys()))
 
         if where:
             query.where(normalize_to_tuple(where))
@@ -347,9 +346,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             record.pop('_rev', None)
             if errors:
                 raise ValidationError(
-                    message=(
-                        f'could not create {cls.__name__} object: {errors}'
-                    ),
+                    message=(f'could not create {cls.__name__} object: {errors}'),
                     data=errors
                 )
             records.append(record)
@@ -536,13 +533,16 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if isinstance(select, str):
             select = {select}
 
-        console.debug(message='loading', data={
-            'class': self.__class__.__name__,
-            'instance': self._id,
-            'select': select
-        })
+        console.debug(
+            message='loading',
+            data={
+                'class': self.__class__.__name__,
+                'instance': self._id,
+                'select': select
+            }
+        )
 
-        fresh = self.get(_id=self._id, select=select)  # TODO: depth=depth
+        fresh = self.get(_id=self._id, select=select)    # TODO: depth=depth
         if fresh:
             self.merge(fresh)
             self.clean(fresh.internal.state.keys())
@@ -560,11 +560,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Remove the given keys from field data and/or relationship data.
         """
         keys = {keys} if isinstance(keys, str) else keys
-        console.debug(message='unloading', data={
-            'class': self.__class__.__name__,
-            'instance': self._id,
-            'keys': keys
-        })
+        console.debug(
+            message='unloading',
+            data={
+                'class': self.__class__.__name__,
+                'instance': self._id,
+                'keys': keys
+            }
+        )
         for k in keys:
             if k in self.internal.state:
                 self.internal.state.pop(k, None)

@@ -1,8 +1,6 @@
 import re
 import threading
-import uuid
 import pickle
-
 
 import sqlalchemy as sa
 
