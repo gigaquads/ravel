@@ -46,9 +46,23 @@ if __name__ == '__main__':
         )
 
     def query_account():
+        account = Account(
+            _id='deadbeef'*4,
+            name='Axial',
+            size=69,
+        ).save()
+
+        kc = User(
+            email='kenneth.chan@axial.net',
+            account_id=account._id,
+            password='password',
+            age=77,
+        ).save()
+
         return (
             Account.select(
                 Account.name,
+                Account.size,
                 Account.users.select(
                     User.email,
                     User.password,
@@ -56,7 +70,7 @@ if __name__ == '__main__':
                 ).where(
                     User.age > 50
                 ).limit(
-                    10
+                    2
                 )
             ).where(
                 Account.name == 'Axial'

@@ -186,6 +186,7 @@ class Relationship(BizAttribute):
         offset: int = None,
         limit: int = None,
         backfiller: 'Backfiller '= None,
+        fetch: bool = True,
     ):
         root = source
         target = None
@@ -236,6 +237,7 @@ class Relationship(BizAttribute):
                 backfiller=backfiller,
                 constraints=constraints,
                 first=False,
+                fetch=fetch,
             )
 
             # output becomes input for next iteration...

@@ -148,7 +148,7 @@ class Query(AbstractQuery):
         Append or replace "where"-expression Predicates.
         """
         if not (predicates or kwargs):
-            self._params.where = None
+            return self
         else:
             additional_predicates = []
             for obj in predicates:
@@ -168,7 +168,7 @@ class Query(AbstractQuery):
             if self._params.where is None:
                 self._params.where = tuple()
 
-            self._params.where = additional_predicates
+            self._params.where += additional_predicates
 
         return self
 
