@@ -12,7 +12,7 @@ class QueryExecutor(object):
     def execute(
         self,
         query: 'Query',
-        backfiller: 'Backfiller' = None,
+        backfiller: 'QueryBackfiller' = None,
         constraints: Dict[Text, 'Constraint'] = None,
         first: bool = False,
     ):
@@ -47,7 +47,7 @@ class QueryExecutor(object):
     def _execute_recursive(
         self,
         query: 'Query',
-        backfiller: 'Backfiller',
+        backfiller: 'QueryBackfiller',
         sources: List['BizObject'],
     ):
         # the class whose relationships we are executing:
@@ -65,14 +65,14 @@ class QueryExecutor(object):
         for biz_attr, subquery in ordered_items:
             if biz_attr.category == 'relationship':
                 relationship = biz_attr
-                targets = relationship.execute(
-                    sources,
-                    select=set(subquery.params.fields.keys()),
-                    where=subquery.params.where,
-                    order_by=subquery.params.order_by,
-                    limit=subquery.params.limit,
-                    offset=subquery.params.offset,
-                )
+                params = {
+                    'select': set(subquery.params.fields.keys()),
+                    'where': subquery.params.where,
+                    'order_by': subquery.params.order_by,
+                    'limit': subquery.params.limit,
+                    'offset': subquery.params.offset,
+                }
+                targets = relationship.execute(sources, **params)
                 # execute nested relationships and then zip each
                 # source BizObject up with its corresponding target
                 # BizObjects, as returned by the BizAttribute.
@@ -80,13 +80,7 @@ class QueryExecutor(object):
                 for source, target in zip(sources, targets):
                     if (not target) and backfiller is not None:
                         target = relationship.generate(
-                            source,
-                            select=set(subquery.params.fields.keys()),
-                            where=subquery.params.where,
-                            order_by=subquery.params.order_by,
-                            limit=subquery.params.limit,
-                            offset=subquery.params.offset,
-                            backfiller=backfiller,
+                            source, backfiller=backfiller, **params
                         )
                     setattr(source, biz_attr.name, target)
             else:

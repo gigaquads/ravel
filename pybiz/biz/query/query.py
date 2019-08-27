@@ -15,106 +15,7 @@ from .order_by import OrderBy
 from .query_loader import QueryLoader
 from .query_executor import QueryExecutor
 from .query_printer import QueryPrinter
-
-
-class Backfill(EnumValueStr):
-    @staticmethod
-    def values():
-        return {'persistent', 'ephemeral'}
-
-
-class Backfiller(object):
-    def __init__(self):
-        # _biz_class_2_biz_list is an accumulator for all
-        # BizObjects generated in the course of a generate()
-        self._biz_class_2_biz_list = {}
-
-    def generate(
-        self,
-        query,
-        constraints: Dict[Text, 'Constraint'] = None,
-        count: int = None,
-    ) -> 'BizList':
-        constraints = self._compute_field_value_constraints(query, constraints)
-        biz_list = self._generate_biz_list(query, count, constraints)
-        #self._generate_biz_list_relationships(query, biz_list)
-        return biz_list
-
-    def register(self, biz_thing):
-        if is_bizobj(biz_thing):
-            biz_class = biz_thing.__class__
-            if biz_class not in self._biz_class_2_biz_list:
-                self._biz_class_2_biz_list[biz_class] = biz_class.BizList()
-            self._biz_class_2_biz_list[biz_class].append(biz_thing)
-        elif is_bizlist(biz_thing):
-            biz_class = biz_thing.biz_class
-            if biz_class not in self._biz_class_2_biz_list:
-                self._biz_class_2_biz_list[biz_class] = biz_class.BizList()
-            self._biz_class_2_biz_list[biz_class].extend(biz_thing)
-
-    def persist(self):
-        for biz_class, biz_list in self._biz_class_2_biz_list.items():
-            biz_list.save()
-
-    def _compute_field_value_constraints(self, query, base_constraints):
-        params = query.params
-        constraints = base_constraints or {}
-        if params.where:
-            if len(params.where) > 1:
-                predicate = reduce(lambda x, y: x & y, params.where)
-            else:
-                predicate = params.where[0]
-            constraints.update(predicate.compute_constraints())
-        return constraints
-
-    def _generate_biz_list(self, query, count, constraints):
-        params = query.params
-
-        if count is None:
-            count_upper_bound = params.limit or random.randint(1, 10)
-            count = random.randint(1, count_upper_bound)
-
-        biz_class = query.biz_class
-        biz_list = biz_class.BizList()
-
-        if biz_class not in self._biz_class_2_biz_list:
-            self._biz_class_2_biz_list[biz_class] = biz_class.BizList()
-
-        for _ in range(count):
-            biz_obj = biz_class.generate(
-                fields=set(params.fields.keys()),
-                constraints=constraints,
-            )
-            biz_list.append(biz_obj)
-
-        self._biz_class_2_biz_list[biz_class].extend(biz_list)
-        return biz_list
-
-    def _generate_biz_list_relationships(self, query, biz_list):
-        # recurse on relationships
-        params = query.params
-        biz_class = query.biz_class
-        for biz_obj in biz_list:
-            for k, v in params.attributes.items():
-                rel = biz_class.relationships.get(k)
-                subquery = v
-                if rel is not None:
-                    related = rel.generate(
-                        source=biz_obj,
-                        select=set(subquery._params.fields.keys()),
-                        where=subquery._params.where,
-                        order_by=subquery._params.order_by,
-                        offset=subquery._params.offset,
-                        limit=subquery._params.limit,
-                        backfiller=self,
-                    )
-                    setattr(biz_obj, k, related)
-
-    def _generate_biz_list_other_biz_attrs(self, biz_list):
-        """
-        # TODO: recurse on non-Relationship BizAttributes
-        # This requires adding a generate to base BizAttribute
-        """
+from .query_backfiller import QueryBackfiller, Backfill
 
 
 class AbstractQuery(object):
@@ -216,11 +117,11 @@ class Query(AbstractQuery):
         constraints: Dict[Text, 'Constraint'] = None,
         backfill: Backfill = None,
     ) -> 'BizThing':
-        # TODO: move backfill logic into executor
-        # in order to implement logic whereby the DAO is first queried and then
-        # the backfill is applied if and only if no BizThing comes back -- i.e.
-        # the meaning of backfill.
-        backfiller = Backfiller() if backfill is not None else None
+        """
+        Execute this Query, returning the target BizThing.
+        """
+        backfiller = QueryBackfiller() if backfill is not None else None
+
         targets = self._executor.execute(
             query=self,
             backfiller=backfiller,
@@ -228,7 +129,9 @@ class Query(AbstractQuery):
             first=first,
         )
 
-        if backfill == Backfill.persistent:
+        if backfill is None:
+            targets.clean()
+        elif backfill == Backfill.persistent:
             backfiller.persist()
 
         if first:

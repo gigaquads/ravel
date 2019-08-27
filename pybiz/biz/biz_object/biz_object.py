@@ -82,17 +82,19 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         objects as well.
         """
         field_names, children = set(), {}
-        if fields:
-            unflattened = DictUtils.unflatten_keys({k: None for k in fields})
-            for k, v in unflattened.items():
-                if k == '*':
-                    field_names |= cls.schema.fields.keys()
-                elif k in cls.schema.fields:
-                    field_names.add(k)
-                elif k in cls.attributes:
-                    attr = cls.attributes.by_name(k)
-                    if attr.category == 'relationship':
-                        children[k] = v
+        if not fields:
+            fields = cls.schema.fields.keys()
+
+        unflattened = DictUtils.unflatten_keys({k: None for k in fields})
+        for k, v in unflattened.items():
+            if k == '*':
+                field_names |= cls.schema.fields.keys()
+            elif k in cls.schema.fields:
+                field_names.add(k)
+            elif k in cls.attributes:
+                attr = cls.attributes.by_name(k)
+                if attr.category == 'relationship':
+                    children[k] = v
 
         data = cls.schema.generate(
             fields=field_names,

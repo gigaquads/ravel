@@ -195,7 +195,7 @@ class Relationship(BizAttribute):
 
         for func in self.joins:
             join_params = func(source)
-            join = RelationshipJoinExecutor(source, *join_params)
+            join = JoinQueryBuilder(source, *join_params)
 
             # the parameters set on the Relationship ctor, merged or overrident
             # with those passed in as kwargs here, are only passed into the
@@ -208,9 +208,13 @@ class Relationship(BizAttribute):
             else:
                 query = join.query()
 
-            # The source BizObject sets the value of its "joined" field to on
-            # the field of the target BizObjects returned from the following
-            # recursive query.generate call.
+            # A `Constraint` is from appyratus.schema, where it represents a
+            # certain kind of constraint placed on the return value of a given
+            # Field's `generate` method. An `ConstantValueConstraint` says that
+            # a specific value must be returned, i.e. not randomized.
+            #
+            # Using this constraint, we can ensure that the two fields joined
+            # between source and target BizObjects have the same value.
             #
             # For example, if the Relationship looks like,
             #
@@ -218,18 +222,13 @@ class Relationship(BizAttribute):
             # Relationship(lambda user: (User.account_id, Account._id))`
             # ```
             #
-            # Then the generated `Account` BizObject will inherit its `_id`
-            # value from `user.account_id`.
-            #
-            # A `Constraint` is from appyratus.schema, where it represents a
-            # certain kind of constraint placed on the return value from a given
-            # Field's `generate` method. An `ConstantValueConstraint` says that
-            # a constant value must be returned "equal" to the given value.
-            constraints = {}
-            constraints[join.target_fname] = ConstantValueConstraint(
-                value=getattr(source, join.source_fname)
-            )
-
+            # Then the generated `Account` BizObject will receive its `_id`
+            # value from the source User's `account_id`.
+            constraints = {
+                join.target_fname: ConstantValueConstraint(
+                    value=getattr(source, join.source_fname)
+                )
+            }
             # Now generate the fully-formed `Query`, which indirectly recurses
             # on the selected Relationships referenced in subqueries therein.
             target = query.executor.execute(
@@ -293,7 +292,7 @@ class Relationship(BizAttribute):
 
         for func in self.joins:
             join_params = func(source)
-            join = RelationshipJoinExecutor(source, *join_params)
+            join = JoinQueryBuilder(source, *join_params)
 
             if func is self.joins[-1]:
                 # only pass in the query params to the last join in the join
@@ -328,17 +327,17 @@ class Relationship(BizAttribute):
         # BizObjects we zip up with which target BizObjects or BizLists.
         tree = defaultdict(list)
 
-        # `executors` just keeps in memory each RelationshipJoinExecutor object
+        # `builders` just keeps in memory each JoinQueryBuilder object
         # instantiated in the process of performing the querying process
-        executors = []
+        builders = []
 
         for func in self.joins:
             # the "join.query" here is configured to issue a query that loads
             # all data required by all source BizObjects' relationships, not
             # just one BizObject's relationship at a time.
             join_params = func(sources)
-            join = RelationshipJoinExecutor(sources, *join_params)
-            executors.append(join)
+            join = JoinQueryBuilder(sources, *join_params)
+            builders.append(join)
 
             # compute `targets` - the collection of ALL BizObjects related to
             # the source objects. Below, we perform logic to determine which
@@ -376,7 +375,7 @@ class Relationship(BizAttribute):
         # BizLists (for a many=True relationship). The caller of query() now
         # must zip up the source and result objects.
         results = []
-        terminal_biz_class = executors[-1].target_biz_class
+        terminal_biz_class = builders[-1].target_biz_class
         for source in original_sources:
             resolved_targets = self._get_terminal_nodes(
                 tree, source, terminal_biz_class, [], 0
@@ -416,6 +415,9 @@ class Relationship(BizAttribute):
         # (and any) Relationship that loads on a source BizObject, which
         # inherits the relationship, always has any field value eagerly loaded
         # beforehand.
+        #
+        # TODO: This is hacky and should perhaps be done elsewhere, like in
+        # bootstrap
         for predicate in query.params.where:
             self.target_biz_class.base_selectors.update(
                 f.name for f in predicate.fields
@@ -470,7 +472,7 @@ class Relationship(BizAttribute):
         }
 
 
-class RelationshipJoinExecutor(object):
+class JoinQueryBuilder(object):
     def __init__(
         self,
         source: BizThing,

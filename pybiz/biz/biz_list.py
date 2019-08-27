@@ -162,6 +162,18 @@ class BizList(BizThing):
     def arg(self, value):
         self._arg = value
 
+    @classmethod
+    def generate(
+        cls,
+        count: int,
+        fields: Set[Text] = None,
+        constraints: Dict[Text, 'Constraint'] = None
+    ) -> 'BizList':
+        return cls(
+            cls.biz_class.generate(fields=fields, constraints=constraints)
+            for _ in range(max(1, count))
+        )
+
     def create(self):
         self.biz_class.create_many(self._targets)
         return self
