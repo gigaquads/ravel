@@ -1,7 +1,7 @@
 import random
 
 from functools import reduce
-from typing import List, Dict, Set, Text, Type, Tuple
+from typing import List, Dict, Set, Text, Type, Tuple, Callable
 
 from appyratus.enum import EnumValueStr
 
@@ -19,20 +19,29 @@ from .query_backfiller import QueryBackfiller, Backfill
 
 
 class AbstractQuery(object):
-    def __init__(self, alias: Text = None):
+    def __init__(
+        self,
+        alias: Text = None,
+        callbacks: List[Callable] = None,
+    ):
         self._alias = alias
+        self._callbacks = callbacks or {}
 
     @property
     def alias(self) -> Text:
         return self._alias
 
     @alias.setter
-    def alias(self, alias):
+    def alias(self, alias: Text):
         if self._alias is not None:
             raise ValueError('alias is readonly')
         self._alias = alias
 
-    def execute(self, source: 'BizObject'):
+    @property
+    def callbacks(self) -> List[Callable]:
+        return self._callbacks
+
+    def execute(self, source: 'BizThing') -> 'BizThing':
         raise NotImplementedError('override in subclass')
 
 
@@ -67,6 +76,9 @@ class Query(AbstractQuery):
             self.limit = None
             self.offset = None
 
+        def keys(self):
+            return set(self.fields.keys() | self.attributes.keys())
+
 
     _loader = QueryLoader()
     _executor = QueryExecutor()
@@ -80,8 +92,9 @@ class Query(AbstractQuery):
         order_by: Tuple = None,
         limit: int = None,
         offset: int = None,
+        callbacks: List[Callable] = None,
     ):
-        super().__init__(alias=alias)
+        super().__init__(alias=alias, callbacks=callbacks)
 
         self._biz_class = biz_class
         self._params = Query.Parameters()
@@ -340,7 +353,8 @@ class BizAttributeQuery(AbstractQuery):
         return self._params
 
     def execute(self, source: 'BizObject'):
-        return self._biz_attr.execute(source, **self._params)
+        biz_thing = self._biz_attr.execute(source, **self._params)
+        return biz_thing
 
     def dump(self) -> Dict:
         record = self.params.copy()

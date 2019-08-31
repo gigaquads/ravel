@@ -584,11 +584,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Remove the given keys from field data and/or relationship data.
         """
         keys = {keys} if isinstance(keys, str) else keys
-        console.debug(message='unloading', data={
-            'class': self.__class__.__name__,
-            'instance': self._id,
-            'keys': keys
-        })
         for k in keys:
             if k in self.internal.state:
                 self.internal.state.pop(k, None)

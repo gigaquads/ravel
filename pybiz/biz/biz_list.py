@@ -256,6 +256,11 @@ class BizList(BizThing):
 
         return self
 
+    def unload(self, keys: Set[Text]) -> 'BizList':
+        for bizobj in self._targets:
+            bizobj.unload(keys)
+        return self
+
     def dump(self, *args, **kwargs) -> List[Dict]:
         return [
             target.dump(*args, **kwargs)

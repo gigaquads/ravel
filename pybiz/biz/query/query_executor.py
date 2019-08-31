@@ -48,9 +48,11 @@ class QueryExecutor(object):
                 constraints=constraints,
             )
 
-        return self._execute_recursive(
-            query, backfiller, targets, fetch
-        )
+        self._execute_recursive(query, backfiller, targets, fetch)
+        for func in query.callbacks:
+            func(query, targets)
+
+        return targets
 
     def _execute_recursive(
         self,
@@ -64,23 +66,23 @@ class QueryExecutor(object):
 
         # now sort attribute names by their BizAttribute priority.
         ordered_items = []
-        for biz_attr_name, subquery in query.params.attributes.items():
+        for biz_attr_name, sub_query in query.params.attributes.items():
             biz_attr = source_biz_class.attributes.by_name(biz_attr_name)
-            bisect.insort(ordered_items, (biz_attr, subquery))
+            bisect.insort(ordered_items, (biz_attr, sub_query))
 
         # execute each BizAttribute on each BizObject individually. a nice to
         # have would be a bulk-execution interface built built into the
         # BizAttribute base class
-        for biz_attr, subquery in ordered_items:
+        for biz_attr, sub_query in ordered_items:
             if biz_attr.category == 'relationship':
                 relationship = biz_attr
-                limit = subquery.params.limit
+                limit = sub_query.params.limit
                 params = {
-                    'select': set(subquery.params.fields.keys()),
-                    'where': subquery.params.where,
-                    'order_by': subquery.params.order_by,
-                    'limit': subquery.params.limit,
-                    'offset': subquery.params.offset or 0,
+                    'select': set(sub_query.params.fields.keys()),
+                    'where': sub_query.params.where,
+                    'order_by': sub_query.params.order_by,
+                    'limit': sub_query.params.limit,
+                    'offset': sub_query.params.offset or 0,
                 }
                 targets = relationship.execute(sources, **params)
                 # execute nested relationships and then zip each
@@ -97,11 +99,15 @@ class QueryExecutor(object):
                             source, backfiller=backfiller, fetch=False, **params
                         ))
                     setattr(source, biz_attr.name, target)
-                self._execute_recursive(subquery, backfiller, targets, fetch)
+
+                for func in sub_query.callbacks:
+                    func(sub_query, getattr(source, biz_attr.name))
+
+                self._execute_recursive(sub_query, backfiller, targets, fetch)
             else:
                 for source in sources:
-                    if subquery:
-                        value = subquery.execute(source)
+                    if sub_query:
+                        value = sub_query.execute(source)
                     else:
                         value = biz_attr.execute(source)
                     setattr(source, biz_attr.name, value)
