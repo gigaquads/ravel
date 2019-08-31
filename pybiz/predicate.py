@@ -67,10 +67,6 @@ class Predicate(object):
         """
         return codecs.encode(pickle.dumps(self), "base64").decode()
 
-    @classmethod
-    def parse(biz_class: Type['BizObject'], source: Text) -> 'Predicate':
-        parser
-
     @staticmethod
     def deserialize(obj) -> 'Predicate':
         """
@@ -94,6 +90,14 @@ class Predicate(object):
             return ConditionalPredicate.load(biz_class, data)
         elif data['code'] == TYPE_BOOLEAN:
             return BooleanPredicate.load(biz_class, data)
+
+    @property
+    def is_conditional_predicate(self):
+        return self.code == TYPE_CONDITIONAL
+
+    @property
+    def is_boolean_predicate(self):
+        return self.code == TYPE_BOOLEAN
 
     def compute_constraints(self) -> 'Constraint':
         constraints = defaultdict(dict)

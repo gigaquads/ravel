@@ -70,7 +70,6 @@ class Relationship(BizAttribute):
         self.on_del = normalize_to_tuple(on_del)
 
         self._is_bootstrapped = False
-        self._is_first_execution = True
         self._order_by_keys = set()
         self._foreign_keys = set()
 
@@ -131,7 +130,16 @@ class Relationship(BizAttribute):
             # the BizObjects loaded through this relationship have all required
             # field data to satisfy their own Relationships' join conditions.
             join_info = func(MagicMock())
-            self._foreign_keys.add(join_info[0].field.name)
+
+            source_fprop, target_fprop = join_info[:2]
+            source_fprop.biz_class.base_selectors.add(source_fprop.field.name)
+            target_fprop.biz_class.base_selectors.add(target_fprop.field.name)
+            if len(join_info) > 2:
+                custom_predicate = join_info[2]
+                for field in custom_predicate.fields:
+                    target_fprop.biz_class.base_selectors.add(field.name)
+
+            self._foreign_keys.add(source_fprop.field.name)
 
         # determine in advance what the "target" BizObject
         # class is that this relationship queries.
@@ -190,9 +198,6 @@ class Relationship(BizAttribute):
     ):
         root = source
         target = None
-        query_params = self._prepare_query_params(
-            source, select, where, order_by, offset, limit
-        )
 
         for func in self.joins:
             join_params = func(source)
@@ -203,9 +208,10 @@ class Relationship(BizAttribute):
             # final "join" query to execute, which is the one that resolves to
             # the final target BizObject type that defines the Relationship.
             if func is self.joins[-1]:
-                query = join.query(**query_params)
-                if self._is_first_execution:
-                    self._on_first_execution(query)
+                params = self._prepare_query_params(
+                    source, select, where, order_by, offset, limit
+                )
+                query = join.query(**params)
             else:
                 query = join.query()
 
@@ -243,9 +249,6 @@ class Relationship(BizAttribute):
             # output becomes input for next iteration...
             source = target
 
-        if self._is_first_execution:
-            self._is_first_execution = False
-
         # return the related BizObject or BizList we just loaded
         if not self.many:
             return target[0] if target else None
@@ -278,12 +281,7 @@ class Relationship(BizAttribute):
 
         # perform the query func, which returns the resolved and loaded
         # target BizThing (A BizList or BizObject)
-        biz_thing = query_func(source, query_params)
-
-        if self._is_first_execution:
-            self._is_first_execution = False
-
-        return biz_thing
+        return query_func(source, query_params)
 
     def _query_simple(self, root: 'BizObject', params: Dict) -> 'BizThing':
         """
@@ -301,8 +299,6 @@ class Relationship(BizAttribute):
                 # sequence, as this is the one that truly applies to the
                 # "target" BizObject type being queried.
                 query = join.query(**params)
-                if self._is_first_execution:
-                    self._on_first_execution(query)
             else:
                 query = join.query()
 
@@ -346,8 +342,6 @@ class Relationship(BizAttribute):
             # source object to zip up with which target BizObject(s)
             if func is self.joins[-1]:
                 query = join.query(**params)
-                if self._is_first_execution:
-                    self._on_first_execution(query)
             else:
                 query = join.query()
 
@@ -407,23 +401,6 @@ class Relationship(BizAttribute):
                     tree, bizobj, target_biz_class, acc, depth+1
                 )
         return acc
-
-    def _on_first_execution(self, query):
-        """
-        Logic to run the first time either the execute or generate method runs.
-        """
-        # add any fields utilized in this Relationship's computed "where"
-        # Predicate to the base selectors of the target BizObject so that this
-        # (and any) Relationship that loads on a source BizObject, which
-        # inherits the relationship, always has any field value eagerly loaded
-        # beforehand.
-        #
-        # TODO: This is hacky and should perhaps be done elsewhere, like in
-        # bootstrap
-        for predicate in query.params.where:
-            self.target_biz_class.base_selectors.update(
-                f.name for f in predicate.fields
-            )
 
     def _prepare_query_params(
         self,
@@ -504,10 +481,18 @@ class JoinQueryBuilder(object):
         if where:
             computed_where_predicate &= reduce(lambda x, y: x & y, where)
 
-        select.add(self.target_fname)
+        # merge custom selectors into base selectors
+        if select is None:
+            select = set()
+        elif not isinstance(select, set):
+            select = set(select)
+
+        selectors = self.target_biz_class.base_selectors.copy()
+        selectors.update(f.name for f in computed_where_predicate.fields)
+        selectors.update(select)
 
         query = self.target_fprop.biz_class.query(
-            select=select,
+            select=selectors,
             where=computed_where_predicate,
             offset=offset,
             limit=limit,
