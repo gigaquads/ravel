@@ -38,9 +38,9 @@ class QueryBackfiller(object):
         creating the BizObjects with which we backfill.
         """
         self._biz_class_2_biz_list = {}  # reset storage for generated objects
-        constraints = self._compute_field_value_constraints(query, constraints)
-        biz_list = self._generate_biz_list(query, count, constraints)
-        return biz_list
+        targets = self._generate_biz_list(query, count, constraints)
+        targets = self._generate_biz_attributes(query, targets)
+        return targets
 
     def persist(self):
         """
@@ -76,6 +76,7 @@ class QueryBackfiller(object):
     def _generate_biz_list(self, query, count, constraints):
         params = query.params
         biz_class = query.biz_class  # <- the class we are generating
+        constraints = self._compute_field_value_constraints(query, constraints)
 
         # randomize the count if none is explicitly given
         if count is None:
@@ -97,8 +98,9 @@ class QueryBackfiller(object):
 
         return generated_biz_list
 
-    def _generate_biz_list_other_biz_attrs(self, biz_list):
+    def _generate_biz_attributes(self, query: 'Query', targets: 'BizList') -> 'BizList':
         """
         # TODO: recurse on non-Relationship BizAttributes
         # This requires adding a generate to base BizAttribute
         """
+        return targets

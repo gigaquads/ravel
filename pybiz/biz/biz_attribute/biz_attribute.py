@@ -114,8 +114,8 @@ class BizAttribute(object):
     def execute(self, source: 'BizObject', *args, **kwargs):
         return
 
-    def generate(self, source: 'BizObject') -> BizThing:
-        pass
+    def generate(self, source: 'BizObject', *args, **kwargs) -> object:
+        return
 
 
 class BizAttributeProperty(property):

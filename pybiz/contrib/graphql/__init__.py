@@ -5,14 +5,62 @@ from typing import Dict, Set, Text, List, Type, Tuple
 
 from graphql.parser import GraphQLParser
 
-from pybiz.biz import OrderBy, Query
+from pybiz.biz import OrderBy, Query, QueryExecutor, QueryBackfiller, BizAttribute
 from pybiz.predicate import PredicateParser
 
 RE_ORDER_BY = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
 
 
-class GraphqlSchema(object):
+class GraphqlQueryTarget(BizAttribute):
+    def __init__(
+        self,
+        target: Type['BizObject'],
+        schema: 'GraphqlSchema' = None,
+        many: bool = True,
+        *args,
+        **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        self._target_biz_class = target
+        self._many = many
+        self._schema = schema
+
+    def on_bootstrap(self):
+        if self._schema is None:
+            self._schema = GraphqlSchema.build(
+                self.name, self._target_biz_class
+            )
+
+    @property
+    def category(self):
+        return 'graphql_query_target'
+
+    @property
+    def target_biz_class(self) -> Type['BizObject']:
+        return self._target_biz_class
+
+    @property
+    def graphql_schema(self) -> 'GraphqlSchema':
+        return self._schema
+
+    @property
+    def many(self) -> bool:
+        return self._many
+
+
+class GraphqlExecutor(object):
+    """
+    """
     def __init__(self, biz_class):
+        self._ast_parser = GraphQLParser()
+        self._schema = GraphqlSchema.build(None, biz_class)
+
+    def query(self, graphql_query_string: Text):
+        return self._schema.query(graphql_query_string)
+
+class GraphqlSchema(object):
+    def __init__(self, name, biz_class):
+        self.name = name
         self.biz_class = biz_class
         self.fields = {}
         self.children = {}
@@ -20,17 +68,23 @@ class GraphqlSchema(object):
         self.query_parser = GraphqlQueryParser()
 
     @classmethod
-    def derive(cls, biz_class, memoized=None):
+    def build(cls, name, biz_class, memoized=None):
         memoized = memoized if memoized is not None else {}
         if biz_class in memoized:
             return memoized[biz_class]
 
-        schema = memoized[biz_class] = cls(biz_class)
+        schema = memoized[biz_class] = cls(name, biz_class)
         schema.fields = biz_class.schema.fields.copy()
         schema.children = {
-            r.name: cls.derive(r.target_biz_class, memoized=memoized)
+            r.name: cls.build(
+                r.name, r.target_biz_class, memoized=memoized
+            )
             for r in biz_class.relationships.values()
         }
+        schema.children.update({
+            k: cls.build(k, biz_attr.target_biz_class, memoized=memoized)
+            for k, biz_attr in biz_class.attributes.by_category('graphql_query_target').items()
+        })
         schema.biz_attributes = {
             k: v for k, v in biz_class.attributes.items()
             if k not in schema.children
@@ -47,26 +101,21 @@ class GraphqlQueryParser(object):
     _ast_parser = GraphQLParser()
 
     def parse(self, schema, source: Text) -> 'Query':
-        graphql_ast = self._parse_graphql_query_string(source)
-        return self._build_pybiz_query(schema, graphql_ast)
+        graphql_ast = self.parse_graphql_query_string(source)
+        return self.build_pybiz_query(schema, graphql_ast)
 
-    def _parse_graphql_query_string(self, query_string: Text):
-        graphql_doc = self._ast_parser.parse(query_string)
+    @classmethod
+    def parse_graphql_query_string(cls, query_string: Text):
+        graphql_doc = cls._ast_parser.parse(query_string)
         graphql_query = graphql_doc.definitions[0]
         return graphql_query
 
-    def _build_pybiz_query(self, schema, ast_node):
-
-        def mask_keys(query, biz_thing):
-            masked_field_names = (
-                query.biz_class.schema.fields.keys() - query.params.keys()
-            )
-            biz_thing.unload(masked_field_names)
-
+    @classmethod
+    def build_pybiz_query(cls, schema, ast_node):
         query = Query(
             biz_class=schema.biz_class,
             alias=ast_node.name,
-            callbacks=[mask_keys]
+            callbacks=[cls._mask_keys]
         )
 
         selected_keys = set()
@@ -78,13 +127,12 @@ class GraphqlQueryParser(object):
                 query.select(child_name)
             elif child_name in schema.children:
                 child_schema = schema.children[child_name]
-                child_query = self._build_pybiz_query(
+                child_query = cls.build_pybiz_query(
                     child_schema, child_ast_node
                 )
                 query.select(child_query)
             else:
                 continue
-
             selected_keys.add(child_name)
 
         graphql_args = GraphQLArguments.parse(schema.biz_class, ast_node)
@@ -95,6 +143,13 @@ class GraphqlQueryParser(object):
         query.limit(graphql_args.limit)
 
         return query
+
+    @classmethod
+    def _mask_keys(cls, query, biz_thing):
+        masked_field_names = (
+            query.biz_class.schema.fields.keys() - query.params.keys()
+        )
+        biz_thing.unload(masked_field_names)
 
 
 class GraphQLArguments(object):

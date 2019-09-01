@@ -20,6 +20,8 @@ class QueryPrinter(object):
         """
         Return a pretty printed string of the query in Pybiz query langauge.
         """
+        from pybiz.biz import Query
+
         biz_class_name = query.biz_class.__name__
 
         # we collect all substrings of the final format string in three
@@ -48,7 +50,7 @@ class QueryPrinter(object):
         for name, sub_query in sorted(query.params.attributes.items()):
             if isinstance(sub_query, Query):
                 type_name = sub_query.biz_class.__name__
-                rel = query.biz_class.attributes.by_name(name)
+                rel = query.biz_class.relationships.get(name)
                 if rel and rel.many:
                     type_name = f'[{type_name}]'
                 sub_query_substr = self.format_query(sub_query, indent=indent+5)
