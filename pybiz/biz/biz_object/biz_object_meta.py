@@ -8,7 +8,7 @@ from collections import defaultdict
 
 from appyratus.utils import DictObject
 
-from pybiz.schema import Schema, fields, String, UuidString, Field, Int
+from pybiz.schema import Schema, fields, String, UuidString, Field, Int, Id
 from pybiz.util.misc_functions import import_object, is_bizobj
 from pybiz.util.loggers import console
 from pybiz.constants import (
@@ -104,7 +104,7 @@ class BizObjectTypeBuilder(object):
 
         # bless each bizobj with mandatory built-in Fields
         if ID_FIELD_NAME not in fields:
-            fields[ID_FIELD_NAME] = UuidString(nullable=True)
+            fields[ID_FIELD_NAME] = Id(nullable=True)
         if REV_FIELD_NAME not in fields:
             fields[REV_FIELD_NAME] = Int(nullable=True)
 
