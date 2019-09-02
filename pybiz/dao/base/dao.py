@@ -113,20 +113,18 @@ class Dao(object, metaclass=DaoMeta):
         """
         Generate and return a new ID for the given not-yet-created record.
         """
-        return record.get('_id') or uuid.uuid4().hex
+        return record.get('_id') or UuidString.next_id()
 
     @abstractmethod
     def exists(self, _id) -> bool:
         """
         Return True if the record with the given _id exists.
         """
-
     @abstractmethod
     def count(self) -> int:
         """
         Return the total number of stored records.
         """
-
     @abstractmethod
     def query(
         self,
