@@ -2,6 +2,7 @@ import random
 
 from functools import reduce
 from typing import List, Dict, Set, Text, Type, Tuple, Callable
+from collections import defaultdict
 
 from appyratus.enum import EnumValueStr
 
@@ -84,6 +85,22 @@ class Query(AbstractQuery):
     _executor = QueryExecutor()
     _printer  = QueryPrinter()
 
+    _default_selectors = defaultdict(set)
+    # _default_selectors is a mapping from biz class to a set of fields
+    # to select always by default. These sets are filled up by
+    # Relationship.on_bootstrap. The rationale here is to ensure that all fields
+    # are fetched by default, which are required by any relationships definedo
+    # on the class. This avoids extra lazy-loading roundtrips to the DAL when
+    # loading said relationships without said fields already in memory.
+
+    @classmethod
+    def add_default_selectors(cls, biz_class, *selectors):
+        cls._default_selectors[biz_class].update(selectors)
+
+    @classmethod
+    def get_default_selectors(cls, biz_class) -> Set:
+        return cls._default_selectors[biz_class]
+
     def __init__(
         self,
         biz_class: Type['BizType'],
@@ -99,7 +116,7 @@ class Query(AbstractQuery):
         self._biz_class = biz_class
         self._params = Query.Parameters()
 
-        self.select(biz_class.base_selectors)
+        self.select(self.get_default_selectors(biz_class))
 
         if offset is not None:
             self.offset(offset)

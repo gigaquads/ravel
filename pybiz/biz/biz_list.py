@@ -110,7 +110,7 @@ class BizList(BizThing):
         return bool(self._targets)
 
     def __iter__(self):
-        return iter(self._targets)
+        return (x for x in self._targets)
 
     def __repr__(self):
         dirty_count = sum(1 for x in self if x and x.dirty)
@@ -239,7 +239,7 @@ class BizList(BizThing):
         })
         return self
 
-    def load(self, fields: Set[Text] = None):
+    def load(self, selectors: Set[Text] = None):
         # TODO: add a depth=None kwarg like in BizObject.load
         if not selectors:
             selectors = set(self.biz_class.schema.fields.keys())

@@ -32,7 +32,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     schema = None
     relationships = {}
-    base_selectors = set()
 
     is_bootstrapped = False
     is_abstract = False
@@ -110,8 +109,18 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return cls(data=data)
 
     def __init__(self, data=None, **more_data):
+        data = data or {}
+        if data.get('_id') is not None:
+            hash_str = ''.join(
+                hex(ord(c))[2:] for c in (
+                    self.__class__.__name__.upper() + ':' + str(data['_id'])
+                )
+            )
+        else:
+            hash_str = uuid.uuid4().hex
+        hash_int = int(hash_str, 16)
         self.internal = DictObject({
-            'hash': int(uuid.uuid4().hex, 16),
+            'hash': hash_int,
             'arg': None,
             'state': DirtyDict(),
             'attributes': {},

@@ -5,8 +5,10 @@ from typing import Dict, Set, Text, List, Type, Tuple
 
 from graphql.parser import GraphQLParser
 
-from pybiz.biz import OrderBy, Query, QueryExecutor, QueryBackfiller, BizAttribute
 from pybiz.predicate import PredicateParser
+from pybiz.biz import (
+    OrderBy, Query, QueryExecutor, QueryBackfiller, BizAttribute
+)
 
 RE_ORDER_BY = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
 
@@ -57,6 +59,7 @@ class GraphqlExecutor(object):
 
     def query(self, graphql_query_string: Text):
         return self._schema.query(graphql_query_string)
+
 
 class GraphqlSchema(object):
     def __init__(self, name, biz_class):

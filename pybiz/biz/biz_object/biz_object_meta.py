@@ -37,7 +37,6 @@ class BizObjectTypeBuilder(object):
         namespace[IS_BOOTSTRAPPED] = False
         namespace[IS_ABSTRACT_ANNOTATION] = self._compute_is_abstract(namespace)
         namespace[ATTRIBUTES_ATTR] = self._build_biz_attr_manager(bases, namespace)
-        namespace['base_selectors'] = set()
         return namespace
 
     def on_init(self, name, biz_class):

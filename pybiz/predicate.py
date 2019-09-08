@@ -54,6 +54,8 @@ RE_STRING = re.compile(r'(\'|").+(\'|")')
 class Predicate(object):
     TYPE_BOOLEAN = TYPE_BOOLEAN
     TYPE_CONDITIONAL = TYPE_CONDITIONAL
+    AND_FUNC = lambda x, y: x & y
+    OR_FUNC = lambda x, y: x | y
 
     def __init__(self, code):
         self.code = code
@@ -90,6 +92,24 @@ class Predicate(object):
             return ConditionalPredicate.load(biz_class, data)
         elif data['code'] == TYPE_BOOLEAN:
             return BooleanPredicate.load(biz_class, data)
+
+    @classmethod
+    def reduce_and(cls, predicates: List['Predicate']) -> 'Predicate':
+        return cls._reduce(cls.AND_FUNC, predicates)
+
+    @classmethod
+    def reduce_or(cls, predicates: List['Predicate']) -> 'Predicate':
+        return cls._reduce(cls.OR_FUNC, predicates)
+
+    @staticmethod
+    def _reduce(func, predicates: List['Predicate']) -> 'Predicate':
+        predicates = [p for p in predicates if p is not None]
+        if not predicates:
+            return None
+        if len(predicates) == 1:
+            return predicates[0]
+        else:
+            return reduce(func, predicates)
 
     @property
     def is_conditional_predicate(self):
