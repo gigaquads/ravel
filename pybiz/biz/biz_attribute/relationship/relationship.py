@@ -184,11 +184,15 @@ class Relationship(BizAttribute):
             #
             # Then the generated `Account` BizObject will receive its `_id`
             # value from the source User's `account_id`.
-            constraints = {
-                builder.target_fname: ConstantValueConstraint(
-                    value=getattr(source, builder.source_fname)
-                )
-            }
+            if meta.join_type == JoinType.static:
+                constraints = {
+                    builder.target_fname: ConstantValueConstraint(
+                        value=getattr(source, builder.source_fname)
+                    )
+                }
+            else:
+                constraints = {}
+
             # Now generate the fully-formed `Query`, which indirectly recurses
             # on the selected Relationships referenced in subqueries therein.
             target = query.executor.execute(

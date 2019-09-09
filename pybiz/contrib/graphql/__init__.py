@@ -5,12 +5,77 @@ from typing import Dict, Set, Text, List, Type, Tuple
 
 from graphql.parser import GraphQLParser
 
+from pybiz.util.loggers import console
 from pybiz.predicate import PredicateParser
 from pybiz.biz import (
-    OrderBy, Query, QueryExecutor, QueryBackfiller, BizAttribute
+    OrderBy, Query, QueryExecutor, QueryBackfiller, BizAttribute, BizObject
 )
 
 RE_ORDER_BY = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
+
+
+class Executor(object):
+    def __init__(self, root_biz_class: Type[BizObject]):
+        self.parser = Parser(root_biz_class)
+
+    def query(self, graphql_query: Text) -> Query:
+        return self.parser.parse(graphql_query)
+
+
+class Parser(object):
+
+    _ast_parser = GraphQLParser()
+
+    def __init__(self, root_biz_class: Type[BizObject]):
+        self.root_biz_class = root_biz_class
+
+    def parse(self, graphql_query_string: Text) -> Query:
+        graphql_query = self._parse_graphql_query_ast(graphql_query_string)
+        pybiz_query = self._build_pybiz_query(graphql_query)
+        return pybiz_query
+
+    @classmethod
+    def _parse_graphql_query_ast(cls, query_string: Text):
+        graphql_doc = cls._ast_parser.parse(query_string)
+        graphql_query = graphql_doc.definitions[0]
+        return graphql_query
+
+    def _build_pybiz_query(self, ast_node, target_biz_class=None) -> Query:
+        selected_names = {u.name for u in ast_node.selections}
+        target_biz_class = target_biz_class or self.root_biz_class
+        query = Query(biz_class=target_biz_class, alias=ast_node.name)
+
+        for child_ast_node in ast_node.selections:
+            child_name = child_ast_node.name
+
+            if child_name in target_biz_class.schema.fields:
+                query.select(child_name)
+            elif child_name in target_biz_class.relationships:
+                rel = target_biz_class.relationships[child_name]
+                child_biz_class = rel.target_biz_class
+                child_query = self._build_pybiz_query(
+                    child_ast_node, target_biz_class=child_biz_class
+                )
+                query.select(child_query)
+            elif child_name in target_biz_class.attributes:
+                query.select(child_name)
+            else:
+                console.warn(
+                    f'unknown field {target_biz_class.__name__}.{child_name} '
+                    f'selected in GraphQL query'
+                )
+
+        # read in raw arguments supplied to the GraphQL node, preparing
+        # them to be passed into the pybiz Query object.
+        graphql_args = GraphQLArguments.parse(target_biz_class, ast_node)
+
+        query.where(graphql_args.where)
+        query.order_by(graphql_args.order_by)
+        query.offset(graphql_args.offset)
+        query.limit(graphql_args.limit)
+
+        return query
+
 
 
 class GraphqlQueryTarget(BizAttribute):

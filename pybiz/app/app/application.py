@@ -23,7 +23,7 @@ class Application(object):
         self._decorators = []
         self._endpoints = {}
         self._biz = None  # set in bootstrap
-        self._dao = None  # set in bootstrap
+        self._dal = None  # set in bootstrap
         self._api = None  # set in bootstrap
         self._manifest = None  # set in bootstrap
         self._arg_loader = None  # set in bootstrap
@@ -172,12 +172,13 @@ class Application(object):
 
         self._manifest.load()
         self._manifest.process(app=self, namespace=self._namespace)
-        self._manifest.bootstrap()
-        self._manifest.bind(rebind=rebootstrap)
 
         self._biz = DictObject(self._manifest.types.biz)
         self._dal = DictObject(self._manifest.types.dal)
         self._api = DictObject(self._endpoints)
+
+        self._manifest.bootstrap()
+        self._manifest.bind(rebind=rebootstrap)
 
         # bootstrap the middlware
         for mware in self.middleware:

@@ -7,7 +7,7 @@ from collections import defaultdict
 from typing import Dict, Set, Text, List, Type, Tuple
 from threading import local
 
-from pyparsing import Literal, Regex, Forward, Optional, Word
+from pyparsing import Literal, Regex, Forward, Optional, Word, QuotedString
 from appyratus.enum import Enum
 from appyratus.utils import DictObject
 from appyratus.schema import RangeConstraint, ConstantValueConstraint
@@ -29,14 +29,18 @@ OP_CODE = Enum(
 OP_CODE_2_DISPLAY_STRING = {
     OP_CODE.EQ: '==',
     OP_CODE.NEQ: '!=',
-    OP_CODE.GT: '>=',
-    OP_CODE.LT: '<=',
+    OP_CODE.GT: '>',
+    OP_CODE.LT: '<',
     OP_CODE.GEQ: '>=',
     OP_CODE.LEQ: '<=',
     OP_CODE.INCLUDING: 'in',
     OP_CODE.EXCLUDING: 'not in',
     OP_CODE.AND: '&&',
     OP_CODE.OR: '||',
+}
+
+DISPLAY_STRING_2_OP_CODE = {
+    v: k for k, v in OP_CODE_2_DISPLAY_STRING.items()
 }
 
 TYPE_BOOLEAN = 1
@@ -48,7 +52,7 @@ BOOLEAN_OPERATORS = frozenset({'&&', '||'})
 
 RE_INT = re.compile(r'\d+')
 RE_FLOAT = re.compile(r'\d*(\.\d+)')
-RE_STRING = re.compile(r'(\'|").+(\'|")')
+RE_STRING = re.compile(r'\'.+\'')
 
 
 class Predicate(object):
@@ -94,11 +98,11 @@ class Predicate(object):
             return BooleanPredicate.load(biz_class, data)
 
     @classmethod
-    def reduce_and(cls, predicates: List['Predicate']) -> 'Predicate':
+    def reduce_and(cls, *predicates) -> 'Predicate':
         return cls._reduce(cls.AND_FUNC, predicates)
 
     @classmethod
-    def reduce_or(cls, predicates: List['Predicate']) -> 'Predicate':
+    def reduce_or(cls, *predicates) -> 'Predicate':
         return cls._reduce(cls.OR_FUNC, predicates)
 
     @staticmethod
@@ -291,74 +295,78 @@ class PredicateParser(object):
     def _init_grammar(self):
         self._grammar = DictObject()
         self._grammar.ident = Regex(r'[a-zA-Z_]\w*')
-        self._grammar.number = Regex(r'\d*(\.\d+)?')
-        self._grammar.string = Regex(r"'.+'")
-        self._grammar.conditional_value = (
-           # self._grammar.number |
-            self._grammar.string
-        )
-        self._grammar.conditional_operator = reduce(
-            lambda x, y: x | y, (Literal(op) for op in CONDITIONAL_OPERATORS)
-        )
-        self._grammar.boolean_operator = reduce(
-            lambda x, y: x | y, (Literal(op) for op in BOOLEAN_OPERATORS)
-        )
+        self._grammar.number = Regex(r'\d*(?:\.\d+)?')
+        self._grammar.string = QuotedString("'", escChar='\\')
         self._grammar.lparen = Literal('(')
         self._grammar.rparen = Literal(')')
+        self._grammar.conditional_value = (
+            self._grammar.string |
+            self._grammar.number
+        )
+
+        self._grammar.conditional_operator = reduce(
+            lambda x, y: x | y,
+            (Literal(op) for op in CONDITIONAL_OPERATORS)
+        )
+        self._grammar.boolean_operator = reduce(
+            lambda x, y: x | y,
+            (Literal(op) for op in BOOLEAN_OPERATORS)
+        )
+
         self._grammar.conditional_predicate = (
             self._grammar.ident.setResultsName('field') +
-            self._grammar.conditional_operator.setResultsName('op') +
+            self._grammar.conditional_operator.setResultsName('cond_op') +
             self._grammar.conditional_value.setResultsName('value')
-        ).addParseAction(self._on_parse_conditional_predicate)
+        ).addParseAction(
+            self._on_parse_conditional_predicate
+        )
 
-        self._grammar.boolean_predicate = Forward().addParseAction(
+        self._grammar.boolean_predicate = Forward()
+
+        self._grammar.predicate = (
+            self._grammar.lparen +
+            (
+                self._grammar.boolean_predicate |
+                self._grammar.conditional_predicate
+            ) +
+            self._grammar.rparen
+        )
+
+        self._grammar.boolean_predicate << (
+            self._grammar.predicate +
+            self._grammar.boolean_operator.setResultsName('bool_op') +
+            self._grammar.predicate
+        ).addParseAction(
             self._on_parse_boolean_predicate
         )
-        self._grammar.any_predicate = (
-            self._grammar.lparen
-            + (self._grammar.boolean_predicate
-                | self._grammar.conditional_predicate)
-            + self._grammar.rparen
-        )
-        self._grammar.boolean_predicate << (
-            Optional(self._grammar.lparen)
-            + (
-                self._grammar.any_predicate
-                + self._grammar.boolean_operator.setResultsName('operator')
-                + self._grammar.any_predicate
-            )
-            + Optional(self._grammar.rparen)
-        )
+
         self._grammar.root = (
-            (
-                Optional(self._grammar.lparen)
-                + self._grammar.conditional_predicate
-                + Optional(self._grammar.rparen)
-            )
-            | self._grammar.boolean_predicate
+            self._grammar.predicate
         )
 
     def _on_parse_conditional_predicate(self, source: Text, loc: int, tokens: Tuple):
+        print('parsing cond predicate', tokens)
         # TODO: further process "value" as list or other dtype
         fprop = getattr(self._biz_class, tokens['field'])
+        op = DISPLAY_STRING_2_OP_CODE[tokens['cond_op']]
+
         value = tokens['value']
-        if RE_STRING.match(value):
-            value = value[1:-1]
-        elif RE_INT.match(value):
+        if RE_INT.match(value):
             value = int(value)
         elif RE_FLOAT.match(value):
             value = float(value)
-        else:
-            raise ValueError()
+
         predicate = ConditionalPredicate(op, fprop, value)
         self._stack.append(predicate)
 
     def _on_parse_boolean_predicate(self, source: Text, loc: int, tokens: Tuple):
+        print('parsing boolean predicate', tokens)
         lhs = self._stack.pop()
         rhs = self._stack.pop()
-        if tokens['op'] == '&&':
+
+        if tokens['bool_op'] == OP_CODE_2_DISPLAY_STRING[OP_CODE.AND]:
             self._stack.append(lhs & rhs)
-        elif tokens['op'] == '||':
+        elif tokens['bool_op'] == OP_CODE_2_DISPLAY_STRING[OP_CODE.OR]:
             self._stack.append(lhs | rhs)
 
     def parse(self, biz_class, source: Text) -> 'Predicate':

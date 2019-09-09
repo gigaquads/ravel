@@ -49,10 +49,6 @@ class QueryExecutor(object):
             )
 
         self._execute_recursive(query, backfiller, targets, fetch)
-        
-        for func in query.callbacks:
-            func(query, targets)
-
         return targets
 
     def _execute_recursive(
@@ -102,9 +98,6 @@ class QueryExecutor(object):
                     setattr(source, biz_attr.name, target)
 
                 target_biz_list = sub_query.biz_class.BizList(targets)
-                for func in sub_query.callbacks:
-                    func(sub_query, target_biz_list)
-
                 self._execute_recursive(sub_query, backfiller, targets, fetch)
             else:
                 for source in sources:

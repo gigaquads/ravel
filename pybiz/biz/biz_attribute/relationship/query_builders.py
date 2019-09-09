@@ -27,6 +27,10 @@ class QueryBuilder(object):
         offset=None,
         order_by=None,
     ) -> Query:
+        """
+        For each "join" function given to a Relationship, a QueryBuilder is
+        responsible for building a Query object.
+        """
         where_predicate = self.build_where_predicate(where)
         selectors = self.build_selectors(select, where_predicate)
         return self.target_biz_class.query(
@@ -55,6 +59,11 @@ class QueryBuilder(object):
 
 
 class DynamicQueryBuilder(QueryBuilder):
+    """
+    DynamicQueryBuilders correspond to "join" functions with a return signature
+    of (Type[BizObject], Predicate?).
+    """
+
     def __init__(
         self,
         source: 'BizThing',
@@ -65,6 +74,11 @@ class DynamicQueryBuilder(QueryBuilder):
 
 
 class StaticQueryBuilder(QueryBuilder):
+    """
+    StaticQueryBuilders correspond to "join" functions with return signatures
+    in the format (FieldProperty, FieldProperty, Predicate?)
+    """
+
     def __init__(
         self,
         source: 'BizThing',

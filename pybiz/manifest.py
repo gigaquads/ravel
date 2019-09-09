@@ -6,6 +6,8 @@ import traceback
 
 import yaml
 
+import pybiz
+
 from typing import Text, Dict
 from collections import defaultdict
 
@@ -174,6 +176,10 @@ class Manifest(object):
         # remove base BizObject class from types dict
         self.types.biz.pop('BizObject', None)
         self.types.dal.pop('Dao', None)
+
+        # do this for convenience in application code...
+        pybiz.BizObject.biz = self.app.biz
+        pybiz.BizObject.dal = self.app.dal
 
     def _register_dao_classes(self):
         """

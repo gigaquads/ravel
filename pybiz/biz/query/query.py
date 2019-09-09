@@ -23,10 +23,8 @@ class AbstractQuery(object):
     def __init__(
         self,
         alias: Text = None,
-        callbacks: List[Callable] = None,
     ):
         self._alias = alias
-        self._callbacks = callbacks or {}
 
     @property
     def alias(self) -> Text:
@@ -37,10 +35,6 @@ class AbstractQuery(object):
         if self._alias is not None:
             raise ValueError('alias is readonly')
         self._alias = alias
-
-    @property
-    def callbacks(self) -> List[Callable]:
-        return self._callbacks
 
     def execute(self, source: 'BizThing') -> 'BizThing':
         raise NotImplementedError('override in subclass')
@@ -109,9 +103,8 @@ class Query(AbstractQuery):
         order_by: Tuple = None,
         limit: int = None,
         offset: int = None,
-        callbacks: List[Callable] = None,
     ):
-        super().__init__(alias=alias, callbacks=callbacks)
+        super().__init__(alias=alias)
 
         self._biz_class = biz_class
         self._params = Query.Parameters()
