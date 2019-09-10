@@ -309,7 +309,7 @@ class Relationship(BizAttribute):
             # compute `targets` - the collection of ALL BizObjects related to
             # the source objects. Below, we perform logic to determine which
             # source object to zip up with which target BizObject(s)
-            if builder.func is self.joins[-1]:
+            if meta.func is self.joins[-1]:
                 query = builder.build_query(**params)
             else:
                 query = builder.build_query()
@@ -454,7 +454,7 @@ class JoinMetadata(object):
         # for an ID-based join, the first two elements of info are the
         # field properties being joined, like (User.account_id, Account._id)
         source_fprop, target_fprop = info[:2]
-        target_biz_class = target_fprop.field.biz_class
+        target_biz_class = target_fprop.biz_class
 
         # regenerate info now that we know what the target biz class is
         dummy = target_biz_class.generate()
@@ -465,7 +465,7 @@ class JoinMetadata(object):
         # that no additional lazy loading of said field is needed when this
         # relationship is executed on an instance.
         Query.add_default_selectors(
-            source_fprop.field.biz_class, source_fprop.field.name
+            source_fprop.biz_class, source_fprop.field.name
         )
 
         self.target_biz_class = target_biz_class

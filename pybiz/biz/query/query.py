@@ -9,6 +9,7 @@ from appyratus.enum import EnumValueStr
 import pybiz.biz
 
 from pybiz.util.misc_functions import is_sequence, is_bizobj, is_bizlist
+from pybiz.predicate import Predicate
 
 from ..field_property import FieldProperty
 from ..biz_list import BizList
@@ -20,11 +21,26 @@ from .query_backfiller import QueryBackfiller, Backfill
 
 
 class AbstractQuery(object):
-    def __init__(
-        self,
-        alias: Text = None,
-    ):
+    def __init__(self, alias: Text = None):
         self._alias = alias
+
+    def __lt__(self, other):
+        return True
+
+    def __gt__(self, other):
+        return True
+
+    def __geq__(self, other):
+        return True
+
+    def __leq__(self, other):
+        return True
+
+    def __eq__(self, other):
+        return True
+
+    def __neq__(self, other):
+        return True
 
     @property
     def alias(self) -> Text:

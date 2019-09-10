@@ -85,11 +85,13 @@ class QueryExecutor(object):
                 # execute nested relationships and then zip each
                 # source BizObject up with its corresponding target
                 # BizObjects, as returned by the BizAttribute.
-                for source, target in zip(sources, targets):
+                print(len(sources), len(targets))
+                for idx, (source, target) in enumerate(zip(sources, targets)):
                     if (not target) and backfiller is not None:
                         target = relationship.generate(
                             source, backfiller=backfiller, **params
                         )
+                        targets[idx] = target
                     elif (limit is not None) and (len(target) < limit):
                         params['limit'] = limit - len(target)
                         target.extend(relationship.generate(
@@ -97,8 +99,11 @@ class QueryExecutor(object):
                         ))
                     setattr(source, biz_attr.name, target)
 
-                target_biz_list = sub_query.biz_class.BizList(targets)
-                self._execute_recursive(sub_query, backfiller, targets, fetch)
+                if relationship.many:
+                    for target_biz_list in targets:
+                        self._execute_recursive(sub_query, backfiller, target_biz_list, fetch)
+                else:
+                    self._execute_recursive(sub_query, backfiller, targets, fetch)
             else:
                 for source in sources:
                     if sub_query:

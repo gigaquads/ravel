@@ -100,7 +100,10 @@ class StaticQueryBuilder(QueryBuilder):
         if is_bizobj(self.source):
             where_predicate = (self.target_fprop == target_field_value)
         elif is_bizlist(self.source):
-            where_predicate = (self.target_fprop.including(target_field_value))
+            try:
+                where_predicate = (self.target_fprop.including(target_field_value))
+            except:
+                import ipdb; ipdb.set_trace()
         else:
             raise TypeError('TODO: raise custom exception')
 
