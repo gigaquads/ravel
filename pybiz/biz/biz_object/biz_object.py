@@ -54,7 +54,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     @classmethod
     def get_dao(cls, bind=True) -> 'Dao':
         """
-        Get the global Dao reference associated with this class.
+        Get the global Dao reference associated with this class. The binder
+        reference will be null unless this BizObject class has been bootstrapped
+        by a host Application.
         """
         binder = None
         if cls.app is not None:
@@ -62,13 +64,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return binder
 
     @classmethod
-    def select(cls, *selectors) -> 'Query':
+    def select(cls, *selectors) -> Query:
         """
         Initialize and return a Query with cls as the target class.
         """
+        # select all BizObject fields by default
         if not selectors:
             selectors = tuple(cls.schema.fields.keys())
-        return Query(cls).select(*selectors)
+        return Query(cls).select(selectors)
 
     @classmethod
     def generate(
@@ -80,11 +83,17 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Recursively generate a fixture for this BizObject class and any related
         objects as well.
         """
-        field_names, children = set(), {}
+        field_names = set()
+        children = {}
+
         if not fields:
             fields = cls.schema.fields.keys()
 
-        unflattened = DictUtils.unflatten_keys({k: None for k in fields})
+        if not isinstance(fields, dict):
+            unflattened = DictUtils.unflatten_keys({k: None for k in fields})
+        else:
+            unflattened = fields
+
         for k, v in unflattened.items():
             if k == '*':
                 field_names |= cls.schema.fields.keys()
@@ -92,40 +101,33 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 field_names.add(k)
             elif k in cls.attributes:
                 attr = cls.attributes.by_name(k)
-                if attr.category == 'relationship':
-                    children[k] = v
+                children[k] = v
 
-        data = cls.schema.generate(
-            fields=field_names,
-            constraints=constraints
-        )
+        data = cls.schema.generate(fields=field_names, constraints=constraints)
+        generated_biz_obj = cls(data=data)
+
+        # TODO: iterate over relationships first
+        # TODO: respect priority when iterating over other BizAttributes
 
         for k, v in children.items():
-            attr = cls.attributes.by_name(k)
-            if attr.category == 'relationship':
-                # TODO: support nested constraints for BizAttributes
-                data[k] = attr.target_biz_class.generate(v)
+            if k in cls.relationships:
+                rel = cls.relationships[k]
+                data[k] = rel.target_biz_class.generate(fields=v)
+            else:
+                biz_attr = cls.attributes.by_name(k)
+                data[k] = biz_attr.generate(generated_biz_obj)
 
-        return cls(data=data)
+        return generated_biz_obj
 
     def __init__(self, data=None, **more_data):
-        data = data or {}
-        if data.get('_id') is not None:
-            hash_str = ''.join(
-                hex(ord(c))[2:] for c in (
-                    self.__class__.__name__.upper() + ':' + str(data['_id'])
-                )
-            )
-        else:
-            hash_str = uuid.uuid4().hex
-        hash_int = int(hash_str, 16)
+        data = dict(data or {}, **more_data)
         self.internal = DictObject({
-            'hash': hash_int,
+            'hash': self._build_hash(data.get('_id')),
             'arg': None,
             'state': DirtyDict(),
             'attributes': {},
         })
-        self.merge(dict(data or {}, **more_data))
+        self.merge(data)
 
     def __hash__(self):
         return self.internal.hash
@@ -191,9 +193,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Does a simple check if a BizObject exists by id.
         """
         _id = obj._id if is_bizobj(obj) else obj
-        if _id is not None:
-            return cls.get_dao().exists(_id=_id)
-        return False
+        return cls.get_dao().exists(_id=_id) if _id is not None else False
 
     @classmethod
     def query(
@@ -209,14 +209,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         Alternate syntax for building Query objects manually.
         """
+        # select all BizObject fields by default
         query = Query.from_keys(
             cls, keys=(select or cls.schema.fields.keys())
         )
-
         if where:
-            query.where(normalize_to_tuple(where))
+            query.where(where)
         if order_by:
-            query.order_by(normalize_to_tuple(order_by))
+            query.order_by(order_by)
         if limit is not None:
             query.limit(limit)
         if offset is not None:
@@ -228,9 +228,16 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             return query.execute(first=first)
 
     @classmethod
+    def query_graphql(cls, graph_query: Text) -> Query:
+        """
+        Return a Query object corresponding to the given GraphQL query string.
+        """
+        parser = GraphQLQueryParser(cls)
+        return parser.parse(graph_query)
+
+    @classmethod
     def get(cls, _id, select=None) -> 'BizObject':
-        return cls.query(
-            select=select,
+        return cls.query( select=select,
             where=(cls._id == _id),
             first=True
         )
@@ -623,3 +630,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         result = dump(target=self, fields=fields)
         return result
+
+    @classmethod
+    def _build_hash(cls, _id):
+        if _id is not None:
+            hash_str = ''.join(
+                hex(ord(c))[2:]
+                for c in f'{cls.__name__}:{_id}'
+            )
+            return int(hash_str, 16)
+        else:
+            return uuid.uuid4().int

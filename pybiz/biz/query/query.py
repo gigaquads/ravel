@@ -100,6 +100,7 @@ class Query(AbstractQuery):
         biz_class: Type['BizType'],
         alias: Text = None,
         select: Set = None,
+        where: Set = None,
         order_by: Tuple = None,
         limit: int = None,
         offset: int = None,
@@ -111,6 +112,8 @@ class Query(AbstractQuery):
 
         self.select(self.get_default_selectors(biz_class))
 
+        if where is not None:
+            self.where(where)
         if offset is not None:
             self.offset(offset)
         if limit is not None:
@@ -177,8 +180,10 @@ class Query(AbstractQuery):
             for obj in predicates:
                 if is_sequence(obj):
                     additional_predicates.extend(obj)
-                else:
+                elif isinstance(obj, Predicate):
                     additional_predicates.append(obj)
+                else:
+                    raise ValueError(f'unrecognized Predicate type: {obj}')
 
             # in this contact, kwargs are interpreted as Equality predicates,
             # like user_id=1 would be interpreted as (User._id == 1)
