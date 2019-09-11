@@ -74,36 +74,39 @@ class QueryExecutor(object):
             if biz_attr.category == 'relationship':
                 relationship = biz_attr
                 limit = sub_query.params.limit
-                params = {
+                rel_query_params = {
                     'select': set(sub_query.params.fields.keys()),
                     'where': sub_query.params.where,
                     'order_by': sub_query.params.order_by,
                     'limit': sub_query.params.limit,
                     'offset': sub_query.params.offset or 0,
                 }
-                targets = relationship.execute(sources, **params)
+
+                targets = relationship.execute(sources, **rel_query_params)
+
                 # execute nested relationships and then zip each
                 # source BizObject up with its corresponding target
                 # BizObjects, as returned by the BizAttribute.
-                print(len(sources), len(targets))
-                for idx, (source, target) in enumerate(zip(sources, targets)):
+                for source, target in zip(sources, targets):
                     if (not target) and backfiller is not None:
                         target = relationship.generate(
-                            source, backfiller=backfiller, **params
+                            source, backfiller=backfiller, **rel_query_params
                         )
-                        targets[idx] = target
                     elif (limit is not None) and (len(target) < limit):
                         params['limit'] = limit - len(target)
-                        target.extend(relationship.generate(
-                            source, backfiller=backfiller, fetch=False, **params
-                        ))
+                        target.extend(
+                            relationship.generate(
+                                source, backfiller=backfiller,
+                                fetch=False, **rel_query_params
+                            )
+                        )
                     setattr(source, biz_attr.name, target)
 
-                if relationship.many:
-                    for target_biz_list in targets:
-                        self._execute_recursive(sub_query, backfiller, target_biz_list, fetch)
-                else:
-                    self._execute_recursive(sub_query, backfiller, targets, fetch)
+                for source in sources:
+                    target_biz_thing = getattr(source, relationship.name)
+                    self._execute_recursive(
+                        sub_query, backfiller, target_biz_thing, fetch
+                    )
             else:
                 for source in sources:
                     if sub_query:
