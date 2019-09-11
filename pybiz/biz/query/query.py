@@ -24,24 +24,6 @@ class AbstractQuery(object):
     def __init__(self, alias: Text = None):
         self._alias = alias
 
-    def __lt__(self, other):
-        return True
-
-    def __gt__(self, other):
-        return True
-
-    def __geq__(self, other):
-        return True
-
-    def __leq__(self, other):
-        return True
-
-    def __eq__(self, other):
-        return True
-
-    def __neq__(self, other):
-        return True
-
     @property
     def alias(self) -> Text:
         return self._alias
