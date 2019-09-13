@@ -22,7 +22,7 @@ from pybiz.exceptions import ValidationError, BizObjectError
 from .biz_object_meta import BizObjectTypeBuilder, BizObjectMeta
 from ..dump import NestingDumper, SideLoadingDumper
 from ..biz_thing import BizThing
-from ..query import Query
+from ..query import Query, Backfill
 
 
 class BizObject(BizThing, metaclass=BizObjectMeta):
@@ -77,47 +77,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def generate(
         cls,
         fields: Set[Text] = None,
-        constraints: Dict = None,
+        constraints: Dict = None
     ) -> 'BizObject':
         """
-        Recursively generate a fixture for this BizObject class and any related
-        objects as well.
+        Generate a fixture for this BizObject type.
         """
-        field_names = set()
-        children = {}
-
-        if not fields:
-            fields = cls.schema.fields.keys()
-
-        if not isinstance(fields, dict):
-            unflattened = DictUtils.unflatten_keys({k: None for k in fields})
-        else:
-            unflattened = fields
-
-        for k, v in unflattened.items():
-            if k == '*':
-                field_names |= cls.schema.fields.keys()
-            elif k in cls.schema.fields:
-                field_names.add(k)
-            elif k in cls.attributes:
-                attr = cls.attributes.by_name(k)
-                children[k] = v
-
-        data = cls.schema.generate(fields=field_names, constraints=constraints)
-        generated_biz_obj = cls(data=data)
-
-        # TODO: iterate over relationships first
-        # TODO: respect priority when iterating over other BizAttributes
-
-        for k, v in children.items():
-            if k in cls.relationships:
-                rel = cls.relationships[k]
-                data[k] = rel.target_biz_class.generate(fields=v)
-            else:
-                biz_attr = cls.attributes.by_name(k)
-                data[k] = biz_attr.generate(generated_biz_obj)
-
-        return generated_biz_obj
+        fields = fields or set(cls.schema.fields.keys())
+        data = cls.schema.generate(fields=fields, constraints=constraints)
+        return cls(data=data)
 
     def __init__(self, data=None, **more_data):
         data = dict(data or {}, **more_data)
@@ -345,7 +312,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 if error:
                     errors[k] = error
 
-        # TODO: allow schema.process to take a subset of total keys
         if errors:
             raise ValidationError(
                 message=f'could not update {self.__class__.__name__} object',
@@ -582,7 +548,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             'select': select
         })
 
-        fresh = self.get(_id=self._id, select=select)  # TODO: depth=depth
+        fresh = self.get(_id=self._id, select=select)
         if fresh:
             self.merge(fresh)
             self.clean(fresh.internal.state.keys())

@@ -11,6 +11,7 @@ from appyratus.utils import DictObject
 from pybiz.schema import Schema, fields, String, UuidString, Field, Int, Id
 from pybiz.util.misc_functions import import_object, is_bizobj
 from pybiz.util.loggers import console
+from pybiz.predicate import PredicateParser
 from pybiz.constants import (
     IS_BIZOBJ_ANNOTATION,
     IS_BOOTSTRAPPED,
@@ -27,7 +28,6 @@ from ..biz_attribute import BizAttribute, BizAttributeProperty
 from ..biz_attribute.relationship import Relationship, RelationshipProperty
 from ..biz_attribute.view import View, ViewProperty
 
-# TODO: call getmembers only once
 
 class BizObjectTypeBuilder(object):
     biz_list_type_builder = BizListTypeBuilder()
@@ -45,6 +45,7 @@ class BizObjectTypeBuilder(object):
         biz_class.schema = biz_class.Schema()
         biz_class.schema.pybiz_internal = True
         biz_class.defaults = self._extract_defaults(biz_class)
+        biz_class.predicate_parser = PredicateParser(biz_class)
 
         for field in biz_class.schema.fields.values():
             if not getattr(field, 'pybiz_internal', False):

@@ -1,9 +1,8 @@
 import re
-import threading
 
 from typing import Dict, Set, Text, List, Type, Tuple
 
-from pybiz.predicate import PredicateParser
+from pybiz.predicate import Predicate
 from pybiz.biz import OrderBy
 
 
@@ -15,9 +14,6 @@ class GraphQLArguments(object):
     """
 
     _re_order_by = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
-
-    _thread_local = threading.local()
-    _thread_local.predicate_parser = PredicateParser()
 
     @classmethod
     def extract_arguments_dict(ast_node) -> Dict:
@@ -72,13 +68,12 @@ class GraphQLArguments(object):
         biz_class: Type['BizObject'],
         predicate_strings: List[Text],
     ) -> List['Predicate']:
-        parser = cls._thread_local.predicate_parser
         if isinstance(predicate_strings, str):
             predicate_strings = [predicate_strings]
-        return [
-            parser.parse(biz_class, pred_str)
+        return Predicate.reduce_and(*[
+            biz_class.predicate_parser.parse(pred_str)
             for pred_str in (predicate_strings or [])
-        ]
+        ])
 
     def __init__(self, where, order_by, offset, limit, custom: Dict):
         self.where = where

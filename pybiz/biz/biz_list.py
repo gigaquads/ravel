@@ -85,7 +85,6 @@ class BizList(BizThing):
         the BizObject which owns the Relationship, and the `relationship` is
         the, well, Relationship through which the BizList was loaded.
         """
-        # TODO: Move private attrs into an "internal" DictObject
         self._relationship = relationship
         self._targets = list(objects or [])
         self._source = source
@@ -240,7 +239,6 @@ class BizList(BizThing):
         return self
 
     def load(self, selectors: Set[Text] = None):
-        # TODO: add a depth=None kwarg like in BizObject.load
         if not selectors:
             selectors = set(self.biz_class.schema.fields.keys())
         elif isinstance(selectors, str):

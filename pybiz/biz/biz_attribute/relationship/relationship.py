@@ -133,7 +133,7 @@ class Relationship(BizAttribute):
             self._join_metadata.append(meta)
 
     def _analyze_order_by(self):
-        dummy = self.biz_class.generate()
+        dummy = MagicMock()
         for func in self.order_by:
             spec = func(dummy)
             field = self.target_biz_class.schema.fields[spec.key]
@@ -148,7 +148,6 @@ class Relationship(BizAttribute):
         offset: int = None,
         limit: int = None,
         backfiller: 'Backfiller '= None,
-        fetch: bool = True,
     ):
         root = source
         target = None
@@ -455,10 +454,6 @@ class JoinMetadata(object):
         source_fprop, target_fprop = info[:2]
         target_biz_class = target_fprop.biz_class
 
-        # regenerate info now that we know what the target biz class is
-        dummy = target_biz_class.generate()
-        info = func(dummy)
-
         # adding the source field name to the default selectors set ensures
         # that this field is alsoways returned from Queries, ensuring further
         # that no additional lazy loading of said field is needed when this
@@ -472,11 +467,6 @@ class JoinMetadata(object):
 
     def _analyze_dynamic_join(self, func: Callable, info: Tuple):
         target_biz_class = info[0]
-
-        # regenerate info now that we know what the target biz class is
-        dummy = target_biz_class.generate()
-        info = func(dummy)
-
         self.target_biz_class = target_biz_class
         self.join_type = JoinType.dynamic
 

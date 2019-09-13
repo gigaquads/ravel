@@ -108,7 +108,6 @@ class QueryBackfiller(object):
         self, query: 'Query', sources: 'BizList'
     ) -> 'BizList':
         """
-        # TODO: recurse on non-Relationship BizAttributes
         # This requires adding a generate to base BizAttribute
         """
         source_biz_class = query.biz_class

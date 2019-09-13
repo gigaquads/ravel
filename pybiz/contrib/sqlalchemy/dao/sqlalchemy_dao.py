@@ -166,6 +166,10 @@ class SqlalchemyDao(Dao):
     def adapters(self):
         return self._adapters
 
+    @property
+    def id_column_name(self):
+        return self.biz_class.schema.fields['_id'].source
+
     def adapt_record(self, record: Dict, serialize=True) -> Dict:
         cb_name = 'on_encode' if serialize else 'on_decode'
         prepared_record = {}
@@ -183,7 +187,7 @@ class SqlalchemyDao(Dao):
 
     def adapt_id(self, _id, serialize=True):
         cb_name = 'on_encode' if serialize else 'on_decode'
-        adapter = self._adapters.get('_id')
+        adapter = self._adapters.get(self.id_column_name)
         if adapter:
             callback = getattr(adapter, cb_name)
             if callback:
@@ -214,20 +218,20 @@ class SqlalchemyDao(Dao):
         }
         self._builder = SqlalchemyTableBuilder(self)
         self._table = self._builder.build_table(name=table, schema=schema)
-        self._id_column = getattr(self._table.c, biz_class.f['_id'].source)
+        self._id_column = getattr(self._table.c, self.id_column_name)
 
     def query(
         self,
-        predicate,
-        fields=None,
-        limit=None,
-        offset=None,
-        order_by=None,  # TODO: implement order_by
+        predicate: 'Predicate',
+        fields: Set[Text] = None,
+        limit: int = None,
+        offset: int = None,
+        order_by: Tuple = None,
         **kwargs,
     ):
         fields = fields or self.biz_class.schema.fields.keys()
         fields.update({
-            self.biz_class.schema.fields['_id'].source,
+            self.id_column_name,
             self.biz_class.schema.fields['_rev'].source,
         })
 
@@ -237,6 +241,15 @@ class SqlalchemyDao(Dao):
 
         # build the query object
         query = sa.select(columns).where(filters)
+
+        if order_by:
+            sa_order_by = [
+                sa.desc(getattr(self.table.c, k)) if x.desc else
+                sa.asc(getattr(self.table.c, k))
+                for x in order_by
+            ]
+            query = query.order_by(*sa_order_by)
+
         if limit is not None:
             query = query.limit(max(0, limit))
         if offset is not None:
@@ -325,15 +338,14 @@ class SqlalchemyDao(Dao):
                 f.source for f in self.biz_class.schema.fields.values()
             }
         fields.update({
-            self.biz_class.schema.fields['_id'].source,
+            self.id_column_name,
             self.biz_class.schema.fields['_rev'].source,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]
         select_stmt = sa.select(columns)
 
-        id_col_name = self.biz_class.schema.fields['_id'].source
-        id_col = getattr(self.table.c, id_col_name)
+        id_col = getattr(self.table.c, self.id_column_name)
 
         if prepared_ids:
             select_stmt = select_stmt.where(id_col.in_(prepared_ids))
@@ -346,7 +358,9 @@ class SqlalchemyDao(Dao):
                 for row in page:
                     raw_record = dict(row.items())
                     record = self.adapt_record(raw_record, serialize=False)
-                    _id = self.adapt_id(row[id_col_name], serialize=False)
+                    _id = self.adapt_id(
+                        row[self.id_column_name], serialize=False
+                    )
                     if as_list:
                         records.append(record)
                     else:
@@ -360,7 +374,6 @@ class SqlalchemyDao(Dao):
         return self.fetch_many([], fields=fields)
 
     def create(self, record: dict) -> dict:
-        # TODO: use id_col_name instead of '_id' here
         record['_id'] = self.create_id(record)
         prepared_record = self.adapt_record(record, serialize=True)
         insert_stmt = self.table.insert().values(**prepared_record)
