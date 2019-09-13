@@ -7,6 +7,8 @@ from appyratus.enum import EnumValueStr
 
 import pybiz.biz
 
+from pybiz.predicate import Predicate
+
 
 class Backfill(EnumValueStr):
     @staticmethod
@@ -65,10 +67,7 @@ class QueryBackfiller(object):
         # convert and merge the "where" conditions to into
         # the reeturned constraint dict.
         if params.where:
-            if len(params.where) > 1:
-                predicate = reduce(lambda x, y: x & y, params.where)
-            else:
-                predicate = params.where[0]
+            predicate = Predicate.reduce_and(*params.where)
             constraints.update(predicate.compute_constraints())
 
         return constraints
@@ -94,13 +93,29 @@ class QueryBackfiller(object):
         generated_biz_list = biz_class.BizList.generate(
             count, constraints=constraints
         )
+
+        # apply field property queries (and transforms therein)
+        for field_name, fprop_query in query.params.fields.items():
+            if fprop_query is not None:
+                for biz_obj in generated_biz_list:
+                    biz_obj[field_name] = fprop_query.execute(biz_obj)
+
         self._biz_class_2_biz_list[biz_class].extend(generated_biz_list)
 
         return generated_biz_list
 
-    def _generate_biz_attributes(self, query: 'Query', targets: 'BizList') -> 'BizList':
+    def _generate_biz_attributes(
+        self, query: 'Query', sources: 'BizList'
+    ) -> 'BizList':
         """
         # TODO: recurse on non-Relationship BizAttributes
         # This requires adding a generate to base BizAttribute
         """
-        return targets
+        source_biz_class = query.biz_class
+        for name, sub_query in query.params.attributes.items():
+            if name not in source_biz_class.relationships:
+                # NOTE: relationships are handled elsewhere
+                for source in sources:
+                    generated_value = sub_query.biz_attr.generate(source)
+                    setattr(source, name, generated_value)
+        return sources

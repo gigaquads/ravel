@@ -5,11 +5,15 @@ from typing import List, Dict, Set, Text, Type, Tuple, Callable
 from collections import defaultdict
 
 from appyratus.enum import EnumValueStr
+from appyratus.utils import DictUtils
 
 import pybiz.biz
 
-from pybiz.util.misc_functions import is_sequence, is_bizobj, is_bizlist
+from pybiz.util.misc_functions import (
+    is_sequence, is_bizobj, is_bizlist, get_class_name
+)
 from pybiz.predicate import Predicate
+from pybiz.schema import fields, StringTransformer
 
 from ..field_property import FieldProperty
 from ..biz_list import BizList
@@ -78,12 +82,7 @@ class Query(AbstractQuery):
     _printer  = QueryPrinter()
 
     _default_selectors = defaultdict(set)
-    # _default_selectors is a mapping from biz class to a set of fields
-    # to select always by default. These sets are filled up by
-    # Relationship.on_bootstrap. The rationale here is to ensure that all fields
-    # are fetched by default, which are required by any relationships definedo
-    # on the class. This avoids extra lazy-loading roundtrips to the DAL when
-    # loading said relationships without said fields already in memory.
+    # TODO: Explain rational for _default_selectors
 
     @classmethod
     def add_default_selectors(cls, biz_class, *selectors):
@@ -128,7 +127,9 @@ class Query(AbstractQuery):
         return setattr(self._params, key, value)
 
     def __repr__(self):
-        biz_class_name = self.biz_class.__name__ if self.biz_class else ''
+        biz_class_name = (
+            get_class_name(self.biz_class) if self.biz_class else ''
+        )
         if self.alias:
             alias_substr = f', alias="{self.alias}"'
         else:
@@ -164,7 +165,7 @@ class Query(AbstractQuery):
             return targets
 
     def select(self, *targets) -> 'Query':
-        self._add_targets(targets)
+        self._add_selectors(targets)
         return self
 
     def where(self, *predicates: 'Predicate', **kwargs) -> 'Query':
@@ -230,14 +231,14 @@ class Query(AbstractQuery):
 
     def dump(self):
         return {
-            'class': self.__class__.__name__,
+            'class': get_class_name(self),
             'alias': self.alias,
             'limit': self.params.limit,
             'offset': self.params.offset,
             'order_by': [x.dump() for x in self.params.order_by],
             'where': [x.dump() for x in (self.params.where or [])],
             'target': {
-                'type': self.biz_class.__name__,
+                'type': get_class_name(self.biz_class),
                 'fields': self.params.fields,
                 'attributes': {
                     k: v.dump() for k, v
@@ -245,16 +246,6 @@ class Query(AbstractQuery):
                 }
             }
         }
-
-    @classmethod
-    def load(cls, biz_class: Type['BizObject'], data: Dict) -> 'Query':
-        return cls._loader.load(biz_class, data)
-
-    @classmethod
-    def from_keys(cls, biz_class: Type['BizObject'], keys: Set[Text] = None):
-        if not keys:
-            keys = biz_class.schema.fields.keys()
-        return cls._loader.from_keys(biz_class, keys=keys)
 
     @property
     def biz_class(self) -> Type['BizObject']:
@@ -268,57 +259,126 @@ class Query(AbstractQuery):
     def params(self) -> Parameters:
         return self._params
 
-    def _add_targets(self, targets):
-        for obj in targets:
-            if is_sequence(obj):
-                self._add_targets(obj)
-            elif isinstance(obj, dict):
-                for k, v in obj.items():
-                    self._add_target(k, v)
+    def _add_selectors(self, selectors):
+        for selector in selectors:
+            if is_sequence(selector):
+                self._add_selectors(selector)
             else:
-                self._add_target(obj, None)
+                self._add_selector(selector)
 
-    def _add_target(self, target, params):
+    def _add_selector(self, selector):
         """
-        Add a new query target to this Query. A target can be a FieldProperty,
-        RelationshipProperty, ViewProperty, or more generically, any
-        BizAttribute declared on self.biz_class, the targeted BizObject class.
-        The target can also just be the string name of one of these things.
-        Finally, a target can also be an already-formed Query object.
         """
-        key = None
-        targets = None
-        params = params if params is not None else {}
-
-        # resolve pybiz type from string target variable
+        # resolve pybiz type from string selector variable
         try:
-            if isinstance(target, str):
-                target = getattr(self._biz_class, target)
+            if isinstance(selector, str):
+                selector = getattr(self._biz_class, selector)
         except AttributeError:
             raise AttributeError(
-                f'{self._biz_class} has no attribute "{target}"'
+                f'{self._biz_class} has no attribute "{selector}"'
             )
 
-        # add the target to the appropriate collection
-        if isinstance(target, FieldProperty):
-            assert target.biz_class is self.biz_class
-            key = target.field.name
-            targets = self._params.fields
-        elif isinstance(target, pybiz.biz.BizAttributeProperty):
-            assert target.biz_attr.biz_class is self.biz_class
-            biz_attr = target.biz_attr
-            key = biz_attr.name
-            targets = self._params.attributes
-            if biz_attr.category == 'relationship':
-                params = Query.from_keys(biz_class=biz_attr.target_biz_class)
-        elif isinstance(target, (Query, BizAttributeQuery)):
-            assert target.alias in self.biz_class.attributes
-            key = target.alias
-            targets = self._params.attributes
-            params = target
+        # add the selector to the appropriate collection
+        if isinstance(selector, FieldProperty):
+            assert selector.biz_class is self.biz_class
+            alias = selector.field.name
+            query = FieldPropertyQuery(selector, alias=alias, clean=True)
+            self._params.fields[selector.field.name] = query
+        elif isinstance(selector, FieldPropertyQuery):
+            assert selector.fprop.biz_class is self.biz_class
+            self._params.fields[selector.alias] = selector
+        elif isinstance(selector, (Query, BizAttributeQuery)):
+            assert selector.alias in self.biz_class.attributes
+            self._params.attributes[selector.alias] = selector
+        elif isinstance(selector, pybiz.biz.BizAttributeProperty):
+            assert selector.biz_attr.biz_class is self.biz_class
+            self._params.attributes[selector.biz_attr.name] = selector.select()
+        else:
+            raise ValueError(f'unrecognized query selector: {selector}')
 
-        if targets is not None:
-            targets[key] = params
+    @classmethod
+    def load(cls, biz_class: Type['BizObject'], dumped: Dict) -> 'Query':
+        return cls._loader.load(biz_class, dumped)
+
+    @classmethod
+    def load_from_keys(
+        cls,
+        biz_class: Type['BizObject'],
+        keys: Set[Text] = None,
+        _tree: Dict = None,
+    ):
+        keys = keys or biz_class.schema.fields.keys()
+        query = cls(biz_class)
+
+        if _tree is None:
+            assert keys
+            _tree = DictUtils.unflatten_keys({k: None for k in keys})
+
+        if '*' in _tree:
+            del _tree['*']
+            _tree.update({k: None for k in biz_class.schema.fields})
+        elif not _tree:
+            _tree = {'_id': None, '_rev': None}
+
+        for k, v in _tree.items():
+            if isinstance(v, dict):
+                rel = biz_class.relationships[k]
+                sub_query = cls.load_from_keys(rel.target_biz_class, _tree=v)
+                sub_query.alias = rel.name
+                query._add_selector(sub_query)
+            else:
+                query._add_selector(k)
+
+        return query
+
+
+class FieldPropertyQuery(AbstractQuery):
+
+    transformers = {
+        fields.String: StringTransformer(),
+    }
+
+    def __init__(
+        self,
+        fprop: 'FieldProperty',
+        alias: Text = None,
+        params: Dict = None,
+        callbacks: List = None,
+        clean: bool = False,
+    ):
+        super().__init__(alias=alias)
+        self.fprop = fprop
+        self.params = params or {}
+        self.transformer = self._get_transformer()
+        self.callbacks = callbacks or tuple()
+        self.clean = clean
+
+    def dump(self) -> Dict:
+        record = {}
+        record['alias'] = self.alias
+        record['params'] = self.params.copy()
+        record['field'] = self.fprop.field.name
+        return record
+
+    def execute(self, source: 'BizThing') -> 'BizThing':
+        value = getattr(source, self.fprop.field.name)
+        if value is not None:
+            if self.params and (self.transformer is not None):
+                for transform_name, arg in self.params.items():
+                    value = self.transformer.transform(
+                        transform_name, value, args=[arg]
+                    )
+        if self.clean:
+            source.clean(self.fprop.field.name)
+        for func in self.callbacks:
+            value = func(source, value)
+        return value
+
+    def _get_transformer(self):
+        if isinstance(self.fprop.field, pybiz.String):
+            return self.transformers[pybiz.String]
+        else:
+            return None
 
 
 class BizAttributeQuery(AbstractQuery):
@@ -329,18 +389,25 @@ class BizAttributeQuery(AbstractQuery):
             self.query = query
 
         def __call__(self, value):
-            self.query._params[self.name] = value
+            self.query.params[self.name] = value
             return self.query
 
 
-    def __init__(self, biz_attr: 'BizAttribute', alias=None, *args, **kwargs):
+    def __init__(
+        self,
+        biz_attr: 'BizAttribute',
+        alias: Text = None,
+        params: Dict = None,
+        *args,
+        **kwargs
+    ):
         super().__init__(alias=alias)
-        self._biz_attr = biz_attr
-        self._params = {}
+        self.params = params or {}
+        self.biz_attr = biz_attr
 
     def __repr__(self):
         biz_class_name = (
-            self._biz_attr.biz_class.__name__
+            get_class_name(self.biz_attr.biz_class)
             if self.biz_attr else ''
         )
         if self.alias:
@@ -353,28 +420,21 @@ class BizAttributeQuery(AbstractQuery):
     def __getattr__(self, param_name):
         """
         This is so you can do query.foo('bar'), resulting in a 'bar': 'foo'
-        entry in query._params.
+        entry in query.params.
         """
-        return BizAttributeQuery.Assignment(param_name, self)
-
-    @property
-    def biz_attr(self) -> 'BizAttribute':
-        return self._biz_attr
-
-    @property
-    def params(self) -> Dict:
-        return self._params
+        return self.Assignment(param_name, self)
 
     def execute(self, source: 'BizObject'):
-        biz_thing = self._biz_attr.execute(source, **self._params)
+        biz_thing = self.biz_attr.execute(source, **self.params)
         return biz_thing
 
     def dump(self) -> Dict:
-        record = self.params.copy()
-        record['class'] = self.__class__.__name__
+        record = {}
+        record['class'] = get_class_name(self)
         record['alias'] = self.alias
+        record['params'] = self.params.copy()
         record['target'] = {
             'attribute': self.biz_attr.name,
             'type': self.biz_attr.biz_class,
-        }
+        },
         return record

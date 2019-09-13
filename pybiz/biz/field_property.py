@@ -2,7 +2,7 @@ import uuid
 
 import pybiz.biz
 
-from typing import Text, Tuple, List, Type
+from typing import Text, Tuple, List, Type, Callable
 
 from pybiz.util.misc_functions import is_bizobj
 from pybiz.util.loggers import console
@@ -82,6 +82,19 @@ class FieldProperty(property):
     @property
     def desc(self) -> 'OrderBy':
         return pybiz.biz.OrderBy(self.field.source, desc=True)
+
+    def transform(
+        self,
+        *callbacks: Tuple[Callable],
+        **params
+    ) -> 'FieldPropertyQuery':
+        from pybiz.biz.query import FieldPropertyQuery
+        return FieldPropertyQuery(
+            fprop=self,
+            alias=self.field.name,
+            params=params,
+            callbacks=callbacks,
+        )
 
     def fget(self, bizobj):
         # try to lazy load the field value

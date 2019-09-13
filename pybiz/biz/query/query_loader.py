@@ -55,36 +55,3 @@ class QueryLoader(object):
             ])
 
         return query
-
-    @classmethod
-    def from_keys(
-        cls, biz_class: Type['BizObject'], keys: Set[Text]=None, tree=None
-    ) -> 'Query':
-        """
-        Create a Query from a list of dotted field paths.
-        """
-        query = pybiz.biz.Query(biz_class)
-
-        if tree is None:
-            assert keys
-            tree = DictUtils.unflatten_keys({k: None for k in keys})
-
-        if '*' in tree:
-            del tree['*']
-            tree.update({
-                k: None for k, v in biz_class.schema.fields.items()
-                if not v.meta.get('private', False)
-            })
-        elif not tree:
-            tree = {'_id': None, '_rev': None}
-
-        for k, v in tree.items():
-            if isinstance(v, dict):
-                rel = biz_class.relationships[k]
-                sub_query = cls.from_keys(rel.target_biz_class, tree=v)
-                sub_query.alias = rel.name
-                query._add_target(sub_query, None)
-            else:
-                query._add_target(k, v)
-
-        return query

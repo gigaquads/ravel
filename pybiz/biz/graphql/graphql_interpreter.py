@@ -3,38 +3,38 @@ from typing import Dict, Set, Text, List, Type, Tuple
 import graphql.parser
 
 from pybiz.util.loggers import console
-from pybiz.biz import Query, BizObject
+from pybiz.biz import (
+    Query, BizObject, BizAttribute, BizAttributeQuery, FieldPropertyQuery
+ )
 
 from .graphql_arguments import GraphQLArguments
 
 
-class GraphQLQueryParser(object):
+class GraphQLInterpreter(object):
     """
-    The purpose of the GraphQLQueryParser is to translate or "parse" a raw
-    GraphQL query string into a corresponding pybiz Query object.
+    The purpose of the GraphQLInterpreter is to take a a raw GraphQL query
+    string and generate a corresponding pybiz Query object.
     """
 
     def __init__(self, root_biz_class: Type[BizObject]):
         self._root_biz_class = root_biz_class
         self._ast_parser = graphql.parser.GraphQLParser()
 
-    def parse(self, graphql_query_string: Text) -> Query:
-        graphql_query = self._parse_graphql_query_ast(graphql_query_string)
-        pybiz_query = self._build_pybiz_query(graphql_query)
-        return pybiz_query
+    def interpret(self, graphql_query_string: Text) -> Query:
+        root_ast_node = self._parse_graphql_query_ast(graphql_query_string)
+        query = self._build_pybiz_query(root_ast_node, self._root_biz_class)
+        return query
 
-    @classmethod
-    def _parse_graphql_query_ast(cls, graphql_query_string: Text):
-        graphql_doc = cls._ast_parser.parse(graphql_query_string)
+    def _parse_graphql_query_ast(self, graphql_query_string: Text):
+        graphql_doc = self._ast_parser.parse(graphql_query_string)
         graphql_query = graphql_doc.definitions[0]
         return graphql_query
 
-    def _build_pybiz_query(self, ast_node, target_biz_class=None) -> Query:
+    def _build_pybiz_query(self, ast_node, target_biz_class) -> Query:
         """
         Recursively build a pybiz Query object from the given low-level GraphQL
         AST node returned from the core GraphQL language parser.
         """
-        target_biz_class = target_biz_class or self._root_biz_class
         args = GraphQLArguments.parse(target_biz_class, ast_node)
         selectors = self._build_selectors(target_biz_class, ast_node)
         return Query(
@@ -47,6 +47,26 @@ class GraphQLQueryParser(object):
             offset=args.offset,
         )
 
+    def _build_pybiz_biz_attr_query(
+        self, ast_node, target_biz_class
+    ) -> BizAttributeQuery:
+        """
+        """
+        alias = ast_node.name
+        biz_attr = target_biz_class.attributes.by_name(ast_node.name)
+        params = GraphQLArguments.extract_arguments_dict(ast_node)
+        query = BizAttributeQuery(biz_attr, alias=alias, params=params)
+        return query
+
+    def _build_pybiz_field_property_query(
+        self, ast_node, target_biz_class
+    ) -> FieldPropertyQuery:
+        alias = ast_node.name
+        fprop = getattr(target_biz_class, ast_node.name)
+        params = GraphQLArguments.extract_arguments_dict(ast_node)
+        query = FieldPropertyQuery(fprop, alias=alias, params=params)
+        return query
+
     def _build_selectors(
         self, target_biz_class: Type[BizObject], ast_node
     ) -> List:
@@ -57,10 +77,15 @@ class GraphQLQueryParser(object):
         for child_ast_node in ast_node.selections:
             child_name = child_ast_node.name
             if child_name in target_biz_class.schema.fields:
-                selectors.append(child_name)
+                fprop_query = cls._build_pybiz_field_property_query(
+                    child_node, target_biz_class
+                )
+                selectors.append(fprop_query)
             elif child_name in target_biz_class.attributes:
-                # TODO: support arguments for BizAttributeQueries
-                selectors.append(child_name)
+                biz_attr_query = cls._build_pybiz_biz_attr_query(
+                    child_node, target_biz_class
+                )
+                selectors.append(biz_attr_query)
             elif child_name in target_biz_class.relationships:
                 # recursively build query based on relationship
                 rel = target_biz_class.relationships[child_name]

@@ -210,7 +210,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Alternate syntax for building Query objects manually.
         """
         # select all BizObject fields by default
-        query = Query.from_keys(
+        query = Query.load_from_keys(
             cls, keys=(select or cls.schema.fields.keys())
         )
         if where:
@@ -228,12 +228,12 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             return query.execute(first=first)
 
     @classmethod
-    def query_graphql(cls, graph_query: Text) -> Query:
+    def query_graphql(cls, graphql_query: Text) -> Query:
         """
         Return a Query object corresponding to the given GraphQL query string.
         """
-        parser = GraphQLQueryParser(cls)
-        return parser.parse(graph_query)
+        nterpreter = GraphQLInterpreter(cls)
+        return interpreter.interpret(graphql_query)
 
     @classmethod
     def get(cls, _id, select=None) -> 'BizObject':

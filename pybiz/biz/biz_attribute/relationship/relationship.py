@@ -200,7 +200,6 @@ class Relationship(BizAttribute):
                 backfiller=backfiller,
                 constraints=constraints,
                 first=False,
-                fetch=fetch,
             )
 
             # output becomes input for next iteration...

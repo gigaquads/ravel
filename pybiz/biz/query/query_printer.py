@@ -54,7 +54,9 @@ class QueryPrinter(object):
                 if rel and rel.many:
                     type_name = f'[{type_name}]'
                 sub_query_substr = self.format_query(sub_query, indent=indent+5)
-                sub_query_substrs.append(f'{" " * indent} - {name}: {type_name} = (')
+                sub_query_substrs.append(
+                    f'{" " * indent} - {name}: {type_name} = ('
+                )
                 sub_query_substrs.append(sub_query_substr)
                 sub_query_substrs.append(f'{" " * indent}   )')
             elif isinstance(sub_query, BizAttributeQuery):
@@ -62,7 +64,9 @@ class QueryPrinter(object):
                 sub_query_substr = self.format_biz_attr_query(
                     sub_query, indent=indent+5
                 )
-                sub_query_substrs.append(f'{" " * indent} - {name}: {type_name} = (')
+                sub_query_substrs.append(
+                    f'{" " * indent} - {name}: {type_name} = ('
+                )
                 sub_query_substrs.append(sub_query_substr)
                 sub_query_substrs.append(f'{" " * indent}   )')
 

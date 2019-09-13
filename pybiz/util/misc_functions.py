@@ -75,6 +75,13 @@ def import_object(dotted_path: Text) -> object:
     return obj
 
 
+def get_class_name(obj):
+    if isinstance(obj, type):
+        return obj.__name__
+    else:
+        return obj.__class__.__name__
+
+
 def remove_keys(
     records: List[Dict], keys: Set[Text], in_place=True
 ) -> List[Dict]:
