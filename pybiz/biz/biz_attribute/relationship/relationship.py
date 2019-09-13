@@ -92,12 +92,12 @@ class Relationship(BizAttribute):
         return RelationshipProperty(self)
 
     @property
-    def order_key(self):
-        return 1
+    def priority(self):
+        return self.PybizPriority.relationship
 
     @property
-    def category(self):
-        return 'relationship'
+    def group(self):
+        return self.PybizGroup.relationship
 
     @property
     def target_biz_class(self):

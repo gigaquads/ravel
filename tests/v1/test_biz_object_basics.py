@@ -131,8 +131,8 @@ class TestBizBasics(object):
 
     @mark.unit
     def test_has_expected_biz_attribute_categories(cls, startrek):
-        rel_names = startrek.biz.Ship.attributes.by_category('relationship').keys()
-        view_names = startrek.biz.Ship.attributes.by_category('view').keys()
+        rel_names = startrek.biz.Ship.relationships.keys()
+        view_names = startrek.biz.Ship.views.keys()
         assert {'missions', 'crew'} == rel_names
         assert {
             'mission_names',

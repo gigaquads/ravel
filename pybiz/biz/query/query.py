@@ -281,8 +281,11 @@ class Query(AbstractQuery):
         # add the selector to the appropriate collection
         if isinstance(selector, FieldProperty):
             assert selector.biz_class is self.biz_class
+            # avoid the overhead of creating a FieldPropertyQuery when no
+            # parameters are applied to this field query; hence, query is set
+            # to None.
+            query = None
             alias = selector.field.name
-            query = FieldPropertyQuery(selector, alias=alias, clean=True)
             self._params.fields[selector.field.name] = query
         elif isinstance(selector, FieldPropertyQuery):
             assert selector.fprop.biz_class is self.biz_class

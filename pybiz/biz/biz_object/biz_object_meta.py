@@ -56,10 +56,9 @@ class BizObjectTypeBuilder(object):
             biz_attr_prop = biz_attr.build_property()
             setattr(biz_class, biz_attr.name, biz_attr_prop)
 
-        biz_class.relationships = {
-            name: rel for name, rel in
-            biz_class.attributes.by_category('relationship').items()
-        }
+        # convenient aliases:
+        biz_class.relationships = biz_class.attributes.relationships
+        biz_class.views = biz_class.attributes.views
 
         biz_class.selectable_attribute_names = set()
         biz_class.selectable_attribute_names.update(biz_class.schema.fields.keys())
@@ -130,9 +129,9 @@ class BizObjectTypeBuilder(object):
             if is_bizobj(base):
                 # inherit BizAttributes from base BizObject class
                 inherited_manager = getattr(base, 'attributes', {})
-                for category, biz_attr in base.attributes.items():
+                for group, biz_attr in base.attributes.items():
                     if biz_attr.name not in ns:
-                        manager.register(category, copy.copy(biz_attr))
+                        manager.register(group, copy.copy(biz_attr))
             else:
                 # inherit BizAttributes declared on a mixin class
                 is_biz_attr = lambda v: isinstance(v, BizAttribute)
@@ -153,7 +152,7 @@ class BizObjectTypeBuilder(object):
 class BizAttributeManager(object):
     def __init__(self, *args, **kwargs):
         self._name_2_biz_attr = {}
-        self._category_map = defaultdict(dict)
+        self._group_map = defaultdict(dict)
         self._ordered_biz_attrs = []
 
     def __iter__(self):
@@ -180,17 +179,25 @@ class BizAttributeManager(object):
             for biz_attr in self._ordered_biz_attrs
         )
 
-    def register(self, name, attr: 'BizAttribute'):
+    def register(self, name, attr: BizAttribute):
         attr.name = name
         self._name_2_biz_attr[name] = attr
-        self._category_map[attr.category][name] = attr
+        self._group_map[attr.group][name] = attr
         bisect.insort(self._ordered_biz_attrs, attr)
 
-    def by_name(self, name: Text) -> 'BizAttribute':
+    def by_name(self, name: Text) -> BizAttribute:
         return self._name_2_biz_attr.get(name, None)
 
-    def by_category(self, category: Text) -> Dict[Text, 'BizAttribute']:
-        return self._category_map[category]
+    def by_group(self, group: Text) -> Dict[Text, BizAttribute]:
+        return self._group_map[group]
+
+    @property
+    def relationships(self):
+        return self.by_group(BizAttribute.PybizGroup.relationship)
+
+    @property
+    def views(self):
+        return self.by_group(BizAttribute.PybizGroup.view)
 
 
 class BizObjectMeta(type):
@@ -206,7 +213,9 @@ class BizObjectMeta(type):
         type.__init__(biz_class, name, bases, ns)
         if name != 'BizObject':
             BizObjectMeta.builder.on_init(name, biz_class)
-            venusian.attach(biz_class, biz_class.venusian_callback, category='biz')
+            venusian.attach(
+                biz_class, biz_class.venusian_callback, category='biz'
+            )
 
     @staticmethod
     def venusian_callback(scanner, name, biz_class):

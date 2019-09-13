@@ -71,10 +71,9 @@ class TestQueryBasics(object):
         assert officer.internal.state['species'] == captain_picard.species
         assert officer.internal.state['_id'] == captain_picard._id
         assert officer.internal.state['_rev'] == captain_picard._rev
-        assert officer.internal.state['first_name'] == captain_picard.first_name
 
         for k, v in officer.internal.state.items():
-            if k not in {'_id', '_rev', 'species', 'first_name'}:
+            if k not in {'_id', '_rev', 'species'}:
                 assert v is None
 
     @mark.integration
