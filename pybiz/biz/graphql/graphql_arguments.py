@@ -15,7 +15,7 @@ class GraphQLArguments(object):
 
     _re_order_by = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
 
-    @classmethod
+    @staticmethod
     def extract_arguments_dict(ast_node) -> Dict:
         return {
             arg.name: arg.value for arg in

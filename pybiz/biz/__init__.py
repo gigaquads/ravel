@@ -4,6 +4,11 @@ from .biz_attribute import BizAttribute, BizAttributeProperty
 from .biz_attribute.relationship import Relationship, Behavior
 from .biz_attribute.view import View
 from .query import (
-    AbstractQuery, Query, BizAttributeQuery, QueryExecutor, QueryBackfiller,
+    AbstractQuery,
+    Query,
+    BizAttributeQuery,
+    FieldPropertyQuery,
+    QueryExecutor,
+    QueryBackfiller,
     OrderBy
 )

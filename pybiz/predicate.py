@@ -291,6 +291,11 @@ class BooleanPredicate(Predicate):
 
 class PredicateParser(object):
 
+    pybiz_field_name_transform_inversions = {
+        'id': '_id',
+        'rev': '_rev',
+    }
+
     class Operand(object):
         def __init__(self, op_code, arity):
             self.op_code = op_code
@@ -342,6 +347,8 @@ class PredicateParser(object):
             ident = comp.right.value
             target = comp.left.value
 
+        target = target.strip("'")
+        ident = self.pybiz_field_name_transform_inversions.get(ident, ident)
         fprop = getattr(self._biz_class, ident)
 
         op_code = None
@@ -376,9 +383,12 @@ class PredicateParser(object):
                 if ident is None:
                     ident = token.value
                 else:
+                    ident = self.pybiz_field_name_transform_inversions.get(
+                        ident, ident
+                    )
                     fprop = getattr(self._biz_class, ident)
                     value_list = [
-                        fprop.field.process(x.strip())[0]
+                        fprop.field.process(x.strip("'").strip())[0]
                         for x in token.value[1:-1].split(',')
                     ]
                     if is_negative:

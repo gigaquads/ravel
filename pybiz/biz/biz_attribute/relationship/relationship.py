@@ -296,7 +296,9 @@ class Relationship(BizAttribute):
                             tree[source].append(target)
                             distinct_targets.add(target)
 
-                sources = builder.target_biz_class.BizList(distinct_targets)
+                if sources:
+                    sources = builder.target_biz_class.BizList(distinct_targets)
+                    break
                 continue
 
             # the query built here is configured to issue a query that loads
@@ -432,12 +434,12 @@ class JoinType(EnumValueInt):
 
 class JoinMetadata(object):
     def __init__(self, func: Callable):
-        self.func = func
+        self.func = lambda *args, **kw: normalize_to_tuple(func(*args, **kw))
         self.target_biz_class = None
         self.join_type = None
 
         # this sets target_biz_class and join_type:
-        self._analyze_func(func)
+        self._analyze_func(self.func)
 
     def _analyze_func(self, func: Callable):
         # further process the return value of the join func

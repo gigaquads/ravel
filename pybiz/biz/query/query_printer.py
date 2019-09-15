@@ -1,6 +1,8 @@
 from functools import reduce
 from typing import Text
 
+import pybiz.biz.query
+
 
 class QueryPrinter(object):
     def print_query(self, query: 'AbstractQuery') -> None:
@@ -59,7 +61,7 @@ class QueryPrinter(object):
                 )
                 sub_query_substrs.append(sub_query_substr)
                 sub_query_substrs.append(f'{" " * indent}   )')
-            elif isinstance(sub_query, BizAttributeQuery):
+            elif isinstance(sub_query, pybiz.biz.query.BizAttributeQuery):
                 type_name = sub_query.biz_attr.biz_class.__name__
                 sub_query_substr = self.format_biz_attr_query(
                     sub_query, indent=indent+5

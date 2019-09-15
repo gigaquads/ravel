@@ -39,7 +39,7 @@ class GraphQLInterpreter(object):
         selectors = self._build_selectors(target_biz_class, ast_node)
         return Query(
             biz_class=target_biz_class,
-            alias=ast_node.name
+            alias=ast_node.name,
             select=selectors,
             where=args.where,
             order_by=args.order_by,
@@ -77,25 +77,28 @@ class GraphQLInterpreter(object):
         for child_ast_node in ast_node.selections:
             child_name = child_ast_node.name
             if child_name in target_biz_class.schema.fields:
-                fprop_query = cls._build_pybiz_field_property_query(
-                    child_node, target_biz_class
+                fprop_query = self._build_pybiz_field_property_query(
+                    child_ast_node, target_biz_class
                 )
                 selectors.append(fprop_query)
-            elif child_name in target_biz_class.attributes:
-                biz_attr_query = cls._build_pybiz_biz_attr_query(
-                    child_node, target_biz_class
-                )
-                selectors.append(biz_attr_query)
             elif child_name in target_biz_class.relationships:
-                # recursively build query based on relationship
+                # Recursively build query based on relationship
+                #
+                # NOTE: this check MUST be performed BEFORE the check
+                # for is child_name in target_biz_class.attributes
                 rel = target_biz_class.relationships[child_name]
                 child_biz_class = rel.target_biz_class
                 child_query = self._build_pybiz_query(
                     child_ast_node, target_biz_class=child_biz_class
                 )
                 selectors.append(child_query)
+            elif child_name in target_biz_class.attributes:
+                biz_attr_query = self._build_pybiz_biz_attr_query(
+                    child_ast_node, target_biz_class
+                )
+                selectors.append(biz_attr_query)
             else:
-                console.warn(
+                console.warning(
                     f'unknown field {target_biz_class.__name__}.{child_name} '
                     f'selected in GraphQL query'
                 )

@@ -199,7 +199,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         Return a Query object corresponding to the given GraphQL query string.
         """
-        nterpreter = GraphQLInterpreter(cls)
+        from ..graphql import GraphQLInterpreter
+
+        interpreter = GraphQLInterpreter(cls)
         return interpreter.interpret(graphql_query)
 
     @classmethod
