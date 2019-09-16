@@ -13,6 +13,7 @@ class QueryExecutor(object):
     def execute(
         self,
         query: 'Query',
+        context: Dict = None,
         backfiller: 'QueryBackfiller' = None,
         constraints: Dict[Text, 'Constraint'] = None,
         first: bool = False,
@@ -25,6 +26,7 @@ class QueryExecutor(object):
         - `first` - Return the first BizObject from the fetched/backfilled
             result "target" BizObjects
         """
+        context = context if context is not None else {}
         target_biz_class = query.biz_class
         target_dao = target_biz_class.get_dao()
 
@@ -66,7 +68,7 @@ class QueryExecutor(object):
             )
         # enter indirect recursion via the Relationships defined on the fetched
         # target BizObjects.
-        self._execute_recursive(query, backfiller, targets)
+        self._execute_recursive(query, backfiller, targets, context)
 
         return targets
 
@@ -75,6 +77,7 @@ class QueryExecutor(object):
         query: 'Query',
         backfiller: 'QueryBackfiller',
         sources: List['BizObject'],
+        context: Dict,
     ):
         """
         Args:
@@ -137,6 +140,7 @@ class QueryExecutor(object):
                     query=sub_query,
                     backfiller=backfiller,
                     sources=next_sources_biz_list,
+                    context=context,
                 )
 
         return sources

@@ -139,16 +139,19 @@ class Query(AbstractQuery):
     def execute(
         self,
         first: bool = False,
+        context: Dict = None,
         constraints: Dict[Text, 'Constraint'] = None,
         backfill: Backfill = None,
     ) -> 'BizThing':
         """
         Execute this Query, returning the target BizThing.
         """
+        context = context if context is not None else {}
         backfiller = QueryBackfiller() if backfill is not None else None
 
         targets = self._executor.execute(
             query=self,
+            context=context,
             backfiller=backfiller,
             constraints=constraints,
             first=first,
