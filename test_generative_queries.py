@@ -61,12 +61,14 @@ if __name__ == '__main__':
 
         return (
             Account.select(
-                Account.name,
-                Account.size,
+                #Account.name,
+                #Account.size,
                 Account.users.select(
-                    User.email,
-                    User.password,
-                    User.age,
+                    #User.email,
+                    #User.password,
+                    #User.age,
+                ).spam(
+                    'eggs'
                 ).where(
                     User.age > 50
                 ).limit(
@@ -74,6 +76,8 @@ if __name__ == '__main__':
                 )
             ).where(
                 Account.name == 'Axial'
+            ).foo(
+                'bar'
             ).execute(
                 first=True,
                 backfill='persistent'

@@ -155,6 +155,32 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return False
 
     @classmethod
+    def pre_execute_query(cls, query: 'Query'):
+        """
+        At this point, a Query targeting this BizObject class is about to
+        execute. Now is your chance to mutate the query or perform additional
+        checks before continuing.
+        """
+
+    @classmethod
+    def on_execute_query(cls, query: 'Query', results: 'BizList'):
+        """
+        At this point, the `targets` BizList contains the BizObjects fetched by
+        this query but only their fields have been loaded. If any relationship
+        on these objects was targeted in a subquery, then these will only be
+        loaded and set on `targets` in the `post_execute_query` method.
+        """
+        print(cls, query, query.params.custom)
+
+    @classmethod
+    def post_execute_query(cls, query: 'Query', results: 'BizList'):
+        """
+        At this point, `results` contains all BizObjects targeted by the query,
+        including all nested BizObjects targeted by queries targeting their
+        Relationships.
+        """
+
+    @classmethod
     def exists(cls, obj=None) -> bool:
         """
         Does a simple check if a BizObject exists by id.
@@ -170,6 +196,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         order_by: Tuple[Text] = None,
         offset: int = None,
         limit: int = None,
+        custom: Dict = None,
         execute=True,
         first=False,
     ):
@@ -188,6 +215,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             query.limit(limit)
         if offset is not None:
             query.offset(offset)
+        if custom:
+            query.params.custom = custom
 
         if not execute:
             return query

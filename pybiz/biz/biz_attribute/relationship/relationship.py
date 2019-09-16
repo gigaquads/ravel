@@ -60,8 +60,7 @@ class Relationship(BizAttribute):
         self.on_rem = normalize_to_tuple(on_rem)
         self.on_add = normalize_to_tuple(on_add)
         self.on_del = normalize_to_tuple(on_del)
-
-        self._is_bootstrapped = False
+        
         self._join_metadata = []
 
     def __repr__(self):
@@ -105,10 +104,6 @@ class Relationship(BizAttribute):
             return self._join_metadata[-1].target_biz_class
         return None
 
-    @property
-    def is_bootstrapped(self):
-        return self._is_bootstrapped
-
     def on_bootstrap(self):
         self._apply_behaviors_pre_bootstrap()
         self._analyze_join_funcs()
@@ -129,7 +124,7 @@ class Relationship(BizAttribute):
         for func in self.joins:
             # add all BizObject classes to the lexical scope of each callable
             func.__globals__.update(self.app.manifest.types.biz)
-            meta = JoinMetadata(func)
+            meta = JoinMetadata(func, is_terminal=(func is self.joins[-1]))
             self._join_metadata.append(meta)
 
     def _analyze_order_by(self):
@@ -147,7 +142,9 @@ class Relationship(BizAttribute):
         order_by: Tuple = None,
         offset: int = None,
         limit: int = None,
+        custom: Dict = None,
         backfiller: 'Backfiller '= None,
+        fetch: bool = True,
     ):
         root = source
         target = None
@@ -160,9 +157,9 @@ class Relationship(BizAttribute):
             # final "join" query to execute, which is the one that resolves to
             # the final target BizObject type that defines the Relationship.
             params = {}
-            if meta.func is self.joins[-1]:
+            if meta.is_terminal:
                 params = self._prepare_query_params(
-                    source, select, where, order_by, offset, limit
+                    source, select, where, order_by, offset, limit, custom
                 )
 
             query = builder.build_query(**params)
@@ -199,6 +196,7 @@ class Relationship(BizAttribute):
                 backfiller=backfiller,
                 constraints=constraints,
                 first=False,
+                fetch=fetch,
             )
 
             # output becomes input for next iteration...
@@ -218,6 +216,7 @@ class Relationship(BizAttribute):
         order_by: Tuple = None,
         offset: int = None,
         limit: int = None,
+        custom: Dict = None,
     ):
         """
         Recursively execute this Relationship on a caller BizObject or BizList,
@@ -231,7 +230,7 @@ class Relationship(BizAttribute):
         )
         # sanitize and compute kwargs for the eventual Query.execute() call
         query_params = self._prepare_query_params(
-            source, select, where, order_by, offset, limit
+            source, select, where, order_by, offset, limit, custom=custom,
         )
 
         # perform the query func, which returns the resolved and loaded
@@ -250,11 +249,7 @@ class Relationship(BizAttribute):
             # only pass in the query params to the last join in the join
             # sequence, as this is the one that truly applies to the
             # "target" BizObject type being queried.
-            if meta.func is self.joins[-1]:
-                query = builder.build_query(**params)
-            else:
-                query = builder.build_query()
-
+            query = builder.build_query(**(params if meta.is_terminal else {}))
             target = query.execute().clean()  # target is a BizThing
             source = target
 
@@ -283,21 +278,18 @@ class Relationship(BizAttribute):
                 distinct_targets = set()
                 for source in sources:
                     builder = meta.new_query_builder(source)
-
-                    if meta.func is self.joins[-1]:
-                        query = builder.build_query(**params)
-                    else:
-                        query = builder.build_query()
-
+                    query = builder.build_query(
+                        **(params if meta.is_terminal else {})
+                    )
                     targets = query.execute().clean()
-
                     for target in targets:
                         if target not in distinct_targets:
                             tree[source].append(target)
                             distinct_targets.add(target)
-
                 if sources:
-                    sources = builder.target_biz_class.BizList(distinct_targets)
+                    sources = builder.target_biz_class.BizList(
+                        distinct_targets
+                    )
                     break
                 continue
 
@@ -309,11 +301,7 @@ class Relationship(BizAttribute):
             # compute `targets` - the collection of ALL BizObjects related to
             # the source objects. Below, we perform logic to determine which
             # source object to zip up with which target BizObject(s)
-            if meta.func is self.joins[-1]:
-                query = builder.build_query(**params)
-            else:
-                query = builder.build_query()
-
+            query = builder.build_query(**(params if meta.is_terminal else {}))
             targets = query.execute().clean()
 
             # adjust data structures that we used to determine, in the end,
@@ -380,6 +368,7 @@ class Relationship(BizAttribute):
         order_by: Tuple = None,
         offset: int = None,
         limit: int = None,
+        custom: Dict = None,
     ):
         """
         This cleans up the keyword arguments that eventually gets passed into a
@@ -420,6 +409,7 @@ class Relationship(BizAttribute):
             'order_by': computed_order_by,
             'offset': offset,
             'limit': limit,
+            'custom': custom or {},
         }
 
 
@@ -433,10 +423,11 @@ class JoinType(EnumValueInt):
 
 
 class JoinMetadata(object):
-    def __init__(self, func: Callable):
+    def __init__(self, func: Callable, is_terminal: bool):
         self.func = lambda *args, **kw: normalize_to_tuple(func(*args, **kw))
         self.target_biz_class = None
         self.join_type = None
+        self.is_terminal = is_terminal
 
         # this sets target_biz_class and join_type:
         self._analyze_func(self.func)

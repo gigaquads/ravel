@@ -26,6 +26,7 @@ class QueryBuilder(object):
         limit=None,
         offset=None,
         order_by=None,
+        custom: Dict = None,
     ) -> Query:
         """
         For each "join" function given to a Relationship, a QueryBuilder is
@@ -35,7 +36,7 @@ class QueryBuilder(object):
         selectors = self.build_selectors(select, where_predicate)
         return self.target_biz_class.query(
             select=selectors, where=where_predicate, offset=offset,
-            limit=limit, order_by=order_by, execute=False
+            limit=limit, order_by=order_by, custom=custom, execute=False
         )
 
     def build_where_predicate(self, additional_predicates: Tuple) -> Predicate:

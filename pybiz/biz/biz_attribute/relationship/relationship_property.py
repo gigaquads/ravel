@@ -67,7 +67,7 @@ class RelationshipProperty(BizAttributeProperty):
         """
         rel = self.relationship
 
-        if source[rel.name] and rel.readonly:
+        if source.internal.state.get(rel.name) and rel.readonly:
             raise RelationshipError(f'{rel} is read-only')
 
         if target is None and rel.many:

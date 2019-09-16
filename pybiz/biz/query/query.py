@@ -25,8 +25,13 @@ from .query_backfiller import QueryBackfiller, Backfill
 
 
 class AbstractQuery(object):
-    def __init__(self, alias: Text = None):
+    def __init__(
+        self,
+        alias: Text = None,
+        context: Dict = None
+    ):
         self._alias = alias
+        self._context = context if context is not None else {}
 
     @property
     def alias(self) -> Text:
@@ -37,6 +42,10 @@ class AbstractQuery(object):
         if self._alias is not None:
             raise ValueError('alias is readonly')
         self._alias = alias
+
+    @property
+    def context(self) -> Dict:
+        return self._context
 
     def execute(self, source: 'BizThing') -> 'BizThing':
         raise NotImplementedError('override in subclass')
@@ -56,6 +65,15 @@ class Query(AbstractQuery):
     )
     """
 
+    class Assignment(object):
+        def __init__(self, name: Text, query: 'Query'):
+            self.name = name
+            self.query = query
+
+        def __call__(self, value):
+            self.query.params.custom[self.name] = value
+            return self.query
+
     class Parameters(object):
         def __init__(
             self,
@@ -65,10 +83,12 @@ class Query(AbstractQuery):
             where=None,
             limit=None,
             offset=None,
+            custom=None,
         ):
             self.fields = fields or {'_id': None, '_rev': None}
             self.attributes = attributes or {}
             self.order_by = order_by or tuple()
+            self.custom = custom or {}
             self.where = tuple()
             self.limit = None
             self.offset = None
@@ -77,9 +97,9 @@ class Query(AbstractQuery):
             return set(self.fields.keys() | self.attributes.keys())
 
 
-    _loader = QueryLoader()
-    _executor = QueryExecutor()
-    _printer  = QueryPrinter()
+    loader = QueryLoader()
+    executor = QueryExecutor()
+    printer  = QueryPrinter()
 
     _default_selectors = defaultdict(set)
     # TODO: Explain rational for _default_selectors
@@ -95,18 +115,18 @@ class Query(AbstractQuery):
     def __init__(
         self,
         biz_class: Type['BizType'],
-        alias: Text = None,
         select: Set = None,
         where: Set = None,
         order_by: Tuple = None,
         limit: int = None,
         offset: int = None,
+        custom: Dict = None,
+        **kwargs,
     ):
-        super().__init__(alias=alias)
+        super().__init__(**kwargs)
 
         self._biz_class = biz_class
-        self._params = Query.Parameters()
-
+        self._params = Query.Parameters(custom=custom)
         self.select(self.get_default_selectors(biz_class))
 
         if where is not None:
@@ -119,6 +139,13 @@ class Query(AbstractQuery):
             self.order_by(order_by)
         if select is not None:
             self.select(select)
+
+    def __getattr__(self, param_name):
+        """
+        This is so you can do query.foo('bar'), resulting in a 'bar': 'foo'
+        entry in query.params.
+        """
+        return self.Assignment(param_name, self)
 
     def __getitem__(self, key):
         return getattr(self._params, key)
@@ -146,12 +173,12 @@ class Query(AbstractQuery):
         """
         Execute this Query, returning the target BizThing.
         """
-        context = context if context is not None else {}
+        self.context.update(context or {})
+
         backfiller = QueryBackfiller() if backfill is not None else None
 
-        targets = self._executor.execute(
+        targets = self.executor.execute(
             query=self,
-            context=context,
             backfiller=backfiller,
             constraints=constraints,
             first=first,
@@ -230,7 +257,7 @@ class Query(AbstractQuery):
         return self
 
     def show(self):
-        self._printer.print_query(query=self)
+        self.printer.print_query(query=self)
 
     def dump(self):
         return {
@@ -253,10 +280,6 @@ class Query(AbstractQuery):
     @property
     def biz_class(self) -> Type['BizObject']:
         return self._biz_class
-
-    @property
-    def executor(self) -> 'QueryExecutor':
-        return self._executor
 
     @property
     def params(self) -> Parameters:
@@ -304,7 +327,7 @@ class Query(AbstractQuery):
 
     @classmethod
     def load(cls, biz_class: Type['BizObject'], dumped: Dict) -> 'Query':
-        return cls._loader.load(biz_class, dumped)
+        return cls.loader.load(biz_class, dumped)
 
     @classmethod
     def load_from_keys(
@@ -347,12 +370,12 @@ class FieldPropertyQuery(AbstractQuery):
     def __init__(
         self,
         fprop: 'FieldProperty',
-        alias: Text = None,
         params: Dict = None,
         callbacks: List = None,
         clean: bool = False,
+        **kwargs
     ):
-        super().__init__(alias=alias)
+        super().__init__(**kwargs)
         self.fprop = fprop
         self.params = params or {}
         self.transformer = self._get_transformer()
@@ -402,12 +425,10 @@ class BizAttributeQuery(AbstractQuery):
     def __init__(
         self,
         biz_attr: 'BizAttribute',
-        alias: Text = None,
         params: Dict = None,
-        *args,
         **kwargs
     ):
-        super().__init__(alias=alias)
+        super().__init__(**kwargs)
         self.params = params or {}
         self.biz_attr = biz_attr
 

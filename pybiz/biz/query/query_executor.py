@@ -13,10 +13,10 @@ class QueryExecutor(object):
     def execute(
         self,
         query: 'Query',
-        context: Dict = None,
         backfiller: 'QueryBackfiller' = None,
         constraints: Dict[Text, 'Constraint'] = None,
         first: bool = False,
+        fetch: bool = True,
     ):
         """
         Args:
@@ -26,9 +26,12 @@ class QueryExecutor(object):
         - `first` - Return the first BizObject from the fetched/backfilled
             result "target" BizObjects
         """
-        context = context if context is not None else {}
         target_biz_class = query.biz_class
         target_dao = target_biz_class.get_dao()
+
+        # perform any custom logic/guards before we set about executing the
+        # query the DAL
+        target_biz_class.pre_execute_query(query)
 
         # if multiple individual "where" predicates exist, join them via
         # conjunction in a single "root" predicate to use as the argument passed
@@ -39,11 +42,14 @@ class QueryExecutor(object):
             root_predicate = (target_biz_class._id != None)
 
         # Fetch the raw dict records from the Dao. Otherwise,
-        records = target_dao.query(
-            predicate=root_predicate, fields=query.params.fields,
-            order_by=query.params.order_by, limit=query.params.limit,
-            offset=query.params.offset,
-        )
+        if fetch:
+            records = target_dao.query(
+                predicate=root_predicate, fields=query.params.fields,
+                order_by=query.params.order_by, limit=query.params.limit,
+                offset=query.params.offset,
+            )
+        else:
+            records = []
 
         # `targets` refers to the BizObjects loaded through the Query.
         targets = target_biz_class.BizList(
@@ -66,9 +72,20 @@ class QueryExecutor(object):
                 count=(1 if first else None),
                 constraints=constraints,
             )
+
+        # perform any custom logic/guards after we've executed the query for
+        # this BizObject class in the DAL but before we've recursed on
+        # subqueries.
+        target_biz_class.on_execute_query(query, targets)
+
         # enter indirect recursion via the Relationships defined on the fetched
         # target BizObjects.
-        self._execute_recursive(query, backfiller, targets, context)
+        self._execute_recursive(query, backfiller, targets)
+
+        # perform any custom logic/guards after we've executed the query for
+        # this BizObject class in the DAL and we've already recursed on its
+        # subqueries.
+        target_biz_class.post_execute_query(query, targets)
 
         return targets
 
@@ -77,7 +94,6 @@ class QueryExecutor(object):
         query: 'Query',
         backfiller: 'QueryBackfiller',
         sources: List['BizObject'],
-        context: Dict,
     ):
         """
         Args:
@@ -140,7 +156,6 @@ class QueryExecutor(object):
                     query=sub_query,
                     backfiller=backfiller,
                     sources=next_sources_biz_list,
-                    context=context,
                 )
 
         return sources
@@ -163,6 +178,7 @@ class QueryExecutor(object):
             'order_by': sub_query.params.order_by,
             'limit': sub_query.params.limit,
             'offset': sub_query.params.offset,
+            'custom': sub_query.params.custom,
         }
 
     def _backfill_relationship(
@@ -182,6 +198,11 @@ class QueryExecutor(object):
             params = params.copy()
             params['limit'] = limit - len(target_biz_thing)
             target_biz_thing.extend(
-                rel.generate(source, backfiller=backfiller, **params)
+                rel.generate(
+                    source,
+                    backfiller=backfiller,
+                    fetch=False,  # TODO: think of better name for param
+                    **params
+                )
             )
         return target_biz_thing
