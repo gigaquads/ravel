@@ -22,9 +22,9 @@ class GraphQLInterpreter(object):
         self._ast_parser = graphql.parser.GraphQLParser()
 
     def interpret(self, graphql_query_string: Text) -> Query:
+        context = {}
         root_ast_node = self._parse_graphql_query_ast(graphql_query_string)
-        query = self._build_relationship_query(root_ast_node, self._root_biz_class)
-        return query
+        return self._build_query(root_ast_node, self._root_biz_class, context)
 
     def _parse_graphql_query_ast(self, graphql_query_string: Text):
         graphql_doc = self._ast_parser.parse(graphql_query_string)
@@ -55,7 +55,7 @@ class GraphQLInterpreter(object):
                 # for is child_name in target_biz_class.attributes
                 rel = target_biz_class.relationships[child_name]
                 child_biz_class = rel.target_biz_class
-                child_query = self._build_relationship_query(
+                child_query = self._build_query(
                     child_ast_node, child_biz_class, context
                 )
                 selectors.append(child_query)
@@ -71,7 +71,7 @@ class GraphQLInterpreter(object):
                 )
         return selectors
 
-    def _build_relationship_query(
+    def _build_query(
         self,
         ast_node: graphql.ast.Field,
         target_biz_class: BizObject,
@@ -81,7 +81,6 @@ class GraphQLInterpreter(object):
         Recursively build a pybiz Query object from the given low-level GraphQL
         AST node returned from the core GraphQL language parser.
         """
-        context = {}
         args = GraphQLArguments.parse(target_biz_class, ast_node)
         selectors = self._build_subqueries(target_biz_class, ast_node, context)
         query = Query(
