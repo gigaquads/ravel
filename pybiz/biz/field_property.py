@@ -4,7 +4,7 @@ import pybiz.biz
 
 from typing import Text, Tuple, List, Type, Callable
 
-from pybiz.util.misc_functions import is_bizobj
+from pybiz.util.misc_functions import is_bizobj, flatten_sequence
 from pybiz.util.loggers import console
 from pybiz.predicate import (
     Predicate,
@@ -59,11 +59,13 @@ class FieldProperty(property):
     def __ge__(self, other: Predicate) -> Predicate:
         return self._build_predicate(OP_CODE.GEQ, other)
 
-    def including(self, others: List) -> Predicate:
+    def including(self, *others) -> Predicate:
+        others = flatten_sequence(others)
         others = {obj._id if is_bizobj(obj) else obj for obj in others}
         return self._build_predicate(OP_CODE.INCLUDING, others)
 
-    def excluding(self, others: List) -> Predicate:
+    def excluding(self, *others) -> Predicate:
+        others = flatten_sequence(others)
         others = {obj._id if is_bizobj(obj) else obj for obj in others}
         return self._build_predicate(OP_CODE.EXCLUDING, others)
 

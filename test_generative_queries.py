@@ -74,7 +74,7 @@ if __name__ == '__main__':
                     2
                 )
             ).where(
-                Account.name == 'Axial'
+                Account.name.excluding('Axial')
             ).foo(
                 'bar'
             ).execute(

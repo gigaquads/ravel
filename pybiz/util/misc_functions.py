@@ -135,3 +135,13 @@ def extract_biz_info_from_annotation(annotation) -> Tuple[bool, Text]:
             many = True
 
     return (many, key)
+
+
+def flatten_sequence(target) -> Set:
+    flattened = set()
+    for child_target in target:
+        if is_sequence(child_target):
+            flattened.update(flatten_sequence(child_target))
+        else:
+            flattened.add(child_target)
+    return flattened

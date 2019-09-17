@@ -18,6 +18,8 @@ from appyratus.enum import Enum
 from appyratus.utils import DictObject
 from appyratus.schema import RangeConstraint, ConstantValueConstraint
 
+from pybiz.schema import Enum as EnumField
+
 
 OP_CODE = Enum(
     EQ='eq',
@@ -150,7 +152,33 @@ class Predicate(object):
                     value=predicate.value,
                     is_negative=True
                 )
-            # TODO: INCLUDING and EXCLUDING predicates
+            elif predicate.op == OP_CODE.INCLUDING:
+                constraints[field.name] = ConstantValueConstraint(
+                    value=random.choice(list(predicate.value)),
+                    is_negative=False
+                )
+            elif predicate.op == OP_CODE.EXCLUDING:
+                disallowed_values = set(predicate.value)
+                if isinstance(field, EnumField):
+                    possible_values = set(field.values) - disallowed_values
+                    is_enum = True
+                else:
+                    possible_values = None
+                    is_enum = False
+                if not is_enum:
+                    while True:
+                        value = field.generate()
+                        if value not in disallowed_values:
+                            break
+                elif disallowed_values == possible_values:
+                    value = None
+                else:
+                    possible_values = list(possible_values)
+                    value = random.choice(possible_values)
+                constraints[field.name] = ConstantValueConstraint(
+                    value=value,
+                    is_negative=True
+                )
 
             con = constraints.setdefault(field.name, RangeConstraint())
             if not con.is_equality_constraint:
