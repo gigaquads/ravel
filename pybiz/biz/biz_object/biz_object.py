@@ -170,7 +170,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         on these objects was targeted in a subquery, then these will only be
         loaded and set on `targets` in the `post_execute_query` method.
         """
-        print(cls, query, query.params.custom)
 
     @classmethod
     def post_execute_query(cls, query: 'Query', results: 'BizList'):

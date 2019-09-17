@@ -311,7 +311,6 @@ class Query(AbstractQuery):
             # parameters are applied to this field query; hence, query is set
             # to None.
             query = None
-            alias = selector.field.name
             self._params.fields[selector.field.name] = query
         elif isinstance(selector, FieldPropertyQuery):
             assert selector.fprop.biz_class is self.biz_class
@@ -322,6 +321,16 @@ class Query(AbstractQuery):
         elif isinstance(selector, pybiz.biz.BizAttributeProperty):
             assert selector.biz_attr.biz_class is self.biz_class
             self._params.attributes[selector.biz_attr.name] = selector.select()
+        elif isinstance(selector, type) and is_bizobj(selector):
+            # select everything but relationships
+            biz_class = selector
+            keys = (
+                set(biz_class.selectable_attribute_names)
+                    - biz_class.relationships.keys()
+            )
+            for k in keys:
+                self._params.fields[k] = None
+
         else:
             raise ValueError(f'unrecognized query selector: {selector}')
 

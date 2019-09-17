@@ -61,12 +61,11 @@ if __name__ == '__main__':
 
         return (
             Account.select(
-                #Account.name,
-                #Account.size,
+                Account,
                 Account.users.select(
-                    #User.email,
-                    #User.password,
-                    #User.age,
+                    User.email,
+                    User.password,
+                    User.age,
                 ).spam(
                     'eggs'
                 ).where(
