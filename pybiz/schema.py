@@ -1,11 +1,24 @@
-from typing import Text, Tuple, Callable
+from typing import Text, Tuple, Callable, Type
 
 from appyratus.schema import Schema, fields
 from appyratus.schema.fields import *
 
 
 class Id(fields.UuidString):
-    pass
+    def replace_with(self, replacement_field_class: Type[Field]):
+        """
+        This is used internally when Pybiz replaces all Id fields declared on
+        BizObject classes with the custom Field type specified by the host
+        Pybiz Application, via the `id_field_class` property.
+        """
+        return replacement_field_class(
+            name=self.name,
+            source=self.source,
+            required=self.required,
+            nullable=self.nullable,
+            default=self.default,
+            meta=self.meta
+        )
 
 
 class Transformer(object):

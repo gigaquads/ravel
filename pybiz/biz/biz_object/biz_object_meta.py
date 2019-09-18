@@ -46,11 +46,14 @@ class BizObjectTypeBuilder(object):
         biz_class.schema.pybiz_internal = True
         biz_class.defaults = self._extract_defaults(biz_class)
         biz_class.predicate_parser = PredicateParser(biz_class)
+        biz_class.pybiz_id_fields = set()
 
         for field in biz_class.schema.fields.values():
             if not getattr(field, 'pybiz_internal', False):
                 field_prop = FieldProperty(biz_class, field)
                 setattr(biz_class, field.name, field_prop)
+                if isinstance(field, Id):
+                    biz_class.pybiz_id_fields.add(field)
 
         for biz_attr in biz_class.attributes.values():
             biz_attr.bind(biz_class)

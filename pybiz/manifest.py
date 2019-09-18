@@ -18,7 +18,7 @@ from appyratus.files import Yaml, Json
 from appyratus.env import Environment
 
 from pybiz.exceptions import ManifestError
-from pybiz.util.misc_functions import import_object
+from pybiz.util.misc_functions import import_object, get_class_name
 from pybiz.util.loggers import console
 
 
@@ -131,6 +131,11 @@ class Manifest(object):
         return self
 
     def bootstrap(self):
+        # visited_dao_classes is used to keep track of which DAO classes we've
+        # already bootstrapped in the process of bootstrapping the DAO classes
+        # bound to BizObject classes.
+        visited_dao_classes = set()
+
         for biz_class in self.types.biz.values():
             if not (biz_class.is_abstract or biz_class.is_bootstrapped):
                 console.debug(
@@ -139,14 +144,17 @@ class Manifest(object):
                 biz_class.bootstrap(app=self.app)
                 dao = biz_class.get_dao(bind=False)
                 dao_class = dao.__class__
-                if not dao_class.is_bootstrapped():
-                    dao_class_name = dao_class.__name__
-                    console.debug(
-                        f'bootstrapping "{dao_class_name}" Dao...'
-                    )
-                    strap = self.bootstraps.get(dao_class_name)
-                    kwargs = strap.params if strap else {}
-                    dao_class.bootstrap(app=self.app, **kwargs)
+
+                # don't bootstrap the dao class if we've done so already
+                if dao_class in visited_dao_classes:
+                    continue
+
+                visited_dao_classes.add(dao_class)
+
+                dao_class_name = get_class_name(dao_class)
+                console.debug(f'bootstrapping "{dao_class_name}" Dao...')
+                boostrap_kwargs = self.bootstraps.get(dao_class_name, {})
+                dao_class.bootstrap(app=self.app, **boostrap_kwargs)
 
         console.debug(f'finished bootstrapped Dao and BizObject classes')
 

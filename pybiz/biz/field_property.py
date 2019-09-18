@@ -17,7 +17,7 @@ from pybiz.predicate import (
 class FieldProperty(property):
     def __init__(self, biz_class: Type['BizObject'], field: 'Field'):
         super().__init__(fget=self.fget, fset=self.fset, fdel=self.fdel)
-        self._field = field
+        self._field_name = field.name
         self._biz_class = biz_class
         self._hash = uuid.uuid4().int
 
@@ -75,7 +75,7 @@ class FieldProperty(property):
 
     @property
     def field(self):
-        return self._field
+        return self._biz_class.schema.fields[self._field_name]
 
     @property
     def asc(self) -> 'OrderBy':

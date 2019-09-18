@@ -9,6 +9,7 @@ from appyratus.utils import DictObject, DictUtils
 from pybiz.manifest import Manifest
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
+from pybiz.schema import Field, UuidString
 
 from .exceptions import ApplicationError
 from .endpoint_decorator import EndpointDecorator
@@ -78,6 +79,10 @@ class Application(object):
     @property
     def endpoint_class(self) -> Type[Endpoint]:
         return Endpoint
+
+    @property
+    def id_field_class(self) -> Type[Field]:
+        return UuidString
 
     @property
     def manifest(self) -> Manifest:

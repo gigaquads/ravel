@@ -130,9 +130,22 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     @classmethod
     def bootstrap(cls, app: 'Application', **kwargs):
         cls.app = app
+
+        # Dynamically mutate the BizObject schema in order to replace each
+        # pybiz.Id field with the custom class via the app.id_field_class
+        # property
+        if app.id_field_class is not None:
+            replacement_field_class = app.id_field_class
+            for field in cls.pybiz_id_fields:
+                replacement_field = field.replace_with(replacement_field_class)
+                cls.Schema.replace_field(replacement_field, overwrite=True)
+
+        # bootstrap BizAttributes, like Relationships, Views, etc.
         for biz_attr in cls.attributes.values():
             biz_attr.bootstrap(app)
-        cls.on_bootstrap()
+
+        cls.on_bootstrap()  # custom app logic goes here
+
         cls.is_bootstrapped = True
 
     @classmethod
