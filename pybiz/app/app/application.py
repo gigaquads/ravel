@@ -17,10 +17,17 @@ from .endpoint import Endpoint
 from .application_argument_loader import ApplicationArgumentLoader
 from .application_dao_binder import ApplicationDaoBinder
 
+DEFAULT_ID_FIELD_CLASS = UuidString
+
 
 class Application(object):
-    def __init__(self, middleware: List['ApplicationMiddleware'] = None):
 
+    def __init__(
+        self,
+        middleware: List['ApplicationMiddleware'] = None,
+        id_field_class: Type[Field] = None,
+    ):
+        self._id_field_class = id_field_class or DEFAULT_ID_FIELD_CLASS
         self._decorators = []
         self._endpoints = {}
         self._biz = None  # set in bootstrap
@@ -82,7 +89,7 @@ class Application(object):
 
     @property
     def id_field_class(self) -> Type[Field]:
-        return UuidString
+        return self._id_field_class
 
     @property
     def manifest(self) -> Manifest:
