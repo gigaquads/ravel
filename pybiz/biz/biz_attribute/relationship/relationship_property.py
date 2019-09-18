@@ -25,7 +25,7 @@ class RelationshipProperty(BizAttributeProperty):
         return Query(
             biz_class=rel.target_biz_class,
             alias=rel.name,
-            select=selectors or set(rel.target_biz_class.schema.fields.keys()),
+            select=selectors or set(rel.target_biz_class.Schema.fields.keys()),
             order_by=rel.order_by,
             limit=rel.limit,
             offset=rel.offset,
@@ -36,7 +36,7 @@ class RelationshipProperty(BizAttributeProperty):
         Return the memoized BizObject instance or list.
         """
         rel = self.relationship
-        selectors = set(rel.target_biz_class.schema.fields.keys())
+        selectors = set(rel.target_biz_class.Schema.fields.keys())
         default = (
             rel.target_biz_class.BizList([], rel, source) if rel.many else None
         )

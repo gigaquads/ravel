@@ -126,7 +126,7 @@ class FilesystemDao(Dao):
 
         fields = fields if isinstance(fields, set) else set(fields or [])
         if not fields:
-            fields = set(self.biz_class.schema.fields.keys())
+            fields = set(self.biz_class.Schema.fields.keys())
         fields |= {'_id', '_rev'}
 
         records = {}

@@ -66,17 +66,14 @@ if __name__ == '__main__':
                     User.email,
                     User.password,
                     User.age,
-                ).spam(
-                    'eggs'
                 ).where(
                     User.age > 50
                 ).limit(
-                    2
+                    4
                 )
             ).where(
-                Account.name.excluding('Axial')
-            ).foo(
-                'bar'
+                Account.name == 'Axial',
+                Account.size.excluding(69, 52)
             ).execute(
                 first=True,
                 backfill='persistent'

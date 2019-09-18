@@ -177,7 +177,7 @@ class CacheDao(Dao):
         if be_records:
             # TODO: prune the be_records to fields
             if fields:
-                all_fields = set(self.biz_class.schema.fields.keys())
+                all_fields = set(self.biz_class.Schema.fields.keys())
                 fields_to_remove = all_fields - fields
                 for be_rec in remove_keys(
                     be_records.values(), fields_to_remove, in_place=True

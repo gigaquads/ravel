@@ -131,7 +131,7 @@ class Relationship(BizAttribute):
         dummy = MagicMock()
         for func in self.order_by:
             spec = func(dummy)
-            field = self.target_biz_class.schema.fields[spec.key]
+            field = self.target_biz_class.Schema.fields[spec.key]
             self.select.add(field.name)
 
     def generate(
@@ -451,8 +451,8 @@ class JoinMetadata(object):
         # that this field is alsoways returned from Queries, ensuring further
         # that no additional lazy loading of said field is needed when this
         # relationship is executed on an instance.
-        Query.add_default_selectors(
-            source_fprop.biz_class, source_fprop.field.name
+        source_fprop.biz_class.pybiz.default_selectors.add(
+            source_fprop.field.name
         )
 
         self.target_biz_class = target_biz_class

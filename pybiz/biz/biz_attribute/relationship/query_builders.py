@@ -53,7 +53,7 @@ class QueryBuilder(object):
             select = set(select)
         return select
 
-        selectors = Query.get_default_selectors(target_biz_class).copy()
+        selectors = target_biz_class.pybiz.default_selectors.copy()
         selectors.update(f.name for f in where.fields)
         selectors.update(select)
         return selectors

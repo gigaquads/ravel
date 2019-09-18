@@ -75,7 +75,7 @@ class FieldProperty(property):
 
     @property
     def field(self):
-        return self._biz_class.schema.fields[self._field_name]
+        return self._biz_class.Schema.fields[self._field_name]
 
     @property
     def asc(self) -> 'OrderBy':

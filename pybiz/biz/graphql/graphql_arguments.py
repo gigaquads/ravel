@@ -71,7 +71,7 @@ class GraphQLArguments(object):
         if isinstance(predicate_strings, str):
             predicate_strings = [predicate_strings]
         return Predicate.reduce_and(*[
-            biz_class.predicate_parser.parse(pred_str)
+            biz_class.pybiz.predicate_parser.parse(pred_str)
             for pred_str in (predicate_strings or [])
         ])
 

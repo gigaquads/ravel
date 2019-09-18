@@ -26,7 +26,7 @@ class BizListTypeBuilder(object):
 
         # create "batch" accessor properties for
         # selectable BizObject attributes
-        for name in biz_class.selectable_attribute_names:
+        for name in biz_class.pybiz.all_selectors:
             prop = self._build_property(name)
             setattr(biz_list_subclass, name, prop)
 
@@ -240,7 +240,7 @@ class BizList(BizThing):
 
     def load(self, selectors: Set[Text] = None):
         if not selectors:
-            selectors = set(self.biz_class.schema.fields.keys())
+            selectors = set(self.biz_class.Schema.fields.keys())
         elif isinstance(selectors, str):
             selectors = {selectors}
 

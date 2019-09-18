@@ -248,7 +248,8 @@ class PythonDao(Dao):
         return records
 
     def _update_indexes(self, _id, record):
-        record, error = self.biz_class.schema.process(record, strict=True)
+        schema = self.biz_class.pybiz.schema
+        record, error = schema.process(record, strict=True)
         for k, v in record.items():
             if k not in self.ignored_indexes:
                 if v not in self.indexes[k]:
@@ -256,8 +257,9 @@ class PythonDao(Dao):
                 self.indexes[k][v].add(_id)
 
     def _delete_from_indexes(self, _id, record, indexes_to_delete=None):
+        schema = self.biz_class.pybiz.schema
         indexes_to_delete = indexes_to_delete or set(record.keys())
-        record, error = self.biz_class.schema.process(record, strict=True)
+        record, error = schema.process(record, strict=True)
         for k in indexes_to_delete:
             if k not in self.ignored_indexes:
                 v = record[k]

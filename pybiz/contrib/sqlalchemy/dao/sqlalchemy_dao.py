@@ -168,7 +168,7 @@ class SqlalchemyDao(Dao):
 
     @property
     def id_column_name(self):
-        return self.biz_class.schema.fields['_id'].source
+        return self.biz_class.Schema.fields['_id'].source
 
     def adapt_record(self, record: Dict, serialize=True) -> Dict:
         cb_name = 'on_encode' if serialize else 'on_decode'
@@ -213,7 +213,7 @@ class SqlalchemyDao(Dao):
         }
         self._adapters = {
             field_name: field_class_2_adapter[type(field)]
-            for field_name, field in self.biz_class.schema.fields.items()
+            for field_name, field in self.biz_class.Schema.fields.items()
             if type(field) in field_class_2_adapter
         }
         self._builder = SqlalchemyTableBuilder(self)
@@ -229,10 +229,10 @@ class SqlalchemyDao(Dao):
         order_by: Tuple = None,
         **kwargs,
     ):
-        fields = fields or self.biz_class.schema.fields.keys()
+        fields = fields or self.biz_class.Schema.fields.keys()
         fields.update({
             self.id_column_name,
-            self.biz_class.schema.fields['_rev'].source,
+            self.biz_class.Schema.fields['_rev'].source,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]
@@ -335,11 +335,11 @@ class SqlalchemyDao(Dao):
                 fields = set(fields)
         else:
             fields = {
-                f.source for f in self.biz_class.schema.fields.values()
+                f.source for f in self.biz_class.Schema.fields.values()
             }
         fields.update({
             self.id_column_name,
-            self.biz_class.schema.fields['_rev'].source,
+            self.biz_class.Schema.fields['_rev'].source,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]

@@ -43,7 +43,7 @@ class QueryPrinter(object):
 
         pre_sub_query_substrs.append(f'FROM {biz_class_name} SELECT')
         for k in field_names:
-            field = query.biz_class.schema.fields[k]
+            field = query.biz_class.Schema.fields[k]
             pre_sub_query_substrs.append(
                 f' - {k}: {field.__class__.__name__}'
             )

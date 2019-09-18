@@ -101,17 +101,6 @@ class Query(AbstractQuery):
     executor = QueryExecutor()
     printer  = QueryPrinter()
 
-    _default_selectors = defaultdict(set)
-    # TODO: Explain rational for _default_selectors
-
-    @classmethod
-    def add_default_selectors(cls, biz_class, *selectors):
-        cls._default_selectors[biz_class].update(selectors)
-
-    @classmethod
-    def get_default_selectors(cls, biz_class) -> Set:
-        return cls._default_selectors[biz_class]
-
     def __init__(
         self,
         biz_class: Type['BizType'],
@@ -127,7 +116,7 @@ class Query(AbstractQuery):
 
         self._biz_class = biz_class
         self._params = Query.Parameters(custom=custom)
-        self.select(self.get_default_selectors(biz_class))
+        self.select(biz_class.pybiz.default_selectors)
 
         if where is not None:
             self.where(where)
@@ -325,8 +314,8 @@ class Query(AbstractQuery):
             # select everything but relationships
             biz_class = selector
             keys = (
-                set(biz_class.selectable_attribute_names)
-                    - biz_class.relationships.keys()
+                set(biz_class.pybiz.all_selectors) -
+                biz_class.relationships.keys()
             )
             for k in keys:
                 self._params.fields[k] = None
@@ -345,7 +334,7 @@ class Query(AbstractQuery):
         keys: Set[Text] = None,
         _tree: Dict = None,
     ):
-        keys = keys or biz_class.schema.fields.keys()
+        keys = keys or biz_class.Schema.fields.keys()
         query = cls(biz_class)
 
         if _tree is None:
@@ -354,7 +343,7 @@ class Query(AbstractQuery):
 
         if '*' in _tree:
             del _tree['*']
-            _tree.update({k: None for k in biz_class.schema.fields})
+            _tree.update({k: None for k in biz_class.Schema.fields})
         elif not _tree:
             _tree = {'_id': None, '_rev': None}
 

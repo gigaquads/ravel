@@ -100,17 +100,17 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return self.internal.hash
 
     def __getitem__(self, key):
-        if key in self.selectable_attribute_names:
+        if key in self.pybiz.all_selectors:
             return getattr(self, key)
         raise KeyError(key)
 
     def __setitem__(self, key, value):
-        if key in self.selectable_attribute_names:
+        if key in self.pybiz.all_selectors:
             return setattr(self, key, value)
         raise KeyError(key)
 
     def __delitem__(self, key):
-        if key in self.selectable_attribute_names:
+        if key in self.pybiz.all_selectors:
             delattr(self, key)
         else:
             raise KeyError(key)
@@ -136,7 +136,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         # property
         if app.id_field_class is not None:
             replacement_field_class = app.id_field_class
-            for field in cls.pybiz_id_fields:
+            for field in cls.pybiz.id_fields:
                 replacement_field = field.replace_with(replacement_field_class)
                 cls.Schema.replace_field(replacement_field, overwrite=True)
 
@@ -321,7 +321,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         self.insert_defaults(prepared_record)
         prepared_record.pop('_rev', None)
 
-        prepared_record, errors = self.schema.process(prepared_record)
+        prepared_record, errors = self.pybiz.schema.process(prepared_record)
         if errors:
             console.error(
                 message=f'could not create {self.__class__.__name__} object',
@@ -380,7 +380,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 continue
             record = bizobj.internal.state.copy()
             cls.insert_defaults(record)
-            record, errors = cls.schema.process(record)
+            record, errors = cls.pybiz.schema.process(record)
             record.pop('_rev', None)
             if errors:
                 raise ValidationError(
@@ -494,7 +494,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         into the `record` dict param.
         """
         generated_defaults = {}
-        for k, default in cls.defaults.items():
+        for k, default in cls.pybiz.field_defaults.items():
             if k not in record:
                 if callable(default):
                     defval = default()

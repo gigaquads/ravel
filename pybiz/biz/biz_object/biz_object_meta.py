@@ -37,36 +37,25 @@ class BizObjectTypeBuilder(object):
         namespace[IS_BOOTSTRAPPED] = False
         namespace[IS_ABSTRACT_ANNOTATION] = self._compute_is_abstract(namespace)
         namespace[ATTRIBUTES_ATTR] = self._build_biz_attr_manager(bases, namespace)
+        namespace['pybiz'] = DictObject()
         return namespace
 
     def on_init(self, name, biz_class):
         biz_class.Schema = self._build_schema_class(name, biz_class)
 
-        biz_class.schema = biz_class.Schema()
-        biz_class.schema.pybiz_internal = True
-        biz_class.defaults = self._extract_defaults(biz_class)
-        biz_class.predicate_parser = PredicateParser(biz_class)
-        biz_class.pybiz_id_fields = set()
+        self._build_biz_attr_properties(biz_class)
 
-        for field in biz_class.schema.fields.values():
-            if not getattr(field, 'pybiz_internal', False):
-                field_prop = FieldProperty(biz_class, field)
-                setattr(biz_class, field.name, field_prop)
-                if isinstance(field, Id):
-                    biz_class.pybiz_id_fields.add(field)
+        biz_class.pybiz.schema = biz_class.Schema()
+        biz_class.pybiz.id_fields = self._compute_id_field_set(biz_class)
+        biz_class.pybiz.field_defaults = self._extract_defaults(biz_class)
+        biz_class.pybiz.predicate_parser = PredicateParser(biz_class)
+        biz_class.pybiz.default_selectors = set()
+        biz_class.pybiz.all_selectors = set(
+            biz_class.Schema.fields.keys() | biz_class.attributes.keys()
+        )
 
-        for biz_attr in biz_class.attributes.values():
-            biz_attr.bind(biz_class)
-            biz_attr_prop = biz_attr.build_property()
-            setattr(biz_class, biz_attr.name, biz_attr_prop)
-
-        # convenient aliases:
         biz_class.relationships = biz_class.attributes.relationships
         biz_class.views = biz_class.attributes.views
-
-        biz_class.selectable_attribute_names = set()
-        biz_class.selectable_attribute_names.update(biz_class.schema.fields.keys())
-        biz_class.selectable_attribute_names.update(biz_class.attributes.keys())
 
         biz_class.BizList = self.biz_list_type_builder.build(biz_class)
 
@@ -76,6 +65,20 @@ class BizObjectTypeBuilder(object):
             is_abstract = static_method.__func__
             return is_abstract()
         return False
+
+    def _compute_id_field_set(self, biz_class):
+        biz_class.pybiz.id_fields = set()
+        for field in biz_class.Schema.fields.values():
+            field_prop = FieldProperty(biz_class, field)
+            setattr(biz_class, field.name, field_prop)
+            if isinstance(field, Id):
+                biz_class.pybiz.id_fields.add(field)
+
+    def _build_biz_attr_properties(self, biz_class):
+        for biz_attr in biz_class.attributes.values():
+            biz_attr.bind(biz_class)
+            biz_attr_prop = biz_attr.build_property()
+            setattr(biz_class, biz_attr.name, biz_attr_prop)
 
     def _build_schema_class(self, name, biz_class):
         # use the schema class override if defined
@@ -119,7 +122,7 @@ class BizObjectTypeBuilder(object):
         defaults = copy.deepcopy(getattr(biz_class, 'defaults', {}))
 
         # add any new defaults from the schema
-        for k, field in biz_class.schema.fields.items():
+        for k, field in biz_class.Schema.fields.items():
             if field.default is not None:
                 defaults[k] = field.default
                 field.default = None

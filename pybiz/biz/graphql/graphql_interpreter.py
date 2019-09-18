@@ -43,7 +43,7 @@ class GraphQLInterpreter(object):
         selectors = []
         for child_ast_node in ast_node.selections:
             child_name = child_ast_node.name
-            if child_name in target_biz_class.schema.fields:
+            if child_name in target_biz_class.Schema.fields:
                 fprop_query = self._build_pybiz_field_property_query(
                     child_ast_node, target_biz_class, context
                 )
