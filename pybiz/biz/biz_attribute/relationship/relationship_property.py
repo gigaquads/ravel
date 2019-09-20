@@ -1,7 +1,7 @@
 from typing import Set
 
 from pybiz.exceptions import RelationshipError
-from pybiz.util.misc_functions import is_sequence, is_bizlist
+from pybiz.util.misc_functions import is_sequence, is_biz_list
 from pybiz.util.loggers import console
 
 from ..biz_attribute import BizAttributeProperty
@@ -75,7 +75,7 @@ class RelationshipProperty(BizAttributeProperty):
         elif is_sequence(target):
             target = rel.target_biz_class.BizList(target, rel, self)
 
-        is_scalar = not is_bizlist(target)
+        is_scalar = not is_biz_list(target)
         expect_scalar = not rel.many
 
         if is_scalar and not expect_scalar:

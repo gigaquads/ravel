@@ -48,7 +48,7 @@ class PythonDao(Dao):
         # because we do no currently index composite data strucures, like dicts
         # and lists, we add the names of these fields on the bound BizObject
         # class to the list of "ignored" indexes.
-        for k, v in biz_class.schema.fields.items():
+        for k, v in biz_class.Schema.fields.items():
             if isinstance(v, (fields.Dict, fields.Nested, Schema)):
                 self.ignored_indexes.add(k)
 
@@ -115,7 +115,7 @@ class PythonDao(Dao):
         """
         Insert one record into the store, indexing its indexable fields.
         """
-        schema = self.biz_class.schema
+        schema = self.biz_class.pybiz.schema
 
         with self.lock:
             record['_id'] = _id = self.create_id(record)

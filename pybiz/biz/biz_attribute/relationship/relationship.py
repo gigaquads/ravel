@@ -9,7 +9,7 @@ from pybiz.exceptions import RelationshipError
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import (
     normalize_to_tuple,
-    is_bizobj,
+    is_biz_obj,
     is_sequence,
 )
 
@@ -226,7 +226,7 @@ class Relationship(BizAttribute):
         # on a single BizObject; otherwise, apply "query_batch" if it is being
         # loaded by a BizList (i.e. batch load)
         query_func = (
-            self._query_simple if is_bizobj(source) else self._query_batch
+            self._query_simple if is_biz_obj(source) else self._query_batch
         )
         # sanitize and compute kwargs for the eventual Query.execute() call
         query_params = self._prepare_query_params(
@@ -310,16 +310,16 @@ class Relationship(BizAttribute):
             field_value_2_targets = defaultdict(list)
             distinct_targets = set()
 
-            for bizobj in targets:
-                target_field_value = bizobj[builder.target_fname]
-                field_value_2_targets[target_field_value].append(bizobj)
-                distinct_targets.add(bizobj)
+            for biz_obj in targets:
+                target_field_value = biz_obj[builder.target_fname]
+                field_value_2_targets[target_field_value].append(biz_obj)
+                distinct_targets.add(biz_obj)
 
-            for bizobj in sources:
-                source_field_value = bizobj[builder.source_fname]
+            for biz_obj in sources:
+                source_field_value = biz_obj[builder.source_fname]
                 mapped_targets = field_value_2_targets.get(source_field_value)
                 if mapped_targets:
-                    tree[bizobj].extend(mapped_targets)
+                    tree[biz_obj].extend(mapped_targets)
 
             # Make targest the new sources for the next iteration
             sources = builder.target_biz_class.BizList(distinct_targets)
@@ -354,9 +354,9 @@ class Relationship(BizAttribute):
         if not children and depth == len(self.joins):
             acc.append(parent)
         else:
-            for bizobj in children:
+            for biz_obj in children:
                 self._get_terminal_nodes(
-                    tree, bizobj, target_biz_class, acc, depth+1
+                    tree, biz_obj, target_biz_class, acc, depth+1
                 )
         return acc
 
@@ -435,7 +435,7 @@ class JoinMetadata(object):
     def _analyze_func(self, func: Callable):
         # further process the return value of the join func
         info = func(MagicMock())
-        is_dynamic_join = is_bizobj(info[0])
+        is_dynamic_join = is_biz_obj(info[0])
         if is_dynamic_join:
             self._analyze_dynamic_join(func, info)
         else:

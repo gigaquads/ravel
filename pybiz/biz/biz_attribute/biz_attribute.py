@@ -179,18 +179,18 @@ class BizAttributeProperty(property):
     def biz_attr(self) -> 'BizAttribute':
         return self._biz_attr
 
-    def fget(self, bizobj: 'BizObject', *execute_args, **execute_kwargs):
+    def fget(self, biz_obj: 'BizObject', *execute_args, **execute_kwargs):
         key = self.biz_attr.name
-        is_loaded = key in bizobj.internal.attributes
+        is_loaded = key in biz_obj.internal.attributes
         if (not is_loaded) and self.biz_attr.lazy:
             value = self.biz_attr.execute(
-                bizobj, *execute_args, **execute_kwargs
+                biz_obj, *execute_args, **execute_kwargs
             )
-            bizobj.internal.attributes[key] = value
-        return bizobj.internal.attributes.get(key)
+            biz_obj.internal.attributes[key] = value
+        return biz_obj.internal.attributes.get(key)
 
-    def fset(self, bizobj: 'BizObject', value):
-        bizobj.internal.attributes[self.biz_attr.name] = value
+    def fset(self, biz_obj: 'BizObject', value):
+        biz_obj.internal.attributes[self.biz_attr.name] = value
 
-    def fdel(self, bizobj: 'BizObject'):
-        bizobj.internal.attributes.pop(self.biz_attr.name, None)
+    def fdel(self, biz_obj: 'BizObject'):
+        biz_obj.internal.attributes.pop(self.biz_attr.name, None)

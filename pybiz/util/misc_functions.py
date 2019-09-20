@@ -16,14 +16,14 @@ _dict_keys = {}.keys().__class__
 _dict_values = {}.values().__class__
 
 
-def is_bizobj(obj):
+def is_biz_obj(obj):
     """
     Return True if obj is an instance of BizObject.
     """
     return getattr(obj, IS_BIZOBJ_ANNOTATION, False) if obj else False
 
 
-def is_bizlist(obj) -> bool:
+def is_biz_list(obj) -> bool:
     """
     Return True if obj is an instance of BizObject.
     """
@@ -37,13 +37,13 @@ def is_sequence(obj) -> bool:
     return isinstance(obj, (list, tuple, set, _dict_keys, _dict_values))
 
 
-def repr_biz_id(bizobj: 'BizObject') -> Text:
+def repr_biz_id(biz_obj: 'BizObject') -> Text:
     """
     Return a string version of a BizObject ID.
     """
-    if bizobj is None:
+    if biz_obj is None:
         return 'None'
-    _id = bizobj['_id']
+    _id = biz_obj['_id']
     if _id is None:
         return '?'
     elif isinstance(_id, str):

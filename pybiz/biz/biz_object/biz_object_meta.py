@@ -9,7 +9,7 @@ from collections import defaultdict
 from appyratus.utils import DictObject
 
 from pybiz.schema import Schema, fields, String, UuidString, Field, Int, Id
-from pybiz.util.misc_functions import import_object, is_bizobj
+from pybiz.util.misc_functions import import_object, is_biz_obj
 from pybiz.util.loggers import console
 from pybiz.predicate import PredicateParser
 from pybiz.constants import (
@@ -44,9 +44,9 @@ class BizObjectTypeBuilder(object):
         biz_class.Schema = self._build_schema_class(name, biz_class)
 
         self._build_biz_attr_properties(biz_class)
+        self._build_field_properties(biz_class)
 
         biz_class.pybiz.schema = biz_class.Schema()
-        biz_class.pybiz.id_fields = self._compute_id_field_set(biz_class)
         biz_class.pybiz.field_defaults = self._extract_defaults(biz_class)
         biz_class.pybiz.predicate_parser = PredicateParser(biz_class)
         biz_class.pybiz.default_selectors = set()
@@ -54,6 +54,8 @@ class BizObjectTypeBuilder(object):
             biz_class.Schema.fields.keys() | biz_class.attributes.keys()
         )
 
+        # these are for access convenience
+        biz_class.schema = biz_class.pybiz.schema
         biz_class.relationships = biz_class.attributes.relationships
         biz_class.views = biz_class.attributes.views
 
@@ -66,7 +68,7 @@ class BizObjectTypeBuilder(object):
             return is_abstract()
         return False
 
-    def _compute_id_field_set(self, biz_class):
+    def _build_field_properties(self, biz_class):
         biz_class.pybiz.id_fields = set()
         for field in biz_class.Schema.fields.values():
             field_prop = FieldProperty(biz_class, field)
@@ -107,7 +109,7 @@ class BizObjectTypeBuilder(object):
         for k, v in inspect.getmembers(biz_class, predicate=is_field):
             fields[k] = v
 
-        # bless each bizobj with mandatory built-in Fields
+        # bless each biz_obj with mandatory built-in Fields
         if ID_FIELD_NAME not in fields:
             fields[ID_FIELD_NAME] = Id(nullable=True)
         if REV_FIELD_NAME not in fields:
@@ -133,7 +135,7 @@ class BizObjectTypeBuilder(object):
         manager = BizAttributeManager()
 
         for base in bases:
-            if is_bizobj(base):
+            if is_biz_obj(base):
                 # inherit BizAttributes from base BizObject class
                 inherited_manager = getattr(base, 'attributes', {})
                 for group, biz_attr in base.attributes.items():

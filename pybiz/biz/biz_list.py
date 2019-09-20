@@ -2,7 +2,7 @@ from typing import Type, List, Set, Tuple, Text, Dict
 
 from pybiz.constants import IS_BIZLIST_ANNOTATION
 from pybiz.exceptions import RelationshipError
-from pybiz.util.misc_functions import repr_biz_id, is_sequence, is_bizlist
+from pybiz.util.misc_functions import repr_biz_id, is_sequence, is_biz_list
 
 from .biz_thing import BizThing
 
@@ -188,27 +188,27 @@ class BizList(BizThing):
         to_create = []
         to_update = []
 
-        for bizobj in self._targets:
-            if bizobj and bizobj._id is None or '_id' in bizobj.dirty:
-                to_create.append(bizobj)
+        for biz_obj in self._targets:
+            if biz_obj and biz_obj._id is None or '_id' in biz_obj.dirty:
+                to_create.append(biz_obj)
             else:
-                to_update.append(bizobj)
+                to_update.append(biz_obj)
 
         self.biz_class.create_many(to_create)
         self.biz_class.update_many(to_update)
 
-        # recursively save each bizobj's relationships
+        # recursively save each biz_obj's relationships
         # TODO: optimize this to batch saves and updates here
         for rel in self.biz_class.relationships.values():
-            for bizobj in self._targets:
-                biz_thing = bizobj.internal.attributes.get(rel.name)
+            for biz_obj in self._targets:
+                biz_thing = biz_obj.internal.attributes.get(rel.name)
                 if biz_thing:
                     biz_thing.save(depth=depth-1)
 
         return self
 
     def merge(self, obj=None, **more_data):
-        if is_sequence(obj) or is_bizlist(obj):
+        if is_sequence(obj) or is_biz_list(obj):
             assert len(obj) == len(self._targets)
             obj_arr = obj
             for biz_obj, obj_to_merge in zip(self._targets, obj_arr):
@@ -222,13 +222,13 @@ class BizList(BizThing):
         return self
 
     def mark(self, keys=None):
-        for bizobj in self._targets:
-            bizobj.mark(keys=keys)
+        for biz_obj in self._targets:
+            biz_obj.mark(keys=keys)
         return self
 
     def clean(self, keys=None):
-        for bizobj in self._targets:
-            bizobj.clean(keys=keys)
+        for biz_obj in self._targets:
+            biz_obj.clean(keys=keys)
         return self
 
     def delete(self):
@@ -255,8 +255,8 @@ class BizList(BizThing):
         return self
 
     def unload(self, keys: Set[Text]) -> 'BizList':
-        for bizobj in self._targets:
-            bizobj.unload(keys)
+        for biz_obj in self._targets:
+            biz_obj.unload(keys)
         return self
 
     def dump(self, *args, **kwargs) -> List[Dict]:

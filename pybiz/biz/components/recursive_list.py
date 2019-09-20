@@ -124,7 +124,7 @@ class RecursiveList(BizObject):
         if self.parent_id is None:
             return
 
-        dirty = self.BizList([self, self.parent])  # bizobjs to update
+        dirty = self.BizList([self, self.parent])  # biz_objs to update
 
         # adjust remaining sibling's positions
         siblings = self.query(
@@ -151,7 +151,7 @@ class RecursiveList(BizObject):
         position = max(0, min(self.size, index))
         do_shift_sibling_positions = position < self.size
 
-        dirty = self.BizList([self])  # bizobjs to update
+        dirty = self.BizList([self])  # biz_objs to update
 
         for j, child in enumerate(children):
             if copy:

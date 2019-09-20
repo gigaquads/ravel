@@ -10,7 +10,7 @@ from appyratus.utils import DictObject, DictUtils
 
 from pybiz.dao.python_dao import PythonDao
 from pybiz.util.misc_functions import (
-    is_bizobj,
+    is_biz_obj,
     is_sequence,
     repr_biz_id,
     normalize_to_tuple,
@@ -31,7 +31,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     BizList = None
 
     schema = None
-    relationships = {}
+    relationships = None
+    views = None
 
     is_bootstrapped = False
     is_abstract = False
@@ -82,7 +83,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         Generate a fixture for this BizObject type.
         """
-        fields = fields or set(cls.schema.fields.keys())
+        fields = fields or set(cls.Schema.fields.keys())
         data = cls.schema.generate(fields=fields, constraints=constraints)
         return cls(data=data)
 
@@ -197,7 +198,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         Does a simple check if a BizObject exists by id.
         """
-        _id = obj._id if is_bizobj(obj) else obj
+        _id = obj._id if is_biz_obj(obj) else obj
         return cls.get_dao().exists(_id=_id) if _id is not None else False
 
     @classmethod
@@ -301,13 +302,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return self
 
     @classmethod
-    def delete_many(cls, bizobjs) -> None:
-        bizobj_ids = []
-        for obj in bizobjs:
+    def delete_many(cls, biz_objs) -> None:
+        biz_obj_ids = []
+        for obj in biz_objs:
             obj.mark(obj.internal.state.keys())
-            bizobj_ids.append(obj._id)
+            biz_obj_ids.append(obj._id)
             obj._id = None
-        cls.get_dao().delete_many(bizobj_ids)
+        cls.get_dao().delete_many(biz_obj_ids)
 
     @classmethod
     def delete_all(cls) -> None:
@@ -321,7 +322,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         self.insert_defaults(prepared_record)
         prepared_record.pop('_rev', None)
 
-        prepared_record, errors = self.pybiz.schema.process(prepared_record)
+        prepared_record, errors = self.schema.process(prepared_record)
         if errors:
             console.error(
                 message=f'could not create {self.__class__.__name__} object',
@@ -349,7 +350,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         errors = {}
         prepared_record = {}
         for k, v in raw_record.items():
-            field = self.schema.fields.get(k)
+            field = self.Schema.fields.get(k)
             if field is not None:
                 prepared_record[k], error = field.process(v)
                 if error:
@@ -368,19 +369,19 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return self.clean()
 
     @classmethod
-    def create_many(cls, bizobjs: List['BizObject']) -> 'BizList':
+    def create_many(cls, biz_objs: List['BizObject']) -> 'BizList':
         """
         Call `dao.create_method` on input `BizObject` list and return them in
         the form of a BizList.
         """
         records = []
 
-        for bizobj in bizobjs:
-            if bizobj is None:
+        for biz_obj in biz_objs:
+            if biz_obj is None:
                 continue
-            record = bizobj.internal.state.copy()
+            record = biz_obj.internal.state.copy()
             cls.insert_defaults(record)
-            record, errors = cls.pybiz.schema.process(record)
+            record, errors = cls.schema.process(record)
             record.pop('_rev', None)
             if errors:
                 raise ValidationError(
@@ -393,29 +394,29 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         created_records = cls.get_dao().create_many(records)
 
-        for bizobj, record in zip(bizobjs, created_records):
-            bizobj.internal.state.update(record)
-            bizobj.clean()
+        for biz_obj, record in zip(biz_objs, created_records):
+            biz_obj.internal.state.update(record)
+            biz_obj.clean()
 
-        return cls.BizList(bizobjs)
+        return cls.BizList(biz_objs)
 
     @classmethod
     def update_many(
         cls,
-        bizobjs: List['BizObject'],
+        biz_objs: List['BizObject'],
         data: Dict = None,
         **more_data
     ) -> 'BizList':
         """
         Call the Dao's update_many method on the list of BizObjects. Multiple
-        Dao calls may be made. As a preprocessing step, the input bizobj list
+        Dao calls may be made. As a preprocessing step, the input biz_obj list
         is partitioned into groups, according to which subset of fields are
         dirty.
 
-        For example, consider this list of bizobjs,
+        For example, consider this list of biz_objs,
 
         ```python
-        bizobjs = [
+        biz_objs = [
             user1,     # dirty == {'email'}
             user2,     # dirty == {'email', 'name'}
             user3,     # dirty == {'email'}
@@ -439,37 +440,37 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         # we issue an update_many statement for each partition in the DAL.
         partitions = defaultdict(list)
 
-        for bizobj in bizobjs:
-            if bizobj is None:
+        for biz_obj in biz_objs:
+            if biz_obj is None:
                 continue
             if common_values:
-                bizobj.merge(common_values)
-            partitions[tuple(bizobj.dirty)].append(bizobj)
+                biz_obj.merge(common_values)
+            partitions[tuple(biz_obj.dirty)].append(biz_obj)
 
-        for bizobj_partition in partitions.values():
+        for biz_obj_partition in partitions.values():
             records, _ids = [], []
 
-            for bizobj in bizobj_partition:
-                record = bizobj.dirty_data
+            for biz_obj in biz_obj_partition:
+                record = biz_obj.dirty_data
                 record.pop('_rev', None)
                 record.pop('_id', None)
                 records.append(record)
-                _ids.append(bizobj._id)
+                _ids.append(biz_obj._id)
 
             console.debug(
                 message='performing update_many',
                 data={
                     'partition_size': len(_ids),
-                    'total_size': len(bizobjs),
+                    'total_size': len(biz_objs),
                 }
             )
             updated_records = cls.get_dao().update_many(_ids, records)
 
-            for bizobj, record in zip(bizobj_partition, updated_records):
-                bizobj.internal.state.update(record)
-                bizobj.clean()
+            for biz_obj, record in zip(biz_obj_partition, updated_records):
+                biz_obj.internal.state.update(record)
+                biz_obj.clean()
 
-        return cls.BizList(bizobjs)
+        return cls.BizList(biz_objs)
 
     def save(self, depth=1):
         if not depth:
@@ -523,7 +524,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def mark(self, keys) -> 'BizObject':
         if not is_sequence(keys):
             keys = {keys}
-        self.internal.state.mark_dirty({k for k in keys if k in self.schema.fields})
+        self.internal.state.mark_dirty({
+            k for k in keys if k in self.Schema.fields
+        })
         return self
 
     def copy(self, deep=False) -> 'BizObject':
@@ -556,7 +559,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if not (source or source_kwargs):
             return self
 
-        if is_bizobj(source):
+        if is_biz_obj(source):
             assert isinstance(source, self.__class__)
             for k, v in source.internal.state.items():
                 setattr(self, k, v)
@@ -566,7 +569,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             original_source = source
             source = self.schema.translate_source(source)
             for k, v in source.items():
-                if k in self.schema.fields or k in self.attributes:
+                if k in self.Schema.fields or k in self.attributes:
                     setattr(self, k, v)
             for k in original_source.keys() - source.keys():
                 setattr(self, k, original_source[k])

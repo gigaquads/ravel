@@ -2,7 +2,7 @@ import pytest
 import pybiz
 
 from appyratus.test import mark
-from pybiz.util.misc_functions import is_bizlist
+from pybiz.util.misc_functions import is_biz_list
 
 
 class TestViewBasics(object):

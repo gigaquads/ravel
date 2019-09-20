@@ -3,7 +3,7 @@ import bisect
 from functools import reduce
 from typing import List, Dict, Set, Text, Type, Tuple
 
-from pybiz.util.misc_functions import is_bizobj, is_bizlist, is_sequence
+from pybiz.util.misc_functions import is_biz_obj, is_biz_list, is_sequence
 from pybiz.predicate import Predicate
 
 from ..biz_list import BizList
@@ -194,7 +194,7 @@ class QueryExecutor(object):
                 source, backfiller=backfiller, **params
             )
         elif limit and (len(target_biz_thing) < limit):
-            assert is_bizlist(target_biz_thing)
+            assert is_biz_list(target_biz_thing)
             params = params.copy()
             params['limit'] = limit - len(target_biz_thing)
             target_biz_thing.extend(

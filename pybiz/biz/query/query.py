@@ -10,7 +10,7 @@ from appyratus.utils import DictUtils
 import pybiz.biz
 
 from pybiz.util.misc_functions import (
-    is_sequence, is_bizobj, is_bizlist, get_class_name
+    is_sequence, is_biz_obj, is_biz_list, get_class_name
 )
 from pybiz.predicate import Predicate
 from pybiz.schema import fields, StringTransformer
@@ -310,7 +310,7 @@ class Query(AbstractQuery):
         elif isinstance(selector, pybiz.biz.BizAttributeProperty):
             assert selector.biz_attr.biz_class is self.biz_class
             self._params.attributes[selector.biz_attr.name] = selector.select()
-        elif isinstance(selector, type) and is_bizobj(selector):
+        elif isinstance(selector, type) and is_biz_obj(selector):
             # select everything but relationships
             biz_class = selector
             keys = (

@@ -2,7 +2,7 @@ from typing import Text, Type, Tuple, Dict, Set, Callable, List
 
 
 from pybiz.predicate import Predicate
-from pybiz.util.misc_functions import is_bizobj, is_bizlist
+from pybiz.util.misc_functions import is_biz_obj, is_biz_list
 from pybiz.util.loggers import console
 
 from ...query import Query
@@ -98,9 +98,9 @@ class StaticQueryBuilder(QueryBuilder):
         target_field_value = getattr(self.source, self.source_fprop.field.name)
         where_predicate = None
 
-        if is_bizobj(self.source):
+        if is_biz_obj(self.source):
             where_predicate = (self.target_fprop == target_field_value)
-        elif is_bizlist(self.source):
+        elif is_biz_list(self.source):
             where_predicate = (self.target_fprop.including(target_field_value))
         else:
             raise TypeError('TODO: raise custom exception')

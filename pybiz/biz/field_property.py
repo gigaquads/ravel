@@ -4,7 +4,7 @@ import pybiz.biz
 
 from typing import Text, Tuple, List, Type, Callable
 
-from pybiz.util.misc_functions import is_bizobj, flatten_sequence
+from pybiz.util.misc_functions import is_biz_obj, flatten_sequence
 from pybiz.util.loggers import console
 from pybiz.predicate import (
     Predicate,
@@ -61,12 +61,12 @@ class FieldProperty(property):
 
     def including(self, *others) -> Predicate:
         others = flatten_sequence(others)
-        others = {obj._id if is_bizobj(obj) else obj for obj in others}
+        others = {obj._id if is_biz_obj(obj) else obj for obj in others}
         return self._build_predicate(OP_CODE.INCLUDING, others)
 
     def excluding(self, *others) -> Predicate:
         others = flatten_sequence(others)
-        others = {obj._id if is_bizobj(obj) else obj for obj in others}
+        others = {obj._id if is_biz_obj(obj) else obj for obj in others}
         return self._build_predicate(OP_CODE.EXCLUDING, others)
 
     @property
@@ -98,32 +98,32 @@ class FieldProperty(property):
             callbacks=callbacks,
         )
 
-    def fget(self, bizobj):
+    def fget(self, biz_obj):
         # try to lazy load the field value
-        is_loaded = self.field.name in bizobj.internal.state
-        exists_in_dao = '_id' in bizobj.internal.state
+        is_loaded = self.field.name in biz_obj.internal.state
+        exists_in_dao = '_id' in biz_obj.internal.state
 
         if (not is_loaded) and exists_in_dao:
             if self.field.meta.get('lazy', True):
                 field_names_to_load = (
-                    bizobj.schema.fields.keys() - bizobj.internal.state.keys()
+                    biz_obj.schema.fields.keys() - biz_obj.internal.state.keys()
                 )
                 field_source_names_to_load = {
-                    bizobj.schema.fields[k].source
+                    biz_obj.schema.fields[k].source
                     for k in field_names_to_load
                 }
                 console.debug(
                     message=f'lazy loading fields',
                     data={
-                        'object': str(bizobj),
+                        'object': str(biz_obj),
                         'fields': field_source_names_to_load,
                     }
                 )
-                bizobj.load(field_source_names_to_load)
+                biz_obj.load(field_source_names_to_load)
 
-        return bizobj.internal.state.get(self.field.name)
+        return biz_obj.internal.state.get(self.field.name)
 
-    def fset(self, bizobj, value):
+    def fset(self, biz_obj, value):
         key = self.field.name
         if value is not None:
             value, error = self.field.process(value)
@@ -131,17 +131,17 @@ class FieldProperty(property):
                 raise ValueError(
                     f'error setting {key} to {value}: {error}'
                 )
-            bizobj.internal.state[key] = value
+            biz_obj.internal.state[key] = value
         elif self.field.nullable:
-            bizobj.internal.state[key] = None
+            biz_obj.internal.state[key] = None
         else:
             raise AttributeError(key)
 
-    def fdel(self, bizobj):
+    def fdel(self, biz_obj):
         key = self.field.name
         if self.field.required:
             raise AttributeError(
                 f'cannot delete required field value: {key}'
             )
         else:
-            bizobj.internal.state.pop(key, None)
+            biz_obj.internal.state.pop(key, None)

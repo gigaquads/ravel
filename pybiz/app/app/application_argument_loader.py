@@ -6,7 +6,7 @@ from typing import (
 )
 
 from pybiz.util.misc_functions import (
-    is_bizobj, is_sequence, extract_biz_info_from_annotation
+    is_biz_obj, is_sequence, extract_biz_info_from_annotation
 )
 
 
@@ -116,7 +116,7 @@ class ApplicationArgumentLoader(object):
         if not (preloaded and biz_class):
             return preloaded
         elif not many:
-            if is_bizobj(preloaded):
+            if is_biz_obj(preloaded):
                 return preloaded
             elif isinstance(preloaded, dict):
                 if 'id' in preloaded:
@@ -129,7 +129,7 @@ class ApplicationArgumentLoader(object):
         elif is_sequence(preloaded):
             if isinstance(preloaded, set):
                 preloaded = list(preloaded)
-            if is_bizobj(preloaded[0]):
+            if is_biz_obj(preloaded[0]):
                 return biz_class.BizList(preloaded)
             elif isinstance(preloaded[0], dict):
                 return biz_class.BizList(
