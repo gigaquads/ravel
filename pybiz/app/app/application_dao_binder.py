@@ -115,7 +115,7 @@ class ApplicationDaoBinder(object):
         elif not is_sequence(biz_classes):
             biz_classes = [biz_classes]
         for biz_class in biz_classes:
-            if not biz_class.is_abstract:
+            if not biz_class.pybiz.is_abstract:
                 biz_class.binder = self  # this is used in BizObject.get_dao()
                 self.get_dao_instance(biz_class, rebind=rebind)
 

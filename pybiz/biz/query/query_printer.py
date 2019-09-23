@@ -52,7 +52,7 @@ class QueryPrinter(object):
         for name, sub_query in sorted(query.params.attributes.items()):
             if isinstance(sub_query, Query):
                 type_name = sub_query.biz_class.__name__
-                rel = query.biz_class.relationships.get(name)
+                rel = query.biz_class.pybiz.attributes.relationships.get(name)
                 if rel and rel.many:
                     type_name = f'[{type_name}]'
                 sub_query_substr = self.format_query(sub_query, indent=indent+5)

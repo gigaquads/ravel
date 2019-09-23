@@ -25,7 +25,7 @@ class RelationshipProperty(BizAttributeProperty):
         return Query(
             biz_class=rel.target_biz_class,
             alias=rel.name,
-            select=selectors or set(rel.target_biz_class.Schema.fields.keys()),
+            select=selectors or rel.target_biz_class.pybiz.default_selectors,
             order_by=rel.order_by,
             limit=rel.limit,
             offset=rel.offset,

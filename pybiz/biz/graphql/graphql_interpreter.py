@@ -48,18 +48,19 @@ class GraphQLInterpreter(object):
                     child_ast_node, target_biz_class, context
                 )
                 selectors.append(fprop_query)
-            elif child_name in target_biz_class.relationships:
+            elif child_name in target_biz_class.pybiz.attributes.relationships:
                 # Recursively build query based on relationship
                 #
-                # NOTE: this check MUST be performed BEFORE the check
-                # for is child_name in target_biz_class.attributes
-                rel = target_biz_class.relationships[child_name]
+                # NOTE: this check MUST be performed BEFORE the check for each
+                # child_name in target_biz_class.pybiz.attributes
+                relationships = target_biz_class.pybiz.attributes.relationships
+                rel = relationships[child_name]
                 child_biz_class = rel.target_biz_class
                 child_query = self._build_query(
                     child_ast_node, child_biz_class, context
                 )
                 selectors.append(child_query)
-            elif child_name in target_biz_class.attributes:
+            elif child_name in target_biz_class.pybiz.attributes:
                 biz_attr_query = self._build_pybiz_biz_attr_query(
                     child_ast_node, target_biz_class, context
                 )
@@ -100,7 +101,7 @@ class GraphQLInterpreter(object):
         """
         """
         alias = ast_node.name
-        biz_attr = target_biz_class.attributes.by_name(ast_node.name)
+        biz_attr = target_biz_class.pybiz.attributes.by_name(ast_node.name)
         params = GraphQLArguments.extract_arguments_dict(ast_node)
         return BizAttributeQuery(
             biz_attr, alias=alias, params=params, context=context

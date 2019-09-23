@@ -163,7 +163,7 @@ class QueryExecutor(object):
     def _sort_biz_attrs(self, query):
         ordered_biz_attrs = []
         for biz_attr_name, sub_query in query.params.attributes.items():
-            biz_attr = query.biz_class.attributes.by_name(biz_attr_name)
+            biz_attr = query.biz_class.pybiz.attributes.by_name(biz_attr_name)
             bisect.insort(ordered_biz_attrs, biz_attr)
         return ordered_biz_attrs
 

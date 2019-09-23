@@ -137,7 +137,8 @@ class Manifest(object):
         visited_dao_classes = set()
 
         for biz_class in self.types.biz.values():
-            if not (biz_class.is_abstract or biz_class.is_bootstrapped):
+            if not (biz_class.pybiz.is_abstract
+                    or biz_class.pybiz.is_bootstrapped):
                 console.debug(
                     f'bootstrapping "{biz_class.__name__}" BizObject...'
                 )

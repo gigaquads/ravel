@@ -305,7 +305,7 @@ class Query(AbstractQuery):
             assert selector.fprop.biz_class is self.biz_class
             self._params.fields[selector.alias] = selector
         elif isinstance(selector, (Query, BizAttributeQuery)):
-            assert selector.alias in self.biz_class.attributes
+            assert selector.alias in self.biz_class.pybiz.attributes
             self._params.attributes[selector.alias] = selector
         elif isinstance(selector, pybiz.biz.BizAttributeProperty):
             assert selector.biz_attr.biz_class is self.biz_class
@@ -315,7 +315,7 @@ class Query(AbstractQuery):
             biz_class = selector
             keys = (
                 set(biz_class.pybiz.all_selectors) -
-                biz_class.relationships.keys()
+                biz_class.pybiz.attributes.relationships.keys()
             )
             for k in keys:
                 self._params.fields[k] = None
@@ -349,7 +349,7 @@ class Query(AbstractQuery):
 
         for k, v in _tree.items():
             if isinstance(v, dict):
-                rel = biz_class.relationships[k]
+                rel = biz_class.pybiz.attributes.relationships[k]
                 sub_query = cls.load_from_keys(rel.target_biz_class, _tree=v)
                 sub_query.alias = rel.name
                 query._add_selector(sub_query)

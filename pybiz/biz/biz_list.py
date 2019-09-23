@@ -1,13 +1,13 @@
 from typing import Type, List, Set, Tuple, Text, Dict
 
-from pybiz.constants import IS_BIZLIST_ANNOTATION
+from pybiz.constants import IS_BIZ_LIST_ANNOTATION
 from pybiz.exceptions import RelationshipError
 from pybiz.util.misc_functions import repr_biz_id, is_sequence, is_biz_list
 
 from .biz_thing import BizThing
 
 
-class BizListTypeBuilder(object):
+class BizListClassBuilder(object):
     """
     This builder is used to endow each BizObject class with its
     BizObject.BizList attribute, which is a derived BizList class which knows
@@ -21,7 +21,7 @@ class BizListTypeBuilder(object):
         Create a BizList subclass, specialized for the given BizObject type.
         """
         derived_name = f'{biz_class.__name__}BizList'
-        derived_attrs = {IS_BIZLIST_ANNOTATION: True, 'biz_class': biz_class}
+        derived_attrs = {IS_BIZ_LIST_ANNOTATION: True, 'biz_class': biz_class}
         biz_list_subclass = type(derived_name, (BizList, ), derived_attrs)
 
         # create "batch" accessor properties for
@@ -30,7 +30,7 @@ class BizListTypeBuilder(object):
             prop = self._build_property(name)
             setattr(biz_list_subclass, name, prop)
 
-        return biz_list_subclass
+        biz_class.BizList = biz_list_subclass
 
     def _build_property(self, key):
         """
@@ -38,7 +38,8 @@ class BizListTypeBuilder(object):
         associated with the BizList subclass.
         """
         def fget(biz_list):
-            rel = biz_list.biz_class.relationships.get(key)
+            relationships = biz_list.biz_class.pybiz.attributes.relationships
+            rel = relationships.get(key)
             if (rel is not None) and (not rel.many):
                 return rel.target_biz_class.BizList([
                     getattr(x, key, None) for x in biz_list
@@ -199,7 +200,7 @@ class BizList(BizThing):
 
         # recursively save each biz_obj's relationships
         # TODO: optimize this to batch saves and updates here
-        for rel in self.biz_class.relationships.values():
+        for rel in self.biz_class.pybiz.attributes.relationships.values():
             for biz_obj in self._targets:
                 biz_thing = biz_obj.internal.attributes.get(rel.name)
                 if biz_thing:

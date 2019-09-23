@@ -112,7 +112,7 @@ class QueryBackfiller(object):
         """
         source_biz_class = query.biz_class
         for name, sub_query in query.params.attributes.items():
-            if name not in source_biz_class.relationships:
+            if name not in source_biz_class.pybiz.attributes.relationships:
                 # NOTE: relationships are handled elsewhere
                 for source in sources:
                     generated_value = sub_query.biz_attr.generate(source)

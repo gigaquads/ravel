@@ -5,6 +5,16 @@ from appyratus.schema.fields import *
 
 
 class Id(fields.UuidString):
+    """
+    This is a special Field recognized internally by Pybiz. When an Application
+    bootstraps, all Id fields declared on BizObject classes are replaced with a
+    concrete Field class determined by the Applciation.id_field_class property.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.meta['pybiz_is_fk'] = True  # "is foriegn key"
+
     def replace_with(self, replacement_field_class: Type[Field]):
         """
         This is used internally when Pybiz replaces all Id fields declared on
@@ -22,6 +32,11 @@ class Id(fields.UuidString):
 
 
 class Transformer(object):
+    """
+    Transformers are used by FieldPropertyQuery objects to perform various
+    transformations on queried field values.
+    """
+
     def transform(self, transform: Text, source, args: Tuple) -> object:
         func = getattr(self, transform, None)
         if func is not None:
@@ -31,6 +46,11 @@ class Transformer(object):
 
 
 class StringTransformer(Transformer):
+    """
+    Transformers are used by FieldPropertyQuery objects to perform various
+    transformations on queried String field values.
+    """
+
     def lower(self, source: Text, is_set, *args: Tuple) -> Text:
         return source.lower() if is_set else source
 

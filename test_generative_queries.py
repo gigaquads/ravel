@@ -73,7 +73,7 @@ if __name__ == '__main__':
                 )
             ).where(
                 Account.name == 'Axial',
-                Account.size.excluding(69, 52)
+                Account.size.excluding(52)
             ).execute(
                 first=True,
                 backfill='persistent'

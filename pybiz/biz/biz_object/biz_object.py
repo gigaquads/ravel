@@ -19,7 +19,7 @@ from pybiz.util.loggers import console
 from pybiz.util.dirty import DirtyDict
 from pybiz.exceptions import ValidationError, BizObjectError
 
-from .biz_object_meta import BizObjectTypeBuilder, BizObjectMeta
+from .biz_object_meta import BizObjectMeta
 from ..dump import NestingDumper, SideLoadingDumper
 from ..biz_thing import BizThing
 from ..query import Query, Backfill
@@ -33,9 +33,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     schema = None
     relationships = None
     views = None
-
-    is_bootstrapped = False
-    is_abstract = False
 
     app = None
 
@@ -51,6 +48,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Declare the DAO type/instance used by this BizObject class.
         """
         return PythonDao
+
+    @classmethod
+    def __abstract__(cls) -> bool:
+        """
+        Declare the DAO type/instance used by this BizObject class.
+        """
+        return True
 
     @classmethod
     def get_dao(cls, bind=True) -> 'Dao':
@@ -71,7 +75,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         # select all BizObject fields by default
         if not selectors:
-            selectors = tuple(cls.schema.fields.keys())
+            selectors = cls.pybiz.default_selectors
         return Query(cls).select(selectors)
 
     @classmethod
@@ -90,7 +94,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def __init__(self, data=None, **more_data):
         data = dict(data or {}, **more_data)
         self.internal = DictObject({
-            'hash': self._build_hash(data.get('_id')),
+            'hash_int': self._build_hash(data.get('_id')),
             'arg': None,
             'state': DirtyDict(),
             'attributes': {},
@@ -98,7 +102,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         self.merge(data)
 
     def __hash__(self):
-        return self.internal.hash
+        return self.internal.hash_int
 
     def __getitem__(self, key):
         if key in self.pybiz.all_selectors:
@@ -142,12 +146,12 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 cls.Schema.replace_field(replacement_field, overwrite=True)
 
         # bootstrap BizAttributes, like Relationships, Views, etc.
-        for biz_attr in cls.attributes.values():
+        for biz_attr in cls.pybiz.attributes.values():
             biz_attr.bootstrap(app)
 
         cls.on_bootstrap()  # custom app logic goes here
 
-        cls.is_bootstrapped = True
+        cls.pybiz.is_bootstrapped = True
 
     @classmethod
     def on_bootstrap(cls, **kwargs):
@@ -569,7 +573,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             original_source = source
             source = self.schema.translate_source(source)
             for k, v in source.items():
-                if k in self.Schema.fields or k in self.attributes:
+                if k in self.Schema.fields or k in self.pybiz.attributes:
                     setattr(self, k, v)
             for k in original_source.keys() - source.keys():
                 setattr(self, k, original_source[k])
