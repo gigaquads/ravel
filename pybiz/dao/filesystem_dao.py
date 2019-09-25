@@ -15,6 +15,7 @@ from appyratus.utils import (
 )
 
 from pybiz.util.misc_functions import import_object
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 from .base import Dao
 from .python_dao import PythonDao
@@ -87,7 +88,7 @@ class FilesystemDao(Dao):
         )
 
     def create_id(self, record):
-        return record.get('_id', uuid.uuid4().hex)
+        return record.get(ID_FIELD_NAME, uuid.uuid4().hex)
 
     def exists(self, fname: Text) -> bool:
         return BaseFile.exists(self.mkpath(fname))
@@ -95,7 +96,7 @@ class FilesystemDao(Dao):
     def create(self, record: Dict) -> Dict:
         _id = self.create_id(record)
         record = self.update(_id, record)
-        record['_id'] = _id
+        record[ID_FIELD_NAME] = _id
         self._cache_dao.create(record)
         return record
 
@@ -127,7 +128,7 @@ class FilesystemDao(Dao):
         fields = fields if isinstance(fields, set) else set(fields or [])
         if not fields:
             fields = set(self.biz_class.Schema.fields.keys())
-        fields |= {'_id', '_rev'}
+        fields |= {ID_FIELD_NAME, REV_FIELD_NAME}
 
         records = {}
 
@@ -135,11 +136,11 @@ class FilesystemDao(Dao):
             fpath = self.mkpath(_id)
             record = self.ftype.read(fpath)
             if record:
-                record.setdefault('_id', _id)
-                record['_rev'] = record.setdefault('_rev', 0)
+                record.setdefault(ID_FIELD_NAME, _id)
+                record[REV_FIELD_NAME] = record.setdefault(REV_FIELD_NAME, 0)
                 records[_id] = {k: record.get(k) for k in fields}
             else:
-                records['_id'] = None
+                records[ID_FIELD_NAME] = None
 
         self._cache_dao.create_many(records.values())
         records.update(cached_records)
@@ -163,13 +164,13 @@ class FilesystemDao(Dao):
         else:
             record = data
 
-        if '_id' not in record:
-            record['_id'] = _id
+        if ID_FIELD_NAME not in record:
+            record[ID_FIELD_NAME] = _id
 
-        if '_rev' not in record:
-            record['_rev'] = 0
+        if REV_FIELD_NAME not in record:
+            record[REV_FIELD_NAME] = 0
         else:
-            record['_rev'] += 1
+            record[REV_FIELD_NAME] += 1
 
         self._cache_dao.update(_id, record)
         self.ftype.write(path=fpath, data=record)

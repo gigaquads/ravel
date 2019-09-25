@@ -10,6 +10,7 @@ from abc import ABCMeta, abstractmethod
 from appyratus.env import Environment
 
 from pybiz.util.loggers import console
+from pybiz.constants import ID_FIELD_NAME
 
 from .dao_history import DaoHistory, DaoEvent
 
@@ -114,7 +115,7 @@ class Dao(object, metaclass=DaoMeta):
         """
         Generate and return a new ID for the given not-yet-created record.
         """
-        return record.get('_id') or uuid.uuid4().hex
+        return record.get(ID_FIELD_NAME) or uuid.uuid4().hex
 
     @abstractmethod
     def exists(self, _id) -> bool:

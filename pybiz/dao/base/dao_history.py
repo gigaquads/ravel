@@ -6,6 +6,7 @@ from collections import deque
 from appyratus.utils import TimeUtils
 
 from pybiz.util.loggers import console
+from pybiz.constants import ID_FIELD_NAME
 
 
 class DaoEvent(object):
@@ -120,10 +121,11 @@ class DaoHistory(object):
                 # anew by the replaying DAO inside its own create methods.
                 if retval:
                     if event.method == 'create':
-                        args[0]['_id'] = retval.get('_id')
+                        args[0][ID_FIELD_NAME] = retval.get(ID_FIELD_NAME)
                     elif event.method == 'create_many':
                         for record, created_record in zip(args[0], retval):
-                            record['_id'] = created_record.get('_id')
+                            _id = created_record.get(ID_FIELD_NAME)
+                            record[ID_FIELD_NAME] = _id
 
                 dao.history.append(event)
                 if exc is not None:

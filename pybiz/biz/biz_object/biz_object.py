@@ -15,6 +15,8 @@ from pybiz.util.misc_functions import (
     repr_biz_id,
     normalize_to_tuple,
 )
+
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.util.loggers import console
 from pybiz.util.dirty import DirtyDict
 from pybiz.exceptions import ValidationError, BizObjectError
@@ -94,7 +96,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def __init__(self, data=None, **more_data):
         data = dict(data or {}, **more_data)
         self.internal = DictObject({
-            'hash_int': self._build_hash(data.get('_id')),
+            'hash_int': self._build_hash(data.get(ID_FIELD_NAME)),
             'arg': None,
             'state': DirtyDict(),
             'attributes': {},
@@ -324,7 +326,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         prepared_record = self.internal.state.copy()
         self.insert_defaults(prepared_record)
-        prepared_record.pop('_rev', None)
+        prepared_record.pop(REV_FIELD_NAME, None)
 
         prepared_record, errors = self.schema.process(prepared_record)
         if errors:
@@ -348,8 +350,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             self.merge(data)
 
         raw_record = self.dirty_data
-        raw_record.pop('_rev', None)
-        raw_record.pop('_id', None)
+        raw_record.pop(REV_FIELD_NAME, None)
+        raw_record.pop(ID_FIELD_NAME, None)
 
         errors = {}
         prepared_record = {}
@@ -364,7 +366,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             raise ValidationError(
                 message=f'could not update {self.__class__.__name__} object',
                 data={
-                    '_id': self._id,
+                    ID_FIELD_NAME: self._id,
                     'errors': errors,
                 }
             )
@@ -386,7 +388,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             record = biz_obj.internal.state.copy()
             cls.insert_defaults(record)
             record, errors = cls.schema.process(record)
-            record.pop('_rev', None)
+            record.pop(REV_FIELD_NAME, None)
             if errors:
                 raise ValidationError(
                     message=(
@@ -456,8 +458,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
             for biz_obj in biz_obj_partition:
                 record = biz_obj.dirty_data
-                record.pop('_rev', None)
-                record.pop('_id', None)
+                record.pop(REV_FIELD_NAME, None)
+                record.pop(ID_FIELD_NAME, None)
                 records.append(record)
                 _ids.append(biz_obj._id)
 
@@ -480,7 +482,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if not depth:
             return self
 
-        if self._id is None or '_id' in self.dirty:
+        if self._id is None or ID_FIELD_NAME in self.dirty:
             self.create()
         else:
             self.update()

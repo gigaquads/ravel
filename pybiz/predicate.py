@@ -19,7 +19,7 @@ from appyratus.utils import DictObject
 from appyratus.schema import RangeConstraint, ConstantValueConstraint
 
 from pybiz.schema import Enum as EnumField
-
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 OP_CODE = Enum(
     EQ='eq',
@@ -320,8 +320,8 @@ class BooleanPredicate(Predicate):
 class PredicateParser(object):
 
     pybiz_field_name_transform_inversions = {
-        'id': '_id',
-        'rev': '_rev',
+        'id': ID_FIELD_NAME,
+        'rev': REV_FIELD_NAME,
     }
 
     class Operand(object):

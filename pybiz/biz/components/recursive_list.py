@@ -1,7 +1,7 @@
 from typing import Dict, List, Text, Set
 
 from pybiz import BizObject, Relationship, fields
-
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 # TODO: implement updates to depth in insert and unlink
 
@@ -107,7 +107,10 @@ class RecursiveList(BizObject):
                 copy_children(child, copied_child._id, fields)
 
         # copy all non-internal fields by default
-        fields = set(fields or self.schema.fields.keys()) - {'_id', '_rev'}
+        fields = (
+            set(fields or self.schema.fields.keys())
+                - {ID_FIELD_NAME, REV_FIELD_NAME}
+        )
 
         # copy this instance & conditionally children, recursively
         copied = copy_one(self, self.parent_id, fields)

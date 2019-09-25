@@ -17,6 +17,7 @@ from appyratus.env import Environment
 from pybiz.app.middleware import ApplicationMiddleware
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.schema import fields, Field
+from pybiz.constants import REV_FIELD_NAME
 
 from .dialect import Dialect
 
@@ -57,7 +58,7 @@ class SqlalchemyTableBuilder(object):
         meta = field.meta.get('sa', {})
         unique = meta.get('unique', False)
 
-        if field.source == '_rev':
+        if field.source == REV_FIELD_NAME:
             indexed = True
             server_default = '0'
         else:

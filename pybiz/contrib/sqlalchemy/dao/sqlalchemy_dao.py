@@ -22,6 +22,7 @@ from pybiz.predicate import (
 from pybiz.schema import fields, Field
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.dao.base import Dao
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 from .dialect import Dialect
 from .sqlalchemy_table_builder import SqlalchemyTableBuilder
@@ -168,13 +169,13 @@ class SqlalchemyDao(Dao):
 
     @property
     def id_column_name(self):
-        return self.biz_class.Schema.fields['_id'].source
+        return self.biz_class.Schema.fields[ID_FIELD_NAME].source
 
     def adapt_record(self, record: Dict, serialize=True) -> Dict:
         cb_name = 'on_encode' if serialize else 'on_decode'
         prepared_record = {}
         for k, v in record.items():
-            if k in ('_rev'):
+            if k in (REV_FIELD_NAME):
                 prepared_record[k] = v
             adapter = self._adapters.get(k)
             if adapter:
@@ -232,7 +233,7 @@ class SqlalchemyDao(Dao):
         fields = fields or self.biz_class.Schema.fields.keys()
         fields.update({
             self.id_column_name,
-            self.biz_class.Schema.fields['_rev'].source,
+            self.biz_class.Schema.fields[REV_FIELD_NAME].source,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]
@@ -339,7 +340,7 @@ class SqlalchemyDao(Dao):
             }
         fields.update({
             self.id_column_name,
-            self.biz_class.Schema.fields['_rev'].source,
+            self.biz_class.Schema.fields[REV_FIELD_NAME].source,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]
@@ -374,7 +375,7 @@ class SqlalchemyDao(Dao):
         return self.fetch_many([], fields=fields)
 
     def create(self, record: dict) -> dict:
-        record['_id'] = self.create_id(record)
+        record[ID_FIELD_NAME] = self.create_id(record)
         prepared_record = self.adapt_record(record, serialize=True)
         insert_stmt = self.table.insert().values(**prepared_record)
         if self.supports_returning:
@@ -383,12 +384,12 @@ class SqlalchemyDao(Dao):
             return dict(record, **(result.returned_defaults or {}))
         else:
             result = self.conn.execute(insert_stmt)
-            return self.fetch(_id=record['_id'])
+            return self.fetch(_id=record[ID_FIELD_NAME])
 
     def create_many(self, records: List[Dict]) -> Dict:
         prepared_records = []
         for record in records:
-            record['_id'] = self.create_id(record)
+            record[ID_FIELD_NAME] = self.create_id(record)
             prepared_record = self.adapt_record(record, serialize=True)
             prepared_records.append(prepared_record)
 
@@ -398,7 +399,7 @@ class SqlalchemyDao(Dao):
             pass
         else:
             return self.fetch_many(
-                (rec['_id'] for rec in records), as_list=True)
+                (rec[ID_FIELD_NAME] for rec in records), as_list=True)
 
     def update(self, _id, data: Dict) -> Dict:
         prepared_id = self.adapt_id(_id)
@@ -431,7 +432,7 @@ class SqlalchemyDao(Dao):
         update_stmt = (
             self.table
                 .update()
-                .where(self._id_column == bindparam('_id'))
+                .where(self._id_column == bindparam(ID_FIELD_NAME))
                 .values(**values)
         )
         self.conn.execute(update_stmt, prepared_data)
@@ -487,7 +488,7 @@ class SqlalchemyDao(Dao):
 
         # add a trigger to each table to auto-increment
         # the _rev column on update.
-        id_col_name = cls.biz_class.f['_id'].source
+        id_col_name = cls.biz_class.f[ID_FIELD_NAME].source
         for table in meta.tables.values():
             engine.execute(f'''
                 create trigger incr_{table.name}_rev_on_update

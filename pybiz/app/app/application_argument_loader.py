@@ -5,6 +5,7 @@ from typing import (
     _GenericAlias as GenericAlias
 )
 
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.util.misc_functions import (
     is_biz_obj, is_sequence, extract_biz_info_from_annotation
 )
@@ -120,9 +121,9 @@ class ApplicationArgumentLoader(object):
                 return preloaded
             elif isinstance(preloaded, dict):
                 if 'id' in preloaded:
-                    preloaded['_id'] = preloaded.pop('id')
+                    preloaded[ID_FIELD_NAME] = preloaded.pop('id')
                 if 'rev' in preloaded:
-                    preloaded['_rev'] = preloaded.pop('rev')
+                    preloaded[REV_FIELD_NAME] = preloaded.pop('rev')
                 return biz_class(preloaded)
             else:
                 return biz_class.get(_id=preloaded)

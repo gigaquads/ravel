@@ -6,6 +6,7 @@ from typing import Text, Tuple, List, Type, Callable
 
 from pybiz.util.misc_functions import is_biz_obj, flatten_sequence
 from pybiz.util.loggers import console
+from pybiz.constants import ID_FIELD_NAME
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -101,7 +102,7 @@ class FieldProperty(property):
     def fget(self, biz_obj):
         # try to lazy load the field value
         is_loaded = self.field.name in biz_obj.internal.state
-        exists_in_dao = '_id' in biz_obj.internal.state
+        exists_in_dao = ID_FIELD_NAME in biz_obj.internal.state
 
         if (not is_loaded) and exists_in_dao:
             if self.field.meta.get('lazy', True):

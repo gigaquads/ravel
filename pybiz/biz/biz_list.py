@@ -2,7 +2,7 @@ from typing import Type, List, Set, Tuple, Text, Dict
 
 from appyratus.utils import DictObject
 
-from pybiz.constants import IS_BIZ_LIST_ANNOTATION
+from pybiz.constants import IS_BIZ_LIST_ANNOTATION, ID_FIELD_NAME
 from pybiz.exceptions import RelationshipError
 from pybiz.util.misc_functions import repr_biz_id, is_sequence, is_biz_list
 
@@ -168,7 +168,10 @@ class BizList(BizThing):
         to_update = []
 
         for biz_obj in self.internal.biz_objects:
-            if biz_obj and biz_obj._id is None or '_id' in biz_obj.dirty:
+            if (
+                (biz_obj and (biz_obj._id is None)) or
+                (ID_FIELD_NAME in biz_obj.dirty)
+            ):
                 to_create.append(biz_obj)
             else:
                 to_update.append(biz_obj)

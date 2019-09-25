@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from appyratus.enum import EnumValueStr
 
 from pybiz.util.misc_functions import remove_keys, import_object
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 from .base import Dao, DaoEvent
 
@@ -124,15 +125,15 @@ class CacheDao(Dao):
 
     def fetch_all(self, fields: Set[Text] = None) -> Dict:
         be_ids = {
-            rec['_id']
-            for rec in self.be.fetch_all(fields={'_id'}).values()
+            rec[ID_FIELD_NAME]
+            for rec in self.be.fetch_all(fields={ID_FIELD_NAME}).values()
             if rec is not None
         }
         return self.fetch_many(be_ids, fields=fields)
 
     def fetch_many(self, _ids, fields: Dict = None) -> Dict:
         fe_records = self.fe.fetch_many(_ids, fields=fields)
-        be_revs = self.be.fetch_many(fe_records.keys(), fields={'_rev'})
+        be_revs = self.be.fetch_many(fe_records.keys(), fields={REV_FIELD_NAME})
 
         ids = set(_ids) if not isinstance(_ids, set) else _ids
         ids_fe = set(fe_records.keys())    # ids in FE
@@ -143,7 +144,7 @@ class CacheDao(Dao):
         for _id, fe_rec in fe_records.items():
             if fe_rec is None:
                 ids_missing.add(_id)
-            elif be_revs.get(_id, {}).get('_rev', 0) > fe_rec.get('_rev', 0):
+            elif be_revs.get(_id, {}).get(REV_FIELD_NAME, 0) > fe_rec.get(REV_FIELD_NAME, 0):
                 ids_to_update.add(_id)
 
         # records in BE ONLY
@@ -170,7 +171,7 @@ class CacheDao(Dao):
             self.fe.create_many(records_to_create)
         if records_to_update:
             self.fe.update_many(
-                (rec['_id'] for rec in records_to_update), records_to_update
+                (rec[ID_FIELD_NAME] for rec in records_to_update), records_to_update
             )
 
         # merge fresh BE records to return into FE records
@@ -183,7 +184,7 @@ class CacheDao(Dao):
                     be_records.values(), fields_to_remove, in_place=True
                 ):
                     if be_rec:
-                        fe_records[be_rec['_id']] = be_rec
+                        fe_records[be_rec[ID_FIELD_NAME]] = be_rec
             else:
                 fe_records.update(be_records)
 
@@ -193,7 +194,7 @@ class CacheDao(Dao):
         """
         """
         fe_records = self.fe.query(predicate=predicate, **kwargs)
-        ids_fe = {rec['_id'] for rec in fe_records}
+        ids_fe = {rec[ID_FIELD_NAME] for rec in fe_records}
 
         # TODO: update predicate to fetch records with stale revs too
         predicate = self.biz_class._id.excluding(ids_fe) & predicate
@@ -222,7 +223,7 @@ class CacheDao(Dao):
         # remove _rev from a copy of fe_record so that the BE dao doesn't
         # increment it from what was set by the FE dao.
         fe_record_no_rev = fe_record.copy()
-        del fe_record_no_rev['_rev']
+        del fe_record_no_rev[REV_FIELD_NAME]
 
         if self.mode == CacheMode.writethru:
             self.be.create(fe_record_no_rev)
@@ -241,7 +242,7 @@ class CacheDao(Dao):
         fe_records_no_rev = []
         for rec in fe_records.values():
             rec = rec.copy()
-            del rec['_rev']
+            del rec[REV_FIELD_NAME]
             fe_records_no_rev.append(rec)
 
         if self.mode == CaheMode.writethru:
@@ -256,14 +257,14 @@ class CacheDao(Dao):
         Update a record with the data passed in.
         record = self.persistence.update(_id, data)
         """
-        record.setdefault('_id', _id)
+        record.setdefault(ID_FIELD_NAME, _id)
 
         if not self.fe.exists(_id):
             return self.create(record)
 
         fe_record = self.fe.update(_id, record)
         fe_record_no_rev = fe_record.copy()
-        del fe_record_no_rev['_rev']
+        del fe_record_no_rev[REV_FIELD_NAME]
 
         if self.mode == CacheMode.writethru:
             self.be.update(_id, fe_record_no_rev)

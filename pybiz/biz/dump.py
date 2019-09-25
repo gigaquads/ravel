@@ -6,6 +6,7 @@ from collections import defaultdict
 from appyratus.utils import StringUtils, DictUtils
 
 from pybiz.util.misc_functions import is_biz_obj, is_biz_list, is_sequence
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 
 class Dumper(object):
@@ -75,7 +76,7 @@ class NestingDumper(Dumper):
         ```
         """
         # fields to ignore while dumping, excpecting custom handling
-        fields_to_ignore = {'_id', '_rev'}
+        fields_to_ignore = {ID_FIELD_NAME, REV_FIELD_NAME}
 
         # `record` is the return values
         record = {
