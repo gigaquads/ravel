@@ -91,16 +91,16 @@ class ApplicationArgumentLoader(object):
             # Note that "key" is either a position integer offset
             # of the name of a keyword argument.
 
-            loaded_arg_value = self.load_param(
+            loaded_biz_thing = self.load_param(
                 spec.many, spec.biz_class, raw_arg_value
             )
             # store a reference to the raw argument value on the loaded BizThing
             # so that it can still be accessed inside the app.
-            if loaded_arg_value is not None:
-                loaded_arg_value.internal.arg = raw_arg_value
+            if loaded_biz_thing is not None:
+                loaded_biz_thing.internal.arg = raw_arg_value
 
             loaded_args_or_kwargs[key] = self._on_load(
-                spec, raw_arg_value, loaded_arg_value
+                spec, raw_arg_value, loaded_biz_thing
             )
         return (loaded_args, loaded_kwargs)
 
