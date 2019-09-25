@@ -58,6 +58,33 @@ class BizAttribute(object):
         self._app = None
         self._biz_class = None
 
+    @classmethod
+    def bless(
+        cls,
+        target_biz_class: Type['BizObject'],
+        source_biz_attr: 'BizAttribute'
+    ) -> 'BizAttribute':
+        """
+        Bless a "target" BizObject class with its own copy of a given "source"
+        BizAttribute, registering it with the target's AttributeManager and
+        bootstrapping it if the source itself is bootstrapped.
+        """
+        biz_attr_copy = cls.copy(source_biz_attr)
+        biz_attr_copy._biz_class = target_biz_class
+
+        if source_biz_attr.is_bootstrapped:
+            target_biz_class.bootstrap(source_biz_attr.app)
+
+        target_biz_class.pybiz.attributes.register(
+            source_biz_attr.group, biz_attr_copy
+        )
+
+        return biz_attr_copy
+
+    @classmethod
+    def copy(cls, source_biz_attr: 'BizAttribute') -> 'BizAttribute':
+        raise NotImplementedError()
+
     def __repr__(self):
         name = f'{self.name}:' if self.name else ''
         biz_attr_class = self.__class__.__name__

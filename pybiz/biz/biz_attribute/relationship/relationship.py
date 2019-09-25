@@ -1,5 +1,6 @@
 from typing import Text, Type, Tuple, Dict, Set, Callable, List
 from collections import defaultdict
+from copy import deepcopy
 
 from mock import MagicMock
 from appyratus.schema import ConstantValueConstraint, RangeConstraint
@@ -60,7 +61,7 @@ class Relationship(BizAttribute):
         self.on_rem = normalize_to_tuple(on_rem)
         self.on_add = normalize_to_tuple(on_add)
         self.on_del = normalize_to_tuple(on_del)
-        
+
         self._join_metadata = []
 
     def __repr__(self):
@@ -86,6 +87,12 @@ class Relationship(BizAttribute):
             f'{target}'
             f')>'
         )
+
+    @classmethod
+    def copy(cls, source_biz_attr):
+        # TODO: copy over select, order_by etc, updating their referent
+        # BizObject classes.
+        return deepcopy(source_biz_attr)
 
     def build_property(self):
         return RelationshipProperty(self)

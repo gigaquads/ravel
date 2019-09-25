@@ -79,8 +79,8 @@ class RecursiveList(BizObject):
         readonly=True,
     )
 
-    @staticmethod
-    def __abstract__():
+    @classmethod
+    def __abstract__(cls):
         return True
 
     @property

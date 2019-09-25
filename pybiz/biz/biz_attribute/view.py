@@ -1,4 +1,5 @@
 from typing import Text, Dict, Callable, Type, Tuple
+from copy import deepcopy
 
 from pybiz.schema import Field
 from pybiz.util.misc_functions import is_sequence, normalize_to_tuple
@@ -26,6 +27,12 @@ class View(BizAttribute):
         self._on_get = normalize_to_tuple(on_get) if on_get else tuple()
         self._on_set = normalize_to_tuple(on_set) if on_set else tuple()
         self._on_del = normalize_to_tuple(on_del) if on_del else tuple()
+
+    @classmethod
+    def copy(cls, source_biz_attr):
+        # TODO: copy over select, order_by etc, updating their referent
+        # BizObject classes.
+        return deepcopy(source_biz_attr)
 
     @property
     def priority(self):
