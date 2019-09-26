@@ -69,14 +69,15 @@ class BizAttribute(object):
         BizAttribute, registering it with the target's AttributeManager and
         bootstrapping it if the source itself is bootstrapped.
         """
-        biz_attr_copy = cls.copy(source_biz_attr)
+        # TODO: make copy an instance method
+        biz_attr_copy = source_biz_attr.copy(source_biz_attr)
         biz_attr_copy._biz_class = target_biz_class
 
         if source_biz_attr.is_bootstrapped:
             target_biz_class.bootstrap(source_biz_attr.app)
 
         target_biz_class.pybiz.attributes.register(
-            source_biz_attr.group, biz_attr_copy
+            source_biz_attr.name, biz_attr_copy
         )
 
         return biz_attr_copy

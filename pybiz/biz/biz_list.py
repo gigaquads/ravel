@@ -33,6 +33,7 @@ class BizListClassBuilder(object):
             setattr(biz_list_subclass, name, prop)
 
         biz_class.BizList = biz_list_subclass
+        biz_class.BizList.biz_class = biz_class
 
     def _build_property(self, key):
         """
@@ -75,6 +76,8 @@ class BizList(BizThing):
     assert users._id == [u1._id, u2._id]
     ```
     """
+
+    biz_class = None
 
     def __init__(
         self,

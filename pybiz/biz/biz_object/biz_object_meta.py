@@ -173,7 +173,7 @@ class BizObjectClassBuilder(object):
         for base in bases:
             if is_biz_obj(base) and base.pybiz.attributes:
                 # inherit BizAttributes from base BizObject class
-                for group, biz_attr in base.pybiz.attributes.items():
+                for biz_attr_name, biz_attr in base.pybiz.attributes.items():
                     if biz_attr.name not in ns:
                         BizAttribute.bless(biz_class, biz_attr)
             else:
@@ -272,7 +272,10 @@ class BizObjectClassBuilder(object):
         called.
         """
         # start with inherited defaults
-        defaults = copy.deepcopy(getattr(biz_class, 'defaults', {}))
+        defaults = {}
+        for base_class in self.base_classes:
+            if is_biz_obj(base_class):
+                defaults.update(copy.deepcopy(base_class.pybiz.field_defaults))
 
         # add any new defaults from the schema
         for k, field in biz_class.Schema.fields.items():

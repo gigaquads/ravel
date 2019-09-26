@@ -28,51 +28,42 @@ class RecursiveList(BizObject):
     - `size`: The number of its children RecursiveLists
     - `position`: The positional index of this RecursiveList in its parent
     """
-    '''
-    size = fields.Int(nullable=False, default=0, required=True)
-    depth = fields.Int(nullable=False, default=0, required=True)
-    position = fields.Int(nullable=False, required=True, default=-1, private=True)
+
+    size = fields.Int(nullable=False, default=lambda: 0, required=True)
+    depth = fields.Int(nullable=False, default=lambda: 0, required=True)
+    position = fields.Int(nullable=False, required=True, default=lambda: -1, private=True)
     parent_id = fields.String(required=True, default=lambda: None, private=True)
 
     parent = Relationship(
-        join=lambda self: (RecursiveList.parent_id, RecursiveList._id),
+        join=lambda cls: (cls.parent_id, cls._id),
         readonly=True,
     )
 
     children = Relationship(
-        join=lambda self: (RecursiveList._id, RecursiveList.parent_id),
-        order_by=lambda cls: cls.position.asc,
-        readonly=True,
-        many=True,
-    )
-
-    siblings = Relationship(
-        join=lambda self: (RecursiveList.parent_id, RecursiveList.parent_id)
-        where=lambda self: (rel.biz_class.parent_id == self.parent_id) &
-            (rel.biz_class._id != self._id)
-        ),
-        ordering=lambda cls: cls.position.asc,
+        join=lambda cls: (cls._id, cls.parent_id),
+        #order_by=lambda cls: cls.position.asc,
         readonly=True,
         many=True,
     )
 
     previous = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class,
-            (rel.biz_class.parent_id == self.parent_id) &
-            (rel.biz_class.position == (self.position - 1))
+        join=lambda cls: cls,
+        where=lambda sources: (
+            (sources.biz_class.parent_id == sources[0].parent_id) &
+            (sources.biz_class.position == sources[0].position - 1)
         ),
         readonly=True,
     )
 
     following = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class,
-            (rel.biz_class.parent_id == self.parent_id) &
-            (rel.biz_class.position == (self.position + 1))
+        join=lambda cls: cls,
+        where=lambda sources: (
+            (sources.biz_class.parent_id == sources[0].parent_id) &
+            (sources.biz_class.position == sources[0].position + 1)
         ),
         readonly=True,
     )
+
 
     @classmethod
     def __abstract__(cls):
@@ -237,6 +228,17 @@ class RecursiveList(BizObject):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 if __name__ == '__main__':
     from pybiz.app import ReplApplication
 
@@ -326,4 +328,3 @@ if __name__ == '__main__':
 
 
     repl.bootstrap(namespace=globals()).start()
-'''

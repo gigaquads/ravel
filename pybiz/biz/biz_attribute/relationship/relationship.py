@@ -135,7 +135,7 @@ class Relationship(BizAttribute):
         for func in self.joins:
             # add all BizObject classes to the lexical scope of each callable
             func.__globals__.update(self.app.manifest.types.biz)
-            meta = JoinMetadata(func, is_terminal=(func is self.joins[-1]))
+            meta = JoinMetadata(self, func, is_terminal=(func is self.joins[-1]))
             self._join_metadata.append(meta)
 
     def _analyze_where_func(self):
@@ -470,9 +470,11 @@ class JoinMetadata(object):
     `where` param.
     """
 
-    def __init__(self, func: Callable, is_terminal: bool):
+    def __init__(self, rel, func: Callable, is_terminal: bool):
+        self.rel = rel
         self.func = lambda *args, **kw: normalize_to_tuple(func(*args, **kw))
         self.target_biz_class = None
+        self.source_biz_class = None
         self.join_type = None
         self.is_terminal = is_terminal
 
@@ -481,7 +483,7 @@ class JoinMetadata(object):
 
     def _analyze(self, func: Callable):
         # further process the return value of the join func
-        info = func()
+        info = func(MagicMock())
         is_dynamic_join = is_biz_obj(info[0])
         if is_dynamic_join:
             self._analyze_dynamic_join(func, info)
@@ -502,16 +504,20 @@ class JoinMetadata(object):
             source_fprop.field.name
         )
 
+        self.source_biz_class = source_fprop.biz_class
         self.target_biz_class = target_biz_class
         self.join_type = JoinType.static
 
     def _analyze_dynamic_join(self, func: Callable, info: Tuple):
         target_biz_class = info[0]
+        import ipdb; ipdb.set_trace()
+        # TODO: daisy chain previous metadata's target type to this one's source, passing it in to the ctor.
+        self.source_biz_class = self.rel.biz_class
         self.target_biz_class = target_biz_class
         self.join_type = JoinType.dynamic
 
     def builder(self, source: 'BizThing') -> 'QueryBuilder':
-        params = self.func()
+        params = self.func(self.source_biz_class)
         if self.join_type == JoinType.static:
             return StaticQueryBuilder(source, *params)
         elif self.join_type == JoinType.dynamic:
