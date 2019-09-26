@@ -2,22 +2,24 @@ from pprint import pprint
 
 import pybiz
 
+from pybiz import BizObject, Relationship
+
 
 app = pybiz.Application()
 
 
-class User(pybiz.BizObject):
+class User(BizObject):
     email = pybiz.String()
     age = pybiz.Uint()
     password = pybiz.String()
     account_id = pybiz.UuidString()
-    account = pybiz.Relationship(lambda source: (User.account_id, Account._id))
+    account = Relationship(lambda: (User.account_id, Account._id))
 
 
-class Account(pybiz.BizObject):
+class Account(BizObject):
     name = pybiz.String()
     size = pybiz.Int()
-    users = pybiz.Relationship(lambda source: (Account._id, User.account_id), many=True)
+    users = Relationship(lambda: (Account._id, User.account_id), many=True)
 
 
 if __name__ == '__main__':

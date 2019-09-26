@@ -28,32 +28,27 @@ class RecursiveList(BizObject):
     - `size`: The number of its children RecursiveLists
     - `position`: The positional index of this RecursiveList in its parent
     """
-
+    '''
     size = fields.Int(nullable=False, default=0, required=True)
     depth = fields.Int(nullable=False, default=0, required=True)
     position = fields.Int(nullable=False, required=True, default=-1, private=True)
     parent_id = fields.String(required=True, default=lambda: None, private=True)
 
     parent = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class, rel.biz_class._id == self.parent_id
-        ),
+        join=lambda self: (RecursiveList.parent_id, RecursiveList._id),
         readonly=True,
     )
 
     children = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class, rel.biz_class.parent_id == self._id
-        ),
-        ordering=lambda cls: cls.position.asc,
+        join=lambda self: (RecursiveList._id, RecursiveList.parent_id),
+        order_by=lambda cls: cls.position.asc,
         readonly=True,
         many=True,
     )
 
     siblings = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class,
-            (rel.biz_class.parent_id == self.parent_id) &
+        join=lambda self: (RecursiveList.parent_id, RecursiveList.parent_id)
+        where=lambda self: (rel.biz_class.parent_id == self.parent_id) &
             (rel.biz_class._id != self._id)
         ),
         ordering=lambda cls: cls.position.asc,
@@ -331,3 +326,4 @@ if __name__ == '__main__':
 
 
     repl.bootstrap(namespace=globals()).start()
+'''

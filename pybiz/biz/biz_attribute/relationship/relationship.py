@@ -7,6 +7,7 @@ from appyratus.schema import ConstantValueConstraint, RangeConstraint
 from appyratus.enum import EnumValueInt
 
 from pybiz.exceptions import RelationshipError
+from pybiz.predicate import Predicate
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import (
     normalize_to_tuple,
@@ -27,6 +28,7 @@ class Relationship(BizAttribute):
         self,
         join: Tuple[Callable] = None,
         select: Set = None,
+        where: Callable = None,
         order_by: Tuple['OrderBy'] = None,
         offset: int = None,
         limit: int = None,
@@ -51,6 +53,7 @@ class Relationship(BizAttribute):
 
         # Default relationship-level query params:
         self.select = set(select) if select else set()
+        self.where_func = where
         self.order_by = normalize_to_tuple(order_by) if order_by else tuple()
         self.offset = offset
         self.limit = limit
@@ -115,6 +118,7 @@ class Relationship(BizAttribute):
         self._apply_behaviors_pre_bootstrap()
         self._analyze_join_funcs()
         self._analyze_order_by()
+        self._analyze_where_func()
         self._apply_behaviors_post_bootstrap()
 
     def _apply_behaviors_pre_bootstrap(self):
@@ -133,6 +137,15 @@ class Relationship(BizAttribute):
             func.__globals__.update(self.app.manifest.types.biz)
             meta = JoinMetadata(func, is_terminal=(func is self.joins[-1]))
             self._join_metadata.append(meta)
+
+    def _analyze_where_func(self):
+        if self.where_func:
+            dummy_biz_object = MagicMock()
+            dummy_biz_list = self.biz_class.BizList([dummy_biz_object])
+            self.where_func.__globals__.update(self.app.manifest.types.biz)
+            pred = self.where_func(dummy_biz_list)
+            for field in pred.fields:
+                self.target_biz_class.pybiz.default_selectors.add(field.name)
 
     def _analyze_order_by(self):
         dummy = MagicMock()
@@ -410,6 +423,17 @@ class Relationship(BizAttribute):
                 computed_order_by.append(order_by_spec)
                 select.add(order_by_spec.key)
 
+        if self.where_func:#
+            # normalize argument to where func to a BizList
+            if is_biz_obj(source):
+                pred = self.where_func(self.biz_class.BizList([source]))
+            else:  # is biz list:
+                pred = self.where_func(source)
+            if isinstance(where, Predicate):
+                where &= pred
+            elif is_sequence(where):
+                where += (pred, )
+
         return {
             'select': select,
             'where': where,
@@ -457,7 +481,7 @@ class JoinMetadata(object):
 
     def _analyze(self, func: Callable):
         # further process the return value of the join func
-        info = func(MagicMock())
+        info = func()
         is_dynamic_join = is_biz_obj(info[0])
         if is_dynamic_join:
             self._analyze_dynamic_join(func, info)
@@ -487,7 +511,7 @@ class JoinMetadata(object):
         self.join_type = JoinType.dynamic
 
     def builder(self, source: 'BizThing') -> 'QueryBuilder':
-        params = self.func(source)
+        params = self.func()
         if self.join_type == JoinType.static:
             return StaticQueryBuilder(source, *params)
         elif self.join_type == JoinType.dynamic:
