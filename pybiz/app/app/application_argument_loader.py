@@ -6,7 +6,7 @@ from typing import (
 )
 
 from pybiz.util.misc_functions import (
-    is_bizobj, is_sequence, extract_biz_info_from_annotation
+    is_biz_obj, is_sequence, extract_biz_info_from_annotation
 )
 
 
@@ -55,13 +55,13 @@ class ApplicationArgumentLoader(object):
         self._on_load = (
             on_load or (lambda spec, raw_value, loaded_value: loaded_value)
         )
-        self._biz_classs = app.types.biz
+        self._biz_classes = app.types.biz
         self._endpoint_2_specs = defaultdict(list)
         for endpoint in app.endpoints.values():
             for idx, param in enumerate(endpoint.signature.parameters.values()):
                 ann = param.annotation
                 many, biz_class_name = extract_biz_info_from_annotation(ann)
-                biz_class = self._biz_classs.get(biz_class_name)
+                biz_class = self._biz_classes.get(biz_class_name)
                 if biz_class is not None:
                     position = (
                         idx if param.default == Parameter.empty else None
@@ -97,7 +97,7 @@ class ApplicationArgumentLoader(object):
             # store a reference to the raw argument value on the loaded BizThing
             # so that it can still be accessed inside the app.
             if loaded_arg_value is not None:
-                loaded_arg_value.internal.loaded_from_argument = raw_arg_value
+                loaded_arg_value.internal.arg = raw_arg_value
 
             loaded_args_or_kwargs[key] = self._on_load(
                 spec, raw_arg_value, loaded_arg_value
@@ -116,7 +116,7 @@ class ApplicationArgumentLoader(object):
         if not (preloaded and biz_class):
             return preloaded
         elif not many:
-            if is_bizobj(preloaded):
+            if is_biz_obj(preloaded):
                 return preloaded
             elif isinstance(preloaded, dict):
                 if 'id' in preloaded:
@@ -129,7 +129,7 @@ class ApplicationArgumentLoader(object):
         elif is_sequence(preloaded):
             if isinstance(preloaded, set):
                 preloaded = list(preloaded)
-            if is_bizobj(preloaded[0]):
+            if is_biz_obj(preloaded[0]):
                 return biz_class.BizList(preloaded)
             elif isinstance(preloaded[0], dict):
                 return biz_class.BizList(

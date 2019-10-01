@@ -53,7 +53,7 @@ class RedisDao(Dao):
 
     def _bind_indexes(self):
         indexes = {}
-        for k, field in self.biz_class.schema.fields.items():
+        for k, field in self.biz_class.Schema.fields.items():
             index_name = f'{self.type_name}:{k.lower()}'
             index_class = self.field_2_index_class.get(field.__class__)
             if index_class is None:
@@ -191,7 +191,7 @@ class RedisDao(Dao):
         records = []
 
         if _ids:
-            _id_field = self.biz_class.schema.fields['_id']
+            _id_field = self.biz_class.Schema.fields['_id']
             json_records = self.records.get_many(_ids)
             rev_strs = self.revs.get_many(_ids)
             for json_record, rev_str in zip(json_records, rev_strs):

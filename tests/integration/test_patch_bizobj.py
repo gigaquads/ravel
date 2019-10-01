@@ -70,7 +70,7 @@ def Artist(Album):
     return Artist
 
 
-def test_patch_bizobj_scalar(Artist, Album):
+def test_patch_biz_obj_scalar(Artist, Album):
     albums = [
         Album(
             title='Passages',

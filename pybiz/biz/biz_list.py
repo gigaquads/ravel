@@ -1,13 +1,13 @@
 from typing import Type, List, Set, Tuple, Text, Dict
 
-from pybiz.constants import IS_BIZLIST_ANNOTATION
+from pybiz.constants import IS_BIZ_LIST_ANNOTATION
 from pybiz.exceptions import RelationshipError
-from pybiz.util.misc_functions import repr_biz_id
+from pybiz.util.misc_functions import repr_biz_id, is_sequence, is_biz_list
 
 from .biz_thing import BizThing
 
 
-class BizListTypeBuilder(object):
+class BizListClassBuilder(object):
     """
     This builder is used to endow each BizObject class with its
     BizObject.BizList attribute, which is a derived BizList class which knows
@@ -21,16 +21,16 @@ class BizListTypeBuilder(object):
         Create a BizList subclass, specialized for the given BizObject type.
         """
         derived_name = f'{biz_class.__name__}BizList'
-        derived_attrs = {IS_BIZLIST_ANNOTATION: True, 'biz_class': biz_class}
+        derived_attrs = {IS_BIZ_LIST_ANNOTATION: True, 'biz_class': biz_class}
         biz_list_subclass = type(derived_name, (BizList, ), derived_attrs)
 
         # create "batch" accessor properties for
         # selectable BizObject attributes
-        for name in biz_class.selectable_attribute_names:
+        for name in biz_class.pybiz.all_selectors:
             prop = self._build_property(name)
             setattr(biz_list_subclass, name, prop)
 
-        return biz_list_subclass
+        biz_class.BizList = biz_list_subclass
 
     def _build_property(self, key):
         """
@@ -38,7 +38,8 @@ class BizListTypeBuilder(object):
         associated with the BizList subclass.
         """
         def fget(biz_list):
-            rel = biz_list.biz_class.relationships.get(key)
+            relationships = biz_list.biz_class.pybiz.attributes.relationships
+            rel = relationships.get(key)
             if (rel is not None) and (not rel.many):
                 return rel.target_biz_class.BizList([
                     getattr(x, key, None) for x in biz_list
@@ -85,11 +86,10 @@ class BizList(BizThing):
         the BizObject which owns the Relationship, and the `relationship` is
         the, well, Relationship through which the BizList was loaded.
         """
-        # TODO: Move private attrs into an "internal" DictObject
         self._relationship = relationship
         self._targets = list(objects or [])
         self._source = source
-        self._loaded_from_argument = None
+        self._arg = None
 
     def __getitem__(self, key: int) -> 'BizObject':
         """
@@ -110,7 +110,7 @@ class BizList(BizThing):
         return bool(self._targets)
 
     def __iter__(self):
-        return iter(self._targets)
+        return (x for x in self._targets)
 
     def __repr__(self):
         dirty_count = sum(1 for x in self if x and x.dirty)
@@ -155,12 +155,24 @@ class BizList(BizThing):
         self._source = source
 
     @property
-    def loaded_from_argument(self):
-        return self._loaded_from_argument
+    def arg(self):
+        return self._arg
 
-    @loaded_from_argument.setter
-    def loaded_from_argument(self, value):
-        self._loaded_from_argument = value
+    @arg.setter
+    def arg(self, value):
+        self._arg = value
+
+    @classmethod
+    def generate(
+        cls,
+        count: int,
+        fields: Set[Text] = None,
+        constraints: Dict[Text, 'Constraint'] = None
+    ) -> 'BizList':
+        return cls(
+            cls.biz_class.generate(fields=fields, constraints=constraints)
+            for _ in range(max(1, count))
+        )
 
     def create(self):
         self.biz_class.create_many(self._targets)
@@ -170,31 +182,54 @@ class BizList(BizThing):
         self.biz_class.update_many(self, data=data, **more_data)
         return self
 
-    def save(self):
+    def save(self, depth=1):
+        if not depth:
+            return self
+
         to_create = []
         to_update = []
-        for bizobj in self._targets:
-            if bizobj and bizobj._id is None or '_id' in bizobj.dirty:
-                to_create.append(bizobj)
+
+        for biz_obj in self._targets:
+            if biz_obj and biz_obj._id is None or '_id' in biz_obj.dirty:
+                to_create.append(biz_obj)
             else:
-                to_update.append(bizobj)
+                to_update.append(biz_obj)
+
         self.biz_class.create_many(to_create)
         self.biz_class.update_many(to_update)
+
+        # recursively save each biz_obj's relationships
+        # TODO: optimize this to batch saves and updates here
+        for rel in self.biz_class.pybiz.attributes.relationships.values():
+            for biz_obj in self._targets:
+                biz_thing = biz_obj.internal.attributes.get(rel.name)
+                if biz_thing:
+                    biz_thing.save(depth=depth-1)
+
         return self
 
     def merge(self, obj=None, **more_data):
-        for obj in self._targets:
-            obj.merge(obj, **more_data)
+        if is_sequence(obj) or is_biz_list(obj):
+            assert len(obj) == len(self._targets)
+            obj_arr = obj
+            for biz_obj, obj_to_merge in zip(self._targets, obj_arr):
+                biz_obj.merge(obj_to_merge)
+            if more_data:
+                for biz_obj in self._targets:
+                    biz_obj.merge(more_data)
+        else:
+            for biz_obj in self._targets:
+                biz_obj.merge(obj, **more_data)
         return self
 
     def mark(self, keys=None):
-        for bizobj in self._targets:
-            bizobj.mark(keys=keys)
+        for biz_obj in self._targets:
+            biz_obj.mark(keys=keys)
         return self
 
     def clean(self, keys=None):
-        for bizobj in self._targets:
-            bizobj.clean(keys=keys)
+        for biz_obj in self._targets:
+            biz_obj.clean(keys=keys)
         return self
 
     def delete(self):
@@ -204,10 +239,9 @@ class BizList(BizThing):
         })
         return self
 
-    def load(self, fields: Set[Text] = None):
-        # TODO: add a depth=None kwarg like in BizObject.load
+    def load(self, selectors: Set[Text] = None):
         if not selectors:
-            selectors = set(self.biz_class.schema.fields.keys())
+            selectors = set(self.biz_class.Schema.fields.keys())
         elif isinstance(selectors, str):
             selectors = {selectors}
 
@@ -219,6 +253,11 @@ class BizList(BizThing):
                 stale.merge(fresh)
                 stale.clean(fresh.internal.state.keys())
 
+        return self
+
+    def unload(self, keys: Set[Text]) -> 'BizList':
+        for biz_obj in self._targets:
+            biz_obj.unload(keys)
         return self
 
     def dump(self, *args, **kwargs) -> List[Dict]:

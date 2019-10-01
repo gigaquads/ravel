@@ -3,18 +3,51 @@ import sys
 from typing import Text, Type, Dict, Callable
 
 from appyratus.schema import Schema
+from appyratus.enum import EnumValueStr, EnumValueInt
 
-import pybiz.biz.query
+from ..biz_thing import BizThing
+from ..query import BizAttributeQuery
 
 
 class BizAttribute(object):
+    """
+    BizAttributes are extensible, query-able attributes that can bet set on
+    BizObjects, whose data can be accessed through properties that are
+    automatically built at runtime. More details to come...
+    """
+
+    class PybizGroup(EnumValueStr):
+        """
+        BizAttribute "group" enum values for subclasses built into Pybiz.
+        """
+
+        @staticmethod
+        def values():
+            return {
+                'relationship',
+                'view',
+            }
+
+
+    class PybizPriority(EnumValueInt):
+        """
+        BizAttribute "priority" enum values for subclasses built into Pybiz.
+        """
+
+        @staticmethod
+        def values():
+            return {
+                'relationship': 1,
+                'view': 10,
+            }
+
+
     def __init__(
         self,
         name: Text = None,
         private: bool = None,
         lazy: bool = True,
-        *args,
-        **kwargs
+        *args, **kwargs
     ):
         self._name = name
         self._private = private
@@ -30,49 +63,57 @@ class BizAttribute(object):
         biz_attr_class = self.__class__.__name__
         return f'<BizAttribute({name}{biz_attr_class})>'
 
-    def __lt__(self, other):
-        return self.order_key < other.order_key
+    def __lt__(self, other: 'BizAttribute'):
+        return self.priority < other.priority
 
-    def __leq__(self, other):
-        return self.order_key <= other.order_key
+    def __leq__(self, other: 'BizAttribute'):
+        return self.priority <= other.priority
 
-    def __gt__(self, other):
-        return self.order_key > other.order_key
+    def __gt__(self, other: 'BizAttribute'):
+        return self.priority > other.priority
 
-    def __geq__(self, other):
-        return self.order_key >= other.order_key
+    def __geq__(self, other: 'BizAttribute'):
+        return self.priority >= other.priority
 
-    def __eq__(self, other):
-        return self.order_key == other.order_key
+    def __eq__(self, other: 'BizAttribute'):
+        return self.priority == other.priority
 
-    def __neq__(self, other):
-        return self.order_key != other.order_key
+    def __neq__(self, other: 'BizAttribute'):
+        return self.priority != other.priority
 
     def build_property(self) -> 'BizAttributeProperty':
         return BizAttributeProperty(self)
 
     @property
-    def order_key(self):
+    def is_relationship(self) -> bool:
+        return self.group == self.PybizGroup.relationship
+
+    @property
+    def is_view(self) -> bool:
+        return self.group == self.PybizGroup.view
+
+    @property
+    def priority(self) -> int:
         return sys.maxsize
 
     @property
-    def category(self):
-        return 'biz_attribute'
+    def group(self) -> Text:
+        return ''
 
     @property
     def name(self) -> Text:
         return self._name
 
     @name.setter
-    def name(self, name):
+    def name(self, name: Text):
         self._name = name
 
     @property
-    def private(self):
+    def private(self) -> bool:
         return self._private
 
     @private.setter
-    def private(self, private):
+    def private(self, private: bool):
         self._private = private
 
     @property
@@ -80,11 +121,11 @@ class BizAttribute(object):
         return self._lazy
 
     @lazy.setter
-    def lazy(self, lazy):
+    def lazy(self, lazy: bool):
         self._lazy = lazy
 
     @property
-    def is_bootstrapped(self):
+    def is_bootstrapped(self) -> bool:
         return self._is_bootstrapped
 
     @property
@@ -92,7 +133,7 @@ class BizAttribute(object):
         return self._biz_class
 
     @property
-    def app(self):
+    def app(self) -> 'Application':
         return self._app
 
     def bootstrap(self, app: 'Application'):
@@ -110,8 +151,11 @@ class BizAttribute(object):
         """
         self._biz_class = biz_class
 
-    def execute(self, source: 'BizObject', *args, **kwargs):
-        return
+    def execute(self, source: 'BizObject', *args, **kwargs) -> object:
+        raise NotImplementedError()
+
+    def generate(self, source: 'BizObject', *args, **kwargs) -> object:
+        raise NotImplementedError()
 
 
 class BizAttributeProperty(property):
@@ -125,7 +169,7 @@ class BizAttributeProperty(property):
         return f'<BizAttributeProperty({name}{biz_attr_class})>'
 
     def select(self, *args, **kwargs) -> 'BizAttributeQuery':
-        return pybiz.biz.query.BizAttributeQuery(
+        return BizAttributeQuery(
             biz_attr=self.biz_attr,
             alias=self.biz_attr.name,
             *args, **kwargs
@@ -135,18 +179,18 @@ class BizAttributeProperty(property):
     def biz_attr(self) -> 'BizAttribute':
         return self._biz_attr
 
-    def fget(self, bizobj: 'BizObject', *execute_args, **execute_kwargs):
+    def fget(self, biz_obj: 'BizObject', *execute_args, **execute_kwargs):
         key = self.biz_attr.name
-        is_loaded = key in bizobj.internal.cache
+        is_loaded = key in biz_obj.internal.attributes
         if (not is_loaded) and self.biz_attr.lazy:
             value = self.biz_attr.execute(
-                bizobj, *execute_args, **execute_kwargs
+                biz_obj, *execute_args, **execute_kwargs
             )
-            bizobj.internal.cache[key] = value
-        return bizobj.internal.cache.get(key)
+            biz_obj.internal.attributes[key] = value
+        return biz_obj.internal.attributes.get(key)
 
-    def fset(self, bizobj: 'BizObject', value):
-        bizobj.internal.cache[self.biz_attr.name] = value
+    def fset(self, biz_obj: 'BizObject', value):
+        biz_obj.internal.attributes[self.biz_attr.name] = value
 
-    def fdel(self, bizobj: 'BizObject'):
-        bizobj.internal.cache.pop(self.biz_attr.name, None)
+    def fdel(self, biz_obj: 'BizObject'):
+        biz_obj.internal.attributes.pop(self.biz_attr.name, None)

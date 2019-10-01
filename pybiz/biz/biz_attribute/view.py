@@ -28,12 +28,12 @@ class View(BizAttribute):
         self._on_del = normalize_to_tuple(on_del) if on_del else tuple()
 
     @property
-    def order_key(self):
-        return 10
+    def priority(self):
+        return self.PybizPriority.view
 
     @property
-    def category(self):
-        return 'view'
+    def group(self):
+        return self.PybizGroup.view
 
     @property
     def field(self) -> Field:

@@ -1,6 +1,8 @@
 from functools import reduce
 from typing import Text
 
+import pybiz.biz.query
+
 
 class QueryPrinter(object):
     def print_query(self, query: 'AbstractQuery') -> None:
@@ -20,6 +22,8 @@ class QueryPrinter(object):
         """
         Return a pretty printed string of the query in Pybiz query langauge.
         """
+        from pybiz.biz import Query
+
         biz_class_name = query.biz_class.__name__
 
         # we collect all substrings of the final format string in three
@@ -39,7 +43,7 @@ class QueryPrinter(object):
 
         pre_sub_query_substrs.append(f'FROM {biz_class_name} SELECT')
         for k in field_names:
-            field = query.biz_class.schema.fields[k]
+            field = query.biz_class.Schema.fields[k]
             pre_sub_query_substrs.append(
                 f' - {k}: {field.__class__.__name__}'
             )
@@ -48,19 +52,23 @@ class QueryPrinter(object):
         for name, sub_query in sorted(query.params.attributes.items()):
             if isinstance(sub_query, Query):
                 type_name = sub_query.biz_class.__name__
-                rel = query.biz_class.attributes.by_name(name)
+                rel = query.biz_class.pybiz.attributes.relationships.get(name)
                 if rel and rel.many:
                     type_name = f'[{type_name}]'
                 sub_query_substr = self.format_query(sub_query, indent=indent+5)
-                sub_query_substrs.append(f'{" " * indent} - {name}: {type_name} = (')
+                sub_query_substrs.append(
+                    f'{" " * indent} - {name}: {type_name} = ('
+                )
                 sub_query_substrs.append(sub_query_substr)
                 sub_query_substrs.append(f'{" " * indent}   )')
-            elif isinstance(sub_query, BizAttributeQuery):
+            elif isinstance(sub_query, pybiz.biz.query.BizAttributeQuery):
                 type_name = sub_query.biz_attr.biz_class.__name__
                 sub_query_substr = self.format_biz_attr_query(
                     sub_query, indent=indent+5
                 )
-                sub_query_substrs.append(f'{" " * indent} - {name}: {type_name} = (')
+                sub_query_substrs.append(
+                    f'{" " * indent} - {name}: {type_name} = ('
+                )
                 sub_query_substrs.append(sub_query_substr)
                 sub_query_substrs.append(f'{" " * indent}   )')
 

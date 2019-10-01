@@ -27,7 +27,7 @@ Without any further work related to persistence, server protocol, or user interf
 ## Fields
 `Field` objects declare what elements of data are available on each `BizObject`. By default, every business object inherits an `_id` field. This is the only field required by pybiz itself. In the example above, `name`, `artist`, and `year` are all fields declared on the `Album` class.
 
-Behind the scenes, pybiz gathers all fields declared on a `BizObject` class and creates a subclass of `pybiz.schema.Schema`. For example, the schema class generated for `Album` would be accessed via `Album.Schema`. In a nutshell, the internal responsibility of the schema is to perform casting and validation upon binding data to instance attributes.
+Behind the scenes, pybiz gathers all fields declared on a `BizObject` class and creates a subclass of `schema.Schema`. For example, the schema class generated for `Album` would be accessed via `Album.Schema`. In a nutshell, the internal responsibility of the schema is to perform casting and validation upon binding data to instance attributes.
 
 For details on the implementation and capabilities of the `Schema` and `Field` classes, please refer to documentation for the `appyratus` project.
 

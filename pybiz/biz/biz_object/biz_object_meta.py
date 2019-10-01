@@ -8,74 +8,173 @@ from collections import defaultdict
 
 from appyratus.utils import DictObject
 
-from pybiz.schema import Schema, fields, String, UuidString, Field, Int
-from pybiz.util.misc_functions import import_object, is_bizobj
+from pybiz.schema import Schema, fields, String, UuidString, Field, Int, Id
+from pybiz.util.misc_functions import import_object, is_biz_obj
 from pybiz.util.loggers import console
+from pybiz.predicate import PredicateParser
 from pybiz.constants import (
-    IS_BIZOBJ_ANNOTATION,
-    IS_BOOTSTRAPPED,
-    IS_ABSTRACT_ANNOTATION,
-    ABSTRACT_MAGIC_METHOD,
-    ATTRIBUTES_ATTR,
+    IS_BIZ_OBJECT_ANNOTATION,
     ID_FIELD_NAME,
     REV_FIELD_NAME,
 )
 
 from ..field_property import FieldProperty
-from ..biz_list import BizList, BizListTypeBuilder
-from ..biz_attribute import BizAttribute, BizAttributeProperty
+from ..biz_list import BizList, BizListClassBuilder
+from ..biz_attribute import BizAttribute, BizAttributeProperty, BizAttributeManager
 from ..biz_attribute.relationship import Relationship, RelationshipProperty
 from ..biz_attribute.view import View, ViewProperty
 
-# TODO: call getmembers only once
 
-class BizObjectTypeBuilder(object):
-    biz_list_type_builder = BizListTypeBuilder()
+class BizObjectClassBuilder(object):
+    """
+    The `BizObjectClassBuilder is used internally by the BizObjectMeta
+    metaclass. The main reason it exists is to move logic out of the metaclass
+    itself into  something else that is more testable and reads like normal OOP
+    rather than metaclass magic.
+    """
+    def __init__(self):
+        self._biz_list_class_builder = BizListClassBuilder()
 
-    def on_new(self, name, bases, namespace):
-        namespace[IS_BIZOBJ_ANNOTATION] = True
-        namespace[IS_BOOTSTRAPPED] = False
-        namespace[IS_ABSTRACT_ANNOTATION] = self._compute_is_abstract(namespace)
-        namespace[ATTRIBUTES_ATTR] = self._build_biz_attr_manager(bases, namespace)
-        namespace['base_selectors'] = set()
-        return namespace
+    def prepare(self, name, bases, namespace):
+        """
+        Mutate the class attribute or "namespace" dict about to be used to
+        build a new BizObject class via the metaclass __new__ method.
+        """
+        namespace.update({
+            IS_BIZ_OBJECT_ANNOTATION: True,
+            'pybiz': DictObject({
+                'attributes': self._prepare_biz_attr_manager(bases, namespace),
+                'is_abstract': self._prepare_is_abstract(namespace),
+                'is_bootstrapped': False,
 
-    def on_init(self, name, biz_class):
-        biz_class.Schema = self._build_schema_class(name, biz_class)
+                # these are set in self.build:
+                'schema': None,
+                'field_defaults': None,
+                'predicate_parser': None,
+                'default_selectors': None,
+                'all_selectors': None,
+            })
+        })
 
-        biz_class.schema = biz_class.Schema()
-        biz_class.schema.pybiz_internal = True
-        biz_class.defaults = self._extract_defaults(biz_class)
+    def build(self, name, biz_class):
+        """
+        Build Pybiz class attributes for the given BizObject class. This is
+        called by the metaclass __init__method.
+        """
+        # build cls.Schema
+        self._build_schema_class(name, biz_class)
 
-        for field in biz_class.schema.fields.values():
-            if not getattr(field, 'pybiz_internal', False):
-                field_prop = FieldProperty(biz_class, field)
-                setattr(biz_class, field.name, field_prop)
+        # build property objects corresponding to each BizAttribute
+        # picked up by the AttributeManager in cls.pybiz.attributes
+        self._build_biz_attr_properties(biz_class)
+        
+        # build property objects corresponding to each Schema Field
+        # declared on this new class or inherited from a base class.
+        self._build_field_properties(biz_class)
 
-        for biz_attr in biz_class.attributes.values():
+        # create a singleton Schema instance for this biz_class
+        biz_class.pybiz.schema = biz_class.Schema()
+
+        # remove default values/callbacks set on schema Fields and store
+        # them separately in this `field_defaults` dict. Otherwise, defaults
+        # get generated in BizObject.__init__ when in fact we only want to
+        # generate defaults during BizObject.create and create_many.
+        biz_class.pybiz.field_defaults = self._extract_defaults(biz_class)
+
+        # Create a predicate parser, which can be used to parse a string, like
+        # "(name == 'Bob')" into its corresponding Pybiz Predicate object. This
+        # is used, for instance, by GraphQL.
+        biz_class.pybiz.predicate_parser = PredicateParser(biz_class)
+
+        # `default_selectors` is filled in by the bootstrap logic of
+        # Relationships set on this class. 
+        biz_class.pybiz.default_selectors = {
+            f.name for f in biz_class.Schema.fields.values()
+            if (f.required or f.meta.get('pybiz_is_fk'))
+        }
+
+        # here is a set of all selectable field/attribute names on this
+        # BizObject class.
+        biz_class.pybiz.all_selectors = set(
+            biz_class.Schema.fields.keys() |
+            biz_class.pybiz.attributes.keys()
+        )
+
+        # build cls.BizList. This must happen after all_selectors is built in
+        # order for the builder to know what bulk properties to build.
+        self._biz_list_class_builder.build(biz_class)
+
+        # these aliases exist for developer convenience:
+        biz_class.schema = biz_class.pybiz.schema
+        biz_class.attributes = biz_class.pybiz.attributes
+        biz_class.relationships = biz_class.pybiz.attributes.relationships
+        biz_class.views = biz_class.pybiz.attributes.views
+
+        # this is for BizObject class autodiscovery:
+        venusian.attach(biz_class, venusian_callback, category='biz')
+
+    def _prepare_is_abstract(self, namespace):
+        class_method = namespace.get('__abstract__')
+        if class_method is not None:
+            is_abstract = class_method.__func__
+            return is_abstract()
+        return False
+
+    def _prepare_biz_attr_manager(self, bases: Tuple[Type], ns: Dict) -> Dict:
+        manager = BizAttributeManager()
+        for base in bases:
+            if is_biz_obj(base):
+                # inherit BizAttributes from base BizObject class
+                for group, biz_attr in base.internal.attributes.items():
+                    if biz_attr.name not in ns:
+                        manager.register(group, copy.copy(biz_attr))
+            else:
+                # inherit BizAttributes declared on a mixin class
+                is_biz_attr = lambda v: isinstance(v, BizAttribute)
+                for k, v in inspect.getmembers(base, predicate=is_biz_attr):
+                    if k not in ns:
+                        manager.register(k, copy.copy(v))
+        # collect newly defined BizAttributes in the namespace
+        # for the new BizObject class being built.
+        for k, v in list(ns.items()):
+            if isinstance(v, BizAttribute):
+                manager.register(k, v)
+                del ns[k]
+        return manager
+
+    def _build_field_properties(self, biz_class):
+        """
+        Here, we create all FieldProperties for each Field present in the
+        BizObject's Schema. In addition, we collect all Id fields used
+        internally by Pybiz. In overview, a FieldProperty is something like
+        `User.email`, when accessed via the class object.
+        """
+        biz_class.pybiz.id_fields = set()
+        for field in biz_class.Schema.fields.values():
+            field_prop = FieldProperty(biz_class, field)
+            setattr(biz_class, field.name, field_prop)
+            if isinstance(field, Id):
+                biz_class.pybiz.id_fields.add(field)
+
+    def _build_biz_attr_properties(self, biz_class):
+        """
+        For each BizAttribute detected on the BizObject class, we create a
+        corresponding BizAttributeProperty. The property class is determined by
+        the `BizAttribute.build_property` method overriden on the BizAttribute
+        subclass.
+        """
+        for biz_attr in biz_class.pybiz.attributes.values():
             biz_attr.bind(biz_class)
             biz_attr_prop = biz_attr.build_property()
             setattr(biz_class, biz_attr.name, biz_attr_prop)
 
-        biz_class.relationships = {
-            name: rel for name, rel in
-            biz_class.attributes.by_category('relationship').items()
-        }
-
-        biz_class.selectable_attribute_names = set()
-        biz_class.selectable_attribute_names.update(biz_class.schema.fields.keys())
-        biz_class.selectable_attribute_names.update(biz_class.attributes.keys())
-
-        biz_class.BizList = self.biz_list_type_builder.build(biz_class)
-
-    def _compute_is_abstract(self, namespace):
-        if ABSTRACT_MAGIC_METHOD in namespace:
-            static_method = namespace.pop(ABSTRACT_MAGIC_METHOD)
-            is_abstract = static_method.__func__
-            return is_abstract()
-        return False
-
     def _build_schema_class(self, name, biz_class):
+        """
+        Collect all Field objects declard on `biz_class` as well as those
+        associated with any base BizObject class and dynamically construct a
+        new Schema class with all of them. Then set it as the `Schema`
+        attribute on biz_class.
+        """
         # use the schema class override if defined
         obj = biz_class.__schema__()
         if obj:
@@ -102,114 +201,60 @@ class BizObjectTypeBuilder(object):
         for k, v in inspect.getmembers(biz_class, predicate=is_field):
             fields[k] = v
 
-        # bless each bizobj with mandatory built-in Fields
+        # bless each biz_obj with mandatory built-in Fields
         if ID_FIELD_NAME not in fields:
-            fields[ID_FIELD_NAME] = UuidString(nullable=True)
+            fields[ID_FIELD_NAME] = Id(nullable=True)
         if REV_FIELD_NAME not in fields:
             fields[REV_FIELD_NAME] = Int(nullable=True)
 
         fields.pop('schema', None)
-
-        return Schema.factory(f'{name}Schema', fields)
+        biz_class.Schema = Schema.factory(f'{name}Schema', fields)
 
     def _extract_defaults(self, biz_class: Type['BizObject']) -> Dict:
+        """
+        Pop all default values/callbacks declared on Schema fields into a
+        separate dictionary for internal use when create or create_many is
+        called.
+        """
         # start with inherited defaults
         defaults = copy.deepcopy(getattr(biz_class, 'defaults', {}))
 
         # add any new defaults from the schema
-        for k, field in biz_class.schema.fields.items():
+        for k, field in biz_class.Schema.fields.items():
             if field.default is not None:
                 defaults[k] = field.default
                 field.default = None
 
         return defaults
 
-    def _build_biz_attr_manager(self, bases: Tuple[Type], ns: Dict) -> Dict:
-        manager = BizAttributeManager()
-
-        for base in bases:
-            if is_bizobj(base):
-                # inherit BizAttributes from base BizObject class
-                inherited_manager = getattr(base, 'attributes', {})
-                for category, biz_attr in base.attributes.items():
-                    if biz_attr.name not in ns:
-                        manager.register(category, copy.copy(biz_attr))
-            else:
-                # inherit BizAttributes declared on a mixin class
-                is_biz_attr = lambda v: isinstance(v, BizAttribute)
-                for k, v in inspect.getmembers(base, predicate=is_biz_attr):
-                    if k not in ns:
-                        manager.register(k, copy.copy(v))
-
-        # collect newly defined BizAttributes in the namespace
-        # for the new BizObject class being built.
-        for k, v in list(ns.items()):
-            if isinstance(v, BizAttribute):
-                manager.register(k, v)
-                del ns[k]
-
-        return manager
-
-
-class BizAttributeManager(object):
-    def __init__(self, *args, **kwargs):
-        self._name_2_biz_attr = {}
-        self._category_map = defaultdict(dict)
-        self._ordered_biz_attrs = []
-
-    def __iter__(self):
-        return (biz_attr.name for biz_attr in self._ordered_biz_attrs)
-
-    def __getitem__(self, key):
-        return self._name_2_biz_attr[key]
-
-    def __contains__(self, key):
-        return key in self._name_2_biz_attr
-
-    def __len__(self):
-        return len(self._name_2_biz_attr)
-
-    def keys(self):
-        return self._name_2_biz_attr.keys()
-
-    def values(self):
-        return self._name_2_biz_attr.values()
-
-    def items(self):
-        return (
-            (biz_attr.name, biz_attr)
-            for biz_attr in self._ordered_biz_attrs
-        )
-
-    def register(self, name, attr: 'BizAttribute'):
-        attr.name = name
-        self._name_2_biz_attr[name] = attr
-        self._category_map[attr.category][name] = attr
-        bisect.insort(self._ordered_biz_attrs, attr)
-
-    def by_name(self, name: Text) -> 'BizAttribute':
-        return self._name_2_biz_attr.get(name, None)
-
-    def by_category(self, category: Text) -> Dict[Text, 'BizAttribute']:
-        return self._category_map[category]
-
 
 class BizObjectMeta(type):
+    """
+    Metaclass used by all BizObject classes.
+    """
 
-    builder = BizObjectTypeBuilder()
-
-    def __new__(cls, name, bases, ns):
+    def __new__(cls, name, bases, namespace):
+        """
+        This is where Python creates the new BizObject subclass object itself.
+        """
+        cls.pybiz_builder = BizObjectClassBuilder()
         if name != 'BizObject':
-            ns = BizObjectMeta.builder.on_new(name, bases, ns)
-        return type.__new__(cls, name, bases, ns)
+            cls.pybiz_builder.prepare(name, bases, namespace)
+        return type.__new__(cls, name, bases, namespace)
 
-    def __init__(biz_class, name, bases, ns):
-        type.__init__(biz_class, name, bases, ns)
+    def __init__(cls, name, bases, ns):
+        """
+        This is where Python initializes class attributes on the newly-created
+        BizObject subclass.
+        """
+        type.__init__(cls, name, bases, ns)
         if name != 'BizObject':
-            BizObjectMeta.builder.on_init(name, biz_class)
-            venusian.attach(biz_class, biz_class.venusian_callback, category='biz')
+            cls.pybiz_builder.build(name, cls)
 
-    @staticmethod
-    def venusian_callback(scanner, name, biz_class):
-        console.info(f'venusian scan found "{biz_class.__name__}" BizObject')
-        scanner.biz_classs.setdefault(name, biz_class)
+
+def venusian_callback(scanner, name, biz_class):
+    """
+    Callback used by Venusian for BizObject class auto-discovery.
+    """
+    console.info(f'venusian scan found "{biz_class.__name__}" BizObject')
+    scanner.biz_classes.setdefault(name, biz_class)

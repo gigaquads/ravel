@@ -8,26 +8,32 @@ from typing import (
 from copy import deepcopy
 
 from pybiz.constants import (
-    IS_BIZOBJ_ANNOTATION,
-    IS_BIZLIST_ANNOTATION,
+    IS_BIZ_OBJECT_ANNOTATION,
+    IS_BIZ_LIST_ANNOTATION,
 )
 
 _dict_keys = {}.keys().__class__
 _dict_values = {}.values().__class__
 
 
-def is_bizobj(obj):
+def is_biz_obj(obj):
     """
     Return True if obj is an instance of BizObject.
     """
-    return getattr(obj, IS_BIZOBJ_ANNOTATION, False) if obj else False
+    return (
+        getattr(obj, IS_BIZ_OBJECT_ANNOTATION, False)
+        if obj else False
+    )
 
 
-def is_bizlist(obj) -> bool:
+def is_biz_list(obj) -> bool:
     """
     Return True if obj is an instance of BizObject.
     """
-    return getattr(obj, IS_BIZLIST_ANNOTATION, False) if obj is not None else False
+    return (
+        getattr(obj, IS_BIZ_LIST_ANNOTATION, False)
+        if obj is not None else False
+    )
 
 
 def is_sequence(obj) -> bool:
@@ -37,13 +43,13 @@ def is_sequence(obj) -> bool:
     return isinstance(obj, (list, tuple, set, _dict_keys, _dict_values))
 
 
-def repr_biz_id(bizobj: 'BizObject') -> Text:
+def repr_biz_id(biz_obj: 'BizObject') -> Text:
     """
     Return a string version of a BizObject ID.
     """
-    if bizobj is None:
+    if biz_obj is None:
         return 'None'
-    _id = bizobj['_id']
+    _id = biz_obj['_id']
     if _id is None:
         return '?'
     elif isinstance(_id, str):
@@ -73,6 +79,13 @@ def import_object(dotted_path: Text) -> object:
         raise ImportError(f'failed to import {dotted_path}')
 
     return obj
+
+
+def get_class_name(obj):
+    if isinstance(obj, type):
+        return obj.__name__
+    else:
+        return obj.__class__.__name__
 
 
 def remove_keys(
@@ -128,3 +141,13 @@ def extract_biz_info_from_annotation(annotation) -> Tuple[bool, Text]:
             many = True
 
     return (many, key)
+
+
+def flatten_sequence(target) -> Set:
+    flattened = set()
+    for child_target in target:
+        if is_sequence(child_target):
+            flattened.update(flatten_sequence(child_target))
+        else:
+            flattened.add(child_target)
+    return flattened

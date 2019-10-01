@@ -37,7 +37,7 @@ class SqlalchemyTableBuilder(object):
     def build_table(self, name=None, schema=None) -> sa.Table:
         columns = [
             self.build_column(field)
-            for field in self._biz_class.schema.fields.values()
+            for field in self._biz_class.Schema.fields.values()
         ]
         if name is not None:
             table_name = name

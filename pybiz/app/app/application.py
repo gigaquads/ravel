@@ -9,19 +9,29 @@ from appyratus.utils import DictObject, DictUtils
 from pybiz.manifest import Manifest
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
+from pybiz.schema import Field, UuidString
 
 from .exceptions import ApplicationError
 from .endpoint_decorator import EndpointDecorator
-from .argument_loader import ApplicationArgumentLoader
 from .endpoint import Endpoint
+from .application_argument_loader import ApplicationArgumentLoader
+from .application_dao_binder import ApplicationDaoBinder
+
+DEFAULT_ID_FIELD_CLASS = UuidString
 
 
 class Application(object):
-    def __init__(self, middleware: List['ApplicationMiddleware'] = None):
+
+    def __init__(
+        self,
+        middleware: List['ApplicationMiddleware'] = None,
+        id_field_class: Type[Field] = None,
+    ):
+        self._id_field_class = id_field_class or DEFAULT_ID_FIELD_CLASS
         self._decorators = []
         self._endpoints = {}
         self._biz = None  # set in bootstrap
-        self._dao = None  # set in bootstrap
+        self._dal = None  # set in bootstrap
         self._api = None  # set in bootstrap
         self._manifest = None  # set in bootstrap
         self._arg_loader = None  # set in bootstrap
@@ -29,6 +39,7 @@ class Application(object):
         self._is_started = False
         self._json_encoder = JsonEncoder()
         self._namespace = {}
+        self._binder = ApplicationDaoBinder()
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.app_types)
@@ -77,6 +88,10 @@ class Application(object):
         return Endpoint
 
     @property
+    def id_field_class(self) -> Type[Field]:
+        return self._id_field_class
+
+    @property
     def manifest(self) -> Manifest:
         return self._manifest
 
@@ -93,8 +108,12 @@ class Application(object):
         return self._decorators
 
     @property
-    def argument_loader(self):
+    def loader(self) -> 'ApplicationArgumentLoader':
         return self._arg_loader
+
+    @property
+    def binder(self) -> 'ApplicationDaoBinder':
+        return self._binder
 
     @property
     def types(self) -> DictObject:
@@ -109,8 +128,8 @@ class Application(object):
         return self._api
 
     @property
-    def data(self) -> DictObject:
-        return self._data
+    def dal(self) -> DictObject:
+        return self._dal
 
     @property
     def is_bootstrapped(self):
@@ -164,13 +183,14 @@ class Application(object):
             self._manifest = manifest
 
         self._manifest.load()
-        self._manifest.process(namespace=self._namespace)
-        self._manifest.bootstrap(app=self)
-        self._manifest.bind(rebind=rebootstrap)
+        self._manifest.process(app=self, namespace=self._namespace)
 
         self._biz = DictObject(self._manifest.types.biz)
-        self._data = DictObject(self._manifest.types.dao)
+        self._dal = DictObject(self._manifest.types.dal)
         self._api = DictObject(self._endpoints)
+
+        self._manifest.bootstrap()
+        self._manifest.bind(rebind=rebootstrap)
 
         # bootstrap the middlware
         for mware in self.middleware:

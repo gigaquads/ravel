@@ -131,8 +131,8 @@ class TestBizBasics(object):
 
     @mark.unit
     def test_has_expected_biz_attribute_categories(cls, startrek):
-        rel_names = startrek.biz.Ship.attributes.by_category('relationship').keys()
-        view_names = startrek.biz.Ship.attributes.by_category('view').keys()
+        rel_names = startrek.biz.Ship.relationships.keys()
+        view_names = startrek.biz.Ship.views.keys()
         assert {'missions', 'crew'} == rel_names
         assert {
             'mission_names',
@@ -147,3 +147,63 @@ class TestBizBasics(object):
         assert isinstance(startrek.biz.Ship.mission_names, ViewProperty)
         assert isinstance(startrek.biz.Ship.mission_count, ViewProperty)
         assert isinstance(startrek.biz.Ship.mission_count_with_field, ViewProperty)
+
+    @mark.integration
+    def test_save_properly_recurses_default_depth(cls, startrek, the_enterprise, enterprise_crew):
+        assert the_enterprise.dirty
+        assert the_enterprise._id is None
+        assert all([officer.dirty for officer in enterprise_crew])
+        assert enterprise_crew._id == ([None] * len(enterprise_crew))
+
+        the_enterprise.crew = enterprise_crew
+        the_enterprise.save(depth=-1)
+
+        assert not the_enterprise.dirty
+        assert the_enterprise._id is not None
+        assert not all([officer.dirty for officer in enterprise_crew])
+        assert enterprise_crew._id != ([None] * len(enterprise_crew))
+
+    @mark.integration
+    def test_save_properly_recurses_depth_0(cls, startrek, the_enterprise, enterprise_crew):
+        assert the_enterprise.dirty
+        assert the_enterprise._id is None
+        assert all([officer.dirty for officer in enterprise_crew])
+        assert enterprise_crew._id == ([None] * len(enterprise_crew))
+
+        the_enterprise.crew = enterprise_crew
+        the_enterprise.save(depth=0)
+
+        assert the_enterprise.dirty
+        assert the_enterprise._id is None
+        assert all([officer.dirty for officer in enterprise_crew])
+        assert enterprise_crew._id == ([None] * len(enterprise_crew))
+
+    @mark.integration
+    def test_save_properly_recurses_depth_1(cls, startrek, the_enterprise, enterprise_crew):
+        assert the_enterprise.dirty
+        assert the_enterprise._id is None
+        assert all([officer.dirty for officer in enterprise_crew])
+        assert enterprise_crew._id == ([None] * len(enterprise_crew))
+
+        the_enterprise.crew = enterprise_crew
+        the_enterprise.save(depth=1)
+
+        assert not the_enterprise.dirty
+        assert the_enterprise._id is not None
+        assert all([officer.dirty for officer in enterprise_crew])
+        assert enterprise_crew._id == ([None] * len(enterprise_crew))
+
+    @mark.integration
+    def test_save_properly_recurses_depth_2(cls, startrek, the_enterprise, enterprise_crew):
+        assert the_enterprise.dirty
+        assert the_enterprise._id is None
+        assert all([officer.dirty for officer in enterprise_crew])
+        assert enterprise_crew._id == ([None] * len(enterprise_crew))
+
+        the_enterprise.crew = enterprise_crew
+        the_enterprise.save(depth=2)
+
+        assert not the_enterprise.dirty
+        assert the_enterprise._id is not None
+        assert not all([officer.dirty for officer in enterprise_crew])
+        assert enterprise_crew._id != ([None] * len(enterprise_crew))

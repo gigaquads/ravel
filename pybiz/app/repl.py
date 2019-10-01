@@ -71,7 +71,7 @@ class Repl(Application):
         local_ns.update(self._namespace)
         local_ns.update(dict(self.endpoints))
         local_ns.update(self.types.biz)
-        local_ns.update(self.types.dao)
+        local_ns.update(self.types.dal)
 
         # enter an ipython shell
         self.shell.mainloop(local_ns=local_ns)

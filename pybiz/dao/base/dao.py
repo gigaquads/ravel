@@ -22,7 +22,7 @@ class DaoMeta(ABCMeta):
         ABCMeta.__init__(cls, name, bases, dict_)
 
         def callback(scanner, name, dao_class):
-            scanner.dao_classs.setdefault(name, dao_class)
+            scanner.dao_classes.setdefault(name, dao_class)
             console.info(f'venusian scan found "{dao_class.__name__}" Dao')
 
         venusian.attach(cls, callback, category='dao')

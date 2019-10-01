@@ -7,10 +7,9 @@ from collections import defaultdict
 from appyratus.utils import DictObject, DictUtils
 from appyratus.schema.fields import UuidString
 
-from pybiz.dao.dao_binder import DaoBinder
 from pybiz.dao.python_dao import PythonDao
 from pybiz.util.misc_functions import (
-    is_bizobj,
+    is_biz_obj,
     is_sequence,
     repr_biz_id,
     normalize_to_tuple,
@@ -19,10 +18,10 @@ from pybiz.util.loggers import console
 from pybiz.util.dirty import DirtyDict
 from pybiz.exceptions import ValidationError, BizObjectError
 
-from ..query import Query
+from .biz_object_meta import BizObjectMeta
 from ..dump import NestingDumper, SideLoadingDumper
 from ..biz_thing import BizThing
-from .biz_object_meta import BizObjectTypeBuilder, BizObjectMeta
+from ..query import Query, Backfill
 
 
 class BizObject(BizThing, metaclass=BizObjectMeta):
@@ -31,13 +30,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     BizList = None
 
     schema = None
-    relationships = {}    # XXX: deprecated. use cls.attributes
-    base_selectors = set()
+    relationships = None
+    views = None
 
-    is_bootstrapped = False
-    is_abstract = False
-
-    binder = DaoBinder.get_instance()    # TODO: put this on the Application class
     app = None
 
     @classmethod
@@ -54,49 +49,49 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return PythonDao
 
     @classmethod
-    def get_dao(cls, bind=True) -> 'Dao':
+    def __abstract__(cls) -> bool:
         """
-        Get the global Dao reference associated with this class.
+        Declare the DAO type/instance used by this BizObject class.
         """
-        return cls.binder.get_dao_instance(cls, bind=bind)
+        return True
 
     @classmethod
-    def select(cls, *selectors) -> 'Query':
+    def get_dao(cls, bind=True) -> 'Dao':
+        """
+        Get the global Dao reference associated with this class. The binder
+        reference will be null unless this BizObject class has been bootstrapped
+        by a host Application.
+        """
+        binder = None
+        if cls.app is not None:
+            binder = cls.app.binder.get_dao_instance(cls, bind=bind)
+        return binder
+
+    @classmethod
+    def select(cls, *selectors) -> Query:
         """
         Initialize and return a Query with cls as the target class.
         """
+        # select all BizObject fields by default
         if not selectors:
-            selectors = tuple(cls.schema.fields.keys())
-        return Query(cls).select(*selectors)
+            selectors = cls.pybiz.default_selectors
+        return Query(cls).select(selectors)
 
     @classmethod
-    def generate(cls, fields: Set[Text] = None) -> 'BizObject':
+    def generate(
+        cls,
+        fields: Set[Text] = None,
+        constraints: Dict = None
+    ) -> 'BizObject':
         """
-        Recursively generate a fixture for this BizObject class and any related
-        objects as well.
+        Generate a fixture for this BizObject type.
         """
-        field_names, children = set(), {}
-        if fields:
-            unflattened = DictUtils.unflatten_keys({k: None for k in fields})
-            for k, v in unflattened.items():
-                if k == '*':
-                    field_names |= cls.schema.fields.keys()
-                elif k in cls.schema.fields:
-                    field_names.add(k)
-                elif k in cls.attributes:
-                    attr = cls.attributes.by_name(k)
-                    if attr.category == 'relationship':
-                        children[k] = v
-
-        data = cls.schema.generate(fields=field_names)
-        for k, v in children.items():
-            attr = cls.attributes.by_name(k)
-            if attr.category == 'relationship':
-                data[k] = attr.target_biz_class.generate(v)
-
+        fields = fields or set(cls.Schema.fields.keys())
+        data = cls.schema.generate(fields=fields, constraints=constraints)
         return cls(data=data)
 
     def __init__(self, data=None, **more_data):
+<<<<<<< HEAD
         self.internal = DictObject(
             {
                 'hash': int(UuidString.next_id(), 16),
@@ -106,22 +101,32 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             }
         )
         self.merge(dict(data or {}, **more_data))
+=======
+        data = dict(data or {}, **more_data)
+        self.internal = DictObject({
+            'hash_int': self._build_hash(data.get('_id')),
+            'arg': None,
+            'state': DirtyDict(),
+            'attributes': {},
+        })
+        self.merge(data)
+>>>>>>> origin/v1
 
     def __hash__(self):
-        return self.internal.hash
+        return self.internal.hash_int
 
     def __getitem__(self, key):
-        if key in self.selectable_attribute_names:
+        if key in self.pybiz.all_selectors:
             return getattr(self, key)
         raise KeyError(key)
 
     def __setitem__(self, key, value):
-        if key in self.selectable_attribute_names:
+        if key in self.pybiz.all_selectors:
             return setattr(self, key, value)
         raise KeyError(key)
 
     def __delitem__(self, key):
-        if key in self.selectable_attribute_names:
+        if key in self.pybiz.all_selectors:
             delattr(self, key)
         else:
             raise KeyError(key)
@@ -141,17 +146,30 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     @classmethod
     def bootstrap(cls, app: 'Application', **kwargs):
         cls.app = app
-        for biz_attr in cls.attributes.values():
+
+        # Dynamically mutate the BizObject schema in order to replace each
+        # pybiz.Id field with the custom class via the app.id_field_class
+        # property
+        if app.id_field_class is not None:
+            replacement_field_class = app.id_field_class
+            for field in cls.pybiz.id_fields:
+                replacement_field = field.replace_with(replacement_field_class)
+                cls.Schema.replace_field(replacement_field, overwrite=True)
+
+        # bootstrap BizAttributes, like Relationships, Views, etc.
+        for biz_attr in cls.pybiz.attributes.values():
             biz_attr.bootstrap(app)
-        cls.on_bootstrap()
-        cls.is_bootstrapped = True
+
+        cls.on_bootstrap()  # custom app logic goes here
+
+        cls.pybiz.is_bootstrapped = True
 
     @classmethod
     def on_bootstrap(cls, **kwargs):
         pass
 
     @classmethod
-    def bind(cls, binder: 'DaoBinder'):
+    def bind(cls, binder: 'ApplicationDaoBinder'):
         cls.binder = binder
         cls.on_bind()
 
@@ -161,19 +179,42 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def is_bound(cls):
-        if cls.binder is not None:
-            return cls.binder.is_bound(cls)
+        if cls.app and cls.app.binder:
+            return cls.app.binder.is_bound(cls)
         return False
+
+    @classmethod
+    def pre_execute_query(cls, query: 'Query'):
+        """
+        At this point, a Query targeting this BizObject class is about to
+        execute. Now is your chance to mutate the query or perform additional
+        checks before continuing.
+        """
+
+    @classmethod
+    def on_execute_query(cls, query: 'Query', results: 'BizList'):
+        """
+        At this point, the `targets` BizList contains the BizObjects fetched by
+        this query but only their fields have been loaded. If any relationship
+        on these objects was targeted in a subquery, then these will only be
+        loaded and set on `targets` in the `post_execute_query` method.
+        """
+
+    @classmethod
+    def post_execute_query(cls, query: 'Query', results: 'BizList'):
+        """
+        At this point, `results` contains all BizObjects targeted by the query,
+        including all nested BizObjects targeted by queries targeting their
+        Relationships.
+        """
 
     @classmethod
     def exists(cls, obj=None) -> bool:
         """
         Does a simple check if a BizObject exists by id.
         """
-        _id = obj._id if is_bizobj(obj) else obj
-        if _id is not None:
-            return cls.get_dao().exists(_id=_id)
-        return False
+        _id = obj._id if is_biz_obj(obj) else obj
+        return cls.get_dao().exists(_id=_id) if _id is not None else False
 
     @classmethod
     def query(
@@ -183,22 +224,27 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         order_by: Tuple[Text] = None,
         offset: int = None,
         limit: int = None,
+        custom: Dict = None,
         execute=True,
         first=False,
     ):
         """
         Alternate syntax for building Query objects manually.
         """
-        query = Query.from_keys(cls, keys=(select or cls.schema.fields.keys()))
-
+        # select all BizObject fields by default
+        query = Query.load_from_keys(
+            cls, keys=(select or cls.schema.fields.keys())
+        )
         if where:
-            query.where(normalize_to_tuple(where))
+            query.where(where)
         if order_by:
-            query.order_by(normalize_to_tuple(order_by))
+            query.order_by(order_by)
         if limit is not None:
             query.limit(limit)
         if offset is not None:
             query.offset(offset)
+        if custom:
+            query.params.custom = custom
 
         if not execute:
             return query
@@ -206,9 +252,18 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             return query.execute(first=first)
 
     @classmethod
+    def query_graphql(cls, graphql_query: Text) -> Query:
+        """
+        Return a Query object corresponding to the given GraphQL query string.
+        """
+        from ..graphql import GraphQLInterpreter
+
+        interpreter = GraphQLInterpreter(cls)
+        return interpreter.interpret(graphql_query)
+
+    @classmethod
     def get(cls, _id, select=None) -> 'BizObject':
-        return cls.query(
-            select=select,
+        return cls.query( select=select,
             where=(cls._id == _id),
             first=True
         )
@@ -262,13 +317,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return self
 
     @classmethod
-    def delete_many(cls, bizobjs) -> None:
-        bizobj_ids = []
-        for obj in bizobjs:
+    def delete_many(cls, biz_objs) -> None:
+        biz_obj_ids = []
+        for obj in biz_objs:
             obj.mark(obj.internal.state.keys())
-            bizobj_ids.append(obj._id)
+            biz_obj_ids.append(obj._id)
             obj._id = None
-        cls.get_dao().delete_many(bizobj_ids)
+        cls.get_dao().delete_many(biz_obj_ids)
 
     @classmethod
     def delete_all(cls) -> None:
@@ -310,13 +365,12 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         errors = {}
         prepared_record = {}
         for k, v in raw_record.items():
-            field = self.schema.fields.get(k)
+            field = self.Schema.fields.get(k)
             if field is not None:
                 prepared_record[k], error = field.process(v)
                 if error:
                     errors[k] = error
 
-        # TODO: allow schema.process to take a subset of total keys
         if errors:
             raise ValidationError(
                 message=f'could not update {self.__class__.__name__} object',
@@ -330,17 +384,17 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return self.clean()
 
     @classmethod
-    def create_many(cls, bizobjs: List['BizObject']) -> 'BizList':
+    def create_many(cls, biz_objs: List['BizObject']) -> 'BizList':
         """
         Call `dao.create_method` on input `BizObject` list and return them in
         the form of a BizList.
         """
         records = []
 
-        for bizobj in bizobjs:
-            if bizobj is None:
+        for biz_obj in biz_objs:
+            if biz_obj is None:
                 continue
-            record = bizobj.internal.state.copy()
+            record = biz_obj.internal.state.copy()
             cls.insert_defaults(record)
             record, errors = cls.schema.process(record)
             record.pop('_rev', None)
@@ -353,29 +407,29 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         created_records = cls.get_dao().create_many(records)
 
-        for bizobj, record in zip(bizobjs, created_records):
-            bizobj.internal.state.update(record)
-            bizobj.clean()
+        for biz_obj, record in zip(biz_objs, created_records):
+            biz_obj.internal.state.update(record)
+            biz_obj.clean()
 
-        return cls.BizList(bizobjs)
+        return cls.BizList(biz_objs)
 
     @classmethod
     def update_many(
         cls,
-        bizobjs: List['BizObject'],
+        biz_objs: List['BizObject'],
         data: Dict = None,
         **more_data
     ) -> 'BizList':
         """
         Call the Dao's update_many method on the list of BizObjects. Multiple
-        Dao calls may be made. As a preprocessing step, the input bizobj list
+        Dao calls may be made. As a preprocessing step, the input biz_obj list
         is partitioned into groups, according to which subset of fields are
         dirty.
 
-        For example, consider this list of bizobjs,
+        For example, consider this list of biz_objs,
 
         ```python
-        bizobjs = [
+        biz_objs = [
             user1,     # dirty == {'email'}
             user2,     # dirty == {'email', 'name'}
             user3,     # dirty == {'email'}
@@ -399,43 +453,52 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         # we issue an update_many statement for each partition in the DAL.
         partitions = defaultdict(list)
 
-        for bizobj in bizobjs:
-            if bizobj is None:
+        for biz_obj in biz_objs:
+            if biz_obj is None:
                 continue
             if common_values:
-                bizobj.merge(common_values)
-            partitions[tuple(bizobj.dirty)].append(bizobj)
+                biz_obj.merge(common_values)
+            partitions[tuple(biz_obj.dirty)].append(biz_obj)
 
-        for bizobj_partition in partitions.values():
+        for biz_obj_partition in partitions.values():
             records, _ids = [], []
 
-            for bizobj in bizobj_partition:
-                record = bizobj.dirty_data
+            for biz_obj in biz_obj_partition:
+                record = biz_obj.dirty_data
                 record.pop('_rev', None)
                 record.pop('_id', None)
                 records.append(record)
-                _ids.append(bizobj._id)
+                _ids.append(biz_obj._id)
 
             console.debug(
                 message='performing update_many',
                 data={
                     'partition_size': len(_ids),
-                    'total_size': len(bizobjs),
+                    'total_size': len(biz_objs),
                 }
             )
             updated_records = cls.get_dao().update_many(_ids, records)
 
-            for bizobj, record in zip(bizobj_partition, updated_records):
-                bizobj.internal.state.update(record)
-                bizobj.clean()
+            for biz_obj, record in zip(biz_obj_partition, updated_records):
+                biz_obj.internal.state.update(record)
+                biz_obj.clean()
 
-        return cls.BizList(bizobjs)
+        return cls.BizList(biz_objs)
 
-    def save(self):
+    def save(self, depth=1):
+        if not depth:
+            return self
+
         if self._id is None or '_id' in self.dirty:
             self.create()
         else:
             self.update()
+
+        for rel in self.relationships.values():
+            biz_thing = self.internal.attributes.get(rel.name)
+            if biz_thing:
+                biz_thing.save(depth=depth-1)
+
         return self
 
     @classmethod
@@ -445,7 +508,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         into the `record` dict param.
         """
         generated_defaults = {}
-        for k, default in cls.defaults.items():
+        for k, default in cls.pybiz.field_defaults.items():
             if k not in record:
                 if callable(default):
                     defval = default()
@@ -474,7 +537,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def mark(self, keys) -> 'BizObject':
         if not is_sequence(keys):
             keys = {keys}
-        self.internal.state.mark_dirty({k for k in keys if k in self.schema.fields})
+        self.internal.state.mark_dirty({
+            k for k in keys if k in self.Schema.fields
+        })
         return self
 
     def copy(self, deep=False) -> 'BizObject':
@@ -507,17 +572,20 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if not (source or source_kwargs):
             return self
 
-        if is_bizobj(source):
+        if is_biz_obj(source):
             assert isinstance(source, self.__class__)
             for k, v in source.internal.state.items():
                 setattr(self, k, v)
-            for k, v in source.internal.cache.items():
+            for k, v in source.internal.attributes.items():
                 setattr(self, k, v)
         elif isinstance(source, dict):
+            original_source = source
             source = self.schema.translate_source(source)
             for k, v in source.items():
-                if k in self.schema.fields or k in self.attributes:
+                if k in self.Schema.fields or k in self.pybiz.attributes:
                     setattr(self, k, v)
+            for k in original_source.keys() - source.keys():
+                setattr(self, k, original_source[k])
 
         if source_kwargs:
             self.merge(source=source_kwargs)
@@ -542,7 +610,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             }
         )
 
-        fresh = self.get(_id=self._id, select=select)    # TODO: depth=depth
+        fresh = self.get(_id=self._id, select=select)
         if fresh:
             self.merge(fresh)
             self.clean(fresh.internal.state.keys())
@@ -560,19 +628,11 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Remove the given keys from field data and/or relationship data.
         """
         keys = {keys} if isinstance(keys, str) else keys
-        console.debug(
-            message='unloading',
-            data={
-                'class': self.__class__.__name__,
-                'instance': self._id,
-                'keys': keys
-            }
-        )
         for k in keys:
             if k in self.internal.state:
                 self.internal.state.pop(k, None)
-            elif k in self.internal.cache:
-                self.internal.cache.pop(k, None)
+            elif k in self.internal.attributes:
+                self.internal.attributes.pop(k, None)
 
     def is_loaded(self, keys: Set[Text]) -> bool:
         """
@@ -580,7 +640,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         keys = {keys} if isinstance(keys, str) else keys
         for k in keys:
-            if not (k in self.internal.state or k in self.internal.cache):
+            if not (k in self.internal.state or k in self.internal.attributes):
                 return False
         return True
 
@@ -598,3 +658,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         result = dump(target=self, fields=fields)
         return result
+
+    @classmethod
+    def _build_hash(cls, _id):
+        if _id is not None:
+            hash_str = ''.join(
+                hex(ord(c))[2:]
+                for c in f'{cls.__name__}:{_id}'
+            )
+            return int(hash_str, 16)
+        else:
+            return uuid.uuid4().int

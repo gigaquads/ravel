@@ -7,9 +7,18 @@ from collections import defaultdict
 from typing import Dict, Set, Text, List, Type, Tuple
 from threading import local
 
-from pyparsing import Literal, Regex, Forward, Optional, Word
+import sqlparse
+
+from sqlparse.sql import (
+    Statement, Parenthesis, Token, Comparison,
+    Identifier,
+)
+
 from appyratus.enum import Enum
 from appyratus.utils import DictObject
+from appyratus.schema import RangeConstraint, ConstantValueConstraint
+
+from pybiz.schema import Enum as EnumField
 
 
 OP_CODE = Enum(
@@ -28,14 +37,18 @@ OP_CODE = Enum(
 OP_CODE_2_DISPLAY_STRING = {
     OP_CODE.EQ: '==',
     OP_CODE.NEQ: '!=',
-    OP_CODE.GT: '>=',
-    OP_CODE.LT: '<=',
+    OP_CODE.GT: '>',
+    OP_CODE.LT: '<',
     OP_CODE.GEQ: '>=',
     OP_CODE.LEQ: '<=',
     OP_CODE.INCLUDING: 'in',
     OP_CODE.EXCLUDING: 'not in',
     OP_CODE.AND: '&&',
     OP_CODE.OR: '||',
+}
+
+DISPLAY_STRING_2_OP_CODE = {
+    v: k for k, v in OP_CODE_2_DISPLAY_STRING.items()
 }
 
 TYPE_BOOLEAN = 1
@@ -47,12 +60,14 @@ BOOLEAN_OPERATORS = frozenset({'&&', '||'})
 
 RE_INT = re.compile(r'\d+')
 RE_FLOAT = re.compile(r'\d*(\.\d+)')
-RE_STRING = re.compile(r'(\'|").+(\'|")')
+RE_STRING = re.compile(r'\'.+\'')
 
 
 class Predicate(object):
     TYPE_BOOLEAN = TYPE_BOOLEAN
     TYPE_CONDITIONAL = TYPE_CONDITIONAL
+    AND_FUNC = lambda x, y: x & y
+    OR_FUNC = lambda x, y: x | y
 
     def __init__(self, code):
         self.code = code
@@ -65,10 +80,6 @@ class Predicate(object):
         the line.
         """
         return codecs.encode(pickle.dumps(self), "base64").decode()
-
-    @classmethod
-    def parse(biz_class: Type['BizObject'], source: Text) -> 'Predicate':
-        parser
 
     @staticmethod
     def deserialize(obj) -> 'Predicate':
@@ -93,6 +104,101 @@ class Predicate(object):
             return ConditionalPredicate.load(biz_class, data)
         elif data['code'] == TYPE_BOOLEAN:
             return BooleanPredicate.load(biz_class, data)
+
+    @classmethod
+    def reduce_and(cls, *predicates) -> 'Predicate':
+        return cls._reduce(cls.AND_FUNC, predicates)
+
+    @classmethod
+    def reduce_or(cls, *predicates) -> 'Predicate':
+        return cls._reduce(cls.OR_FUNC, predicates)
+
+    @staticmethod
+    def _reduce(func, predicates: List['Predicate']) -> 'Predicate':
+        predicates = [p for p in predicates if p is not None]
+        if not predicates:
+            return None
+        if len(predicates) == 1:
+            return predicates[0]
+        else:
+            return reduce(func, predicates)
+
+    @property
+    def is_conditional_predicate(self):
+        return self.code == TYPE_CONDITIONAL
+
+    @property
+    def is_boolean_predicate(self):
+        return self.code == TYPE_BOOLEAN
+
+    def compute_constraints(self) -> 'Constraint':
+        constraints = defaultdict(dict)
+        self._compute_constraint(self, constraints)
+        return constraints
+
+    def _compute_constraint(self, predicate, constraints):
+        if predicate.code == TYPE_BOOLEAN:
+            self._compute_constraint(predicate.lhs, constraints)
+            self._compute_constraint(predicate.rhs, constraints)
+        elif predicate.code == TYPE_CONDITIONAL:
+            field = predicate.fprop.field
+            if predicate.op == OP_CODE.EQ:
+                constraints[field.name] = ConstantValueConstraint(
+                    value=predicate.value,
+                    is_negative=False
+                )
+            elif predicate.op == OP_CODE.NEQ:
+                constraints[field.name] = ConstantValueConstraint(
+                    value=predicate.value,
+                    is_negative=True
+                )
+            elif predicate.op == OP_CODE.INCLUDING:
+                constraints[field.name] = ConstantValueConstraint(
+                    value=random.choice(list(predicate.value)),
+                    is_negative=False
+                )
+            elif predicate.op == OP_CODE.EXCLUDING:
+                disallowed_values = set(predicate.value)
+                if isinstance(field, EnumField):
+                    possible_values = set(field.values) - disallowed_values
+                    is_enum = True
+                else:
+                    possible_values = None
+                    is_enum = False
+                if not is_enum:
+                    while True:
+                        value = field.generate()
+                        if value not in disallowed_values:
+                            break
+                elif disallowed_values == possible_values:
+                    value = None
+                else:
+                    possible_values = list(possible_values)
+                    value = random.choice(possible_values)
+                constraints[field.name] = ConstantValueConstraint(
+                    value=value,
+                    is_negative=True
+                )
+
+            con = constraints.setdefault(field.name, RangeConstraint())
+            if not con.is_equality_constraint:
+                if predicate.op == OP_CODE.LEQ:
+                    con.upper_value = predicate.value
+                    con.is_upper_inclusive = True
+                elif predicate.op == OP_CODE.LT:
+                    con.upper_value = predicate.value
+                    con.is_upper_inclusive = False
+                elif predicate.op == OP_CODE.GEQ:
+                    con.lower_value = predicate.value
+                    con.is_lower_inclusive = True
+                elif predicate.op == OP_CODE.GT:
+                    con.lower_value = predicate.value
+                    con.is_lower_inclusive = False
+        else:
+            raise ValueError(
+                f'unrecogized predicate type: {predicate.code}'
+            )
+        return constraints
 
 
 class ConditionalPredicate(Predicate):
@@ -158,8 +264,10 @@ class BooleanPredicate(Predicate):
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
-        self.fields.add(self.lhs.fprop.field)
-        self.fields.add(self.rhs.fprop.field)
+        if lhs.code == TYPE_CONDITIONAL:
+            self.fields.add(lhs.fprop.field)
+        if rhs.code == TYPE_CONDITIONAL:
+            self.fields.add(rhs.fprop.field)
 
     def __or__(self, other):
         return BooleanPredicate(OP_CODE.OR, self, other)
@@ -210,90 +318,108 @@ class BooleanPredicate(Predicate):
 
 
 class PredicateParser(object):
-    """
-    """
 
-    def __init__(self):
-        self._stack = []
-        self._biz_class = None
-        self._init_grammar()
+    pybiz_field_name_transform_inversions = {
+        'id': '_id',
+        'rev': '_rev',
+    }
 
-    def _init_grammar(self):
-        self._grammar = DictObject()
-        self._grammar.ident = Regex(r'[a-zA-Z_]\w*')
-        self._grammar.number = Regex(r'\d*(\.\d+)?')
-        self._grammar.string = Regex(r"'.+'")
-        self._grammar.conditional_value = (
-           # self._grammar.number |
-            self._grammar.string
-        )
-        self._grammar.conditional_operator = reduce(
-            lambda x, y: x | y, (Literal(op) for op in CONDITIONAL_OPERATORS)
-        )
-        self._grammar.boolean_operator = reduce(
-            lambda x, y: x | y, (Literal(op) for op in BOOLEAN_OPERATORS)
-        )
-        self._grammar.lparen = Literal('(')
-        self._grammar.rparen = Literal(')')
-        self._grammar.conditional_predicate = (
-            self._grammar.ident.setResultsName('field') +
-            self._grammar.conditional_operator.setResultsName('op') +
-            self._grammar.conditional_value.setResultsName('value')
-        ).addParseAction(self._on_parse_conditional_predicate)
+    class Operand(object):
+        def __init__(self, op_code, arity):
+            self.op_code = op_code
+            self.arity = arity
 
-        self._grammar.boolean_predicate = Forward().addParseAction(
-            self._on_parse_boolean_predicate
-        )
-        self._grammar.any_predicate = (
-            self._grammar.lparen
-            + (self._grammar.boolean_predicate
-                | self._grammar.conditional_predicate)
-            + self._grammar.rparen
-        )
-        self._grammar.boolean_predicate << (
-            Optional(self._grammar.lparen)
-            + (
-                self._grammar.any_predicate
-                + self._grammar.boolean_operator.setResultsName('operator')
-                + self._grammar.any_predicate
-            )
-            + Optional(self._grammar.rparen)
-        )
-        self._grammar.root = (
-            (
-                Optional(self._grammar.lparen)
-                + self._grammar.conditional_predicate
-                + Optional(self._grammar.rparen)
-            )
-            | self._grammar.boolean_predicate
-        )
-
-    def _on_parse_conditional_predicate(self, source: Text, loc: int, tokens: Tuple):
-        # TODO: further process "value" as list or other dtype
-        fprop = getattr(self._biz_class, tokens['field'])
-        value = tokens['value']
-        if RE_STRING.match(value):
-            value = value[1:-1]
-        elif RE_INT.match(value):
-            value = int(value)
-        elif RE_FLOAT.match(value):
-            value = float(value)
-        else:
-            raise ValueError()
-        predicate = ConditionalPredicate(op, fprop, value)
-        self._stack.append(predicate)
-
-    def _on_parse_boolean_predicate(self, source: Text, loc: int, tokens: Tuple):
-        lhs = self._stack.pop()
-        rhs = self._stack.pop()
-        if tokens['op'] == '&&':
-            self._stack.append(lhs & rhs)
-        elif tokens['op'] == '||':
-            self._stack.append(lhs | rhs)
-
-    def parse(self, biz_class, source: Text) -> 'Predicate':
+    def __init__(self, biz_class):
         self._biz_class = biz_class
-        self._stack.clear()
-        self._grammar.root.parseString(source)
-        predicate = self._stack[-1]
+
+    def parse(self, source: Text):
+        source = f'({source})'
+        stmt = sqlparse.parse(source)[0]
+        predicate = self._parse_predicate(stmt[0])
         return predicate
+
+    def _parse_predicate(self, paren: Parenthesis):
+        predicate_stack = []
+        op_stack = []
+        for token in paren:
+            if isinstance(token, Parenthesis):
+                predicate = self._parse_predicate(token)
+                predicate_stack.append(predicate)
+                if op_stack:
+                    op = op_stack[-1]
+                    if len(predicate_stack) >= op.arity:
+                        op_stack.pop()
+                        args = [predicate_stack.pop() for i in range(op.arity)]
+                        if op.op_code == 'and':
+                            predicate_stack.append(Predicate.reduce_and(*args))
+                        elif op.op_code == 'or':
+                            predicate_stack.append(Predicate.reduce_or(*args))
+                        else:
+                            raise Exception()
+            elif token.is_keyword:
+                value = token.value.lower()
+                if value in {'and', 'or'}:
+                    op_stack.append(self.Operand(value, 2))
+                elif value == 'in':
+                    predicate_stack.append(self._parse_in_predicate(paren))
+            elif isinstance(token, Comparison):
+                return self._parse_comparison(token)
+
+        return predicate_stack[0] if predicate_stack else None
+
+    def _parse_comparison(self, comp: Comparison):
+        if isinstance(comp.left, Identifier):
+            ident = comp.left.value
+            target = comp.right.value
+        else:
+            ident = comp.right.value
+            target = comp.left.value
+
+        target = target.strip("'")
+        ident = self.pybiz_field_name_transform_inversions.get(ident, ident)
+        fprop = getattr(self._biz_class, ident)
+
+        op_code = None
+        for token in comp:
+            if token.ttype == sqlparse.tokens.Comparison:
+                op_code = token.value
+                break
+
+        if op_code == '=':
+            return fprop == target
+        if op_code == '!=':
+            return fprop != target
+        if op_code == '<':
+            return fprop < target
+        if op_code == '>':
+            return fprop > target
+        if op_code == '>=':
+            return fprop >= target
+        if op_code == '<=':
+            return fprop <= target
+
+        raise Exception()
+
+    def _parse_in_predicate(self, paren: Parenthesis):
+        ident = None
+        value_list = []
+        is_negative = False
+        for token in paren:
+            if token.is_keyword and token.value.lower() == 'not':
+                is_negative = not is_negative
+            if isinstance(token, Identifier):
+                if ident is None:
+                    ident = token.value
+                else:
+                    ident = self.pybiz_field_name_transform_inversions.get(
+                        ident, ident
+                    )
+                    fprop = getattr(self._biz_class, ident)
+                    value_list = [
+                        fprop.field.process(x.strip("'").strip())[0]
+                        for x in token.value[1:-1].split(',')
+                    ]
+                    if is_negative:
+                        return fprop.excluding(value_list)
+                    else:
+                        return fprop.including(value_list)

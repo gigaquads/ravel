@@ -1,7 +1,7 @@
 from typing import List, Text, Set, Tuple
 
 from appyratus.utils import StringUtils
-from pybiz.util.misc_functions import normalize_to_tuple, is_bizobj
+from pybiz.util.misc_functions import normalize_to_tuple, is_biz_obj
 
 
 class Behavior(object):

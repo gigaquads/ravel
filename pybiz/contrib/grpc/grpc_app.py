@@ -23,7 +23,7 @@ from appyratus.schema import fields
 from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 
-from pybiz.util.misc_functions import is_bizobj, is_bizlist
+from pybiz.util.misc_functions import is_biz_obj, is_biz_list
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.app import Application
 
@@ -116,7 +116,7 @@ class Grpc(Application):
         self.grpc.pb2_grpc = import_module(pb2_grpc_mod_path, pkg_path)
 
         # build a lookup table of protobuf response Message types
-        self.grpc.response_classs = {
+        self.grpc.response_classes = {
             endpoint: getattr(
                 self.grpc.pb2, f'{StringUtils.camel(endpoint.name)}Response'
             )
@@ -150,7 +150,7 @@ class Grpc(Application):
         Map the return dict from the endpoint to the expected outgoing protobuf
         response Message object.
         """
-        response_class = self.grpc.response_classs[endpoint]
+        response_class = self.grpc.response_classes[endpoint]
         response = response_class()
 
         if result:
@@ -362,7 +362,7 @@ def _bind_message(message, source: Dict):
 
 
 def _dump_result_obj(obj):
-    if is_bizobj(obj) or is_bizlist(obj):
+    if is_biz_obj(obj) or is_biz_list(obj):
         return obj.dump()
     elif isinstance(obj, (list, set, tuple)):
         return [_dump_result_obj(x) for x in obj]

@@ -50,10 +50,7 @@ class CookieSessionMiddleware(ApplicationMiddleware):
         else:
             for name in endpoint.signature.parameters:
                 if name == self._arg_name:
-                    try:
-                        raw_kwargs[name] = self.get_session(session_id)
-                    except:
-                        import ipdb; ipdb.set_trace()
+                    raw_kwargs[name] = self.get_session(session_id)
                     break
 
     def get_request(self, raw_args, raw_kwargs):

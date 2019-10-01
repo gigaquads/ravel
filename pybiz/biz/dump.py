@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from appyratus.utils import StringUtils, DictUtils
 
-from pybiz.util.misc_functions import is_bizobj, is_bizlist, is_sequence
+from pybiz.util.misc_functions import is_biz_obj, is_biz_list, is_sequence
 
 
 class Dumper(object):
@@ -14,21 +14,21 @@ class Dumper(object):
         if isinstance(fields, dict):
             fields = DictUtils.unflatten_keys(fields)
         elif (not fields) or is_sequence(fields):
-            if is_bizobj(target):
+            if is_biz_obj(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
                         fields or (
                             target.internal.state.keys()
-                            | target.internal.cache.keys()
+                            | target.internal.attributes.keys()
                         )
                     )
                 })
-            elif is_sequence(target) or is_bizlist(target):
+            elif is_sequence(target) or is_biz_list(target):
                 fields = DictUtils.unflatten_keys({
                     k: None for k in (
                         fields or (
                             target.internal.state.keys()
-                            | target.internal.cache.keys()
+                            | target.internal.attributes.keys()
                         )
                     )
                 })
@@ -107,23 +107,23 @@ class NestingDumper(Dumper):
                 related = getattr(target, k, None)
                 if related is None:
                     record[k] = None
-                elif is_bizobj(related):
+                elif is_biz_obj(related):
                     record[k] = self(related, fields=fields[k])
                 else:
                     record[k] = [
                         self(obj, fields=fields[k])
                         for obj in related
                     ]
-            elif k in target.attributes:
-                biz_attr = target.attributes.by_name(k)
+            elif k in target.pybiz.attributes:
+                biz_attr = target.pybiz.attributes.by_name(k)
                 if not biz_attr.private:
-                    value = getattr(bizobj, k, None)
+                    value = getattr(target, k, None)
                     record[k] = self._dump_object(value)
 
         return record
 
     def _dump_object(self, obj):
-        if is_bizobj(obj) or is_bizlist(obj):
+        if is_biz_obj(obj) or is_biz_list(obj):
             return obj.dump()
         elif is_sequence(obj):
             return [

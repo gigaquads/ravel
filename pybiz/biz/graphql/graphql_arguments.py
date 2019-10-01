@@ -1,31 +1,36 @@
 import re
-import threading
 
 from typing import Dict, Set, Text, List, Type, Tuple
 
-from pybiz.biz.query import OrderBy
-from pybiz.predicate import PredicateParser
-
-RE_ORDER_BY = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
+from pybiz.predicate import Predicate
+from pybiz.biz import OrderBy
 
 
 class GraphQLArguments(object):
+    """
+    This class is responsible for parsing and normalizing the base arguments
+    supplied to a GraphQL query node into the corresponding arguments expected
+    by a pybiz Query object.
+    """
 
-    _thread_local = threading.local()
-    _thread_local.predicate_parser = PredicateParser()
+    _re_order_by = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
+
+    @staticmethod
+    def extract_arguments_dict(ast_node) -> Dict:
+        return {
+            arg.name: arg.value for arg in
+            getattr(ast_node, 'arguments', ())
+        }
 
     @classmethod
-    def parse(cls, biz_class, node) -> 'GraphQLArguments':
-        args = {
-            arg.name: arg.value for arg in
-            getattr(node, 'arguments', ())
-        }
+    def parse(cls, biz_class, ast_node) -> 'GraphQLArguments':
+        args = cls.extract_arguments_dict(ast_node)
         return cls(
             where=cls._parse_where(biz_class, args.pop('where', None)),
             order_by=cls._parse_order_by(args.pop('order_by', None)),
             offset=cls._parse_offset(args.pop('offset', None)),
             limit=cls._parse_limit(args.pop('limit', None)),
-            custom=args
+            custom=args  # `custom` is whatever remains in args
         )
 
     @classmethod
@@ -33,7 +38,7 @@ class GraphQLArguments(object):
         order_by_strs = order_by_strs or []
         order_by_list = []
         for order_by_str in order_by_strs:
-            match = RE_ORDER_BY.match(order_by_str)
+            match = self._re_order_by.match(order_by_str)
             if match is not None:
                 key, asc_or_desc = match.groups()
                 order_by = OrderBy.load({
@@ -63,15 +68,14 @@ class GraphQLArguments(object):
         biz_class: Type['BizObject'],
         predicate_strings: List[Text],
     ) -> List['Predicate']:
-        parser = cls._thread_local.predicate_parser
         if isinstance(predicate_strings, str):
             predicate_strings = [predicate_strings]
-        return [
-            parser.parse(biz_class, pred_str)
+        return Predicate.reduce_and(*[
+            biz_class.pybiz.predicate_parser.parse(pred_str)
             for pred_str in (predicate_strings or [])
-        ]
+        ])
 
-    def __init__(self, where, order_by, offset, limit, custom):
+    def __init__(self, where, order_by, offset, limit, custom: Dict):
         self.where = where
         self.order_by = order_by
         self.offset = offset

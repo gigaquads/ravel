@@ -1,11 +1,10 @@
 from typing import Dict, List, Type, Set, Text
 
-from pybiz.dao import Dao
 from pybiz.util.misc_functions import is_sequence
 from pybiz.util.loggers import console
 
 
-class DaoBinding(object):
+class BizBinding(object):
     def __init__(self, biz_class, dao_instance, dao_bind_kwargs=None):
         self.biz_class = biz_class
         self.dao_instance = dao_instance
@@ -14,7 +13,7 @@ class DaoBinding(object):
 
     def __repr__(self):
         return (
-            f'<DaoBinding({self.biz_class_name}, {self.dao_class_name}, '
+            f'<BizBinding({self.biz_class_name}, {self.dao_class_name}, '
             f'bound={self.is_bound})>'
         )
 
@@ -40,7 +39,7 @@ class DaoBinding(object):
         return self.biz_class.__name__
 
 
-class DaoBinder(object):
+class ApplicationDaoBinder(object):
     """
     Stores and manages a global app, entailing which BizObject class is
     associated with which Dao class.
@@ -48,11 +47,11 @@ class DaoBinder(object):
 
     def __init__(self):
         self._bindings = {}
-        self._named_dao_classs = {}
-        self._named_biz_classs = {}
+        self._named_dao_classes = {}
+        self._named_biz_classes = {}
 
     def __repr__(self):
-        return f'<DaoBinder(bindings={len(self.bindings)})>'
+        return f'<ApplicationDaoBinder(bindings={len(self.bindings)})>'
 
     @classmethod
     def get_instance(cls):
@@ -67,29 +66,29 @@ class DaoBinder(object):
         return singleton
 
     @property
-    def bindings(self) -> List['DaoBinding']:
+    def bindings(self) -> List['BizBinding']:
         return list(self._bindings.values())
 
     @property
-    def biz_classs(self) -> Dict[Text, 'BizObject']:
-        return self._named_biz_classs
+    def biz_classes(self) -> Dict[Text, 'BizObject']:
+        return self._named_biz_classes
 
     @property
-    def dao_classs(self) -> Dict[Text, 'Dao']:
-        return self._named_dao_classs
+    def dao_classes(self) -> Dict[Text, 'Dao']:
+        return self._named_dao_classes
 
     def register(
         self,
         biz_class: Type['BizObject'],
-        dao_class: Type[Dao],
+        dao_class: Type['Dao'],
         dao_bind_kwargs: Dict = None,
     ):
         dao_class_name = dao_class.__name__
-        if dao_class_name not in self._named_dao_classs:
+        if dao_class_name not in self._named_dao_classes:
             dao_class = type(dao_class_name, (dao_class, ), {})
-            self._named_dao_classs[dao_class_name] = dao_class
+            self._named_dao_classes[dao_class_name] = dao_class
             console.debug(
-                f'registered Dao "{dao_class_name}" with DaoBinder'
+                f'registered Dao "{dao_class_name}" with ApplicationDaoBinder'
             )
 
         dao_instance = dao_class()
@@ -97,32 +96,32 @@ class DaoBinder(object):
         if biz_class is not None:
             biz_class_name = biz_class.__name__
             biz_class.binder = self
-            self._named_biz_classs[biz_class_name] = biz_class
-            self._bindings[biz_class_name] = binding = DaoBinding(
+            self._named_biz_classes[biz_class_name] = biz_class
+            self._bindings[biz_class_name] = binding = BizBinding(
                 biz_class=biz_class,
                 dao_instance=dao_instance,
                 dao_bind_kwargs=dao_bind_kwargs,
             )
             console.debug(
-                f'registered BizObject "{biz_class_name}" with DaoBinder'
+                f'registered BizObject "{biz_class_name}" with ApplicationDaoBinder'
             )
             return binding
 
         return None
 
-    def bind(self, biz_classs: Set[Type['BizObject']] = None, rebind=False):
-        if not biz_classs:
-            biz_classs = [v.biz_class for v in self._bindings.values()]
-        elif not is_sequence(biz_classs):
-            biz_classs = [biz_classs]
-        for biz_class in biz_classs:
-            if not biz_class.is_abstract:
+    def bind(self, biz_classes: Set[Type['BizObject']] = None, rebind=False):
+        if not biz_classes:
+            biz_classes = [v.biz_class for v in self._bindings.values()]
+        elif not is_sequence(biz_classes):
+            biz_classes = [biz_classes]
+        for biz_class in biz_classes:
+            if not biz_class.pybiz.is_abstract:
                 biz_class.binder = self  # this is used in BizObject.get_dao()
                 self.get_dao_instance(biz_class, rebind=rebind)
 
     def get_dao_instance(
         self, biz_class: Type['BizObject'], bind=True, rebind=False
-    ) -> Dao:
+    ) -> 'Dao':
         if isinstance(biz_class, str):
             binding = self._bindings.get(biz_class)
         else:
@@ -148,8 +147,8 @@ class DaoBinder(object):
 
         return binding.dao_instance
 
-    def get_dao_class(self, dao_class_name: Text) -> Type[Dao]:
-        return self._named_dao_classs.get(dao_class_name)
+    def get_dao_class(self, dao_class_name: Text) -> Type['Dao']:
+        return self._named_dao_classes.get(dao_class_name)
 
     def is_registered(self, biz_class: Type['BizObject']) -> bool:
         if isinstance(biz_class, str):

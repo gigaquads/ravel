@@ -29,32 +29,37 @@ class FilesystemDao(Dao):
     def __init__(
         self,
         ftype: Text = None,
-        extensions: Set[Text] = None,    # TODO: change into a single one
+        extension: Text = None,
     ):
         super().__init__()
-        self._paths = DictObject({})
+
+        self._paths = DictObject()
         self._cache_dao = PythonDao()
 
         # convert the ftype string arg into a File class ref
         if not ftype:
-            self.ftype = Yaml
+            self._ftype = Yaml
         elif not isinstance(ftype, BaseFile):
-            self.ftype = import_object(ftype)
+            self._ftype = import_object(ftype)
 
         assert issubclass(self.ftype, BaseFile)
 
-        # set of recognized (case-normalized) file extensions
-        self.extensions = {
-            ext.lower() for ext in (
-                extensions or self.ftype.extensions()
-            )
-        }
-        if extensions:
-            self.extensions.update(extensions)
+        if extension is None:
+            self._extension = sorted(list(self.ftype.extensions()))[0].lower()
+        else:
+            self._extension = extension.lower()
 
     @property
     def paths(self):
         return self._paths
+
+    @property
+    def extension(self):
+        return self._extension
+
+    @property
+    def ftype(self):
+        return self._ftype
 
     @classmethod
     def on_bootstrap(cls, ftype: Text = None, root: Text = None):
@@ -99,11 +104,8 @@ class FilesystemDao(Dao):
         self._cache_dao.create_many(created_records)
 
     def count(self) -> int:
-        running_count = 0
-        for ext in self.extensions:
-            fnames = glob.glob(f'{self.paths.records}/*.{ext}')
-            running_count += len(fnames)
-        return running_count
+        fnames = glob.glob(f'{self.paths.records}/*.{self._extension}')
+        return len(fnames)
 
     def fetch(self, _id, fields=None) -> Dict:
         records = self.fetch_many([_id], fields=fields)
@@ -122,7 +124,7 @@ class FilesystemDao(Dao):
 
         fields = fields if isinstance(fields, set) else set(fields or [])
         if not fields:
-            fields = set(self.biz_class.schema.fields.keys())
+            fields = set(self.biz_class.Schema.fields.keys())
         fields |= {'_id', '_rev'}
 
         records = {}
@@ -199,9 +201,8 @@ class FilesystemDao(Dao):
 
     def _fetch_all_ids(self):
         _ids = set()
-        for ext in self.extensions:
-            for fpath in glob.glob(f'{self.paths.records}/*.{ext}'):
-                fname = fpath.split('/')[-1]
-                basename = os.path.splitext(fname)[0]
-                _ids.add(basename)
+        for fpath in glob.glob(f'{self.paths.records}/*.{self.extension}'):
+            fname = fpath.split('/')[-1]
+            basename = os.path.splitext(fname)[0]
+            _ids.add(basename)
         return _ids

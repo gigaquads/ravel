@@ -3,70 +3,206 @@ import bisect
 from functools import reduce
 from typing import List, Dict, Set, Text, Type, Tuple
 
-from pybiz.util.misc_functions import is_bizobj, is_sequence
+from pybiz.util.misc_functions import is_biz_obj, is_biz_list, is_sequence
+from pybiz.predicate import Predicate
 
 from ..biz_list import BizList
 
 
 class QueryExecutor(object):
-    def execute(self, query: 'Query'):
-        biz_class = query.biz_class
+    def execute(
+        self,
+        query: 'Query',
+        backfiller: 'QueryBackfiller' = None,
+        constraints: Dict[Text, 'Constraint'] = None,
+        first: bool = False,
+        fetch: bool = True,
+    ):
+        """
+        Args:
+        - `query` - The Query we are executing recursively.
+        - `backfiller` - The QueryBackfiller being used to backfill, if defined.
+        - `constraints` - The Field value constraints used by the backfiller
+        - `first` - Return the first BizObject from the fetched/backfilled
+            result "target" BizObjects
+        """
+        target_biz_class = query.biz_class
+        target_dao = target_biz_class.get_dao()
 
+        # perform any custom logic/guards before we set about executing the
+        # query the DAL
+        target_biz_class.pre_execute_query(query)
+
+        # if multiple individual "where" predicates exist, join them via
+        # conjunction in a single "root" predicate to use as the argument passed
+        # int othe Dao.qeuery method.
         if query.params.where:
-            if len(query.params.where) > 1:
-                predicate = reduce(lambda x, y: x & y, query.params.where)
-            else:
-                predicate = query.params.where[0]
+            root_predicate = Predicate.reduce_and(*query.params.where)
         else:
-            predicate = (biz_class._id != None)
+            root_predicate = (target_biz_class._id != None)
 
-        records = biz_class.get_dao().query(
-            predicate=predicate,
-            fields=query.params.fields,
-            order_by=query.params.order_by,
-            limit=query.params.limit,
-            offset=query.params.offset,
-        )
+        # Fetch the raw dict records from the Dao. Otherwise,
+        if fetch:
+            records = target_dao.query(
+                predicate=root_predicate, fields=query.params.fields,
+                order_by=query.params.order_by, limit=query.params.limit,
+                offset=query.params.offset,
+            )
+        else:
+            records = []
 
-        targets = biz_class.BizList(biz_class(x) for x in records)
-        return self._execute_recursive(query, targets).clean()
+        # `targets` refers to the BizObjects loaded through the Query.
+        targets = target_biz_class.BizList(
+            target_biz_class(x) for x in records
+        ).clean()
 
-    def _execute_recursive(self, query: 'Query', sources: List['BizObject']):
-        # the class whose relationships we are executing:
-        biz_class = query.biz_class
+        # Note that any FieldPropertyQuery executed on the field will result
+        # in the queried BizObject being returned "dirty" to the caller.
+        for field_name, fprop_query in query.params.fields.items():
+            if fprop_query is not None:
+                for biz_obj in targets:
+                    biz_obj[field_name] = fprop_query.execute(biz_obj)
 
-        # now sort attribute names by their BizAttribute priority.
-        ordered_items = []
-        for biz_attr_name, sub_query in query.params.attributes.items():
-            biz_attr = biz_class.attributes.by_name(biz_attr_name)
-            bisect.insort(ordered_items, (biz_attr, sub_query))
+        # if we're backfilling, ensure that we get at least 1 BizObject back in
+        # case the Dao query returned a number of records smaller than the
+        # requested limit or none at all,
+        if backfiller and (len(targets) < (query.params.limit or 1)):
+            targets = backfiller.generate(
+                query=query,
+                count=(1 if first else None),
+                constraints=constraints,
+            )
 
-        # execute each BizAttribute on each BizObject individually. a nice to
+        # perform any custom logic/guards after we've executed the query for
+        # this BizObject class in the DAL but before we've recursed on
+        # subqueries.
+        target_biz_class.on_execute_query(query, targets)
+
+        # enter indirect recursion via the Relationships defined on the fetched
+        # target BizObjects.
+        self._execute_recursive(query, backfiller, targets)
+
+        # perform any custom logic/guards after we've executed the query for
+        # this BizObject class in the DAL and we've already recursed on its
+        # subqueries.
+        target_biz_class.post_execute_query(query, targets)
+
+        return targets
+
+    def _execute_recursive(
+        self,
+        query: 'Query',
+        backfiller: 'QueryBackfiller',
+        sources: List['BizObject'],
+    ):
+        """
+        Args:
+        - `query`: The Query object whose selected Relationships and other
+            BizAttributes we are iterating over and recursively executing.
+        - `backfiller`: The QueryBackfiller being used to backfill queried
+            BizObjects throughout this recursive procedure.
+        - `sources`: The BizObjects whose Relationships we are recursively
+            executing here.
+        """
+        # class whose relationships we are executing
+        source_biz_class = query.biz_class
+
+        # Sort attribute names by their BizAttribute priority.
+        ordered_biz_attrs = self._sort_biz_attrs(query)
+
+        # Execute each BizAttribute on each BizObject individually. a nice to
         # have would be a bulk-execution interface built built into the
         # BizAttribute base class
-        for biz_attr, sub_query in ordered_items:
-            if biz_attr.category == 'relationship':
-                relationship = biz_attr
-                targets = relationship.execute(
-                    sources,
-                    select=sub_query.params.fields,
-                    where=sub_query.params.where,
-                    order_by=sub_query.params.order_by,
-                    limit=sub_query.params.limit,
-                    offset=sub_query.params.offset,
-                )
-                # execute nested relationships and then zip each
-                # source BizObject up with its corresponding target
-                # BizObjects, as returned by the BizAttribute.
-                self._execute_recursive(sub_query, targets)
-                for source, target in zip(sources, targets):
-                    setattr(source, biz_attr.name, target)
-            else:
-                for source in sources:
-                    if sub_query:
-                        value = sub_query.execute(source)
+        for biz_attr in ordered_biz_attrs:
+            sub_query = query.params.attributes[biz_attr.name]
+
+            # Process Relationships. Other BizAttribute values are generated by
+            # the QueryBackfiller via indirect recursion through the
+            # Relationship.execute method.
+            if biz_attr.is_relationship:
+                rel = biz_attr
+                params = self._prepare_relationship_query_params(sub_query)
+
+                # `next_sources_set` is used to collect all distinct BizObjects
+                # loaded via this Relationship on all source BizObjects. This is
+                # eventually transformed int oa a BizList and passed into a
+                # recursive call to this method as the next "sources" argument.
+                next_sources_set = set()
+
+                # Execute the relationship's underlying query before
+                # backfilling if necessary.
+                target_biz_things = rel.execute(sources, **params)
+
+                # Zip up each source BizObject with corresponding targets
+                # and add BizObjects(s) to accumulator set.
+                for source, target_biz_thing in zip(sources, target_biz_things):
+                    if backfiller is not None:
+                        target_biz_thing = self._backfill_relationship(
+                            source, target_biz_thing, rel, backfiller, params
+                        )
+                    if rel.many:
+                        next_sources_set.update(target_biz_thing)
                     else:
-                        value = biz_attr.execute(source)
-                    setattr(source, biz_attr.name, value)
+                        next_sources_set.add(target_biz_thing)
+
+                    # finally, set the target BizThing on the source BizObject
+                    setattr(source, rel.name, target_biz_thing)
+
+                # recursively execute subqueries for next_sources BizObjects
+                next_sources_biz_list = rel.target_biz_class.BizList(
+                    next_sources_set
+                )
+                self._execute_recursive(
+                    query=sub_query,
+                    backfiller=backfiller,
+                    sources=next_sources_biz_list,
+                )
 
         return sources
+
+    def _sort_biz_attrs(self, query):
+        ordered_biz_attrs = []
+        for biz_attr_name, sub_query in query.params.attributes.items():
+            biz_attr = query.biz_class.pybiz.attributes.by_name(biz_attr_name)
+            bisect.insort(ordered_biz_attrs, biz_attr)
+        return ordered_biz_attrs
+
+    def _prepare_relationship_query_params(self, sub_query):
+        """
+        Translate the Query params data into the kwargs expected by
+        Relationip.execute/generate.
+        """
+        return {
+            'select': set(sub_query.params.fields.keys()),
+            'where': sub_query.params.where,
+            'order_by': sub_query.params.order_by,
+            'limit': sub_query.params.limit,
+            'offset': sub_query.params.offset,
+            'custom': sub_query.params.custom,
+        }
+
+    def _backfill_relationship(
+        self, source, target_biz_thing, rel, backfiller, params
+    ):
+        """
+        Ensure that each target BizList is not empty and, if a limit is
+        specified, has a length equal to said limit.
+        """
+        limit = params['limit']
+        if limit is None:
+            target_biz_thing = rel.generate(
+                source, backfiller=backfiller, **params
+            )
+        elif limit and (len(target_biz_thing) < limit):
+            assert is_biz_list(target_biz_thing)
+            params = params.copy()
+            params['limit'] = limit - len(target_biz_thing)
+            target_biz_thing.extend(
+                rel.generate(
+                    source,
+                    backfiller=backfiller,
+                    fetch=False,  # TODO: think of better name for param
+                    **params
+                )
+            )
+        return target_biz_thing

@@ -205,7 +205,7 @@ class Endpoint(object):
             return (tuple(), {}, Endpoint.Error(exc))
 
         # load BizObjects from ID's passed into the endpoint in place
-        args, kwargs = self.app.argument_loader.load(self, args, kwargs)
+        args, kwargs = self.app.loader.load(self, args, kwargs)
         args = args if isinstance(args, list) else list(args)
 
         # middleware on_request logic
