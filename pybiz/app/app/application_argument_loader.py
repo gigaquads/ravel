@@ -5,6 +5,7 @@ from typing import (
     _GenericAlias as GenericAlias
 )
 
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.util.misc_functions import (
     is_biz_obj, is_sequence, extract_biz_info_from_annotation
 )
@@ -91,16 +92,16 @@ class ApplicationArgumentLoader(object):
             # Note that "key" is either a position integer offset
             # of the name of a keyword argument.
 
-            loaded_arg_value = self.load_param(
+            loaded_biz_thing = self.load_param(
                 spec.many, spec.biz_class, raw_arg_value
             )
             # store a reference to the raw argument value on the loaded BizThing
             # so that it can still be accessed inside the app.
-            if loaded_arg_value is not None:
-                loaded_arg_value.internal.arg = raw_arg_value
+            if loaded_biz_thing is not None:
+                loaded_biz_thing.internal.arg = raw_arg_value
 
             loaded_args_or_kwargs[key] = self._on_load(
-                spec, raw_arg_value, loaded_arg_value
+                spec, raw_arg_value, loaded_biz_thing
             )
         return (loaded_args, loaded_kwargs)
 
@@ -120,9 +121,9 @@ class ApplicationArgumentLoader(object):
                 return preloaded
             elif isinstance(preloaded, dict):
                 if 'id' in preloaded:
-                    preloaded['_id'] = preloaded.pop('id')
+                    preloaded[ID_FIELD_NAME] = preloaded.pop('id')
                 if 'rev' in preloaded:
-                    preloaded['_rev'] = preloaded.pop('rev')
+                    preloaded[REV_FIELD_NAME] = preloaded.pop('rev')
                 return biz_class(preloaded)
             else:
                 return biz_class.get(_id=preloaded)

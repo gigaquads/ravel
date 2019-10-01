@@ -1,22 +1,10 @@
-import re
-import threading
-import pickle
+from copy import deepcopy
 
 import sqlalchemy as sa
 
-from copy import deepcopy
-from typing import List, Dict, Text, Type, Set, Tuple
-
-from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils
-from appyratus.enum import EnumValueStr
-from appyratus.env import Environment
 
-from pybiz.app.middleware import ApplicationMiddleware
-from pybiz.util.json_encoder import JsonEncoder
-from pybiz.schema import fields, Field
-
-from .dialect import Dialect
+from pybiz.constants import REV_FIELD_NAME
 
 
 class SqlalchemyTableBuilder(object):
@@ -48,14 +36,14 @@ class SqlalchemyTableBuilder(object):
         table = sa.Table(table_name, self._metadata, *columns)
         return table
 
-    def build_column(self, field: Field) -> sa.Column:
+    def build_column(self, field: 'Field') -> sa.Column:
         name = field.source
         dtype = self.adapters.get(field.name).on_adapt(field)
         primary_key = field.meta.get('primary_key', False)
         meta = field.meta.get('sa', {})
         unique = meta.get('unique', False)
 
-        if field.source == '_rev':
+        if field.source == REV_FIELD_NAME:
             indexed = True
             server_default = '0'
         else:

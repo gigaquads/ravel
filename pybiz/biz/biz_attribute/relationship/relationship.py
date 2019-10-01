@@ -1,11 +1,13 @@
 from typing import Text, Type, Tuple, Dict, Set, Callable, List
 from collections import defaultdict
+from copy import deepcopy
 
 from mock import MagicMock
 from appyratus.schema import ConstantValueConstraint, RangeConstraint
 from appyratus.enum import EnumValueInt
 
 from pybiz.exceptions import RelationshipError
+from pybiz.predicate import Predicate
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import (
     normalize_to_tuple,
@@ -26,6 +28,7 @@ class Relationship(BizAttribute):
         self,
         join: Tuple[Callable] = None,
         select: Set = None,
+        where: Callable = None,
         order_by: Tuple['OrderBy'] = None,
         offset: int = None,
         limit: int = None,
@@ -50,6 +53,7 @@ class Relationship(BizAttribute):
 
         # Default relationship-level query params:
         self.select = set(select) if select else set()
+        self.where_func = where
         self.order_by = normalize_to_tuple(order_by) if order_by else tuple()
         self.offset = offset
         self.limit = limit
@@ -60,7 +64,7 @@ class Relationship(BizAttribute):
         self.on_rem = normalize_to_tuple(on_rem)
         self.on_add = normalize_to_tuple(on_add)
         self.on_del = normalize_to_tuple(on_del)
-        
+
         self._join_metadata = []
 
     def __repr__(self):
@@ -87,6 +91,12 @@ class Relationship(BizAttribute):
             f')>'
         )
 
+    @classmethod
+    def copy(cls, source_biz_attr):
+        # TODO: copy over select, order_by etc, updating their referent
+        # BizObject classes.
+        return deepcopy(source_biz_attr)
+
     def build_property(self):
         return RelationshipProperty(self)
 
@@ -108,6 +118,7 @@ class Relationship(BizAttribute):
         self._apply_behaviors_pre_bootstrap()
         self._analyze_join_funcs()
         self._analyze_order_by()
+        self._analyze_where_func()
         self._apply_behaviors_post_bootstrap()
 
     def _apply_behaviors_pre_bootstrap(self):
@@ -124,8 +135,17 @@ class Relationship(BizAttribute):
         for func in self.joins:
             # add all BizObject classes to the lexical scope of each callable
             func.__globals__.update(self.app.manifest.types.biz)
-            meta = JoinMetadata(func, is_terminal=(func is self.joins[-1]))
+            meta = JoinMetadata(self, func, is_terminal=(func is self.joins[-1]))
             self._join_metadata.append(meta)
+
+    def _analyze_where_func(self):
+        if self.where_func:
+            dummy_biz_object = MagicMock()
+            dummy_biz_list = self.biz_class.BizList([dummy_biz_object])
+            self.where_func.__globals__.update(self.app.manifest.types.biz)
+            pred = self.where_func(dummy_biz_list)
+            for field in pred.fields:
+                self.target_biz_class.pybiz.default_selectors.add(field.name)
 
     def _analyze_order_by(self):
         dummy = MagicMock()
@@ -150,7 +170,7 @@ class Relationship(BizAttribute):
         target = None
 
         for meta in self._join_metadata:
-            builder = meta.new_query_builder(source)
+            builder = meta.builder(source)
 
             # the parameters set on the Relationship ctor, merged or overrident
             # with those passed in as kwargs here, are only passed into the
@@ -244,7 +264,7 @@ class Relationship(BizAttribute):
         source = root
         target = None
         for meta in self._join_metadata:
-            builder = meta.new_query_builder(source)
+            builder = meta.builder(source)
 
             # only pass in the query params to the last join in the join
             # sequence, as this is the one that truly applies to the
@@ -277,7 +297,7 @@ class Relationship(BizAttribute):
                 # dynamic joins cannot use the batch mechanism
                 distinct_targets = set()
                 for source in sources:
-                    builder = meta.new_query_builder(source)
+                    builder = meta.builder(source)
                     query = builder.build_query(
                         **(params if meta.is_terminal else {})
                     )
@@ -296,7 +316,7 @@ class Relationship(BizAttribute):
             # the query built here is configured to issue a query that loads
             # all data required by all source BizObjects' relationships, not
             # just one BizObject's relationship at a time.
-            builder = meta.new_query_builder(sources)
+            builder = meta.builder(sources)
 
             # compute `targets` - the collection of ALL BizObjects related to
             # the source objects. Below, we perform logic to determine which
@@ -403,6 +423,17 @@ class Relationship(BizAttribute):
                 computed_order_by.append(order_by_spec)
                 select.add(order_by_spec.key)
 
+        if self.where_func:#
+            # normalize argument to where func to a BizList
+            if is_biz_obj(source):
+                pred = self.where_func(self.biz_class.BizList([source]))
+            else:  # is biz list:
+                pred = self.where_func(source)
+            if isinstance(where, Predicate):
+                where &= pred
+            elif is_sequence(where):
+                where += (pred, )
+
         return {
             'select': select,
             'where': where,
@@ -423,25 +454,43 @@ class JoinType(EnumValueInt):
 
 
 class JoinMetadata(object):
-    def __init__(self, func: Callable, is_terminal: bool):
+    """
+    The role of `JoinMetadata` is to analyze each function returned as part of
+    a `Relationship`'s `join` kwarg, determining what mechanism to use to build
+    the corresponding pybiz Query that executes during execution of said
+    `Relationship`.
+
+    We have two mechanisms for building Queries: "static" and "dynamic" query
+    builders. The `StaticQueryBuilder` is used when specific fields in the
+    source and target BizObjects are specified for performing the join, like
+    (User.account_id, Acccount._id); whereas, the a `DynamicQueryBuilder` is
+    used when no such fields are specified and instead a custom predicate is
+    given as an optinal second return value of the join function, like
+    (Account, Account._id == User.account_id) or passed in to the Relationships
+    `where` param.
+    """
+
+    def __init__(self, rel, func: Callable, is_terminal: bool):
+        self.rel = rel
         self.func = lambda *args, **kw: normalize_to_tuple(func(*args, **kw))
         self.target_biz_class = None
+        self.source_biz_class = None
         self.join_type = None
         self.is_terminal = is_terminal
 
         # this sets target_biz_class and join_type:
-        self._analyze_func(self.func)
+        self._analyze(self.func)
 
-    def _analyze_func(self, func: Callable):
+    def _analyze(self, func: Callable):
         # further process the return value of the join func
         info = func(MagicMock())
         is_dynamic_join = is_biz_obj(info[0])
         if is_dynamic_join:
             self._analyze_dynamic_join(func, info)
         else:
-            self._analyze_id_join(func, info)
+            self._analyze_static_join(func, info)
 
-    def _analyze_id_join(self, func: Callable, info: Tuple):
+    def _analyze_static_join(self, func: Callable, info: Tuple):
         # for an ID-based join, the first two elements of info are the
         # field properties being joined, like (User.account_id, Account._id)
         source_fprop, target_fprop = info[:2]
@@ -455,16 +504,20 @@ class JoinMetadata(object):
             source_fprop.field.name
         )
 
+        self.source_biz_class = source_fprop.biz_class
         self.target_biz_class = target_biz_class
         self.join_type = JoinType.static
 
     def _analyze_dynamic_join(self, func: Callable, info: Tuple):
         target_biz_class = info[0]
+        import ipdb; ipdb.set_trace()
+        # TODO: daisy chain previous metadata's target type to this one's source, passing it in to the ctor.
+        self.source_biz_class = self.rel.biz_class
         self.target_biz_class = target_biz_class
         self.join_type = JoinType.dynamic
 
-    def new_query_builder(self, source: 'BizThing') -> 'QueryBuilder':
-        params = self.func(source)
+    def builder(self, source: 'BizThing') -> 'QueryBuilder':
+        params = self.func(self.source_biz_class)
         if self.join_type == JoinType.static:
             return StaticQueryBuilder(source, *params)
         elif self.join_type == JoinType.dynamic:

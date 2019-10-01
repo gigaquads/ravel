@@ -1,6 +1,8 @@
 from typing import Type, List, Set, Tuple, Text, Dict
 
-from pybiz.constants import IS_BIZ_LIST_ANNOTATION
+from appyratus.utils import DictObject
+
+from pybiz.constants import IS_BIZ_LIST_ANNOTATION, ID_FIELD_NAME
 from pybiz.exceptions import RelationshipError
 from pybiz.util.misc_functions import repr_biz_id, is_sequence, is_biz_list
 
@@ -31,6 +33,7 @@ class BizListClassBuilder(object):
             setattr(biz_list_subclass, name, prop)
 
         biz_class.BizList = biz_list_subclass
+        biz_class.BizList.biz_class = biz_class
 
     def _build_property(self, key):
         """
@@ -74,6 +77,8 @@ class BizList(BizThing):
     ```
     """
 
+    biz_class = None
+
     def __init__(
         self,
         objects: List['BizObject'] = None,
@@ -86,31 +91,35 @@ class BizList(BizThing):
         the BizObject which owns the Relationship, and the `relationship` is
         the, well, Relationship through which the BizList was loaded.
         """
-        self._relationship = relationship
-        self._targets = list(objects or [])
-        self._source = source
-        self._arg = None
+        self.internal = DictObject({
+            'biz_objects': list(objects or []),
+            'relationship': relationship,
+            'source': source,
+            'arg': None,
+        })
 
     def __getitem__(self, key: int) -> 'BizObject':
         """
         Get one or a slice of a BizList. A slice returns another BizList.
         """
         if isinstance(key, int):
-            return self._targets[key]
+            return self.internal.biz_objects[key]
         elif isinstance(key, slice):
             return self.biz_class.BizList(
-                self._targets[key], self._relationship, self._source
+                objects=self.internal.biz_objects[key],
+                relationship=self.internal.relationship,
+                source=self.internal.source
             )
         raise IndexError(key)
 
     def __len__(self):
-        return len(self._targets)
+        return len(self.internal.biz_objects)
 
     def __bool__(self):
-        return bool(self._targets)
+        return bool(self.internal.biz_objects)
 
     def __iter__(self):
-        return (x for x in self._targets)
+        return (x for x in self.internal.biz_objects)
 
     def __repr__(self):
         dirty_count = sum(1 for x in self if x and x.dirty)
@@ -124,43 +133,15 @@ class BizList(BizThing):
         Create and return a copy, containing the concatenated data lists.
         """
         cls = self.__class__
-        clone = cls(self._targets, self._relationship, self._source)
+        clone = cls(self.internal.biz_objects, self.internal.relationship, self.internal.source)
         if isinstance(other, (list, tuple)):
-            clone._targets += other
+            clone._biz_objects += other
         elif isinstance(other, BizList):
-            assert self._relationship is other.relationship
-            clone._targets += other._targets
+            assert self.internal.relationship is other.relationship
+            clone._biz_objects += other._biz_objects
         else:
             raise ValueError(str(other))
         return clone
-
-    @property
-    def relationship(self) -> 'BizObject':
-        return self._relationship
-
-    @relationship.setter
-    def relationship(self, relationship: 'Relationship'):
-        if self._relationship is not None:
-            raise ValueError('relationship is readonly')
-        self._relationship = relationship
-
-    @property
-    def source(self) -> 'BizObject':
-        return self._source
-
-    @source.setter
-    def source(self, source: 'BizObject'):
-        if self._source is not None:
-            raise ValueError('source is readonly')
-        self._source = source
-
-    @property
-    def arg(self):
-        return self._arg
-
-    @arg.setter
-    def arg(self, value):
-        self._arg = value
 
     @classmethod
     def generate(
@@ -175,7 +156,7 @@ class BizList(BizThing):
         )
 
     def create(self):
-        self.biz_class.create_many(self._targets)
+        self.biz_class.create_many(self.internal.biz_objects)
         return self
 
     def update(self, data: Dict = None, **more_data):
@@ -189,8 +170,11 @@ class BizList(BizThing):
         to_create = []
         to_update = []
 
-        for biz_obj in self._targets:
-            if biz_obj and biz_obj._id is None or '_id' in biz_obj.dirty:
+        for biz_obj in self.internal.biz_objects:
+            if (
+                (biz_obj and (biz_obj._id is None)) or
+                (ID_FIELD_NAME in biz_obj.dirty)
+            ):
                 to_create.append(biz_obj)
             else:
                 to_update.append(biz_obj)
@@ -201,7 +185,7 @@ class BizList(BizThing):
         # recursively save each biz_obj's relationships
         # TODO: optimize this to batch saves and updates here
         for rel in self.biz_class.pybiz.attributes.relationships.values():
-            for biz_obj in self._targets:
+            for biz_obj in self.internal.biz_objects:
                 biz_thing = biz_obj.internal.attributes.get(rel.name)
                 if biz_thing:
                     biz_thing.save(depth=depth-1)
@@ -210,31 +194,31 @@ class BizList(BizThing):
 
     def merge(self, obj=None, **more_data):
         if is_sequence(obj) or is_biz_list(obj):
-            assert len(obj) == len(self._targets)
+            assert len(obj) == len(self.internal.biz_objects)
             obj_arr = obj
-            for biz_obj, obj_to_merge in zip(self._targets, obj_arr):
+            for biz_obj, obj_to_merge in zip(self.internal.biz_objects, obj_arr):
                 biz_obj.merge(obj_to_merge)
             if more_data:
-                for biz_obj in self._targets:
+                for biz_obj in self.internal.biz_objects:
                     biz_obj.merge(more_data)
         else:
-            for biz_obj in self._targets:
+            for biz_obj in self.internal.biz_objects:
                 biz_obj.merge(obj, **more_data)
         return self
 
     def mark(self, keys=None):
-        for biz_obj in self._targets:
+        for biz_obj in self.internal.biz_objects:
             biz_obj.mark(keys=keys)
         return self
 
     def clean(self, keys=None):
-        for biz_obj in self._targets:
+        for biz_obj in self.internal.biz_objects:
             biz_obj.clean(keys=keys)
         return self
 
     def delete(self):
         self.biz_class.delete_many({
-            target._id for target in self._targets
+            target._id for target in self.internal.biz_objects
             if (target and target._id)
         })
         return self
@@ -256,57 +240,59 @@ class BizList(BizThing):
         return self
 
     def unload(self, keys: Set[Text]) -> 'BizList':
-        for biz_obj in self._targets:
+        for biz_obj in self.internal.biz_objects:
             biz_obj.unload(keys)
         return self
 
     def dump(self, *args, **kwargs) -> List[Dict]:
         return [
             target.dump(*args, **kwargs)
-            for target in self._targets
+            for target in self.internal.biz_objects
         ]
 
     def append(self, target: 'BizObject'):
         self._perform_on_add([target])
-        self._targets.append(target)
+        self.internal.biz_objects.append(target)
         return self
 
-    def extend(self, targets: List['BizObject']):
-        self._perform_on_add(targets)
-        self._targets.extend(targets)
+    def extend(self, biz_objects: List['BizObject']):
+        self._perform_on_add(biz_objects)
+        self.internal.biz_objects.extend(biz_objects)
         return self
 
     def insert(self, index: int, target: 'BizObject'):
         self._perform_on_add([target])
-        self._targets.insert(index, target)
+        self.internal.biz_objects.insert(index, target)
         return self
 
     def remove(self, target):
-        if self._relationship and self._relationship.on_rem:
-            if self._relationship.readonly:
+        if self.internal.relationship and self.internal.relationship.on_rem:
+            if self.internal.relationship.readonly:
                 raise RelationshipError(
-                    f'{self._relationship} is read-only'
+                    f'{self.internal.relationship} is read-only'
                 )
             do_callbacks = False
             if target is not None:
                 try:
-                    del self._targets[self._id.index(target._id)]
+                    del self.internal.biz_objects[self._id.index(target._id)]
                     do_callbacks = True
                 except ValueError:
                     pass
             if do_callbacks:
-                for cb_func in self._relationship.on_rem:
-                    cb_func(self._source, target)
+                for cb_func in self.internal.relationship.on_rem:
+                    cb_func(self.internal.source, target)
 
     def pop(self, default=None):
-        if self._targets:
-            return self.remove(self._targets[-1])
+        if self.internal.biz_objects:
+            return self.remove(self.internal.biz_objects[-1])
         return default
 
-    def _perform_on_add(self, targets):
-        if self._relationship and self._relationship.on_add:
-            if self._relationship.readonly:
-                raise RelationshipError(f'{self._relationship} is read-only')
-            for target in targets:
-                for cb_func in self._relationship.on_add:
-                    cb_func(self._source, target)
+    def _perform_on_add(self, biz_objects):
+        if self.internal.relationship and self.internal.relationship.on_add:
+            if self.internal.relationship.readonly:
+                raise RelationshipError(
+                    f'{self.internal.relationship} is read-only'
+                )
+            for target in biz_objects:
+                for cb_func in self.internal.relationship.on_add:
+                    cb_func(self.internal.source, target)

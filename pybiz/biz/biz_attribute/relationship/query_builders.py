@@ -17,7 +17,6 @@ class QueryBuilder(object):
     ):
         self.source = source
         self.target_biz_class = target_biz_class
-        self.predicate = predicate
 
     def build_query(
         self,
@@ -32,7 +31,7 @@ class QueryBuilder(object):
         For each "join" function given to a Relationship, a QueryBuilder is
         responsible for building a Query object.
         """
-        where_predicate = self.build_where_predicate(where)
+        where_predicate = Predicate.reduce_and(where)
         selectors = self.build_selectors(select, where_predicate)
         return self.target_biz_class.query(
             select=selectors, where=where_predicate, offset=offset,
@@ -40,10 +39,7 @@ class QueryBuilder(object):
         )
 
     def build_where_predicate(self, additional_predicates: Tuple) -> Predicate:
-        if additional_predicates:
-            return Predicate.reduce_and(self.predicate, *additional_predicates)
-        else:
-            return self.predicate
+        return Predicate.reduce_and(additional_predicates)
 
     def build_selectors(self, select: Set, where: Predicate) -> Set:
         # merge custom selectors into base selectors
@@ -105,10 +101,8 @@ class StaticQueryBuilder(QueryBuilder):
         else:
             raise TypeError('TODO: raise custom exception')
 
-        if self.predicate:
-            where_predicate &= self.predicate
-
         if additional_predicates:
-            return Predicate.reduce_and(where_predicate, *additional_predicates)
+            additional_predicates += [where_predicate]
+            return Predicate.reduce_and(additional_predicates)
         else:
             return where_predicate

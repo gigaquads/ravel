@@ -7,8 +7,8 @@ import pybiz
 
 class User(pybiz.BizObject):
 
-    @staticmethod
-    def __abstract__():
+    @classmethod
+    def __abstract__(cls):
         return True
 
     email = pybiz.String(required=True, nullable=False)
