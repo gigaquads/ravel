@@ -5,7 +5,7 @@ from typing import List, Dict, Text, Type, Tuple, Set
 from collections import defaultdict
 
 from appyratus.utils import DictObject, DictUtils
-from appyratus.schema.fields import UuidString
+from appyratus.schema.fields import Uuid
 
 from pybiz.dao.python_dao import PythonDao
 from pybiz.util.misc_functions import (
@@ -78,11 +78,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return Query(cls).select(selectors)
 
     @classmethod
-    def generate(
-        cls,
-        fields: Set[Text] = None,
-        constraints: Dict = None
-    ) -> 'BizObject':
+    def generate(cls, fields: Set[Text] = None, constraints: Dict = None) -> 'BizObject':
         """
         Generate a fixture for this BizObject type.
         """
@@ -91,26 +87,17 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return cls(data=data)
 
     def __init__(self, data=None, **more_data):
-<<<<<<< HEAD
+        import ipdb; ipdb.set_trace(); print('=' * 100)
+        data = dict(data or {}, **more_data)
         self.internal = DictObject(
             {
-                'hash': int(UuidString.next_id(), 16),
+                'hash_int': self._build_hash(data.get('_id')),
+                'arg': None,
                 'state': DirtyDict(),
-                'loaded_from_argument': None,
-                'cache': {},
+                'attributes': {},
             }
         )
-        self.merge(dict(data or {}, **more_data))
-=======
-        data = dict(data or {}, **more_data)
-        self.internal = DictObject({
-            'hash_int': self._build_hash(data.get('_id')),
-            'arg': None,
-            'state': DirtyDict(),
-            'attributes': {},
-        })
         self.merge(data)
->>>>>>> origin/v1
 
     def __hash__(self):
         return self.internal.hash_int
@@ -160,7 +147,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for biz_attr in cls.pybiz.attributes.values():
             biz_attr.bootstrap(app)
 
-        cls.on_bootstrap()  # custom app logic goes here
+        cls.on_bootstrap()    # custom app logic goes here
 
         cls.pybiz.is_bootstrapped = True
 
@@ -232,9 +219,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Alternate syntax for building Query objects manually.
         """
         # select all BizObject fields by default
-        query = Query.load_from_keys(
-            cls, keys=(select or cls.schema.fields.keys())
-        )
+        query = Query.load_from_keys(cls, keys=(select or cls.schema.fields.keys()))
         if where:
             query.where(where)
         if order_by:
@@ -263,10 +248,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def get(cls, _id, select=None) -> 'BizObject':
-        return cls.query( select=select,
-            where=(cls._id == _id),
-            first=True
-        )
+        return cls.query(select=select, where=(cls._id == _id), first=True)
 
     @classmethod
     def get_many(
@@ -340,12 +322,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         prepared_record, errors = self.schema.process(prepared_record)
         if errors:
             console.error(
-                message=f'could not create {self.__class__.__name__} object',
-                data=errors
+                message=f'could not create {self.__class__.__name__} object', data=errors
             )
             raise ValidationError(
-                message=f'could not create {self.__class__.__name__} object',
-                data=errors
+                message=f'could not create {self.__class__.__name__} object', data=errors
             )
 
         created_record = self.get_dao().create(prepared_record)
@@ -415,10 +395,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def update_many(
-        cls,
-        biz_objs: List['BizObject'],
-        data: Dict = None,
-        **more_data
+        cls, biz_objs: List['BizObject'], data: Dict = None, **more_data
     ) -> 'BizList':
         """
         Call the Dao's update_many method on the list of BizObjects. Multiple
@@ -497,7 +474,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for rel in self.relationships.values():
             biz_thing = self.internal.attributes.get(rel.name)
             if biz_thing:
-                biz_thing.save(depth=depth-1)
+                biz_thing.save(depth=depth - 1)
 
         return self
 
@@ -537,9 +514,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def mark(self, keys) -> 'BizObject':
         if not is_sequence(keys):
             keys = {keys}
-        self.internal.state.mark_dirty({
-            k for k in keys if k in self.Schema.fields
-        })
+        self.internal.state.mark_dirty({k for k in keys if k in self.Schema.fields})
         return self
 
     def copy(self, deep=False) -> 'BizObject':
@@ -662,10 +637,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     @classmethod
     def _build_hash(cls, _id):
         if _id is not None:
-            hash_str = ''.join(
-                hex(ord(c))[2:]
-                for c in f'{cls.__name__}:{_id}'
-            )
+            hash_str = ''.join(hex(ord(c))[2:] for c in f'{cls.__name__}:{_id}')
             return int(hash_str, 16)
         else:
-            return uuid.uuid4().int
+            return Uuid.next_id().int

@@ -32,6 +32,7 @@ class BizObjectClassBuilder(object):
     itself into  something else that is more testable and reads like normal OOP
     rather than metaclass magic.
     """
+
     def __init__(self):
         self._biz_list_class_builder = BizListClassBuilder()
 
@@ -40,21 +41,27 @@ class BizObjectClassBuilder(object):
         Mutate the class attribute or "namespace" dict about to be used to
         build a new BizObject class via the metaclass __new__ method.
         """
-        namespace.update({
-            IS_BIZ_OBJECT_ANNOTATION: True,
-            'pybiz': DictObject({
-                'attributes': self._prepare_biz_attr_manager(bases, namespace),
-                'is_abstract': self._prepare_is_abstract(namespace),
-                'is_bootstrapped': False,
+        namespace.update(
+            {
+                IS_BIZ_OBJECT_ANNOTATION: True,
+                'pybiz':
+                    DictObject(
+                        {
+                            'attributes':
+                                self._prepare_biz_attr_manager(bases, namespace),
+                            'is_abstract': self._prepare_is_abstract(namespace),
+                            'is_bootstrapped': False,
 
-                # these are set in self.build:
-                'schema': None,
-                'field_defaults': None,
-                'predicate_parser': None,
-                'default_selectors': None,
-                'all_selectors': None,
-            })
-        })
+        # these are set in self.build:
+                            'schema': None,
+                            'field_defaults': None,
+                            'predicate_parser': None,
+                            'default_selectors': None,
+                            'all_selectors': None,
+                        }
+                    )
+            }
+        )
 
     def build(self, name, biz_class):
         """
@@ -67,7 +74,7 @@ class BizObjectClassBuilder(object):
         # build property objects corresponding to each BizAttribute
         # picked up by the AttributeManager in cls.pybiz.attributes
         self._build_biz_attr_properties(biz_class)
-        
+
         # build property objects corresponding to each Schema Field
         # declared on this new class or inherited from a base class.
         self._build_field_properties(biz_class)
@@ -87,17 +94,17 @@ class BizObjectClassBuilder(object):
         biz_class.pybiz.predicate_parser = PredicateParser(biz_class)
 
         # `default_selectors` is filled in by the bootstrap logic of
-        # Relationships set on this class. 
+        # Relationships set on this class.
         biz_class.pybiz.default_selectors = {
-            f.name for f in biz_class.Schema.fields.values()
+            f.name
+            for f in biz_class.Schema.fields.values()
             if (f.required or f.meta.get('pybiz_is_fk'))
         }
 
         # here is a set of all selectable field/attribute names on this
         # BizObject class.
         biz_class.pybiz.all_selectors = set(
-            biz_class.Schema.fields.keys() |
-            biz_class.pybiz.attributes.keys()
+            biz_class.Schema.fields.keys() | biz_class.pybiz.attributes.keys()
         )
 
         # build cls.BizList. This must happen after all_selectors is built in
