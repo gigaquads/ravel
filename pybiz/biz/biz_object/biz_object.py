@@ -14,6 +14,7 @@ from pybiz.util.misc_functions import (
     is_sequence,
     repr_biz_id,
     normalize_to_tuple,
+    get_class_name,
 )
 
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
@@ -593,12 +594,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         if isinstance(select, str):
             select = {select}
-
-        console.debug(message='loading', data={
-            'class': self.__class__.__name__,
-            'instance': self._id,
-            'select': select
-        })
 
         fresh = self.get(_id=self._id, select=select)
         if fresh:

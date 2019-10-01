@@ -7,6 +7,8 @@ from pybiz.util.loggers import console
 
 from .biz_attribute import BizAttribute, BizAttributeProperty
 
+# TODO: make callbacks part of base BizAttribute and define a function prototype
+# that takes the BizAttribute instance as first argument.
 
 class View(BizAttribute):
     def __init__(
@@ -27,12 +29,6 @@ class View(BizAttribute):
         self._on_get = normalize_to_tuple(on_get) if on_get else tuple()
         self._on_set = normalize_to_tuple(on_set) if on_set else tuple()
         self._on_del = normalize_to_tuple(on_del) if on_del else tuple()
-
-    @classmethod
-    def copy(cls, source_biz_attr):
-        # TODO: copy over select, order_by etc, updating their referent
-        # BizObject classes.
-        return deepcopy(source_biz_attr)
 
     @property
     def priority(self):
@@ -60,6 +56,9 @@ class View(BizAttribute):
 
     def build_property(self) -> 'ViewProperty':
         return ViewProperty(self)
+
+    def copy(self):
+        return deepcopy(self)
 
     def execute(self, caller: 'BizObject', *args, **kwargs) -> object:
         data = self._load(caller, *args, **kwargs)
