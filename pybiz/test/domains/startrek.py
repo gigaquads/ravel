@@ -1,6 +1,7 @@
 import pybiz
 
 from appyratus.utils import TimeUtils
+from appyratus.schema import fields
 
 startrek = pybiz.Application()
 
@@ -10,12 +11,12 @@ class Officer(pybiz.BizObject):
     rank = pybiz.String(default='recruit')
     ship_id = pybiz.Field(private=True)
     species = pybiz.Enum(
-        pybiz.String(), values=('human', 'klingon', 'vulcan'),
-        nullable=False, default='human'
+        pybiz.String(),
+        values=('human', 'klingon', 'vulcan'),
+        nullable=False,
+        default='human'
     )
-    ship = pybiz.Relationship(
-        join=lambda biz_thing: (Officer.ship_id, Ship._id)
-    )
+    ship = pybiz.Relationship(join=lambda biz_thing: (Officer.ship_id, Ship._id))
 
 
 class Ship(pybiz.BizObject):
@@ -28,9 +29,7 @@ class Ship(pybiz.BizObject):
         on_del=lambda self, officer: officer.update({'ship_id': None}),
         many=True
     )
-    mission_names = pybiz.View(
-        load=lambda self: self.missions.name,
-    )
+    mission_names = pybiz.View(load=lambda self: self.missions.name, )
     mission_count = pybiz.View(
         load=lambda self: self.missions,
         transform=lambda self, data: len(data),
@@ -41,8 +40,7 @@ class Ship(pybiz.BizObject):
         field=pybiz.Int(),
     )
     missions = pybiz.Relationship(
-        join=lambda biz_thing: (Ship._id, Mission.ship_id),
-        many=True
+        join=lambda biz_thing: (Ship._id, Mission.ship_id), many=True
     )
 
 
@@ -57,6 +55,15 @@ class Mission(pybiz.BizObject):
         values=('pending', 'active', 'closed', 'anomalous'),
         default='pending',
         nullable=False,
+    )
+
+
+class Planet(pybiz.BizObject):
+    resources = fields.Nested(
+        {
+            'water': fields.Bool(),
+            'wine': fields.List(fields.String())
+        }
     )
 
 

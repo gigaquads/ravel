@@ -1,7 +1,7 @@
 import pytest
 import pybiz
 
-from appyratus.fields.schema import Uuid
+from appyratus.schema.fields import Uuid
 from pybiz.test.domains.startrek import startrek as startrek_app
 
 
