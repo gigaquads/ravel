@@ -21,7 +21,7 @@ from pybiz.util.loggers import console
 from pybiz.util.dirty import DirtyDict
 from pybiz.exceptions import ValidationError, BizObjectError
 
-from .biz_object_meta import BizObjectClassBuilder
+from .biz_object_class_builder import BizObjectClassBuilder
 from ..dump import NestingDumper, SideLoadingDumper
 from ..biz_thing import BizThing
 from ..query import Query, Backfill
