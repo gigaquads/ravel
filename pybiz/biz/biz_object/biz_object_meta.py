@@ -25,28 +25,6 @@ from ..biz_attribute.relationship import Relationship, RelationshipProperty
 from ..biz_attribute.view import View, ViewProperty
 
 
-class BizObjectMeta(type):
-    """
-    Metaclass used by all BizObject classes.
-    """
-
-    def __new__(cls, class_name, bases, namespace):
-        """
-        This is where Python creates the new BizObject subclass object itself.
-        """
-        builder = BizObjectClassBuilder(class_name, bases, namespace)
-        builder.initialize_inherited_pybiz_internal_class_attributes()
-        return type.__new__(cls, class_name, bases, namespace)
-
-    def __init__(biz_class, class_name, bases, namespace):
-        """
-        This is where Python initializes class attributes on the newly-created
-        BizObject subclass.
-        """
-        type.__init__(biz_class, class_name, bases, namespace)
-        biz_class.pybiz.builder.build_class_attributes(biz_class)
-
-
 class BizObjectClassBuilder(object):
     """
     The `BizObjectClassBuilder is used internally by the BizObjectMeta
@@ -72,22 +50,27 @@ class BizObjectClassBuilder(object):
         bases = self.base_classes
         namespace = self.namespace
 
-        namespace.update({
-            IS_BIZ_OBJECT_ANNOTATION: True,
-            'pybiz': DictObject({
-                'builder': self,
-                'is_abstract': self._prepare_is_abstract(namespace),
-                'is_bootstrapped': False,
+        namespace.update(
+            {
+                IS_BIZ_OBJECT_ANNOTATION: True,
+                'pybiz':
+                    DictObject(
+                        {
+                            'builder': self,
+                            'is_abstract': self._prepare_is_abstract(namespace),
+                            'is_bootstrapped': False,
 
-                # these are set in build_class_attributes:
-                'attributes': None,
-                'schema': None,
-                'field_defaults': {},
-                'predicate_parser': None,
-                'default_selectors': set(),
-                'all_selectors': set(),
-            })
-        })
+        # these are set in build_class_attributes:
+                            'attributes': None,
+                            'schema': None,
+                            'field_defaults': {},
+                            'predicate_parser': None,
+                            'default_selectors': set(),
+                            'all_selectors': set(),
+                        }
+                    )
+            }
+        )
 
     def build_class_attributes(self, biz_class):
         """
@@ -151,7 +134,6 @@ class BizObjectClassBuilder(object):
         biz_class.views = biz_class.pybiz.attributes.views
 
         # this is for BizObject class autodiscovery:
-        venusian.attach(biz_class, venusian_callback, category='biz')
 
     def _prepare_is_abstract(self, namespace):
         class_method = namespace.get('__abstract__')
@@ -284,11 +266,3 @@ class BizObjectClassBuilder(object):
                 field.default = None
 
         return defaults
-
-
-def venusian_callback(scanner, name, biz_class):
-    """
-    Callback used by Venusian for BizObject class auto-discovery.
-    """
-    console.info(f'venusian scan found "{biz_class.__name__}" BizObject')
-    scanner.biz_classes.setdefault(name, biz_class)
