@@ -13,6 +13,7 @@ from pybiz.util.misc_functions import (
     is_sequence,
     repr_biz_id,
     normalize_to_tuple,
+    get_class_name,
 )
 
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
@@ -20,10 +21,41 @@ from pybiz.util.loggers import console
 from pybiz.util.dirty import DirtyDict
 from pybiz.exceptions import ValidationError, BizObjectError
 
-from .biz_object_meta import BizObjectMeta
+from .biz_object_class_builder import BizObjectClassBuilder
 from ..dump import NestingDumper, SideLoadingDumper
 from ..biz_thing import BizThing
 from ..query import Query, Backfill
+
+
+class BizObjectMeta(type):
+    """
+    Metaclass used by all BizObject classes.
+    """
+
+    def __new__(cls, class_name, bases, namespace):
+        """
+        This is where Python creates the new BizObject subclass object itself.
+        """
+        builder = BizObjectClassBuilder(class_name, bases, namespace)
+        builder.initialize_inherited_pybiz_internal_class_attributes()
+        return type.__new__(cls, class_name, bases, namespace)
+
+    def __init__(biz_class, class_name, bases, namespace):
+        """
+        This is where Python initializes class attributes on the newly-created
+        BizObject subclass.
+        """
+        type.__init__(biz_class, class_name, bases, namespace)
+        biz_class.pybiz.builder.build_class_attributes(biz_class)
+
+        def callback(scanner, name, biz_class):
+            """
+            Callback used by Venusian for BizObject class auto-discovery.
+            """
+            console.info(f'venusian scan found "{biz_class.__name__}" BizObject')
+            scanner.biz_classes.setdefault(name, biz_class)
+
+        venusian.attach(biz_class, callback, category='biz')
 
 
 class BizObject(BizThing, metaclass=BizObjectMeta):
@@ -90,12 +122,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     def __init__(self, data=None, **more_data):
         data = dict(data or {}, **more_data)
-        self.internal = DictObject({
-            'hash_int': self._build_hash(data.get(ID_FIELD_NAME)),
-            'arg': None,
-            'state': DirtyDict(),
-            'attributes': {},
-        })
+        self.internal = DictObject(
+            {
+                'hash_int': self._build_hash(data.get(ID_FIELD_NAME)),
+                'arg': None,
+                'state': DirtyDict(),
+                'attributes': {},
+            }
+        )
         self.merge(data)
 
     def __hash__(self):
@@ -574,15 +608,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         if isinstance(select, str):
             select = {select}
-
-        console.debug(
-            message='loading',
-            data={
-                'class': self.__class__.__name__,
-                'instance': self._id,
-                'select': select
-            }
-        )
 
         fresh = self.get(_id=self._id, select=select)
         if fresh:

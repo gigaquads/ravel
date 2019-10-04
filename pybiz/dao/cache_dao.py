@@ -15,6 +15,7 @@ from .base import Dao, DaoEvent
 
 
 class CacheMode(EnumValueStr):
+
     @staticmethod
     def values():
         return {
@@ -25,6 +26,7 @@ class CacheMode(EnumValueStr):
 
 
 class CacheDaoExecutor(ThreadPoolExecutor):
+
     def __init__(self, dao: 'CacheDao'):
         super().__init__(max_workers=1, initializer=self.initializer)
         self.dao = dao
@@ -34,6 +36,7 @@ class CacheDaoExecutor(ThreadPoolExecutor):
         self.dao.be.bind(self.dao.be.biz_class)
 
     def enqueue(self, method: Text, args=None, kwargs=None):
+
         def task(dao, event):
             dao.play([event])
 
@@ -80,10 +83,14 @@ class CacheDao(Dao):
         back = back or self.be_params
 
         self.fe = self._setup_inner_dao(
-            biz_class, front['dao'], front.get('params', {}),
+            biz_class,
+            front['dao'],
+            front.get('params', {}),
         )
         self.be = self._setup_inner_dao(
-            biz_class, back['dao'], back.get('params', {}),
+            biz_class,
+            back['dao'],
+            back.get('params', {}),
         )
 
         if self.prefetch:
@@ -97,10 +104,7 @@ class CacheDao(Dao):
         return self.app.binder if self.app is not None else None
 
     def _setup_inner_dao(
-        self,
-        biz_class: Type['BizType'],
-        dao_class_name: Text,
-        bind_params: Dict = None
+        self, biz_class: Type['BizType'], dao_class_name: Text, bind_params: Dict = None
     ):
         # fetch the dao type from the ApplicationDaoBinder
         dao_class = self.binder.get_dao_class(dao_class_name.split('.')[-1])

@@ -154,8 +154,9 @@ class Manifest(object):
 
                 dao_class_name = get_class_name(dao_class)
                 console.debug(f'bootstrapping "{dao_class_name}" Dao...')
-                boostrap_kwargs = self.bootstraps.get(dao_class_name, {})
-                dao_class.bootstrap(app=self.app, **boostrap_kwargs)
+                bootstrap_object = self.bootstraps.get(dao_class_name)
+                bootstrap_kwargs = bootstrap_object.params if bootstrap_object else {}
+                dao_class.bootstrap(app=self.app, **bootstrap_kwargs)
 
         console.debug(f'finished bootstrapped Dao and BizObject classes')
 

@@ -36,12 +36,12 @@ class DaoMeta(ABCMeta):
 class Dao(object, metaclass=DaoMeta):
 
     env = Environment()
+    _app = None
 
     def __init__(self, *args, **kwargs):
         self._history = DaoHistory(dao=self)
         self._is_bound = False
         self._biz_class = None
-        self._app = None
 
     def __repr__(self):
         if self.is_bound:
