@@ -3,7 +3,11 @@ import pybiz.biz
 from typing import Text, Tuple, List, Type, Callable
 
 from appyratus.schema.fields import Uuid
-from pybiz.util.misc_functions import is_biz_obj, flatten_sequence
+from pybiz.util.misc_functions import (
+    is_biz_obj,
+    flatten_sequence,
+    get_class_name,
+)
 from pybiz.util.loggers import console
 from pybiz.constants import ID_FIELD_NAME
 from pybiz.predicate import (
@@ -113,9 +117,13 @@ class FieldProperty(property):
                     for k in field_names_to_load
                 }
                 console.debug(
-                    message=f'lazy loading fields',
+                    message=(
+                        f'lazy loading fields via '
+                        f'{get_class_name(self.biz_class)}.{self.field.name}'
+                    ),
                     data={
-                        'object': str(biz_obj),
+                        'instance': biz_obj._id,
+                        'class': get_class_name(self.biz_class),
                         'fields': field_source_names_to_load,
                     }
                 )

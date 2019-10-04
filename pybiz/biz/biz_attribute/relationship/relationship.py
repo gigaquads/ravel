@@ -91,12 +91,6 @@ class Relationship(BizAttribute):
             f')>'
         )
 
-    @classmethod
-    def copy(cls, source_biz_attr):
-        # TODO: copy over select, order_by etc, updating their referent
-        # BizObject classes.
-        return deepcopy(source_biz_attr)
-
     def build_property(self):
         return RelationshipProperty(self)
 
@@ -116,9 +110,7 @@ class Relationship(BizAttribute):
 
     def on_bootstrap(self):
         self._apply_behaviors_pre_bootstrap()
-        self._analyze_join_funcs()
-        self._analyze_order_by()
-        self._analyze_where_func()
+        self._setup()
         self._apply_behaviors_post_bootstrap()
 
     def _apply_behaviors_pre_bootstrap(self):
@@ -131,28 +123,47 @@ class Relationship(BizAttribute):
             for behavior in self.behaviors:
                 behavior.on_post_bootstrap(self)
 
-    def _analyze_join_funcs(self):
+    def _setup(self):
+        # setup_join_funcs must be performed first!
+        self._setup_join_funcs()
+        self._setup_order_by()
+        self._setup_where_func()
+
+    def _setup_join_funcs(self):
+        source_biz_class = self.biz_class
         for func in self.joins:
             # add all BizObject classes to the lexical scope of each callable
             func.__globals__.update(self.app.manifest.types.biz)
-            meta = JoinMetadata(self, func, is_terminal=(func is self.joins[-1]))
+            is_terminal = func is self.joins[-1]
+            meta = JoinMetadata(source_biz_class, func, is_terminal)
             self._join_metadata.append(meta)
+            source_biz_class = meta.target_biz_class
 
-    def _analyze_where_func(self):
+    def _setup_where_func(self):
         if self.where_func:
-            dummy_biz_object = MagicMock()
-            dummy_biz_list = self.biz_class.BizList([dummy_biz_object])
             self.where_func.__globals__.update(self.app.manifest.types.biz)
-            pred = self.where_func(dummy_biz_list)
+
+            meta = self._join_metadata[-1]
+            if meta.is_dynamic_join:
+                dummy_source = MagicMock()
+                pred = self.where_func(self.target_biz_class, dummy_source)
+            else:
+                dummy_sources = self.biz_class.BizList([MagicMock()])
+                pred = self.where_func(target_biz_class, dummy_sources)
+
             for field in pred.fields:
                 self.target_biz_class.pybiz.default_selectors.add(field.name)
 
-    def _analyze_order_by(self):
-        dummy = MagicMock()
+    def _setup_order_by(self):
         for func in self.order_by:
-            spec = func(dummy)
+            spec = func(self.target_biz_class)
             field = self.target_biz_class.Schema.fields[spec.key]
             self.select.add(field.name)
+
+    def copy(self):
+        # TODO: copy over select, order_by etc, updating their referent
+        # BizObject classes.
+        return deepcopy(self)
 
     def generate(
         self,
@@ -294,6 +305,7 @@ class Relationship(BizAttribute):
 
         for meta in self._join_metadata:
             if meta.join_type == JoinType.dynamic:
+                # TODO: clean this up or factor it into a private method
                 # dynamic joins cannot use the batch mechanism
                 distinct_targets = set()
                 for source in sources:
@@ -417,18 +429,21 @@ class Relationship(BizAttribute):
         if order_by:
             for obj in order_by:
                 if callable(obj):
-                    order_by_spec = obj(source)
+                    order_by_spec = obj(self.target_biz_class)
                 else:
                     order_by_spec = obj
                 computed_order_by.append(order_by_spec)
                 select.add(order_by_spec.key)
 
-        if self.where_func:#
-            # normalize argument to where func to a BizList
-            if is_biz_obj(source):
-                pred = self.where_func(self.biz_class.BizList([source]))
-            else:  # is biz list:
-                pred = self.where_func(source)
+        if self.where_func:
+            meta = self._join_metadata[-1]
+            if meta.is_dynamic_join:
+                assert is_biz_obj(source)
+            elif not is_biz_list(source):
+                source = self.biz_class.BizList([source])
+
+            pred = self.where_func(self.target_biz_class, source)
+
             if isinstance(where, Predicate):
                 where &= pred
             elif is_sequence(where):
@@ -455,7 +470,7 @@ class JoinType(EnumValueInt):
 
 class JoinMetadata(object):
     """
-    The role of `JoinMetadata` is to analyze each function returned as part of
+    The role of `JoinMetadata` is to setup each function returned as part of
     a `Relationship`'s `join` kwarg, determining what mechanism to use to build
     the corresponding pybiz Query that executes during execution of said
     `Relationship`.
@@ -470,27 +485,34 @@ class JoinMetadata(object):
     `where` param.
     """
 
-    def __init__(self, rel, func: Callable, is_terminal: bool):
-        self.rel = rel
+    def __init__(self, source_biz_class, func: Callable, is_terminal: bool):
         self.func = lambda *args, **kw: normalize_to_tuple(func(*args, **kw))
         self.target_biz_class = None
-        self.source_biz_class = None
+        self.source_biz_class = source_biz_class
         self.join_type = None
         self.is_terminal = is_terminal
 
         # this sets target_biz_class and join_type:
-        self._analyze(self.func)
+        self._setup(self.func)
 
-    def _analyze(self, func: Callable):
+    @property
+    def is_dynamic_join(self):
+        return self.join_type == JoinType.dynamic
+
+    @property
+    def is_static_join(self):
+        return self.join_type == JoinType.static
+
+    def _setup(self, func: Callable):
         # further process the return value of the join func
-        info = func(MagicMock())
+        info = func(self.source_biz_class)
         is_dynamic_join = is_biz_obj(info[0])
         if is_dynamic_join:
-            self._analyze_dynamic_join(func, info)
+            self._setup_dynamic_join(func, info)
         else:
-            self._analyze_static_join(func, info)
+            self._setup_static_join(func, info)
 
-    def _analyze_static_join(self, func: Callable, info: Tuple):
+    def _setup_static_join(self, func: Callable, info: Tuple):
         # for an ID-based join, the first two elements of info are the
         # field properties being joined, like (User.account_id, Account._id)
         source_fprop, target_fprop = info[:2]
@@ -500,19 +522,16 @@ class JoinMetadata(object):
         # that this field is alsoways returned from Queries, ensuring further
         # that no additional lazy loading of said field is needed when this
         # relationship is executed on an instance.
-        source_fprop.biz_class.pybiz.default_selectors.add(
-            source_fprop.field.name
+        target_fprop.biz_class.pybiz.default_selectors.add(
+            target_fprop.field.name
         )
 
         self.source_biz_class = source_fprop.biz_class
         self.target_biz_class = target_biz_class
         self.join_type = JoinType.static
 
-    def _analyze_dynamic_join(self, func: Callable, info: Tuple):
+    def _setup_dynamic_join(self, func: Callable, info: Tuple):
         target_biz_class = info[0]
-        import ipdb; ipdb.set_trace()
-        # TODO: daisy chain previous metadata's target type to this one's source, passing it in to the ctor.
-        self.source_biz_class = self.rel.biz_class
         self.target_biz_class = target_biz_class
         self.join_type = JoinType.dynamic
 
