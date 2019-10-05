@@ -114,7 +114,7 @@ class Dao(object, metaclass=DaoMeta):
         """
         Generate and return a new ID for the given not-yet-created record.
         """
-        return record.get(ID_FIELD_NAME) or uuid.uuid4().hex
+        return record.get(ID_FIELD_NAME) or UuidString.next_id()
 
     @abstractmethod
     def exists(self, _id) -> bool:
