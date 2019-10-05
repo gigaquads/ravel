@@ -1,3 +1,4 @@
+from appyratus.exc import BaseError
 import os
 import glob
 
@@ -19,6 +20,16 @@ from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 from .base import Dao
 from .python_dao import PythonDao
+
+
+class DaoError(BaseError):
+    pass
+
+
+class MissingBootstrapParameterError(DaoError):
+    error_code = 'missing-bootstrap-param'
+    error_message = 'Missing Bootstrap Parameter `{id}`'
+    error_help = "Add the missing parameter to your manifest's bootstrap settings"
 
 
 class FilesystemDao(Dao):
@@ -45,10 +56,11 @@ class FilesystemDao(Dao):
 
         assert issubclass(self.ftype, BaseFile)
 
+        known_extension = self._ftype.has_extension(extension)
+        if known_extension:
+            self._extension = known_extension
         if extension is None:
-            self._extension = sorted(list(self.ftype.extensions()))[0].lower()
-        else:
-            self._extension = extension.lower()
+            self._extension = self._ftype.default_extension()
 
     @property
     def paths(self):
@@ -66,7 +78,8 @@ class FilesystemDao(Dao):
     def on_bootstrap(cls, ftype: Text = None, root: Text = None):
         cls.ftype = import_object(ftype) if ftype else Yaml
         cls.root = root or cls.root
-        assert cls.root
+        if not cls.root:
+            raise MissingBootstrapParameterError(data={'id': 'root'})
 
     def on_bind(self, biz_class, root: Text = None, ftype: BaseFile = None):
         """
@@ -86,7 +99,7 @@ class FilesystemDao(Dao):
         self._cache_dao.create_many(self.fetch_all(ignore_cache=True).values())
 
     def create_id(self, record):
-        return record.get(ID_FIELD_NAME, uuid.uuid4().hex)
+        return record.get(ID_FIELD_NAME, UuidString.next_id())
 
     def exists(self, fname: Text) -> bool:
         return BaseFile.exists(self.mkpath(fname))
@@ -105,7 +118,7 @@ class FilesystemDao(Dao):
         self._cache_dao.create_many(created_records)
 
     def count(self) -> int:
-        fnames = glob.glob(f'{self.paths.records}/*.{self._extension}')
+        fnames = glob.glob(f'{self.paths.records}/*.{self.extension}')
         return len(fnames)
 
     def fetch(self, _id, fields=None) -> Dict:
