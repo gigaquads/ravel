@@ -5,6 +5,7 @@ import sqlalchemy as sa
 from appyratus.utils import StringUtils
 
 from pybiz.constants import REV_FIELD_NAME
+from pybiz.util.loggers import console
 
 
 class SqlalchemyTableBuilder(object):
@@ -31,6 +32,13 @@ class SqlalchemyTableBuilder(object):
             table_name = name
         else:
             table_name = StringUtils.snake(self._biz_class.__name__)
+
+        console.debug(
+            message=(
+                f'building Sqlalchemy Table "{table_name}" '
+                f'from "{self._biz_class.Schema.__name__}" schema'
+            )
+        )
         if schema is not None:
             self._metadata.schema = schema
         table = sa.Table(table_name, self._metadata, *columns)
@@ -38,7 +46,13 @@ class SqlalchemyTableBuilder(object):
 
     def build_column(self, field: 'Field') -> sa.Column:
         name = field.source
-        dtype = self.adapters.get(field.name).on_adapt(field)
+
+        try:
+            dtype = self.adapters.get(field.name).on_adapt(field)
+        except:
+            console.error(f'could not adapt field {field}')
+            raise
+
         primary_key = field.meta.get('primary_key', False)
         meta = field.meta.get('sa', {})
         unique = meta.get('unique', False)

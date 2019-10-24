@@ -81,8 +81,8 @@ class FalconService(AbstractWsgiService):
 
         falcon_app = falcon.API(
             middleware=middleware,
-            request_class=self.request_class,
-            response_class=self.response_class,
+            request_type=self.request_class,
+            response_type=self.response_class,
         )
         falcon_app.req_options = self.Request.Options()
         falcon_app.resp_options = self.Response.Options()

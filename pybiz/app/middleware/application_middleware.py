@@ -11,8 +11,7 @@ class ApplicationMiddleware(object):
 
     def __repr__(self):
         return (
-            f'<Middleware({self.__class__.__name__}, '
-            f'bootstrapped={self._is_bootstrapped})>'
+            f'<Middleware({self.__class__.__name__})>'
         )
 
     def bootstrap(self, app: 'Application'):

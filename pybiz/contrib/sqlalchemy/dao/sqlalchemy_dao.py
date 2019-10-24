@@ -21,6 +21,7 @@ from pybiz.predicate import (
 )
 from pybiz.schema import fields, Field
 from pybiz.util.json_encoder import JsonEncoder
+from pybiz.util.loggers import console
 from pybiz.dao.base import Dao
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
@@ -37,11 +38,15 @@ class SqlalchemyDao(Dao):
     json_encoder = JsonEncoder()
 
     env = Environment(
-        SQLALCHEMY_ECHO=fields.Bool(default=lambda: False),
-        SQLALCHEMY_URL=fields.String(default=lambda: 'sqlite://'),
+        SQLALCHEMY_ECHO=fields.Bool(default=False),
         SQLALCHEMY_DIALECT=fields.Enum(
             fields.String(), Dialect.values(), default=Dialect.sqlite
-        )
+        ),
+        SQLALCHEMY_DB_PROTOCOL=fields.String(default='sqlite'),
+        SQLALCHEMY_DB_USER=fields.String(default='postgres'),
+        SQLALCHEMY_DB_HOST=fields.String(default='0.0.0.0'),
+        SQLALCHEMY_DB_PORT=fields.Int(default=5432),
+        SQLALCHEMY_DB_NAME=fields.String(default='cytokine'),
     )
 
     @classmethod
@@ -76,6 +81,9 @@ class SqlalchemyDao(Dao):
                 fields.Sint32, fields.Sint64
             }
         )
+
+        console.debug(f'{cls.__name__} using SQL dialect "{cls.dialect}"')
+
         if dialect == Dialect.postgresql:
             adapters.extend(cls.get_postgresql_default_adapters())
         elif dialect == Dialect.mysql:
@@ -96,6 +104,7 @@ class SqlalchemyDao(Dao):
                 )
             return pg_types.ARRAY({
                 fields.String: sa.Text,
+                fields.Uuid: pg_types.UUID,
                 fields.Int: sa.Integer,
                 fields.Bool: sa.Boolean,
                 fields.Float: sa.Float,
@@ -197,7 +206,22 @@ class SqlalchemyDao(Dao):
 
     @classmethod
     def on_bootstrap(cls, url=None, dialect=None, echo=False):
-        url = url or self._url or cls.env.SQLALCHEMY_URL
+        url = url or (
+            '{protocol}://{user}@{host}:{port}/{db}'.format(
+                protocol=cls.env.SQLALCHEMY_DB_PROTOCOL,
+                user=cls.env.SQLALCHEMY_DB_USER,
+                host=cls.env.SQLALCHEMY_DB_HOST,
+                port=cls.env.SQLALCHEMY_DB_PORT,
+                db=cls.env.SQLALCHEMY_DB_NAME,
+            )
+        )
+        console.debug(
+            message=f'creating Sqlalchemy engine',
+            data={
+                'echo': bool(cls.env.SQLALCHEMY_ECHO),
+                'url': url,
+            }
+        )
         cls.dialect = dialect or cls.env.SQLALCHEMY_DIALECT
         cls.local.metadata = sa.MetaData()
         cls.local.metadata.bind = sa.create_engine(
@@ -206,7 +230,11 @@ class SqlalchemyDao(Dao):
         )
 
     def on_bind(
-        self, biz_class: Type['BizObject'], table: Text = None, schema: Text = None, **kwargs
+        self,
+        biz_class: Type['BizObject'],
+        table: Text = None,
+        schema: 'Schema' = None,
+        **kwargs
     ):
         field_class_2_adapter = {
             adapter.field_class: adapter for adapter in
