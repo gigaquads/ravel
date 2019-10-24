@@ -82,8 +82,6 @@ class SqlalchemyDao(Dao):
             }
         )
 
-        console.debug(f'{cls.__name__} using SQL dialect "{cls.dialect}"')
-
         if dialect == Dialect.postgresql:
             adapters.extend(cls.get_postgresql_default_adapters())
         elif dialect == Dialect.mysql:
@@ -215,15 +213,18 @@ class SqlalchemyDao(Dao):
                 db=cls.env.SQLALCHEMY_DB_NAME,
             )
         )
+        cls.dialect = dialect or cls.env.SQLALCHEMY_DIALECT
+        cls.local.metadata = sa.MetaData()
+
         console.debug(
             message=f'creating Sqlalchemy engine',
             data={
                 'echo': bool(cls.env.SQLALCHEMY_ECHO),
                 'url': url,
+                'dialect': cls.dialect,
             }
         )
-        cls.dialect = dialect or cls.env.SQLALCHEMY_DIALECT
-        cls.local.metadata = sa.MetaData()
+
         cls.local.metadata.bind = sa.create_engine(
             name_or_url=url,
             echo=bool(echo or cls.env.SQLALCHEMY_ECHO),
