@@ -9,6 +9,7 @@ from appyratus.utils import DictObject, DictUtils
 from pybiz.manifest import Manifest
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
+from pybiz.util.misc_functions import get_class_name
 from pybiz.schema import Field, UuidString
 
 from .exceptions import ApplicationError
@@ -165,7 +166,7 @@ class Application(object):
             console.warning(f'{self} already bootstrapped. skipping...')
             return self
 
-        console.debug(f'bootstrapping "{self.__class__.__name__}" Application...')
+        console.debug(f'bootstrapping "{get_class_name(self)}" Application...')
 
         # merge additional namespace data into namespace accumulator
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
@@ -194,7 +195,7 @@ class Application(object):
 
         # bootstrap the middlware
         for mware in self.middleware:
-            console.debug(f'bootstrapping {mware}')
+            console.debug(f'bootstrapping "{get_class_name(mware)}" middleware')
             mware.bootstrap(app=self)
 
         # execute custom lifecycle hook provided by this subclass
@@ -206,7 +207,7 @@ class Application(object):
         # passed in as ID's with their respective BizObjects
         self._arg_loader = ApplicationArgumentLoader(self)
 
-        console.debug(f'finished bootstrapping {self.__class__.__name__}')
+        console.debug(f'finished bootstrapping "{get_class_name(self)}" application')
 
         return self
 
@@ -215,7 +216,7 @@ class Application(object):
         Enter the main loop in whatever program context your Application is
         being used, like in a web framework or a REPL.
         """
-        console.info(f'starting {self.__class__.__name__}...')
+        console.info(f'starting {get_class_name(self)}...')
         self._is_started = True
         return self.on_start()
 

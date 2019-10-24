@@ -10,6 +10,9 @@ from .application_middleware import ApplicationMiddleware
 
 
 class DaoHistoryMiddleware(ApplicationMiddleware):
+    """
+    Keep history for each request, clearing it at the end.
+    """
 
     def __init__(self, echo=False, verbose=False, *args, **kwargs):
         super().__init__(*args, **kwargs)

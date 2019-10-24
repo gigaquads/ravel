@@ -1,6 +1,6 @@
 from typing import Dict, List, Type, Set, Text
 
-from pybiz.util.misc_functions import is_sequence
+from pybiz.util.misc_functions import is_sequence, get_class_name
 from pybiz.util.loggers import console
 
 
@@ -139,8 +139,8 @@ class ApplicationDaoBinder(object):
         if rebind or ((not binding.is_bound) and bind):
             console.debug(
                 message=(
-                    f'binding {binding.dao_instance.__class__.__name__} '
-                    f'singleton to {binding.biz_class.__name__} class...'
+                    f'binding "{get_class_name(binding.dao_instance)}" '
+                    f'with "{get_class_name(binding.biz_class)}"'
                 )
             )
             binding.bind(binder=self)
