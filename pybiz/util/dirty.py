@@ -1,13 +1,12 @@
 import weakref
-import uuid
-
 from abc import ABCMeta, abstractmethod
+
+from appyratus.schema.fields import UuidString
 
 from .misc_functions import is_sequence
 
 
 class DirtyInterface(metaclass=ABCMeta):
-
     @property
     @abstractmethod
     def dirty(self) -> frozenset:
@@ -35,10 +34,9 @@ class DirtyInterface(metaclass=ABCMeta):
 
 
 class DirtyObject(DirtyInterface):
-
     def __init__(self):
         super(DirtyObject, self).__init__()
-        self._hash = int(uuid.uuid4().hex, 16)
+        self._hash = int(UuidString.next_id(), 16)
         self._parent_ref = None
         self._key_in_parent = None
         self._dirty_keys = set()

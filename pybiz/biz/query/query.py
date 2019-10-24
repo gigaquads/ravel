@@ -14,6 +14,7 @@ from pybiz.util.misc_functions import (
 )
 from pybiz.predicate import Predicate
 from pybiz.schema import fields, StringTransformer
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 from ..field_property import FieldProperty
 from ..biz_list import BizList
@@ -85,7 +86,7 @@ class Query(AbstractQuery):
             offset=None,
             custom=None,
         ):
-            self.fields = fields or {'_id': None, '_rev': None}
+            self.fields = fields or {ID_FIELD_NAME: None, REV_FIELD_NAME: None}
             self.attributes = attributes or {}
             self.order_by = order_by or tuple()
             self.custom = custom or {}
@@ -345,7 +346,7 @@ class Query(AbstractQuery):
             del _tree['*']
             _tree.update({k: None for k in biz_class.Schema.fields})
         elif not _tree:
-            _tree = {'_id': None, '_rev': None}
+            _tree = {ID_FIELD_NAME: None, REV_FIELD_NAME: None}
 
         for k, v in _tree.items():
             if isinstance(v, dict):

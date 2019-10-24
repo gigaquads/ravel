@@ -1,5 +1,5 @@
+from appyratus.exc import BaseError
 import os
-import uuid
 import glob
 
 from typing import Text, List, Set, Dict, Tuple
@@ -8,6 +8,7 @@ from datetime import datetime
 
 from appyratus.env import Environment
 from appyratus.files import BaseFile, Yaml
+from appyratus.schema.fields import UuidString
 from appyratus.utils import (
     DictObject,
     DictUtils,
@@ -15,9 +16,20 @@ from appyratus.utils import (
 )
 
 from pybiz.util.misc_functions import import_object
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 from .base import Dao
 from .python_dao import PythonDao
+
+
+class DaoError(BaseError):
+    pass
+
+
+class MissingBootstrapParameterError(DaoError):
+    error_code = 'missing-bootstrap-param'
+    error_message = 'Missing Bootstrap Parameter `{id}`'
+    error_help = "Add the missing parameter to your manifest's bootstrap settings"
 
 
 class FilesystemDao(Dao):
@@ -44,10 +56,11 @@ class FilesystemDao(Dao):
 
         assert issubclass(self.ftype, BaseFile)
 
+        known_extension = self._ftype.has_extension(extension)
+        if known_extension:
+            self._extension = known_extension
         if extension is None:
-            self._extension = sorted(list(self.ftype.extensions()))[0].lower()
-        else:
-            self._extension = extension.lower()
+            self._extension = self._ftype.default_extension()
 
     @property
     def paths(self):
@@ -65,7 +78,8 @@ class FilesystemDao(Dao):
     def on_bootstrap(cls, ftype: Text = None, root: Text = None):
         cls.ftype = import_object(ftype) if ftype else Yaml
         cls.root = root or cls.root
-        assert cls.root
+        if not cls.root:
+            raise MissingBootstrapParameterError(data={'id': 'root'})
 
     def on_bind(self, biz_class, root: Text = None, ftype: BaseFile = None):
         """
@@ -82,12 +96,10 @@ class FilesystemDao(Dao):
 
         self._cache_dao.bootstrap(biz_class.app)
         self._cache_dao.bind(biz_class)
-        self._cache_dao.create_many(
-            self.fetch_all(ignore_cache=True).values()
-        )
+        self._cache_dao.create_many(self.fetch_all(ignore_cache=True).values())
 
     def create_id(self, record):
-        return record.get('_id', uuid.uuid4().hex)
+        return record.get(ID_FIELD_NAME, UuidString.next_id())
 
     def exists(self, fname: Text) -> bool:
         return BaseFile.exists(self.mkpath(fname))
@@ -95,7 +107,7 @@ class FilesystemDao(Dao):
     def create(self, record: Dict) -> Dict:
         _id = self.create_id(record)
         record = self.update(_id, record)
-        record['_id'] = _id
+        record[ID_FIELD_NAME] = _id
         self._cache_dao.create(record)
         return record
 
@@ -106,7 +118,7 @@ class FilesystemDao(Dao):
         self._cache_dao.create_many(created_records)
 
     def count(self) -> int:
-        fnames = glob.glob(f'{self.paths.records}/*.{self._extension}')
+        fnames = glob.glob(f'{self.paths.records}/*.{self.extension}')
         return len(fnames)
 
     def fetch(self, _id, fields=None) -> Dict:
@@ -127,7 +139,7 @@ class FilesystemDao(Dao):
         fields = fields if isinstance(fields, set) else set(fields or [])
         if not fields:
             fields = set(self.biz_class.Schema.fields.keys())
-        fields |= {'_id', '_rev'}
+        fields |= {ID_FIELD_NAME, REV_FIELD_NAME}
 
         records = {}
 
@@ -135,11 +147,11 @@ class FilesystemDao(Dao):
             fpath = self.mkpath(_id)
             record = self.ftype.read(fpath)
             if record:
-                record.setdefault('_id', _id)
-                record['_rev'] = record.setdefault('_rev', 0)
+                record.setdefault(ID_FIELD_NAME, _id)
+                record[REV_FIELD_NAME] = record.setdefault(REV_FIELD_NAME, 0)
                 records[_id] = {k: record.get(k) for k in fields}
             else:
-                records['_id'] = None
+                records[ID_FIELD_NAME] = None
 
         self._cache_dao.create_many(records.values())
         records.update(cached_records)
@@ -163,13 +175,13 @@ class FilesystemDao(Dao):
         else:
             record = data
 
-        if '_id' not in record:
-            record['_id'] = _id
+        if ID_FIELD_NAME not in record:
+            record[ID_FIELD_NAME] = _id
 
-        if '_rev' not in record:
-            record['_rev'] = 0
+        if REV_FIELD_NAME not in record:
+            record[REV_FIELD_NAME] = 0
         else:
-            record['_rev'] += 1
+            record[REV_FIELD_NAME] += 1
 
         self._cache_dao.update(_id, record)
         self.ftype.write(path=fpath, data=record)

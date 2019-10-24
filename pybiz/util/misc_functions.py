@@ -10,6 +10,7 @@ from copy import deepcopy
 from pybiz.constants import (
     IS_BIZ_OBJECT_ANNOTATION,
     IS_BIZ_LIST_ANNOTATION,
+    ID_FIELD_NAME,
 )
 
 _dict_keys = {}.keys().__class__
@@ -49,7 +50,7 @@ def repr_biz_id(biz_obj: 'BizObject') -> Text:
     """
     if biz_obj is None:
         return 'None'
-    _id = biz_obj['_id']
+    _id = biz_obj[ID_FIELD_NAME]
     if _id is None:
         return '?'
     elif isinstance(_id, str):

@@ -16,5 +16,6 @@ websockets
 faker
 sqlalchemy
 redis
+sqlparse
 pytest
 mock

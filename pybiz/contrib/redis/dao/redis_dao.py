@@ -1,7 +1,3 @@
-import uuid
-
-import ujson
-
 from typing import Type, Dict, List, Set, Text
 from collections import defaultdict
 from copy import deepcopy
@@ -11,6 +7,7 @@ from appyratus.utils import StringUtils
 
 from pybiz.dao import Dao
 from pybiz.schema import fields
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.predicate import (
     Predicate,
@@ -85,7 +82,7 @@ class RedisDao(Dao):
             return None
 
         full_record = JsonEncoder.decode(record_json)
-        full_record['_rev'] = int(rev_str) - 1
+        full_record[REV_FIELD_NAME] = int(rev_str) - 1
 
         if fields:
             return {k: full_record.get(k) for k in fields}
@@ -107,13 +104,13 @@ class RedisDao(Dao):
             for record_json, _rev in zip(json_records, rev_strs):
                 record = JsonEncoder.decode(record_json)
                 record = {k: record.get(k) for k in fields}
-                record['_rev'] = int(_rev) - 1
-                records[record['_id']] = record
+                record[REV_FIELD_NAME] = int(_rev) - 1
+                records[record[ID_FIELD_NAME]] = record
         else:
             for record_json, _rev in zip(json_records, rev_strs):
                 record = JsonEncoder.decode(record_json)
-                record['_rev'] = int(_rev) - 1
-                records[record['_id']] = record
+                record[REV_FIELD_NAME] = int(_rev) - 1
+                records[record[ID_FIELD_NAME]] = record
 
         return records
 
@@ -121,12 +118,12 @@ class RedisDao(Dao):
         return self.fetch_many(list(self.records.keys()), fields=fields)
 
     def upsert(self, record: Dict, pipe=None) -> Dict:
-        is_creating = record.get('_id') is None
+        is_creating = record.get(ID_FIELD_NAME) is None
         _id = self.create_id(record)
 
         # prepare the record for upsert
         upserted_record = record.copy()
-        upserted_record['_id'] = _id
+        upserted_record[ID_FIELD_NAME] = _id
 
         # json encode and store record JSON
         self.records[_id] = self.encoder.encode(upserted_record)
@@ -137,9 +134,9 @@ class RedisDao(Dao):
 
         # add rev to record AFTER insert to avoid storing _rev in records hset
         if is_creating:
-            upserted_record['_rev'] = 0
+            upserted_record[REV_FIELD_NAME] = 0
         else:
-            upserted_record['_rev'] = self.revs.increment(_id)
+            upserted_record[REV_FIELD_NAME] = self.revs.increment(_id)
 
         return upserted_record
 
@@ -195,12 +192,12 @@ class RedisDao(Dao):
         records = []
 
         if _ids:
-            _id_field = self.biz_class.Schema.fields['_id']
+            _id_field = self.biz_class.Schema.fields[ID_FIELD_NAME]
             json_records = self.records.get_many(_ids)
             rev_strs = self.revs.get_many(_ids)
             for json_record, rev_str in zip(json_records, rev_strs):
                 record = JsonEncoder.decode(json_record)
-                record['_rev'] = int(rev_str.decode())
+                record[REV_FIELD_NAME] = int(rev_str.decode())
                 records.append(record)
 
         return records
@@ -276,9 +273,7 @@ class RedisDao(Dao):
                         include_lower=False
                     ))
             else:
-                raise ValueError(
-                    'unrecognized op: {}'.format(predicate.op)
-                )
+                raise ValueError('unrecognized op: {}'.format(predicate.op))
         elif isinstance(predicate, BooleanPredicate):
             ids_lhs = self.query_ids(predicate.lhs)
             if ids_lhs:
@@ -290,8 +285,6 @@ class RedisDao(Dao):
             elif predicate.op == OP_CODE.AND:
                 ids = ids_lhs & ids_rhs
             else:
-                raise ValueError(
-                    'unrecognized op: {}'.format(predicate.op)
-                )
+                raise ValueError('unrecognized op: {}'.format(predicate.op))
 
         return ids

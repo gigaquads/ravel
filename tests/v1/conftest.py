@@ -1,7 +1,7 @@
-import uuid
 import pytest
 import pybiz
 
+from appyratus.schema.fields import Uuid
 from pybiz.test.domains.startrek import startrek as startrek_app
 
 
@@ -50,7 +50,7 @@ def the_enterprise(startrek):
 
 @pytest.fixture(scope='function')
 def the_enterprise_with_crew(the_enterprise, enterprise_crew):
-    the_enterprise._id = uuid.uuid4()
+    the_enterprise._id = Uuid.next_id()
     enterprise_crew.merge(ship_id=the_enterprise._id)
     the_enterprise.crew = enterprise_crew
     return the_enterprise
@@ -59,7 +59,9 @@ def the_enterprise_with_crew(the_enterprise, enterprise_crew):
 @pytest.fixture(scope='function')
 def missions(startrek):
     Mission = startrek.biz.Mission
-    return Mission.BizList([
-        Mission(name="Defeat the borg", description="Infiltrate unimatrix 01"),
-        Mission(name="Escape Delta Quadrant", description="Steal transwarp drive"),
-    ])
+    return Mission.BizList(
+        [
+            Mission(name="Defeat the borg", description="Infiltrate unimatrix 01"),
+            Mission(name="Escape Delta Quadrant", description="Steal transwarp drive"),
+        ]
+    )

@@ -16,8 +16,8 @@ class Session(BizObject):
         join=lambda self: (Session.owner_id, self.get_user_class()._id)
     )
 
-    @staticmethod
-    def __abstract__():
+    @classmethod
+    def __abstract__(cls):
         return True
 
     @classmethod

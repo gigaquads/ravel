@@ -1,11 +1,15 @@
-import uuid
-
 import pybiz.biz
 
 from typing import Text, Tuple, List, Type, Callable
 
-from pybiz.util.misc_functions import is_biz_obj, flatten_sequence
+from appyratus.schema.fields import Uuid
+from pybiz.util.misc_functions import (
+    is_biz_obj,
+    flatten_sequence,
+    get_class_name,
+)
 from pybiz.util.loggers import console
+from pybiz.constants import ID_FIELD_NAME
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -19,7 +23,7 @@ class FieldProperty(property):
         super().__init__(fget=self.fget, fset=self.fset, fdel=self.fdel)
         self._field_name = field.name
         self._biz_class = biz_class
-        self._hash = uuid.uuid4().int
+        self._hash = Uuid.next_id().int
 
     def __repr__(self):
         type_name = None
@@ -101,7 +105,7 @@ class FieldProperty(property):
     def fget(self, biz_obj):
         # try to lazy load the field value
         is_loaded = self.field.name in biz_obj.internal.state
-        exists_in_dao = '_id' in biz_obj.internal.state
+        exists_in_dao = ID_FIELD_NAME in biz_obj.internal.state
 
         if (not is_loaded) and exists_in_dao:
             if self.field.meta.get('lazy', True):
@@ -113,9 +117,13 @@ class FieldProperty(property):
                     for k in field_names_to_load
                 }
                 console.debug(
-                    message=f'lazy loading fields',
+                    message=(
+                        f'lazy loading fields via '
+                        f'{get_class_name(self.biz_class)}.{self.field.name}'
+                    ),
                     data={
-                        'object': str(biz_obj),
+                        'instance': biz_obj._id,
+                        'class': get_class_name(self.biz_class),
                         'fields': field_source_names_to_load,
                     }
                 )
@@ -140,8 +148,6 @@ class FieldProperty(property):
     def fdel(self, biz_obj):
         key = self.field.name
         if self.field.required:
-            raise AttributeError(
-                f'cannot delete required field value: {key}'
-            )
+            raise AttributeError(f'cannot delete required field value: {key}')
         else:
             biz_obj.internal.state.pop(key, None)

@@ -1,5 +1,3 @@
-import uuid
-
 import venusian
 
 from copy import deepcopy, copy
@@ -7,6 +5,7 @@ from typing import List, Dict, Text, Type, Tuple, Set
 from collections import defaultdict
 
 from appyratus.utils import DictObject, DictUtils
+from appyratus.schema.fields import Uuid
 
 from pybiz.dao.python_dao import PythonDao
 from pybiz.util.misc_functions import (
@@ -14,15 +13,49 @@ from pybiz.util.misc_functions import (
     is_sequence,
     repr_biz_id,
     normalize_to_tuple,
+    get_class_name,
 )
+
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.util.loggers import console
 from pybiz.util.dirty import DirtyDict
 from pybiz.exceptions import ValidationError, BizObjectError
 
-from .biz_object_meta import BizObjectMeta
+from .biz_object_class_builder import BizObjectClassBuilder
 from ..dump import NestingDumper, SideLoadingDumper
 from ..biz_thing import BizThing
 from ..query import Query, Backfill
+
+
+class BizObjectMeta(type):
+    """
+    Metaclass used by all BizObject classes.
+    """
+
+    def __new__(cls, class_name, bases, namespace):
+        """
+        This is where Python creates the new BizObject subclass object itself.
+        """
+        builder = BizObjectClassBuilder(class_name, bases, namespace)
+        builder.initialize_inherited_pybiz_internal_class_attributes()
+        return type.__new__(cls, class_name, bases, namespace)
+
+    def __init__(biz_class, class_name, bases, namespace):
+        """
+        This is where Python initializes class attributes on the newly-created
+        BizObject subclass.
+        """
+        type.__init__(biz_class, class_name, bases, namespace)
+        biz_class.pybiz.builder.build_class_attributes(biz_class)
+
+        def callback(scanner, name, biz_class):
+            """
+            Callback used by Venusian for BizObject class auto-discovery.
+            """
+            console.info(f'venusian scan found "{biz_class.__name__}" BizObject')
+            scanner.biz_classes.setdefault(name, biz_class)
+
+        venusian.attach(biz_class, callback, category='biz')
 
 
 class BizObject(BizThing, metaclass=BizObjectMeta):
@@ -79,11 +112,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return Query(cls).select(selectors)
 
     @classmethod
-    def generate(
-        cls,
-        fields: Set[Text] = None,
-        constraints: Dict = None
-    ) -> 'BizObject':
+    def generate(cls, fields: Set[Text] = None, constraints: Dict = None) -> 'BizObject':
         """
         Generate a fixture for this BizObject type.
         """
@@ -93,12 +122,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     def __init__(self, data=None, **more_data):
         data = dict(data or {}, **more_data)
-        self.internal = DictObject({
-            'hash_int': self._build_hash(data.get('_id')),
-            'arg': None,
-            'state': DirtyDict(),
-            'attributes': {},
-        })
+        self.internal = DictObject(
+            {
+                'hash_int': self._build_hash(data.get(ID_FIELD_NAME)),
+                'arg': None,
+                'state': DirtyDict(),
+                'attributes': {},
+            }
+        )
         self.merge(data)
 
     def __hash__(self):
@@ -149,7 +180,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for biz_attr in cls.pybiz.attributes.values():
             biz_attr.bootstrap(app)
 
-        cls.on_bootstrap()  # custom app logic goes here
+        cls.on_bootstrap()    # custom app logic goes here
 
         cls.pybiz.is_bootstrapped = True
 
@@ -221,9 +252,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Alternate syntax for building Query objects manually.
         """
         # select all BizObject fields by default
-        query = Query.load_from_keys(
-            cls, keys=(select or cls.schema.fields.keys())
-        )
+        query = Query.load_from_keys(cls, keys=(select or cls.schema.fields.keys()))
         if where:
             query.where(where)
         if order_by:
@@ -252,10 +281,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def get(cls, _id, select=None) -> 'BizObject':
-        return cls.query( select=select,
-            where=(cls._id == _id),
-            first=True
-        )
+        return cls.query(select=select, where=(cls._id == _id), first=True)
 
     @classmethod
     def get_many(
@@ -324,17 +350,15 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         prepared_record = self.internal.state.copy()
         self.insert_defaults(prepared_record)
-        prepared_record.pop('_rev', None)
+        prepared_record.pop(REV_FIELD_NAME, None)
 
         prepared_record, errors = self.schema.process(prepared_record)
         if errors:
             console.error(
-                message=f'could not create {self.__class__.__name__} object',
-                data=errors
+                message=f'could not create {self.__class__.__name__} object', data=errors
             )
             raise ValidationError(
-                message=f'could not create {self.__class__.__name__} object',
-                data=errors
+                message=f'could not create {self.__class__.__name__} object', data=errors
             )
 
         created_record = self.get_dao().create(prepared_record)
@@ -348,8 +372,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             self.merge(data)
 
         raw_record = self.dirty_data
-        raw_record.pop('_rev', None)
-        raw_record.pop('_id', None)
+        raw_record.pop(REV_FIELD_NAME, None)
+        raw_record.pop(ID_FIELD_NAME, None)
 
         errors = {}
         prepared_record = {}
@@ -364,7 +388,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             raise ValidationError(
                 message=f'could not update {self.__class__.__name__} object',
                 data={
-                    '_id': self._id,
+                    ID_FIELD_NAME: self._id,
                     'errors': errors,
                 }
             )
@@ -386,12 +410,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             record = biz_obj.internal.state.copy()
             cls.insert_defaults(record)
             record, errors = cls.schema.process(record)
-            record.pop('_rev', None)
+            record.pop(REV_FIELD_NAME, None)
             if errors:
                 raise ValidationError(
-                    message=(
-                        f'could not create {cls.__name__} object: {errors}'
-                    ),
+                    message=(f'could not create {cls.__name__} object: {errors}'),
                     data=errors
                 )
             records.append(record)
@@ -406,10 +428,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def update_many(
-        cls,
-        biz_objs: List['BizObject'],
-        data: Dict = None,
-        **more_data
+        cls, biz_objs: List['BizObject'], data: Dict = None, **more_data
     ) -> 'BizList':
         """
         Call the Dao's update_many method on the list of BizObjects. Multiple
@@ -456,8 +475,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
             for biz_obj in biz_obj_partition:
                 record = biz_obj.dirty_data
-                record.pop('_rev', None)
-                record.pop('_id', None)
+                record.pop(REV_FIELD_NAME, None)
+                record.pop(ID_FIELD_NAME, None)
                 records.append(record)
                 _ids.append(biz_obj._id)
 
@@ -480,7 +499,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if not depth:
             return self
 
-        if self._id is None or '_id' in self.dirty:
+        if self._id is None or ID_FIELD_NAME in self.dirty:
             self.create()
         else:
             self.update()
@@ -488,7 +507,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for rel in self.relationships.values():
             biz_thing = self.internal.attributes.get(rel.name)
             if biz_thing:
-                biz_thing.save(depth=depth-1)
+                biz_thing.save(depth=depth - 1)
 
         return self
 
@@ -528,9 +547,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def mark(self, keys) -> 'BizObject':
         if not is_sequence(keys):
             keys = {keys}
-        self.internal.state.mark_dirty({
-            k for k in keys if k in self.Schema.fields
-        })
+        self.internal.state.mark_dirty({k for k in keys if k in self.Schema.fields})
         return self
 
     def copy(self, deep=False) -> 'BizObject':
@@ -592,12 +609,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if isinstance(select, str):
             select = {select}
 
-        console.debug(message='loading', data={
-            'class': self.__class__.__name__,
-            'instance': self._id,
-            'select': select
-        })
-
         fresh = self.get(_id=self._id, select=select)
         if fresh:
             self.merge(fresh)
@@ -650,10 +661,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     @classmethod
     def _build_hash(cls, _id):
         if _id is not None:
-            hash_str = ''.join(
-                hex(ord(c))[2:]
-                for c in f'{cls.__name__}:{_id}'
-            )
+            hash_str = ''.join(hex(ord(c))[2:] for c in f'{cls.__name__}:{_id}')
             return int(hash_str, 16)
         else:
-            return uuid.uuid4().int
+            return Uuid.next_id().int

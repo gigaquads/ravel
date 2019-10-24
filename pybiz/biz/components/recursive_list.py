@@ -1,7 +1,7 @@
 from typing import Dict, List, Text, Set
 
 from pybiz import BizObject, Relationship, fields
-
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 # TODO: implement updates to depth in insert and unlink
 
@@ -29,58 +29,44 @@ class RecursiveList(BizObject):
     - `position`: The positional index of this RecursiveList in its parent
     """
 
-    size = fields.Int(nullable=False, default=0, required=True)
-    depth = fields.Int(nullable=False, default=0, required=True)
-    position = fields.Int(nullable=False, required=True, default=-1, private=True)
+    size = fields.Int(nullable=False, default=lambda: 0, required=True)
+    depth = fields.Int(nullable=False, default=lambda: 0, required=True)
+    position = fields.Int(nullable=False, required=True, default=lambda: -1, private=True)
     parent_id = fields.String(required=True, default=lambda: None, private=True)
 
     parent = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class, rel.biz_class._id == self.parent_id
-        ),
+        join=lambda cls: (cls.parent_id, cls._id),
         readonly=True,
     )
 
     children = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class, rel.biz_class.parent_id == self._id
-        ),
-        ordering=lambda cls: cls.position.asc,
-        readonly=True,
-        many=True,
-    )
-
-    siblings = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class,
-            (rel.biz_class.parent_id == self.parent_id) &
-            (rel.biz_class._id != self._id)
-        ),
-        ordering=lambda cls: cls.position.asc,
+        join=lambda cls: (cls._id, cls.parent_id),
+        #order_by=lambda cls: cls.position.asc,
         readonly=True,
         many=True,
     )
 
     previous = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class,
-            (rel.biz_class.parent_id == self.parent_id) &
-            (rel.biz_class.position == (self.position - 1))
+        join=lambda cls: cls,
+        where=lambda sources: (
+            (sources.biz_class.parent_id == sources[0].parent_id) &
+            (sources.biz_class.position == sources[0].position - 1)
         ),
         readonly=True,
     )
 
     following = Relationship(
-        conditions=lambda rel, self: (
-            rel.biz_class,
-            (rel.biz_class.parent_id == self.parent_id) &
-            (rel.biz_class.position == (self.position + 1))
+        join=lambda cls: cls,
+        where=lambda sources: (
+            (sources.biz_class.parent_id == sources[0].parent_id) &
+            (sources.biz_class.position == sources[0].position + 1)
         ),
         readonly=True,
     )
 
-    @staticmethod
-    def __abstract__():
+
+    @classmethod
+    def __abstract__(cls):
         return True
 
     @property
@@ -107,7 +93,10 @@ class RecursiveList(BizObject):
                 copy_children(child, copied_child._id, fields)
 
         # copy all non-internal fields by default
-        fields = set(fields or self.schema.fields.keys()) - {'_id', '_rev'}
+        fields = (
+            set(fields or self.schema.fields.keys())
+                - {ID_FIELD_NAME, REV_FIELD_NAME}
+        )
 
         # copy this instance & conditionally children, recursively
         copied = copy_one(self, self.parent_id, fields)
@@ -236,6 +225,17 @@ class RecursiveList(BizObject):
                 child_results = node.apply(func, direction, args, kwargs)
                 results.extend(child_results)
         return results
+
+
+
+
+
+
+
+
+
+
+
 
 
 

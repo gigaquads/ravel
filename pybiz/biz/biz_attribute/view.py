@@ -1,4 +1,5 @@
 from typing import Text, Dict, Callable, Type, Tuple
+from copy import deepcopy
 
 from pybiz.schema import Field
 from pybiz.util.misc_functions import is_sequence, normalize_to_tuple
@@ -6,6 +7,8 @@ from pybiz.util.loggers import console
 
 from .biz_attribute import BizAttribute, BizAttributeProperty
 
+# TODO: make callbacks part of base BizAttribute and define a function prototype
+# that takes the BizAttribute instance as first argument.
 
 class View(BizAttribute):
     def __init__(
@@ -53,6 +56,9 @@ class View(BizAttribute):
 
     def build_property(self) -> 'ViewProperty':
         return ViewProperty(self)
+
+    def copy(self):
+        return deepcopy(self)
 
     def execute(self, caller: 'BizObject', *args, **kwargs) -> object:
         data = self._load(caller, *args, **kwargs)

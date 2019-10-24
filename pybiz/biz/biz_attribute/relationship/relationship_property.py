@@ -49,10 +49,10 @@ class RelationshipProperty(BizAttributeProperty):
         # if the data was lazy loaded for the first time and returns a BizList,
         # we want to set the source and relationship properties on it.
         if rel.many:
-            if biz_thing.source is None:
-                biz_thing.source = source
-            if biz_thing.relationship is None:
-                biz_thing.relationship = rel
+            if biz_thing.internal.source is None:
+                biz_thing.internal.source = source
+            if biz_thing.internal.relationship is None:
+                biz_thing.internal.relationship = rel
 
         # perform callbacks set on Relationship ctor
         for cb_func in rel.on_get:

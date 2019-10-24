@@ -38,7 +38,7 @@ class BizAttributeManager(object):
             for biz_attr in self._ordered_biz_attrs
         )
 
-    def register(self, name, attr: BizAttribute):
+    def register(self, name: Text, attr: BizAttribute):
         attr.name = name
         self._name_2_biz_attr[name] = attr
         self._group_map[attr.group][name] = attr

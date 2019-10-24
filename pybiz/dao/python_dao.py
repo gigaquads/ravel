@@ -1,4 +1,3 @@
-import uuid
 import bisect
 
 import numpy as np
@@ -15,6 +14,7 @@ from BTrees.OOBTree import BTree
 from appyratus.utils import DictUtils
 
 from pybiz.schema import Schema, fields
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -118,8 +118,8 @@ class PythonDao(Dao):
         schema = self.biz_class.pybiz.schema
 
         with self.lock:
-            record['_id'] = _id = self.create_id(record)
-            record['_rev'] = self.rev_counter[_id]
+            record[ID_FIELD_NAME] = _id = self.create_id(record)
+            record[REV_FIELD_NAME] = self.rev_counter[_id]
 
             # ensure that missing nullable fields are written to the store with
             # a value of None.
@@ -141,7 +141,7 @@ class PythonDao(Dao):
         results = []
         with self.lock:
             for record in records:
-                record['_id'] = self.create_id(record)
+                record[ID_FIELD_NAME] = self.create_id(record)
                 result = self.create(record)
                 results.append(result)
         return results
@@ -158,13 +158,13 @@ class PythonDao(Dao):
             # and then replace it.
             if old_record:
                 self.delete(
-                    old_record['_id'],
+                    old_record[ID_FIELD_NAME],
                     clear_rev=False,
                     indexes_to_delete=set(data.keys()),
                 )
 
             merged_record = DictUtils.merge(old_record, data)
-            merged_record['_rev'] = old_rev + 1
+            merged_record[REV_FIELD_NAME] = old_rev + 1
 
             # "re-insert" the new copy of the record
             record = self.create(merged_record)
