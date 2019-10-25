@@ -38,15 +38,15 @@ class SqlalchemyDao(Dao):
     json_encoder = JsonEncoder()
 
     env = Environment(
-        SQLALCHEMY_ECHO=fields.Bool(default=False),
-        SQLALCHEMY_DIALECT=fields.Enum(
+        SQLALCHEMY_DAO_ECHO=fields.Bool(default=False),
+        SQLALCHEMY_DAO_DIALECT=fields.Enum(
             fields.String(), Dialect.values(), default=Dialect.sqlite
         ),
-        SQLALCHEMY_DB_PROTOCOL=fields.String(default='sqlite'),
-        SQLALCHEMY_DB_USER=fields.String(default='postgres'),
-        SQLALCHEMY_DB_HOST=fields.String(default='0.0.0.0'),
-        SQLALCHEMY_DB_PORT=fields.Int(default=5432),
-        SQLALCHEMY_DB_NAME=fields.String(default='cytokine'),
+        SQLALCHEMY_DAO_PROTOCOL=fields.String(default='sqlite'),
+        SQLALCHEMY_DAO_USER=fields.String(default='postgres'),
+        SQLALCHEMY_DAO_HOST=fields.String(default='0.0.0.0'),
+        SQLALCHEMY_DAO_PORT=fields.Int(default=5432),
+        SQLALCHEMY_DAO_NAME=fields.String(default='cytokine'),
     )
 
     @classmethod
@@ -206,20 +206,20 @@ class SqlalchemyDao(Dao):
     def on_bootstrap(cls, url=None, dialect=None, echo=False):
         url = url or (
             '{protocol}://{user}@{host}:{port}/{db}'.format(
-                protocol=cls.env.SQLALCHEMY_DB_PROTOCOL,
-                user=cls.env.SQLALCHEMY_DB_USER,
-                host=cls.env.SQLALCHEMY_DB_HOST,
-                port=cls.env.SQLALCHEMY_DB_PORT,
-                db=cls.env.SQLALCHEMY_DB_NAME,
+                protocol=cls.env.SQLALCHEMY_DAO_PROTOCOL,
+                user=cls.env.SQLALCHEMY_DAO_USER,
+                host=cls.env.SQLALCHEMY_DAO_HOST,
+                port=cls.env.SQLALCHEMY_DAO_PORT,
+                db=cls.env.SQLALCHEMY_DAO_NAME,
             )
         )
-        cls.dialect = dialect or cls.env.SQLALCHEMY_DIALECT
+        cls.dialect = dialect or cls.env.SQLALCHEMY_DAO_DIALECT
         cls.local.metadata = sa.MetaData()
 
         console.debug(
             message=f'creating Sqlalchemy engine',
             data={
-                'echo': bool(cls.env.SQLALCHEMY_ECHO),
+                'echo': bool(cls.env.SQLALCHEMY_DAO_ECHO),
                 'url': url,
                 'dialect': cls.dialect,
             }
@@ -227,7 +227,7 @@ class SqlalchemyDao(Dao):
 
         cls.local.metadata.bind = sa.create_engine(
             name_or_url=url,
-            echo=bool(echo or cls.env.SQLALCHEMY_ECHO),
+            echo=bool(echo or cls.env.SQLALCHEMY_DAO_ECHO),
         )
 
     def on_bind(
