@@ -34,8 +34,8 @@ DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = '50051'
 DEFAULT_IS_SECURE = False
 REGISTRY_PROTO_FILE = 'app.proto'
-PB2_MODULE_PATH_FSTR = '{}.grpc.registry_pb2'
-PB2_GRPC_MODULE_PATH_FSTR = '{}.grpc.registry_pb2_grpc'
+PB2_MODULE_PATH_FSTR = '{}.grpc.app_pb2'
+PB2_GRPC_MODULE_PATH_FSTR = '{}.grpc.app_pb2_grpc'
 
 
 class Grpc(Application):
@@ -85,10 +85,10 @@ class Grpc(Application):
         grpc.options.data.setdefault('port', DEFAULT_PORT)
 
         grpc.options.server_address = (
-            f'{grpc.options.server_host}:{grpc.options.port}'
+            f"{grpc.options.data['server_host']}:{grpc.options.data['port']}"
         )
         grpc.options.client_address = (
-            f'{grpc.options.client_host}:{grpc.options.port}'
+            f"{grpc.options.data['client_host']}:{grpc.options.data['port']}"
         )
 
         # create the build directory and add it to PYTHONPATH
@@ -101,7 +101,7 @@ class Grpc(Application):
         # try to import the pb2 module just to see if it exists
         try:
             import_module(pb2_mod_path, pkg_path)
-            pb2_module_dne = False  # dne: does not exist
+            pb2_module_dne = False    # dne: does not exist
         except Exception:
             pb2_module_dne = True
             #traceback.print_exc()
@@ -260,7 +260,6 @@ class Grpc(Application):
         for endpoint in self.endpoints.values():
             lines.extend(endpoint.generate_protobuf_message_types())
             func_decls.append(endpoint.generate_protobuf_function_declaration())
-
 
         lines.append('service GrpcApplication {')
 

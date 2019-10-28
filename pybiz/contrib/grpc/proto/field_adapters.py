@@ -61,7 +61,7 @@ class ArrayFieldAdapter(FieldAdapter):
 class NestedFieldAdapter(FieldAdapter):
     def emit(self, field, field_no):
         return super().emit(
-            field_class=field.schema_class.__name__,
+            field_class=field.schema.__class__.__name__,
             field_no=field_no,
             field_name=field.name,
         )
