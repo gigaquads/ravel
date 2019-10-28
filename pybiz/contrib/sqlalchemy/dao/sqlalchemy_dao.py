@@ -46,7 +46,7 @@ class SqlalchemyDao(Dao):
         SQLALCHEMY_DAO_USER=fields.String(default='postgres'),
         SQLALCHEMY_DAO_HOST=fields.String(default='0.0.0.0'),
         SQLALCHEMY_DAO_PORT=fields.Int(default=5432),
-        SQLALCHEMY_DAO_NAME=fields.String(default='cytokine'),
+        SQLALCHEMY_DAO_NAME=fields.String(),
     )
 
     @classmethod
@@ -109,10 +109,12 @@ class SqlalchemyDao(Dao):
                 fields.DateTime: sa.DateTime,
                 fields.Timestamp: sa.DateTime,
                 fields.Dict: pg_types.JSONB,
+                fields.Field: pg_types.JSONB,
                 fields.Nested: pg_types.JSONB,
             }.get(type(field.nested), sa.Text))
 
         return [
+            fields.Field.adapt(on_adapt=lambda field: pg_types.JSONB),
             fields.Uuid.adapt(on_adapt=lambda field: pg_types.UUID),
             fields.Dict.adapt(on_adapt=lambda field: pg_types.JSONB),
             fields.Nested.adapt(on_adapt=lambda field: pg_types.JSONB),
