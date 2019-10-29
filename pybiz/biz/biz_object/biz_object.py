@@ -252,7 +252,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Alternate syntax for building Query objects manually.
         """
         # select all BizObject fields by default
-        query = Query.load_from_keys(cls, keys=(select or cls.schema.fields.keys()))
+        query = Query(cls)
+
+        if select:
+            query.select(select)
         if where:
             query.where(where)
         if order_by:
@@ -419,7 +422,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             records.append(record)
 
         created_records = cls.get_dao().create_many(records)
-
         for biz_obj, record in zip(biz_objs, created_records):
             biz_obj.internal.state.update(record)
             biz_obj.clean()

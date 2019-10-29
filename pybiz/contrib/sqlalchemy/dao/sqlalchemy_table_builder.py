@@ -13,7 +13,7 @@ class SqlalchemyTableBuilder(object):
         self._dialect = dao.dialect
         self._biz_class = dao.biz_class
         self._adapters = dao.adapters
-        self._metadata = deepcopy(dao.get_metadata())
+        self._metadata = dao.get_metadata()
 
     @property
     def adapters(self):
