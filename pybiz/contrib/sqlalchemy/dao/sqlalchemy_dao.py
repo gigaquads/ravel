@@ -23,7 +23,7 @@ from pybiz.schema import fields, Field
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
 from pybiz.dao.base import Dao
-from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from pybiz.constants import REV_FIELD_NAME, ID_FIELD_NAME
 
 from .dialect import Dialect
 from .sqlalchemy_table_builder import SqlalchemyTableBuilder
@@ -34,8 +34,10 @@ class SqlalchemyDao(Dao):
 
     local = threading.local()
     local.metadata = None
+    local.connection = None
 
     json_encoder = JsonEncoder()
+    id_column_names = {}
 
     env = Environment(
         SQLALCHEMY_DAO_ECHO=fields.Bool(default=False),
@@ -81,7 +83,6 @@ class SqlalchemyDao(Dao):
                 fields.Sint32, fields.Sint64
             }
         )
-
         if dialect == Dialect.postgresql:
             adapters.extend(cls.get_postgresql_default_adapters())
         elif dialect == Dialect.mysql:
@@ -252,6 +253,8 @@ class SqlalchemyDao(Dao):
         self._table = self._builder.build_table(name=table, schema=schema)
         self._id_column = getattr(self._table.c, self.id_column_name)
 
+        self.id_column_names[self._table.name] = self.id_column_name
+
     def query(
         self,
         predicate: 'Predicate',
@@ -261,10 +264,10 @@ class SqlalchemyDao(Dao):
         order_by: Tuple = None,
         **kwargs,
     ):
-        fields = fields or self.biz_class.Schema.fields.keys()
+        fields = fields or {k: None for k in self.biz_class.Schema.fields}
         fields.update({
-            self.id_column_name,
-            self.biz_class.Schema.fields[REV_FIELD_NAME].source,
+            self.id_column_name: None,
+            self.biz_class.Schema.fields[REV_FIELD_NAME].source: None,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]
@@ -276,8 +279,8 @@ class SqlalchemyDao(Dao):
 
         if order_by:
             sa_order_by = [
-                sa.desc(getattr(self.table.c, k)) if x.desc else
-                sa.asc(getattr(self.table.c, k))
+                sa.desc(getattr(self.table.c, x.key)) if x.desc else
+                sa.asc(getattr(self.table.c, x.key))
                 for x in order_by
             ]
             query = query.order_by(*sa_order_by)
@@ -406,7 +409,7 @@ class SqlalchemyDao(Dao):
         return self.fetch_many([], fields=fields)
 
     def create(self, record: dict) -> dict:
-        record[ID_FIELD_NAME] = self.create_id(record)
+        record[self.id_column_name] = self.create_id(record)
         prepared_record = self.adapt_record(record, serialize=True)
         insert_stmt = self.table.insert().values(**prepared_record)
         if self.supports_returning:
@@ -415,12 +418,12 @@ class SqlalchemyDao(Dao):
             return dict(record, **(result.returned_defaults or {}))
         else:
             result = self.conn.execute(insert_stmt)
-            return self.fetch(_id=record[ID_FIELD_NAME])
+            return self.fetch(_id=record[self.id_column_name])
 
     def create_many(self, records: List[Dict]) -> Dict:
         prepared_records = []
         for record in records:
-            record[ID_FIELD_NAME] = self.create_id(record)
+            record[self.id_column_name] = self.create_id(record)
             prepared_record = self.adapt_record(record, serialize=True)
             prepared_records.append(prepared_record)
 
@@ -428,9 +431,9 @@ class SqlalchemyDao(Dao):
         if self.supports_returning:
             # TODO: use implicit returning if possible
             pass
-        else:
-            return self.fetch_many(
-                (rec[ID_FIELD_NAME] for rec in records), as_list=True)
+
+        return self.fetch_many(
+            (rec[self.id_column_name] for rec in records), as_list=True)
 
     def update(self, _id, data: Dict) -> Dict:
         prepared_id = self.adapt_id(_id)
@@ -463,7 +466,7 @@ class SqlalchemyDao(Dao):
         update_stmt = (
             self.table
                 .update()
-                .where(self._id_column == bindparam(ID_FIELD_NAME))
+                .where(self._id_column == bindparam(self.id_column_name))
                 .values(**values)
         )
         self.conn.execute(update_stmt, prepared_data)
@@ -498,6 +501,8 @@ class SqlalchemyDao(Dao):
 
     @property
     def conn(self):
+        if self.local.connection is None:
+            self.connect()
         return self.local.connection
 
     @property
@@ -507,29 +512,64 @@ class SqlalchemyDao(Dao):
         return self.local.metadata.bind.dialect.implicit_returning
 
     @classmethod
-    def create_tables(cls):
+    def create_tables(cls, recreate=False):
         if not cls.is_bootstrapped():
+            console.error(
+                f'{get_class_name(cls)} cannot create '
+                f'tables unless bootstrapped'
+            )
             return
 
         meta = cls.get_metadata()
         engine = cls.get_engine()
+
+        if recreate:
+            meta.drop_all(engine)
 
         # create all tables
         meta.create_all(engine)
 
         # add a trigger to each table to auto-increment
         # the _rev column on update.
-        id_col_name = cls.biz_class.f[ID_FIELD_NAME].source
-        for table in meta.tables.values():
+        if cls.dialect == Dialect.postgresql:
             engine.execute(f'''
-                create trigger incr_{table.name}_rev_on_update
-                after update on {table.name}
-                for each row
+                drop function if exists increment_rev;
+                create function increment_rev() returns trigger
+                    language plpgsql
+                    as $$
                 begin
-                    update {table.name} set _rev = old._rev + 1
-                    where {id_col_name} = old.{id_col_name};
-                end
+                    new._rev = old._rev + 1;
+                    return new;
+                end;
+                $$;
             ''')
+            for table in meta.tables.values():
+                id_col_name = cls.id_column_names[table.name]
+                engine.execute(f'''
+                    drop trigger if exists increment_{table.name}_rev_on_update
+                        on {table.name};
+
+                    create trigger increment_{table.name}_rev_on_update
+                    after update on {table.name}
+                    for each row
+                        when (new.{id_col_name} = old.{id_col_name})
+                        execute procedure increment_rev();
+                ''')
+        else:
+            for table in meta.tables.values():
+                id_col_name = cls.id_column_names[table.name]
+                engine.execute(f'''
+                    drop trigger if exists increment_{table.name}_rev_on_update
+                        on {table.name};
+
+                    create trigger increment_{table.name}_rev_on_update
+                    after update on {table.name}
+                    for each row
+                    begin
+                        update {table.name} set _rev = old._rev + 1
+                        where {id_col_name} = old.{id_col_name};
+                    end
+                ''')
 
     @classmethod
     def connect(cls):
