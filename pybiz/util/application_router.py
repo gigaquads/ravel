@@ -2,7 +2,7 @@ import sys
 
 from typing import Text, Dict, List
 
-from appyratus.cli import CliProgram, PositionalArg
+from appyratus.cli import CliProgram, PositionalArg, OptionalArg
 
 
 class ApplicationRouter(CliProgram):
@@ -15,7 +15,8 @@ class ApplicationRouter(CliProgram):
     def __init__(
         self,
         manifest: 'Manifest' = None,
-        applications: List = None,
+        applications: Dict = None,
+        default_app: Text = None,
         *args,
         **kwargs
     ):
@@ -26,6 +27,7 @@ class ApplicationRouter(CliProgram):
         """
         self._manifest = manifest
         self._apps = applications or {}
+        self._default_app = default_app
         super().__init__(merge_unknown=False, *args, **kwargs)
 
     def args(self):
@@ -36,11 +38,13 @@ class ApplicationRouter(CliProgram):
         routed to
         """
         app_names = ', '.join([r for r in self._apps.keys()])
-        return [
-            PositionalArg(
-                name='app', usage=f'the app to utilize [{app_names}]'
-            )
-        ]
+        app_arg_args = {'name': 'app', 'usage': f'the app to utilize [{app_names}'}
+        if self._default_app:
+            # default app is provided, so we will not require the app positional key
+            app_arg = OptionalArg(**app_arg_args, default=self._default_app)
+        else:
+            app_arg = PositionalArg(**app_arg_args)
+        return [app_arg]
 
     def perform(self, program: 'CliProgram'):
         """
@@ -84,9 +88,7 @@ class ApplicationRouter(CliProgram):
         Application lifecycle
         Perform necessary bootstrapping with manifest and then fire it up
         """
-        app.bootstrap(
-            manifest=manifest or self._manifest, **(bootstrap_kwargs or {})
-        )
+        app.bootstrap(manifest=manifest or self._manifest, **(bootstrap_kwargs or {}))
         app.start(**(start_kwargs or {}))
         return app
 

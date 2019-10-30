@@ -90,7 +90,6 @@ class CliApplication(Application):
         response = super().on_response(endpoint, result, *args, **kwargs)
         dumped_result = _dump_result_obj(response)
         if self._echo:
-
             output_format = getattr(self._cli_program.cli_args, 'format', None)
             formatted_result = _format_result_data(dumped_result, output_format)
             if isinstance(formatted_result, str):
