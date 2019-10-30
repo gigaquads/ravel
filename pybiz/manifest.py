@@ -83,6 +83,8 @@ class Manifest(object):
                 file_data = Yaml.read(self.path)
             elif ext in Json.extensions():
                 file_data = Json.read(self.path)
+            else:
+                file_data = {}
 
             # merge contents of file with data dict arg
             self.data = DictUtils.merge(file_data, self.data)
