@@ -410,6 +410,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for biz_obj in biz_objs:
             if biz_obj is None:
                 continue
+            if isinstance(biz_obj, dict):
+                biz_obj = cls(data=biz_obj)
             record = biz_obj.internal.state.copy()
             cls.insert_defaults(record)
             record, errors = cls.schema.process(record)
