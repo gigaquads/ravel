@@ -79,8 +79,13 @@ class QueryBackfiller(object):
 
         # randomize the count if none is explicitly given
         if count is None:
-            count_upper_bound = params.limit or random.randint(1, 10)
-            count = random.randint(count_upper_bound//2 or 1, count_upper_bound)
+            if params.limit is not None:
+                count = params.limit
+            else:
+                count_upper_bound = params.limit or random.randint(1, 10)
+                count = random.randint(
+                    count_upper_bound // 2 or 1, count_upper_bound
+                )
 
         # initialize storage for all instances of the biz_class created
         # in the course of running the self.generate.

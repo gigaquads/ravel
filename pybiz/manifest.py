@@ -99,6 +99,9 @@ class Manifest(object):
 
         self.package = self.data.get('package')
 
+        if not self.data.get('bindings'):
+            console.warning(f'no "bindings" section detected in manifest!')
+
         for binding_data in (self.data.get('bindings') or []):
             biz = binding_data['biz']
             dao = binding_data.get('dao', 'PythonDao')
