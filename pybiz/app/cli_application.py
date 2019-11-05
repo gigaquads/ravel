@@ -126,7 +126,11 @@ class CliCommand(Endpoint):
         super().__init__(func, decorator)
         self.program_name = decorator.kwargs.get('name', func.__name__)
         self.subparser_kwargs = self._build_subparser_kwargs(func, decorator)
-        self.subparser = Subparser(**self.subparser_kwargs)
+        subparser_class = decorator.kwargs.get('subparser', Subparser)
+        self.subparser = subparser_class(**self.subparser_kwargs)
+
+    def __call__(self, *raw_args, **raw_kwargs):
+        super().__call__(*raw_args, **raw_kwargs)
 
     def _build_subparser_kwargs(self, func, decorator):
         parser_kwargs = decorator.kwargs.get('parser') or {}
