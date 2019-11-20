@@ -47,7 +47,7 @@ class Dao(object, metaclass=DaoMeta):
         if self.is_bound:
             return (
                 f'<{self.__class__.__name__}'
-                f'({self.biz_class.__name__})>'
+                f'(biz_class={self.biz_class.__name__})>'
             )
         else:
             return (f'<{self.__class__.__name__}>')

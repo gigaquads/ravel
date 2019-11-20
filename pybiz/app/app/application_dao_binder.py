@@ -5,7 +5,8 @@ from pybiz.util.loggers import console
 
 
 class BizBinding(object):
-    def __init__(self, biz_class, dao_instance, dao_bind_kwargs=None):
+    def __init__(self, binder, biz_class, dao_instance, dao_bind_kwargs=None):
+        self.binder = binder
         self.biz_class = biz_class
         self.dao_instance = dao_instance
         self.dao_bind_kwargs = dao_bind_kwargs or {}
@@ -17,9 +18,15 @@ class BizBinding(object):
             f'bound={self.is_bound})>'
         )
 
-    def bind(self, binder):
+    def bind(self, binder=None):
+        binder = binder or self.binder
+
+        # associate a singleton Dao instance with the biz class.
         self.dao_instance.bind(self.biz_class, **self.dao_bind_kwargs)
+
+        # first call bind on the BizObject class itself
         self.biz_class.bind(binder)
+
         self._is_bound = True
 
     @property
@@ -77,6 +84,11 @@ class ApplicationDaoBinder(object):
     def dao_classes(self) -> Dict[Text, 'Dao']:
         return self._named_dao_classes
 
+    def get_binding(self, biz_class):
+        if isinstance(biz_class, type):
+            biz_class = get_class_name(biz_class)
+        return self._bindings.get(biz_class)
+
     def register(
         self,
         biz_class: Type['BizObject'],
@@ -98,6 +110,7 @@ class ApplicationDaoBinder(object):
             biz_class.binder = self
             self._named_biz_classes[biz_class_name] = biz_class
             self._bindings[biz_class_name] = binding = BizBinding(
+                self,
                 biz_class=biz_class,
                 dao_instance=dao_instance,
                 dao_bind_kwargs=dao_bind_kwargs,
@@ -116,7 +129,7 @@ class ApplicationDaoBinder(object):
             biz_classes = [biz_classes]
         for biz_class in biz_classes:
             if not biz_class.pybiz.is_abstract:
-                biz_class.binder = self  # this is used in BizObject.get_dao()
+                biz_class.binder = self
                 self.get_dao_instance(biz_class, rebind=rebind)
 
     def get_dao_instance(

@@ -1,7 +1,7 @@
 import inspect
 import logging
 
-from typing import List, Dict, Text, Tuple, Set, Type
+from typing import List, Dict, Text, Tuple, Set, Type, Callable
 from collections import deque
 
 from appyratus.utils import DictObject, DictUtils
@@ -9,7 +9,7 @@ from appyratus.utils import DictObject, DictUtils
 from pybiz.manifest import Manifest
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
-from pybiz.util.misc_functions import get_class_name
+from pybiz.util.misc_functions import get_class_name, inject
 from pybiz.schema import Field, UuidString
 
 from .exceptions import ApplicationError
@@ -28,18 +28,19 @@ class Application(object):
         middleware: List['ApplicationMiddleware'] = None,
         id_field_class: Type[Field] = None,
     ):
-        self._id_field_class = id_field_class or DEFAULT_ID_FIELD_CLASS
         self._decorators = []
         self._endpoints = {}
-        self._biz = None  # set in bootstrap
-        self._dal = None  # set in bootstrap
-        self._api = None  # set in bootstrap
+        self._biz = DictObject()
+        self._dal = DictObject()
+        self._api = DictObject()
         self._manifest = None  # set in bootstrap
         self._arg_loader = None  # set in bootstrap
         self._is_bootstrapped = False
         self._is_started = False
-        self._json_encoder = JsonEncoder()
         self._namespace = {}
+
+        self._id_field_class = id_field_class or DEFAULT_ID_FIELD_CLASS  # XXX reprecated
+        self._json_encoder = JsonEncoder()
         self._binder = ApplicationDaoBinder()
         self._middleware = deque([
             m for m in (middleware or [])
@@ -152,12 +153,33 @@ class Application(object):
                 data={'endpoint': endpoint}
             )
 
+    def bind(self, biz_class, dao_class=None):
+        if dao_class is None:
+            dao_obj = biz_class.__dao__()
+            if not isinstance(dao_obj, type):
+                dao_class = type(dao_obj)
+            else:
+                dao_class = dao_obj
+
+        self._dal[get_class_name(dao_class)] = dao_class
+        self._biz[get_class_name(biz_class)] = biz_class
+
+        if self.is_bootstrapped:
+            if not biz_class.is_bootstrapped():
+                biz_class.bootstrap(self)
+            if not dao_class.is_bootstrapped():
+                dao_class.bootstrap(self)
+
+        binding = self.binder.register(biz_class=biz_class, dao_class=dao_class)
+        binding.bind(self.binder)
+
     def bootstrap(
         self,
         manifest: Manifest = None,
         namespace: Dict = None,
         rebootstrap: bool = False,
-        *args, **kwargs
+        *args,
+        **kwargs
     ):
         """
         Bootstrap the data, business, and service layers, wiring them up.
@@ -186,9 +208,9 @@ class Application(object):
         self._manifest.load()
         self._manifest.process(app=self, namespace=self._namespace)
 
-        self._biz = DictObject(self._manifest.types.biz)
-        self._dal = DictObject(self._manifest.types.dal)
-        self._api = DictObject(self._endpoints)
+        self._biz.update(self._manifest.types.biz)
+        self._dal.update(self._manifest.types.dal)
+        self._api.update(self._endpoints)
 
         self._manifest.bootstrap()
         self._manifest.bind(rebind=rebootstrap)
@@ -219,6 +241,18 @@ class Application(object):
         console.info(f'starting {get_class_name(self)}...')
         self._is_started = True
         return self.on_start()
+
+    def inject(self, func: Callable, biz=True, dal=True, api=True):
+        """
+        Inject BizObject, Dao, and/or Endpoint classes into the lexical scope of
+        the given function.
+        """
+        if biz:
+            inject(func, self.biz)
+        if dal:
+            inject(func, self.dal)
+        if api:
+            inject(func, self.api)
 
     def on_bootstrap(self, *args, **kwargs):
         pass

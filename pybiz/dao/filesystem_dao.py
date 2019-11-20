@@ -161,12 +161,6 @@ class FilesystemDao(Dao):
         return self.fetch_many(None, fields=fields, ignore_cache=ignore_cache)
 
     def update(self, _id, data: Dict) -> Dict:
-        if not self.exists(_id):
-            # this is here, because update in this dao is can be used like #
-            # upsert, but in the BizObject class, insert_defaults is only called
-            # on create, not update.
-            self.biz_class.insert_defaults(data)
-
         fpath = self.mkpath(_id)
         base_record = self.ftype.read(fpath)
         if base_record:

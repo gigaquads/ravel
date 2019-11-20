@@ -2,7 +2,7 @@ from uuid import UUID
 from importlib import import_module
 from typing import (
     List, Dict, ForwardRef, Text, Tuple, Set, Type,
-    _GenericAlias as GenericAlias
+    _GenericAlias as GenericAlias, Callable
 )
 
 from copy import deepcopy
@@ -152,3 +152,10 @@ def flatten_sequence(target) -> Set:
         else:
             flattened.add(child_target)
     return flattened
+
+
+def inject(func: Callable, data: Dict):
+    """
+    Dynamically inject data dict into a function's lexcial scope.
+    """
+    func.__globals.__update(data)
