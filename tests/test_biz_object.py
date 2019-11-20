@@ -76,6 +76,14 @@ def test_schema_creation_with_inheritance(Dog, DogMan):
     assert isinstance(DogMan.Schema.fields['name'], pybiz.String)
 
 
+def test_id_field_value_generated_in_ctor(Dog):
+    dog = Dog()
+    assert dog._id is not None
+
+    dog = Dog(_id='1' * 32)
+    assert dog._id == '1' * 32
+
+
 @pytest.mark.parametrize('dirty_field_names', [
     set(),
     {'_id'},

@@ -2,6 +2,7 @@ import sys
 
 from copy import deepcopy
 from typing import Text, Set, Dict
+from collections import defaultdict
 
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import (
@@ -98,10 +99,15 @@ class Resolver(object):
         """
         return {'untagged'}
 
-    def copy(self):
+    def copy(self, unbind=True) -> 'Resolver':
+        """
+        Return a copy of this resolver. If unbind is set, clear away the
+        reference to the BizObject class to which this resolver is bound.
+        """
         clone = deepcopy(self)
-        clone.biz_class = None
-        clone._is_bound = False
+        if unbind:
+            clone.biz_class = None
+            clone._is_bound = False
         return clone
 
     def execute(self, instance, *args, **kwargs):
@@ -147,6 +153,46 @@ class Resolver(object):
     @staticmethod
     def on_del(resolver, deleted_value):
         return None
+
+
+class ResolverManager(object):
+    def __init__(self):
+        self._resolvers = {}
+        self._tag_2_resolvers = defaultdict(dict)
+
+    def __getattr__(self, tag):
+        return self.by_tag(tag)
+
+    def __getitem__(self, resolver_name):
+        return self._resolvers.get(resolver_name)
+
+    def __iter__(self):
+        return iter(self._resolvers)
+
+    def __contains__(self, obj):
+        if isinstance(obj, Resolver):
+            return obj.name in self._resolvers
+        else:
+            return obj in self._resolvers
+
+    def __len__(self):
+        return len(self._resolvers)
+
+    def keys(self):
+        return set(self._resolvers.keys())
+
+    def values(self):
+        return set(self._resolvers.values())
+
+    def register(self, resolver):
+        self._resolvers[resolver.name] = resolver
+        for tag in resolver.tags():
+            self._tag_2_resolvers[tag][resolver.name] = resolver
+
+    def by_tag(self, tag):
+        return self._tag_2_resolvers.get(tag, {})
+
+
 
 
 class FieldResolver(Resolver):

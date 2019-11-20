@@ -28,46 +28,9 @@ from .resolver import (
     Resolver,
     ResolverProperty,
     ResolverDecorator,
-    FieldResolver
+    ResolverManager,
+    FieldResolver,
 )
-
-
-class ResolverManager(object):
-    def __init__(self):
-        self._resolvers = {}
-        self._tag_2_resolvers = defaultdict(dict)
-
-    def __getattr__(self, tag):
-        return self.by_tag(tag)
-
-    def __getitem__(self, resolver_name):
-        return self._resolvers.get(resolver_name)
-
-    def __iter__(self):
-        return iter(self._resolvers)
-
-    def __contains__(self, obj):
-        if isinstance(obj, Resolver):
-            return obj.name in self._resolvers
-        else:
-            return obj in self._resolvers
-
-    def __len__(self):
-        return len(self._resolvers)
-
-    def keys(self):
-        return set(self._resolvers.keys())
-
-    def values(self):
-        return set(self._resolvers.values())
-
-    def register(self, resolver):
-        self._resolvers[resolver.name] = resolver
-        for tag in resolver.tags():
-            self._tag_2_resolvers[tag][resolver.name] = resolver
-
-    def by_tag(self, tag):
-        return self._tag_2_resolvers.get(tag, {})
 
 
 class BizObjectMeta(type):
@@ -160,6 +123,7 @@ class BizObjectMeta(type):
         biz_class.pybiz.is_bootstrapped = False
         biz_class.pybiz.is_bound = False
         biz_class.pybiz.schema = None
+        biz_class.pybiz.defaults = {}
 
     def _compute_is_abstract(biz_class):
         if hasattr(biz_class, '__abstract__'):
@@ -182,9 +146,11 @@ class BizObjectMeta(type):
 
         fields = fields.copy()
 
+        # inherit Fields from base BizObject classes
         for base_class in base_classes:
             if biz_class._is_biz_class(base_class):
                 fields.update(deepcopy(base_class.Schema.fields))
+                biz_class.pybiz.defaults.update(base_class.pybiz.defaults)
 
         fields.update(extract_fields(biz_class))
 
@@ -194,8 +160,7 @@ class BizObjectMeta(type):
 
         class_name = f'{biz_class.__name__}Schema'
 
-        if ID_FIELD_NAME not in fields:
-            fields[ID_FIELD_NAME] = UuidString(default=lambda: uuid.uuid4().hex)
+        assert ID_FIELD_NAME in fields
 
         biz_class.Schema = type(class_name, (Schema, ), fields)
         biz_class.pybiz.schema = biz_class.Schema()
@@ -220,7 +185,7 @@ class BizObjectMeta(type):
             else:
                 return lambda: deepcopy(field.default)
 
-        biz_class.pybiz.defaults = defaults = {}
+        defaults = biz_class.pybiz.defaults
         for field in biz_class.Schema.fields.values():
             if field.default:
                 defaults[field.name] = build_default_func(field)
@@ -239,11 +204,26 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     Schema = None
     BizList = None
 
+    # built-in fields
+    _id = Id()
+
     def __init__(self, data: Dict = None, **more_data):
         self.internal = DictObject()
         self.internal.state = DirtyDict()
-        self.internal.state = DirtyDict()
-        self.merge(data, **more_data)
+
+        # merge more_data into data
+        data = data or {}
+        data.update(more_data)
+
+        # unlike other fields, whose defaults are generated upon calling
+        # self.create or cls.create_many, the _id field default is generated up
+        # front so that, as much as possible, other BizObjects can access this
+        # object by _id when defining relationships and such.
+        if ID_FIELD_NAME not in data:
+            if ID_FIELD_NAME in self.pybiz.defaults:
+                data[ID_FIELD_NAME] = self.pybiz.defaults['_id']()
+
+        self.merge(data)
 
     def __getitem__(self, key):
         if key in self.Schema.fields:
