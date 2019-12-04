@@ -1,7 +1,7 @@
 import sys
 
 from copy import deepcopy
-from typing import Text, Set, Dict
+from typing import Text, Set, Dict, List
 from collections import defaultdict
 
 from pybiz.util.loggers import console
@@ -16,7 +16,7 @@ class Resolver(object):
         biz_class=None,
         name=None,
         schema=None,
-        state=True,
+        lazy=True,
         on_execute=None,
         on_get=None,
         on_set=None,
@@ -24,15 +24,25 @@ class Resolver(object):
     ):
         self._schema = schema
         self._name = name
+        self._lazy = lazy
         self._biz_class = biz_class
-        self._on_execute = on_execute or self.on_execute
         self._is_bootstrapped = False
         self._is_bound = False
-        self._state = state
 
+        self.on_execute = on_execute or self.on_execute
         self.on_get = on_get or self.on_set
         self.on_set = on_set or self.on_set
         self.on_del = on_del or self.on_del
+
+
+    def __repr__(self):
+        return (
+            f'<Resolver('
+            f'name="{self.name}", '
+            f'tags={"|".join(self.tags())}, '
+            f'priority={self.priority()}'
+            f'>'
+        )
 
     @classmethod
     def bootstrap(cls, biz_class):
@@ -61,6 +71,10 @@ class Resolver(object):
     @property
     def name(self):
         return self._name
+
+    @property
+    def lazy(self):
+        return self._lazy
 
     @property
     def schema(self):
@@ -99,6 +113,15 @@ class Resolver(object):
         """
         return {'untagged'}
 
+    @staticmethod
+    def sort(resolvers: List['Resolver']) -> List['Resolver']:
+        """
+        Sort and return the input resolvers as a new list, orderd by priority
+        int, ascending. This reflects the relative order of intended execution,
+        from first to last.
+        """
+        return sorted(resolvers, key=lambda resolver: resolver.priority())
+
     def copy(self, unbind=True) -> 'Resolver':
         """
         Return a copy of this resolver. If unbind is set, clear away the
@@ -110,22 +133,19 @@ class Resolver(object):
             clone._is_bound = False
         return clone
 
-    def execute(self, instance, *args, **kwargs):
+    def execute(self, instance, query=None, *args, **kwargs):
         """
         Return the result of calling the on_execute callback. If self.state
         is set, then we return any state data that may exist, in which case
         no new call is made.
         """
-        if self._on_execute is not None:
-            if self._state:
-                if self.name not in instance.internal.state:
-                    result = self._on_execute(instance, self, *args, **kwargs)
-                    instance.internal.state[self.name] = result
-                else:
-                    result = instance.internal.state[self.name]
-                return result
+        if self.on_execute is not None:
+            if self.name not in instance.internal.state:
+                result = self.on_execute(instance, self, *args, **kwargs)
+                instance.internal.state[self.name] = result
             else:
-                return self._on_execute(instance, self, *args, **kwargs)
+                result = instance.internal.state[self.name]
+            return result
         else:
             console.warning(
                 message=(
@@ -138,9 +158,12 @@ class Resolver(object):
             )
             return None
 
+    def generate(self, instance, query=None, *args, **kwarg):
+        raise NotImplementedError()
+
     @staticmethod
-    def on_execute(*args, **kwargs):
-        pass
+    def on_execute(query=None, *args, **kwargs):
+        raise NotImplementedError()
 
     @staticmethod
     def on_get(resolver, value):
@@ -184,6 +207,9 @@ class ResolverManager(object):
     def values(self):
         return set(self._resolvers.values())
 
+    def items(self):
+        return list(self._resolvers.items())
+
     def register(self, resolver):
         self._resolvers[resolver.name] = resolver
         for tag in resolver.tags():
@@ -191,8 +217,6 @@ class ResolverManager(object):
 
     def by_tag(self, tag):
         return self._tag_2_resolvers.get(tag, {})
-
-
 
 
 class FieldResolver(Resolver):
@@ -213,7 +237,11 @@ class FieldResolver(Resolver):
     def tags(cls):
         return {'fields'}
 
-    def on_execute(self, instance):
+    @classmethod
+    def priority(cls):
+        return 1
+
+    def on_execute(self, instance, query=None):
         key = self._field.name
         is_value_loaded = key in instance.internal.state
         if self._lazy and (not is_value_loaded):
@@ -221,7 +249,10 @@ class FieldResolver(Resolver):
                 instance.Schema.fields.keys() - instance.internal.state.keys()
             )
             instance.load(unloaded_field_names)
-        return getattr(instance, key)
+        value = getattr(instance, key)
+        for func in (transforms or []):
+            value = func(value)
+        return value
 
 
 class ResolverProperty(property):
@@ -244,7 +275,7 @@ class ResolverProperty(property):
 
     def _fget(self, instance):
         key = self.resolver.name
-        obj = instance.internal.state.get(key)
+        obj = self.resolver.execute(instance, query=None)
         if self.resolver.on_get:
             self.resolver.on_get(instance, resolver, obj)
         return obj
@@ -281,8 +312,8 @@ class ResolverDecorator(object):
     the constructor of the Resolver type (self.resolver_class).
     """
 
-    def __init__(self, resolver=None, schema=None):
-        if callable(resolver):
+    def __init__(self, resolver: Resolver = None, schema=None, **kwargs):
+        if not isinstance(resolver, type):
             # in this case, the decorator was used like "@resolver"
             self.resolver_class = Resolver
             self.on_execute_func = resolver
@@ -294,6 +325,7 @@ class ResolverDecorator(object):
             self.on_execute_func = None
             self.name = None
 
+        self.kwargs = kwargs.copy()
         self.schema = schema
         self.on_get_func = None
         self.on_set_func = None

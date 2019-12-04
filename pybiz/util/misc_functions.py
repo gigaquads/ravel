@@ -158,4 +158,4 @@ def inject(func: Callable, data: Dict):
     """
     Dynamically inject data dict into a function's lexcial scope.
     """
-    func.__globals.__update(data)
+    func.__globals__.update(data)

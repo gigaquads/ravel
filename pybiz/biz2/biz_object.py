@@ -23,7 +23,9 @@ from pybiz.constants import (
 )
 
 from .biz_thing import BizThing
+from .biz_list import BizList
 from .dirty import DirtyDict
+from .query import Query
 from .resolver import (
     Resolver,
     ResolverProperty,
@@ -53,6 +55,7 @@ class BizObjectMeta(type):
         biz_class._extract_field_defaults()
 
     def _analyze(biz_class):
+        # TODO: structure this up
         info = {
             'fields': {},
             'resolvers': {},
@@ -105,6 +108,7 @@ class BizObjectMeta(type):
                 on_get=dec.on_get_func,
                 on_set=dec.on_set_func,
                 on_del=dec.on_del_func,
+                **dec.kwargs,
             )
             resolvers.register(resolver)
 
@@ -176,7 +180,11 @@ class BizObjectMeta(type):
             setattr(biz_class, resolver.name, resolver_prop)
 
     def _build_biz_list(biz_class):
-        pass  # TODO
+        class CustomBizList(BizList):
+            pass
+
+        CustomBizList.pybiz.biz_class = biz_class
+        biz_class.BizList = CustomBizList
 
     def _extract_field_defaults(biz_class):
         def build_default_func(field):
@@ -313,6 +321,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Get the global Dao reference associated with this class.
         """
         return cls.pybiz.dao
+
+    @classmethod
+    def select(cls, *selectors):
+        return Query(cls).select(*selectors)
 
     @property
     def dirty(self) -> Set[Text]:
@@ -728,12 +740,60 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         else:
             self.update()
 
-        for rel in self.relationships.values():
-            biz_thing = self.internal.resolvers.get(rel.name)
-            if biz_thing:
-                biz_thing.save(depth=depth - 1)
+        # TODO: rework this a bit
+        #for rel in self.resolvers.relationships.values():
+        #    biz_thing = self.resolvers.get(rel.name)
+        #    if biz_thing:
+        #        biz_thing.save(depth=depth - 1)
 
         return self
+
+    @classmethod
+    def generate(cls, query: Query = None) -> 'BizObject':
+        query = query or cls.select()
+
+        # partition selectors into those which select fields declared on the
+        # schema and those which do not. This is for the purpose of passing in
+        # field selectors into the schema's built-in fixture data generation
+        # method.
+        other_resolvers = set()
+        field_names = set()
+        if not query.params['select']:
+            field_names.update(cls.pybiz.resolvers.fields.keys())
+        else:
+            for sel in query.params['select']:
+                if isinstance(sel, str):
+                    sel = cls.pybiz.resolvers[sel]
+                    if sel is None:
+                        continue
+                elif isinstance(sel, ResolverProperty):
+                    sel = sel.resolver
+
+                if sel.name in cls.pybiz.schema.fields:
+                    field_names.add(sel.name)
+                elif sel.name in cls.pybiz.resolvers:
+                    other_resolvers.add(sel)
+
+        field_resolvers = [
+            q.resolver for q in query.params['select'].values()
+            if q.resolver.name in cls.pybiz.resolvers.fields
+        ]
+
+        # generate all field data requested
+        data = cls.pybiz.schema.generate(fields=field_names)
+        instance = cls(data=data)
+
+        # recursively generate all other resolvers
+        generated_child_data = {}
+        for resolver in Resolver.sort(other_resolvers):
+            subquery = None
+            if query is not None:
+                subquery = query.params['select'].get(resolver.name)
+            value = resolver.generate(instance, query=subquery)
+            generated_child_data[resolver.name] = value
+
+        instance.merge(generated_child_data)
+        return instance
 
     @classmethod
     def _insert_defaults(cls, record: Dict):

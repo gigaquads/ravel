@@ -11,6 +11,11 @@ import pybiz
 from pybiz import Application
 from pybiz.constants import ID_FIELD_NAME
 from pybiz.biz2.biz_object import BizObject
+from pybiz.biz2.relationship import (
+    Relationship,
+    relationship,
+    RelationshipBizList,
+)
 from pybiz.biz2.resolver import (
     Resolver,
     ResolverProperty,
@@ -25,7 +30,16 @@ def app():
 
 
 @pytest.fixture(scope='function')
-def Dog(app):
+def Person(app):
+    class Person(BizObject):
+        name = pybiz.String()
+
+    app.bind(Person)
+    return Person
+
+
+@pytest.fixture(scope='function')
+def Dog(app, Person):
     class Dog(BizObject):
         mother_id = pybiz.Id()
         color = pybiz.String()
@@ -33,12 +47,20 @@ def Dog(app):
         age = pybiz.Int()
 
         @resolver
-        def mother(self, resolver):
+        def mother(self, resolver, query=None):
             return Dog(color='brown', age=12)
 
         @mother.on_get
         def mother(self, resolver, mother):
             print(f'Getting mother of {self}')
+
+        @relationship(Person)
+        def owner(self, relationship, query=None, *args, **kwargs):
+            return Person(name='Todd')
+
+        @relationship(Person, many=True)
+        def friends(self, relationship, query=None, *args, **kwargs):
+            return [Person(name='Todd')]
 
     app.bind(Dog)
     return Dog
@@ -113,12 +135,12 @@ def test_field_property_gets_value(Dog):
 def test_field_property_sets_value(Dog):
     dog = Dog()
 
-    assert dog.color is None
+    assert dog.internal.state.get('color') is None
     assert 'color' not in dog.internal.state
 
     dog.color = 'red'
     assert 'color' in dog.internal.state
-    assert dog.internal.state['color'] == 'red'
+    assert dog.internal.state.get('color') == 'red'
 
 
 def test_field_property_deletes_value(Dog):
@@ -129,7 +151,7 @@ def test_field_property_deletes_value(Dog):
     assert dog.internal.state['color'] == 'red'
 
     del dog.color
-    assert dog.color is None
+    assert dog.internal.state.get('color') is None
     assert 'color' not in dog.internal.state
 
 
@@ -173,4 +195,47 @@ def test_update(Dog, lassie):
 def test_resolvers_correctly_assembled(Dog):
     assert Dog.pybiz.resolvers['mother'] is Dog.mother.resolver
     assert Dog.pybiz.resolvers.untagged['mother'] is Dog.mother.resolver
+
+
+def test_relationship_executes(Dog):
+    dog = Dog(color='purple', age=12).save()
+    owner = dog.owner
+
+
+def test_relationship_does_append(Dog):
+    dog = Dog(color='purple', age=12).save()
+    cat = Dog(color='green', age=21).save()
+
+    Dog.resolvers['friends'].on_add = MagicMock()
+
+    friends = dog.friends
+    original_len = len(friends)
+
+    friends.append(cat)
+
+    # ensure returns a RelationshipBizList with the right length
+    assert isinstance(friends, RelationshipBizList)
+    assert len(friends) == original_len + 1
+
+    # ensure the on_add callback was called
+    Dog.resolvers['friends'].on_add.assert_called_once_with(
+        Dog.resolvers['friends'], 1, cat
+    )
+
+
+@pytest.mark.parametrize('field_names', [
+    [],
+    ['color'],
+    ['color', 'age']
+])
+def test_basic_fixture_generate_ok(Dog, field_names):
+    fixture = Dog.generate(selectors=field_names)
+    assert fixture._id is not None
+    for k in field_names:
+        assert getattr(fixture, k) is not None
+
+
+def test_relationship_does_insert(Dog): pass
+def test_relationship_does_remove(Dog): pass
+def test_fixture_generates_resolvers_ok(Dog): pass
 
