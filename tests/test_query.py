@@ -137,3 +137,24 @@ def test_generate_recurses_with_query(Thing):
     Thing.pybiz.resolvers['friend'].generate.assert_called_once_with(
         thing, query=query.params['select']['friend']
     )
+
+
+@mark.unit
+@pytest.mark.parametrize('selectors', [
+    tuple(),
+    ('_id',),
+    ('_id', 'a'),
+    ('a'),
+    ('b'),
+    ('a', 'b', 'friend'),
+])
+def test_dump_outputs_expected_items(Thing, selectors):
+    query = Thing.select(Thing.a, Thing.b, Thing.friend)
+    thing = Thing.generate(query)
+    data = thing.dump()
+
+    assert data is not None
+    assert data.get('_id') is thing._id
+
+    for k in selectors:
+        assert k in data

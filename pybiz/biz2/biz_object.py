@@ -35,6 +35,29 @@ from .resolver import (
 )
 
 
+class Dumper(object):
+    def dump(self, target: 'BizObject', selectors=None) -> Dict:
+        raise NotImplementedError()
+
+
+class NestingDumper(Dumper):
+    def dump(self, target: 'BizObject', keys=None) -> Dict:
+
+        state = target.internal.state
+        if keys:
+            state = {k: state.get(k) for k in keys}
+
+        result = {}
+
+        for k, v in state.items():
+            if isinstance(v, BizThing):
+                result[k] = v.dump(style='nested')
+            else:
+                result[k] = v
+
+        return result
+
+
 class BizObjectMeta(type):
     def __init__(biz_class, name, bases, attr_dict):
         super().__init__(name, bases, attr_dict)
@@ -448,14 +471,17 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         # TODO: make "style" an enum
         style = style or 'nested'
         if style == 'nested':
-            dump = NestingDumper()
-        elif style == 'side':
-            dump = SideLoadingDumper()
+            dumper = NestingDumper()
         else:
             raise Exception('# TODO: raise custom exception')
 
+        if selectors is not None:
+            keys = self._normalize_selectors(selectors)
+        else:
+            keys = list(self.internal.state.keys())
+
         # TODO: change "fields" kwarg name to selectors
-        result = dump(target=self, fields=selectors)
+        result = dumper.dump(self, keys=keys)
         return result
 
     @classmethod
