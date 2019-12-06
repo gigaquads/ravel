@@ -4,6 +4,7 @@ os.environ['PYBIZ_CONSOLE_LOG_LEVEL'] = 'WARN'
 
 from mock import MagicMock
 from appyratus.test import mark
+from pprint import pprint as pp
 
 import pytest
 
@@ -38,16 +39,16 @@ def app():
 @pytest.fixture(scope='function')
 def Thing(app):
     class Thing(BizObject):
-        a = fields.String()
-        b = fields.Int()
+        label = fields.String()
+        size = fields.Int()
 
         @relationship(target=lambda: Thing)
         def friend(self, query=None, *args, **kwargs):
-            return Thing(a='friend', b=1)
+            return Thing(label='friend', size=1)
 
         @relationship(target=lambda: Thing.BizList)
         def owners(self, query=None, *args, **kwargs):
-            return [Thing(a='owner', b=2)]
+            return [Thing(label='owner', size=2)]
 
 
     app.bind(Thing)
@@ -64,19 +65,19 @@ def test_entry_is_made_in_query_params(thing_query):
     assert isinstance(thing_query.foo, QueryParameterAssignment)
 
     thing_query.where(1)
-    thing_query.order_by('a')
+    thing_query.order_by('label')
 
     assert 'where' in thing_query.params
     assert thing_query.params['where'] == 1
 
     assert 'order_by' in thing_query.params
-    assert thing_query.params['order_by'] == 'a'
+    assert thing_query.params['order_by'] == 'label'
 
 
 @mark.unit
 def test_resolvers_are_selected(Thing, thing_query):
-    query = thing_query.select(Thing._id, Thing.a)
-    assert {'_id', 'a'} == set(thing_query.params['select'].keys())
+    query = thing_query.select(Thing._id, Thing.label)
+    assert {'_id', 'label'} == set(thing_query.params['select'].keys())
     for k, v in thing_query.params['select'].items():
         assert isinstance(v, ResolverQuery)
         assert v.resolver.name == k
@@ -85,13 +86,13 @@ def test_resolvers_are_selected(Thing, thing_query):
 @mark.unit
 def test_query_generates_correct_dao_call(Thing, thing_query):
     Thing.get_dao = MagicMock()
-    thing_query.select(Thing._id, Thing.a)
+    thing_query.select(Thing._id, Thing.label)
     thing_query.where(Thing._id != None)
     thing_query.execute()
 
     assert Thing.get_dao.query.called_once_with(
         predicate=thing_query.params['where'],
-        fields={Thing._id, Thing.a}
+        fields={Thing._id, Thing.label}
     )
 
 
@@ -104,8 +105,8 @@ def test_relationship_autoconfigures_many(Thing):
 @mark.unit
 def test_generate_recurses_correctly(Thing):
     query = Thing.select(
-        Thing.a,
-        Thing.b,
+        Thing.label,
+        Thing.size,
         Thing.friend,
     )
     thing = Thing.generate(query)
@@ -114,19 +115,19 @@ def test_generate_recurses_correctly(Thing):
     #print(thing.friend.internal.state)
 
     assert isinstance(thing._id, str)
-    assert isinstance(thing.a, str)
-    assert isinstance(thing.b, int)
+    assert isinstance(thing.label, str)
+    assert isinstance(thing.size, int)
     assert isinstance(thing.friend, Thing)
-    assert isinstance(thing.friend.a, str)
-    assert isinstance(thing.friend.b, int)
+    assert isinstance(thing.friend.label, str)
+    assert isinstance(thing.friend.size, int)
     assert isinstance(thing.friend._id, str)
 
 
 @mark.unit
 def test_generate_recurses_with_query(Thing):
     query = Thing.select(
-        Thing.a,
-        Thing.b,
+        Thing.label,
+        Thing.size,
         Thing.friend,
     )
 
@@ -143,18 +144,33 @@ def test_generate_recurses_with_query(Thing):
 @pytest.mark.parametrize('selectors', [
     tuple(),
     ('_id',),
-    ('_id', 'a'),
-    ('a'),
-    ('b'),
-    ('a', 'b', 'friend'),
+    ('_id', 'label',),
+    ('label',),
+    ('size',),
+    ('label', 'size', 'friend',),
 ])
 def test_dump_outputs_expected_items(Thing, selectors):
-    query = Thing.select(Thing.a, Thing.b, Thing.friend)
+    query = Thing.select(Thing.label, Thing.size, Thing.friend)
     thing = Thing.generate(query)
     data = thing.dump()
 
+    pp(data)
+
     assert data is not None
-    assert data.get('_id') is thing._id
+    assert data.get('_id') == thing._id
 
     for k in selectors:
         assert k in data
+
+
+def test_dump_side_loaded_works_with_defaults(Thing):
+    query = Thing.select(Thing.label, Thing.friend)
+    thing = Thing.generate(query)
+
+    result = thing.dump(style='side_loaded')
+
+    assert result.keys() == {'target', 'links'}
+    assert result['target']['_id'] not in result['links']
+    assert len(result['links']) == 1
+
+    pp(result)

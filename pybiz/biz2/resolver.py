@@ -158,6 +158,9 @@ class Resolver(object):
             )
             return None
 
+    def dump(self, dumper: 'Dumper', value):
+        raise NotImplementedError()
+
     def generate(self, instance, query=None, *args, **kwarg):
         raise NotImplementedError()
 
@@ -253,6 +256,12 @@ class FieldResolver(Resolver):
         for func in (transforms or []):
             value = func(value)
         return value
+
+    def dump(self, dumper: 'Dumper', value):
+        processed_value, errors = self._field.process(value)
+        if errors:
+            raise Exception('ValidationError: ' + str(errors))
+        return processed_value
 
 
 class ResolverProperty(property):

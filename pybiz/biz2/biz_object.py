@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Text, Tuple, List, Set, Dict
 
 from appyratus.utils import DictObject
+from appyratus.enum import EnumValueStr
 
 from pybiz.util.misc_functions import (
     is_sequence,
@@ -35,27 +36,74 @@ from .resolver import (
 )
 
 
+class DumpStyle(EnumValueStr):
+    @staticmethod
+    def values():
+        return {
+            'nested',
+            'side_loaded',
+        }
+
+
 class Dumper(object):
-    def dump(self, target: 'BizObject', selectors=None) -> Dict:
+
+    def dump(self, target: 'BizObject', keys=None) -> Dict:
+        return self.on_dump(target, keys)
+
+    def on_dump(self, target: 'BizObject', keys=None) -> Dict:
         raise NotImplementedError()
 
+    @classmethod
+    def get_style(cls):
+        raise NotImplementedError()
 
-class NestingDumper(Dumper):
-    def dump(self, target: 'BizObject', keys=None) -> Dict:
+    @classmethod
+    def for_style(cls, style: DumpStyle) -> 'Dumper':
+        if style == DumpStyle.nested:
+            return NestedDumper()
+        if style == DumpStyle.side_loaded:
+            return SideLoadedDumper()
 
-        state = target.internal.state
-        if keys:
-            state = {k: state.get(k) for k in keys}
 
-        result = {}
+class NestedDumper(Dumper):
 
-        for k, v in state.items():
-            if isinstance(v, BizThing):
-                result[k] = v.dump(style='nested')
-            else:
-                result[k] = v
+    @classmethod
+    def get_style(cls):
+        return DumpStyle.nested
 
-        return result
+    def on_dump(self, target: 'BizObject', keys) -> Dict:
+        return {
+            k: target.pybiz.resolvers[k].dump(self, v)
+            for k, v in target.internal.state.items()
+        }
+
+
+class SideLoadedDumper(Dumper):
+
+    @classmethod
+    def get_style(cls):
+        return DumpStyle.side_loaded
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.links = {}
+
+    def on_dump(self, target: 'BizObject', keys) -> Dict:
+        self.links[target._id] = {
+            k: target.pybiz.resolvers[k].dump(self, v)
+            for k, v in target.internal.state.items()
+            if target.pybiz.resolvers[k].name not in
+                target.pybiz.resolvers.relationships
+        }
+
+        for k, v in target.internal.state.items():
+            resolver = target.pybiz.resolvers[k]
+            resolver.dump(self, v)
+
+        return {
+            'target': self.links.pop(target._id),
+            'links': self.links,
+        }
 
 
 class BizObjectMeta(type):
@@ -463,26 +511,23 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         return True
 
-    def dump(self, selectors=None, style=None) -> Dict:
+    def dump(self, resolvers: Set[Text] = None, style: DumpStyle = None) -> Dict:
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
         """
-        # TODO: make "style" an enum
-        style = style or 'nested'
-        if style == 'nested':
-            dumper = NestingDumper()
-        else:
-            raise Exception('# TODO: raise custom exception')
+        # get Dumper instance based on DumpStyle (nested, side-loaded, etc)
+        dumper = Dumper.for_style(style or DumpStyle.nested)
 
-        if selectors is not None:
-            keys = self._normalize_selectors(selectors)
+        if resolvers is not None:
+            # only dump resolver state specifically requested
+            keys_to_dump = self._normalize_selectors(resolvers)
         else:
-            keys = list(self.internal.state.keys())
+            # or else dump all instance state
+            keys_to_dump = list(self.internal.state.keys())
 
-        # TODO: change "fields" kwarg name to selectors
-        result = dumper.dump(self, keys=keys)
-        return result
+        dumped_instance_state = dumper.dump(self, keys=keys_to_dump)
+        return dumped_instance_state
 
     @classmethod
     def query(
