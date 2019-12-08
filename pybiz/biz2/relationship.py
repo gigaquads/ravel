@@ -88,41 +88,22 @@ class Relationship(Resolver):
             return self.target.generate()
 
     def dump(self, dumper: 'Dumper', value):
-        style = dumper.get_style()
-
         if self._many:
             biz_objects = value
         else:
             biz_objects = [value]
 
-        if style == DumpStyle.nested:
-            dumped_biz_objects = [
-                dumper.dump(biz_obj) for biz_obj in biz_objects
-            ]
-            if not dumped_biz_objects:
-                return []
-            else:
-                return (
-                    dumped_biz_objects if self._many
-                    else dumped_biz_objects[0]
-                )
-        elif style == DumpStyle.side_loaded:
-            for biz_obj in biz_objects:
-                if biz_obj is None:
-                    continue
-                dumped_biz_obj = self._dump_root_biz_object(dumper, biz_obj)
-                if biz_obj._id not in dumper.links:
-                    dumper.links[biz_obj._id] = dumped_biz_obj
-                else:
-                    dumper.links[biz_obj._id].update(dumped_biz_obj)
+        dumped_biz_objects = [
+            dumper.dump(biz_obj) for biz_obj in biz_objects
+        ]
 
-
-    def _dump_root_biz_object(self, dumper, biz_obj):
-        data = {}
-        for k, v in biz_obj.internal.state.items():
-            resolver = biz_obj.pybiz.resolvers[k]
-            data[k] = resolver.dump(dumper, v)
-        return data
+        if not dumped_biz_objects:
+            return [] if self._many else None
+        else:
+            return (
+                dumped_biz_objects if self._many
+                else dumped_biz_objects[0]
+            )
 
     @classmethod
     def tags(cls):

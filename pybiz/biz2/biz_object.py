@@ -23,6 +23,7 @@ from pybiz.constants import (
     REV_FIELD_NAME,
 )
 
+from .util import is_biz_list, is_biz_object
 from .biz_thing import BizThing
 from .biz_list import BizList
 from .dirty import DirtyDict
@@ -47,12 +48,6 @@ class DumpStyle(EnumValueStr):
 
 class Dumper(object):
 
-    def dump(self, target: 'BizObject', keys=None) -> Dict:
-        return self.on_dump(target, keys)
-
-    def on_dump(self, target: 'BizObject', keys=None) -> Dict:
-        raise NotImplementedError()
-
     @classmethod
     def get_style(cls):
         raise NotImplementedError()
@@ -71,7 +66,7 @@ class NestedDumper(Dumper):
     def get_style(cls):
         return DumpStyle.nested
 
-    def on_dump(self, target: 'BizObject', keys) -> Dict:
+    def dump(self, target: 'BizObject', keys=None) -> Dict:
         return {
             k: target.pybiz.resolvers[k].dump(self, v)
             for k, v in target.internal.state.items()
@@ -84,25 +79,44 @@ class SideLoadedDumper(Dumper):
     def get_style(cls):
         return DumpStyle.side_loaded
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.links = {}
-
-    def on_dump(self, target: 'BizObject', keys) -> Dict:
-        self.links[target._id] = {
-            k: target.pybiz.resolvers[k].dump(self, v)
-            for k, v in target.internal.state.items()
-            if target.pybiz.resolvers[k].name not in
-                target.pybiz.resolvers.relationships
+    def dump(self, target: 'BizObject', keys=None) -> Dict:
+        links = self._dump_recursive(target)
+        return {
+            'target': links.pop(target._id),
+            'links': dict(links),
         }
 
-        for k, v in target.internal.state.items():
-            resolver = target.pybiz.resolvers[k]
-            resolver.dump(self, v)
+    def _dump_recursive(self, biz_object, acc=None):
+        shallow_data = {}
+        acc = acc if acc is not None else defaultdict(dict)
+        relationships = biz_object.pybiz.resolvers.relationships
+        for k, v in biz_object.internal.state.items():
+            resolver = biz_object.pybiz.resolvers[k]
+            if resolver.name not in relationships:
+                shallow_data[k] = resolver.dump(self, v)
+            else:
+                relationship = resolver
+                shallow_data[k] = getattr(v, ID_FIELD_NAME)
+                if k in biz_object.internal.state:
+                    self._recurse_on_biz_thing(v, acc)
 
+        biz_obj_id = getattr(biz_object, ID_FIELD_NAME)
+        acc[biz_obj_id].update(shallow_data)
+        return acc
+
+    def _recurse_on_biz_thing(self, biz_thing, acc):
+        if is_biz_list(biz_thing):
+            rel_biz_objects = biz_thing
+        else:
+            rel_biz_objects = [biz_thing]
+        for rel_biz_obj in rel_biz_objects:
+            self._dump_recursive(rel_biz_obj, acc)
+
+    def _extract_relationship_state(self, biz_object):
         return {
-            'target': self.links.pop(target._id),
-            'links': self.links,
+            k: biz_object.internal.state[k]
+            for k in biz_object.pybiz.resolvers.relationships
+            if k in biz_object.internal.state
         }
 
 
