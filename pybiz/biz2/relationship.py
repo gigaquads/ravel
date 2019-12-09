@@ -21,14 +21,28 @@ class Relationship(Resolver):
     ):
         self.on_add = on_add or self.on_add
         self.on_rem = on_rem or self.on_rem
+
+        # If `many` is set, then we expect this relationship to return a a
+        # collection (e.g. a list, BizList) instead of a single BizObject.  this
+        # flag is set automatically during the bind lifecycle method of the this
+        # Relationship.
         self._many = None
 
-        on_execute = kwargs.get('on_execute', None)
+        # wrap the raw on_execute callback in a dynamic function that ensures
+        # that Relationship return values are BizThing instances.
+        on_execute = kwargs.pop('on_execute', None)
         if on_execute is not None:
-            kwargs['on_execute'] = self.wrap_on_execute(on_execute)
+            on_execute_wrapper = self._wrap_on_execute(on_execute)
+        else:
+            on_execute_wrapper = None
 
-        super().__init__(*args, **kwargs)
+        super().__init__(on_execute=on_execute_wrapper, *args, **kwargs)
 
+        # if `target` was not provided as a callback but as a class object,
+        # we can eagerly set self._target. otherwise, we can only call the
+        # callback lazily, during the bind lifecycle method, after its lexical
+        # scope has been updated with references to the BizObject types picked
+        # up by the host Application.
         if isinstance(target, type):
             self._target_callback = None
             self._target = target
@@ -36,7 +50,7 @@ class Relationship(Resolver):
             self._target_callback = target
             self._target = None
 
-    def wrap_on_execute(self, on_execute):
+    def _wrap_on_execute(self, on_execute):
         def wrapper(instance, *args, **kwargs):
             value = on_execute(instance, *args, *kwargs)
             if self.many and (value is not None):
@@ -49,7 +63,7 @@ class Relationship(Resolver):
             else:
                 return value
 
-        wrapper.__name__ = on_execute.__name__
+        wrapper.__name__ = f'{on_execute.__name__}_wrapper'
         return wrapper
 
     def on_bind(self, biz_class):
@@ -88,22 +102,22 @@ class Relationship(Resolver):
             return self.target.generate()
 
     def dump(self, dumper: 'Dumper', value):
+        """
+        NOTE: The built-in Dumper classes do not call Relationship.dump. They
+        instead recurse down the Relationship tree using a custom traversal
+        algorithm.
+        """
+        def dump_one(biz_obj):
+            return {
+                k: biz_obj.pybiz.resolvers[k].dump(dumper, v)
+                for k, v in biz_obj.internal.state.items()
+            }
+
         if self._many:
-            biz_objects = value
+            return [dump_one(biz_obj) for biz_obj in value]
         else:
-            biz_objects = [value]
+            return dump_one(biz_obj)
 
-        dumped_biz_objects = [
-            dumper.dump(biz_obj) for biz_obj in biz_objects
-        ]
-
-        if not dumped_biz_objects:
-            return [] if self._many else None
-        else:
-            return (
-                dumped_biz_objects if self._many
-                else dumped_biz_objects[0]
-            )
 
     @classmethod
     def tags(cls):
