@@ -13,7 +13,7 @@ def is_biz_object(obj):
     Return True if obj is an instance of BizObject.
     """
     return (
-        getattr(obj, IS_BIZ_OBJECT_ANNOTATION, False)
+        getattr(obj, '_pybiz_is_biz_object', False)
         if obj else False
     )
 

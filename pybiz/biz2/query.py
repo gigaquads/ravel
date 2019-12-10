@@ -134,6 +134,22 @@ class Query(AbstractQuery):
 
         return self
 
+    def generate(self, count=1, first=False):
+        """
+        This method is really just syntactic surgar for doing query.generate()
+        instead of BizObject.generate(query).
+        """
+        biz_objects = self.biz_class.BizList(
+            self.biz_class.generate(query=self)
+            for i in range(count)
+        )
+        if first:
+            return biz_objects[0]
+        else:
+            return biz_objects
+
+
+
 
 class ResolverQuery(Query):
     def __init__(self, resolver, *args, **kwargs):

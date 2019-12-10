@@ -174,3 +174,66 @@ def test_dump_side_loaded_works_with_defaults(Thing):
     assert len(result['links']) == 1
 
     pp(result)
+
+
+@mark.unit
+@pytest.mark.parametrize('num_to_create, num_to_update', [
+    [2, 0],
+    [1, 1],
+    [0, 2],
+    [0, 0],
+])
+def test_save_many_correctly_partitions_objects(
+    Thing, num_to_create, num_to_update
+):
+    """
+    Make sure that the "save" method sends the correct biz objects to create or
+    update internally.
+    """
+    query = Thing.select(Thing.label, Thing.friend)
+
+    # to_create and to_update are BizLists
+    to_create = query.generate(num_to_create)
+    to_update = query.generate(num_to_update).clean()
+
+    Thing.create_many = MagicMock()
+    Thing.update_many = MagicMock()
+
+    things = to_create + to_update
+    retval = Thing.save_many(things, depth=0)
+
+    if num_to_create:
+        Thing.create_many.assert_called_once_with(to_create.internal.data)
+    else:
+        assert not Thing.create_many.called
+
+    if num_to_update:
+        Thing.update_many.assert_called_once_with(to_update.internal.data)
+    else:
+        assert not Thing.update_many.called
+
+
+def test_save_recurses_on_resolvers(
+    Thing,
+):
+    query = Thing.select(Thing.label, Thing.friend)
+    things = query.generate(count=1)
+    thing = things[0]
+
+    Thing.create_many = MagicMock()
+    Thing.update_many = MagicMock()
+
+    friend = thing.friend  # cause state to be written lazily
+
+    mock_resolver = MagicMock()
+    mock_resolver.name = 'friend'
+    mock_resolver.tags = lambda: ['relationships']
+    mock_resolver.biz_class = Thing
+    mock_resolver.on_save.return_value = friend
+
+    thing.pybiz.resolvers['friend'] = mock_resolver
+
+    retval = Thing.save_many(things, depth=1)
+
+    assert Thing.create_many.call_count == 2
+    assert not Thing.update_many.call_count

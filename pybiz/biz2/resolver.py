@@ -9,6 +9,8 @@ from pybiz.util.misc_functions import (
     is_sequence,
 )
 
+from .biz_thing import BizThing
+
 
 class Resolver(object):
     def __init__(
@@ -161,24 +163,30 @@ class Resolver(object):
     def dump(self, dumper: 'Dumper', value):
         raise NotImplementedError()
 
-    def generate(self, instance, query=None, *args, **kwarg):
+    def generate(
+        self, instance: 'BizObject', query: 'Query' = None, *args, **kwargs
+    ):
         raise NotImplementedError()
 
     @staticmethod
-    def on_execute(query=None, *args, **kwargs):
+    def on_execute(query: 'Query' = None, *args, **kwargs):
         raise NotImplementedError()
 
     @staticmethod
-    def on_get(resolver, value):
+    def on_get(resolver: 'Resolver', value):
         return None
 
     @staticmethod
-    def on_set(resolver, old_value, value):
-        return None
+    def on_set(resolver: 'Resolver', old_value, value):
+        return
 
     @staticmethod
-    def on_del(resolver, deleted_value):
-        return None
+    def on_del(resolver: 'Resolver', deleted_value):
+        return
+
+    @staticmethod
+    def on_save(resolver: 'Resolver', owner: 'BizObject', value) -> 'BizThing':
+        return value if isinstance(value, BizThing) else None
 
 
 class ResolverManager(object):
@@ -191,6 +199,18 @@ class ResolverManager(object):
 
     def __getitem__(self, resolver_name):
         return self._resolvers.get(resolver_name)
+
+    def __setitem__(self, resolver_name, resolver):
+        assert resolver_name == resolver.name
+        old_resolver = self._resolvers.get(resolver_name)
+        if old_resolver is not None:
+            del self._resolvers[resolver_name]
+            for tag in old_resolver.tags():
+                del self._tag_2_resolvers[tag][resolver_name]
+
+        self._resolvers[resolver_name] = resolver
+        for tag in resolver.tags():
+            self._tag_2_resolvers[tag][resolver_name] = resolver
 
     def __iter__(self):
         return iter(self._resolvers)
@@ -218,8 +238,16 @@ class ResolverManager(object):
         for tag in resolver.tags():
             self._tag_2_resolvers[tag][resolver.name] = resolver
 
-    def by_tag(self, tag):
-        return self._tag_2_resolvers.get(tag, {})
+    def by_tag(self, tag, invert=False):
+        if not invert:
+            return self._tag_2_resolvers.get(tag, {})
+        else:
+            resolvers = {}
+            keys_to_exclude = self._tag_2_resolvers.get(tag, {}).keys()
+            for tag_key, resolver_dict in self._tag_2_resolvers.items():
+                if tag_key != tag:
+                    resolvers.update(resolver_dict)
+            return resolvers
 
 
 class FieldResolver(Resolver):

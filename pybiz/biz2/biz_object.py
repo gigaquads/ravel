@@ -330,6 +330,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return Query(cls).select(*selectors)
 
     @property
+    def dao(self):
+        return self.get_dao()
+
+    @property
     def dirty(self) -> Set[Text]:
         return {
             k: self.internal.state[k]
@@ -577,26 +581,28 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def delete_all(cls) -> None:
         cls.get_dao().delete_all()
 
-    @property
-    def dao(self):
-        return self.get_dao()
+    @classmethod
+    def exists(cls, _id) -> bool:
+        """
+        Does a simple check if a BizObject exists by id.
+        """
+        if is_biz_object(_id):
+            obj = _id
+            _id = getattr(obj, ID_FIELD_NAME)
+
+        return cls.get_dao().exists(_id=_id)
+
+    def save(self, depth=0):
+        return self.save_many([self], depth=depth)[0]
 
     def create(self, data: Dict = None) -> 'BizObject':
         if data:
             self.merge(data)
 
-        prepared_record = self.internal.state.copy()
-        self._insert_defaults(prepared_record)
+        prepared_record = self._prepare_record_for_create()
         prepared_record.pop(REV_FIELD_NAME, None)
-
-        prepared_record, errors = self.pybiz.schema.process(prepared_record)
-        if errors:
-            raise ValidationError(
-                message=f'could not create {get_class_name(self)} object',
-                data=errors
-            )
-
         created_record = self.get_dao().create(prepared_record)
+
         self.internal.state.update(created_record)
 
         return self.clean()
@@ -631,6 +637,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         self.internal.state.update(updated_record)
         return self.clean()
 
+    @property
+    def is_created(self):
+        return not (self._id is None or ID_FIELD_NAME in self.dirty)
+
     @classmethod
     def create_many(cls, biz_objs: List['BizObject']) -> 'BizList':
         """
@@ -644,21 +654,12 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 continue
             if isinstance(biz_obj, dict):
                 biz_obj = cls(data=biz_obj)
-            record = biz_obj.internal.state.copy()
-            cls._insert_defaults(record)
-            record, errors = cls.schema.process(record)
-            record.pop(REV_FIELD_NAME, None)
-            if errors:
-                raise ValidationError(
-                    message=(
-                        f'could not create {get_class_name(cls)} object: '
-                        f'{errors}'
-                    ),
-                    data=errors
-                )
+
+            record = biz_obj._prepare_record_for_create()
             records.append(record)
 
-        created_records = cls.get_dao().create_many(records)
+        dao = cls.get_dao()
+        created_records = dao.create_many(records)
         for biz_obj, record in zip(biz_objs, created_records):
             biz_obj.internal.state.update(record)
             biz_obj.clean()
@@ -734,22 +735,59 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         return cls.BizList(biz_objs)
 
-    def save(self, depth=1):
-        if not depth:
-            return self
+    @classmethod
+    def save_many(
+        cls,
+        biz_objects: List['BizObject'],
+        depth: int = 0
+    ) -> 'BizList':
+        """
+        Essentially a bulk upsert.
+        """
+        # partition biz_objects into those that are "uncreated" and those which
+        # simply need to be updated.
+        to_update = []
+        to_create = []
+        for biz_obj in biz_objects:
+            # TODO: merge duplicates
+            if not biz_obj.is_created:
+                to_create.append(biz_obj)
+            else:
+                to_update.append(biz_obj)
 
-        if self._id is None or ID_FIELD_NAME in self.dirty:
-            self.create()
-        else:
-            self.update()
+        # perform bulk create and update
+        if to_create:
+            created = cls.create_many(to_create)
+        if to_update:
+            updated = cls.update_many(to_update)
 
-        # TODO: rework this a bit
-        #for rel in self.resolvers.relationships.values():
-        #    biz_thing = self.resolvers.get(rel.name)
-        #    if biz_thing:
-        #        biz_thing.save(depth=depth - 1)
+        retval = cls.BizList(to_update + to_create)
 
-        return self
+        if depth < 1:
+            # base case. do not recurse on Resolvers
+            return retval
+
+        # aggregate and save all BizObjects referenced by all objects in
+        # `biz_object` via their resolvers.
+        class_2_objects = defaultdict(set)
+        resolvers = cls.pybiz.resolvers.by_tag('fields', invert=True)
+        for resolver in resolvers.values():
+            for biz_obj in biz_objects:
+                if resolver.name in biz_obj.internal.state:
+                    value = biz_obj.internal.state[resolver.name]
+                    biz_thing_to_save = resolver.on_save(resolver, biz_obj, value)
+                    if biz_thing_to_save:
+                        if is_biz_object(biz_thing_to_save):
+                            class_2_objects[resolver.biz_class].add(biz_thing_to_save)
+                        else:
+                            assert is_sequence(biz_thing_to_save)
+                            class_2_objects[resolver.biz_class].update(biz_thing_to_save)
+
+        # recursively call save_many for each type of BizObject
+        for biz_class, biz_objects in class_2_objects.items():
+            biz_class.save_many(biz_objects, depth=depth-1)
+
+        return retval
 
     @classmethod
     def generate(cls, query: Query = None) -> 'BizObject':
@@ -798,12 +836,29 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         instance.merge(generated_child_data)
         return instance
 
-    @classmethod
-    def _insert_defaults(cls, record: Dict):
-        for k, default in cls.pybiz.defaults.items():
+    def _prepare_record_for_create(self):
+        """
+        Prepares a a BizObject state dict for insertion via DAL.
+        """
+        # extract only those elements of state data that correspond to
+        # Fields declared on this BizObject class.
+        record = {
+            k: v for k, v in self.internal.state.items()
+            if k in self.pybiz.resolvers.fields
+        }
+        # when inserting or updating, we don't want to write the _rev value on
+        # accident. The DAL is solely responsible for modifying this value.
+        if REV_FIELD_NAME in record:
+            del record[REV_FIELD_NAME]
+
+        # generate default values for any missing fields
+        # that specifify a default
+        for k, default in self.pybiz.defaults.items():
             if k not in record:
                 def_val = default()
                 record[k] = def_val
+
+        return record
 
     @staticmethod
     def _normalize_selectors(selectors: Set):
