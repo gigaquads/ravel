@@ -9,7 +9,7 @@ from appyratus.utils import DictObject, DictUtils
 from pybiz.manifest import Manifest
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
-from pybiz.util.misc_functions import get_class_name, inject
+from pybiz.util.misc_functions import get_class_name, inject, is_sequence
 from pybiz.schema import Field, UuidString
 
 from .exceptions import ApplicationError
@@ -153,40 +153,54 @@ class Application(object):
                 data={'endpoint': endpoint}
             )
 
-    def bind(self, biz_class, dao_class=None):
-        if dao_class is None:
-            dao_obj = biz_class.__dao__()
-            if not isinstance(dao_obj, type):
-                dao_class = type(dao_obj)
-            else:
-                dao_class = dao_obj
+    def bind(self, biz_classes, dao_class=None):
+        """
+        Dynamically register one or more BizObject classes with this
+        bootstrapped Application. If a dao_class is specified, it will be used
+        for all classes in biz_classes. Otherwise, the Dao class will come from
+        calling the __dao__ method on each BizClass.
+        """
+        assert self.is_bootstrapped
 
-        self._dal[get_class_name(dao_class)] = dao_class
-        self._biz[get_class_name(biz_class)] = biz_class
+        def bind_one(biz_class, dao_class):
+            if dao_class is None:
+                dao_obj = biz_class.__dao__()
+                if not isinstance(dao_obj, type):
+                    dao_class = type(dao_obj)
+                else:
+                    dao_class = dao_obj
 
-        if self.is_bootstrapped:
+            self._dal[get_class_name(dao_class)] = dao_class
+            self._biz[get_class_name(biz_class)] = biz_class
+
             if not biz_class.is_bootstrapped():
                 biz_class.bootstrap(self)
             if not dao_class.is_bootstrapped():
                 dao_class.bootstrap(self)
 
-        binding = self.binder.register(biz_class=biz_class, dao_class=dao_class)
-        binding.bind(self.binder)
+            binding = self.binder.register(biz_class=biz_class, dao_class=dao_class)
+            binding.bind(self.binder)
+
+        if not is_sequence(biz_classes):
+            biz_classes = [biz_classes]
+
+        for biz_class in biz_classes:
+            bind_one(biz_class, dao_class)
+
+        return self
 
     def bootstrap(
         self,
         manifest: Manifest = None,
         namespace: Dict = None,
-        rebootstrap: bool = False,
         *args,
         **kwargs
     ):
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
-        if self.is_bootstrapped and not rebootstrap:
+        if self.is_bootstrapped:
             console.warning(f'{self} already bootstrapped. skipping...')
-            return self
 
         console.debug(f'bootstrapping "{get_class_name(self)}" Application...')
 
@@ -213,7 +227,7 @@ class Application(object):
         self._api.update(self._endpoints)
 
         self._manifest.bootstrap()
-        self._manifest.bind(rebind=rebootstrap)
+        self._manifest.bind(rebind=True)
 
         # bootstrap the middlware
         for mware in self.middleware:
