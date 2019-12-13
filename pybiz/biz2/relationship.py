@@ -50,12 +50,13 @@ class Relationship(Resolver):
             self._target_callback = target
             self._target = None
 
+        self._biz_list_class = None
+
     def _wrap_on_execute(self, on_execute):
         def wrapper(instance, *args, **kwargs):
             value = on_execute(instance, *args, *kwargs)
             if self.many and (value is not None):
-                return RelationshipBizList(
-                    biz_class=self.target,
+                return self._biz_list_class(
                     biz_objects=value,
                     relationship=self,
                     owner=instance,
@@ -78,12 +79,19 @@ class Relationship(Resolver):
                 self._many = False
         else:
             if is_biz_list(self._target):
-                self._target = self._target.biz_class
                 self._many = True
+                self._biz_list_class = type(
+                    'RelationshipBizList',
+                    (RelationshipBizList, ),
+                    {'biz_class': self._target}
+                )
             else:
                 self._many = False
 
             self._target = self._target
+
+        self._biz_list_class = type('RelationshipBizList', (RelationshipBizList, ), {})
+        self._biz_list_class.pybiz.biz_class = self._target
 
     def generate(self, instance, query=None, *args, **kwarg):
         count = 1 if not self.many else None
@@ -153,8 +161,8 @@ class RelationshipBizList(BizList):
         **kwargs
     ):
         super().__init__(*args, **kwargs)
-        self._owner = owner
-        self._relationship = relationship
+        self.internal.owner = owner
+        self.internal.relationship = relationship
 
     def append(self, biz_object: 'BizObject'):
         super().append(biz_object)
@@ -172,14 +180,14 @@ class RelationshipBizList(BizList):
         return self
 
     def _perform_callback_on_add(self, offset, biz_objects):
-        rel = self._relationship
+        rel = self.internal.relationship
         for idx, biz_obj in enumerate(biz_objects):
-            self._relationship.on_add(rel, offset + idx, biz_obj)
+            self.internal.relationship.on_add(rel, offset + idx, biz_obj)
 
     def _perform_callback_on_rem(self, offset, biz_objects):
-        rel = self._relationship
+        rel = self.internal.relationship
         for idx, biz_obj in enumerate(biz_objects):
-            self._relationship.on_rem(rel, offset + idx, biz_obj)
+            self.internal.relationship.on_rem(rel, offset + idx, biz_obj)
 
 
 class relationship(ResolverDecorator):
