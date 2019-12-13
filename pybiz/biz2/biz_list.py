@@ -1,4 +1,4 @@
-from typing import List, Type, Dict
+from typing import List, Type, Dict, Set, Text
 
 from appyratus.utils import DictObject
 
@@ -6,6 +6,7 @@ from pybiz.util.misc_functions import get_class_name, is_sequence
 from pybiz.constants import IS_BIZ_LIST_ANNOTATION
 
 from .biz_thing import BizThing
+from .dumper import Dumper, DumpStyle
 
 
 class BizListMeta(type):
@@ -111,7 +112,56 @@ class BizList(BizThing, metaclass=BizListMeta):
         self.pybiz.biz_class.update_many(self, data=data, **more_data)
         return self
 
+    def delete(self):
+        self.biz_class.delete_many({
+            biz_obj._id for biz_obj in self.internal.data
+            if biz_obj and biz_obj.is_created
+        })
+        return self
+
+    def save(self, depth=0):
+        self.biz_class.save_many(self.internal.data, depth=depth)
+        return self
+
     def clean(self, fields=None):
         for biz_obj in self.internal.data:
             biz_obj.clean(fields=fields)
+        return self
+
+    def mark(self, fields=None):
+        for biz_obj in self.internal.data:
+            biz_obj.mark(fields=fields)
+        return self
+
+    def dump(
+        self,
+        resolvers: Set[Text] = None,
+        style: DumpStyle = None,
+    ) -> List[Dict]:
+        return [
+            biz_obj.dump(resolvers=resolvers, style=style)
+            for biz_obj in self.internal.data
+        ]
+
+    def load(self, resolvers: Set[Text] = None):
+        stale_id_2_object = {}
+        for biz_obj in self.internal.data:
+            if biz_obj and biz_obj._id:
+                stale_id_2_object[biz_obj._id] = biz_obj
+
+        if stale_id_2_object:
+            fresh_objects = self.biz_class.get_many(
+                stale_id_2_object.keys(), select=resolvers
+            )
+            for fresh_obj in fresh_objects:
+                stale_obj = stale_id_2_object.get(fresh_obj._id)
+                if stale_obj is not None:
+                    stale_obj.merge(fresh_obj)
+                    stale_obj.clean(fresh_obj.internal.state.keys())
+
+        return self
+
+    def unload(self, keys: Set[Text]) -> 'BizList':
+        for biz_obj in self.internal.data:
+            biz_obj.unload(keys)
         return self
