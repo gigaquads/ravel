@@ -81,7 +81,6 @@ class Query(AbstractQuery):
         )
 
         # TODO: apply FieldResolver transforms
-
         biz_objects = [
             cls(data=record) for record in records
         ]
@@ -115,7 +114,9 @@ class Query(AbstractQuery):
                 resolver = None
                 if isinstance(x, str):
                     resolver = self._biz_class.resolvers[x]
-                    if not resolver:
+                    if resolver:
+                        rq = ResolverQuery(resolver)
+                    else:
                         continue
                 elif isinstance(x, ResolverProperty):
                     resolver = x.resolver

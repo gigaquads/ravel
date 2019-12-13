@@ -11,6 +11,7 @@ import pybiz
 from pybiz import Application
 from pybiz.constants import ID_FIELD_NAME
 from pybiz.biz2.biz_object import BizObject
+from pybiz.biz2.query import Query
 from pybiz.biz2.relationship import (
     Relationship,
     relationship,
@@ -58,7 +59,7 @@ def Dog(app, Person):
         def owner(self, relationship, query=None, *args, **kwargs):
             return Person(name='Todd')
 
-        @relationship(Person, many=True)
+        @relationship(Person.BizList)
         def friends(self, relationship, query=None, *args, **kwargs):
             return [Person(name='Todd')]
 
@@ -229,7 +230,8 @@ def test_relationship_does_append(Dog):
     ['color', 'age']
 ])
 def test_basic_fixture_generate_ok(Dog, field_names):
-    fixture = Dog.generate(selectors=field_names)
+    query = Query(Dog).select(field_names)
+    fixture = Dog.generate(query)
     assert fixture._id is not None
     for k in field_names:
         assert getattr(fixture, k) is not None

@@ -1,12 +1,22 @@
 import sys
+import re
 
 from copy import deepcopy
 from typing import Text, Set, Dict, List
 from collections import defaultdict
 
+import pybiz.biz
+
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import (
     is_sequence,
+    flatten_sequence,
+)
+from pybiz.predicate import (
+    Predicate,
+    ConditionalPredicate,
+    BooleanPredicate,
+    OP_CODE,
 )
 
 from .biz_thing import BizThing
@@ -20,6 +30,7 @@ class Resolver(object):
         schema=None,
         lazy=True,
         on_execute=None,
+        on_post_execute=None,
         on_get=None,
         on_set=None,
         on_del=None,
@@ -32,10 +43,10 @@ class Resolver(object):
         self._is_bound = False
 
         self.on_execute = on_execute or self.on_execute
+        self.on_post_execute = on_post_execute or self.on_post_execute
         self.on_get = on_get or self.on_set
         self.on_set = on_set or self.on_set
         self.on_del = on_del or self.on_del
-
 
     def __repr__(self):
         return (
@@ -147,6 +158,7 @@ class Resolver(object):
                 instance.internal.state[self.name] = result
             else:
                 result = instance.internal.state[self.name]
+            result = self.on_post_execute(instance, self, result, query)
             return result
         else:
             console.warning(
@@ -169,8 +181,23 @@ class Resolver(object):
         raise NotImplementedError()
 
     @staticmethod
-    def on_execute(query: 'Query' = None, *args, **kwargs):
+    def on_execute(
+        instance: 'BizObject',
+        resolver: 'Resolver',
+        query: 'Query' = None,
+        *args,
+        **kwargs
+    ):
         raise NotImplementedError()
+
+    @staticmethod
+    def on_post_execute(
+        instance: 'BizObject',
+        resolver: 'Resolver',
+        result: object,
+        query: 'Query' = None,
+    ):
+        return result
 
     @staticmethod
     def on_get(resolver: 'Resolver', value):
@@ -225,10 +252,10 @@ class ResolverManager(object):
         return len(self._resolvers)
 
     def keys(self):
-        return set(self._resolvers.keys())
+        return list(self._resolvers.keys())
 
     def values(self):
-        return set(self._resolvers.values())
+        return list(self._resolvers.values())
 
     def items(self):
         return list(self._resolvers.items())
@@ -257,6 +284,15 @@ class FieldResolver(Resolver):
         self._lazy = lazy
 
     @property
+    def asc(self) -> 'OrderBy':
+        return pybiz.biz.OrderBy(self.field.source, desc=False)
+
+    @property
+    def desc(self) -> 'OrderBy':
+        return pybiz.biz.OrderBy(self.field.source, desc=True)
+
+
+    @property
     def lazy(self):
         return self._lazy
 
@@ -280,9 +316,7 @@ class FieldResolver(Resolver):
                 instance.Schema.fields.keys() - instance.internal.state.keys()
             )
             instance.load(unloaded_field_names)
-        value = getattr(instance, key)
-        for func in (transforms or []):
-            value = func(value)
+        value = instance.internal.state.get(key)
         return value
 
     def dump(self, dumper: 'Dumper', value):
@@ -300,11 +334,17 @@ class ResolverProperty(property):
 
     def __init__(self, resolver: Resolver):
         self.resolver = resolver
+        self._hash = hash(self.biz_class) + int(
+            re.sub(r'[^a-zA-Z0-9]', '', self.resolver.name), 36
+        )
         super().__init__(
             fget=self._fget,
             fset=self._fset,
             fdel=self._fdel,
         )
+
+    def __hash__(self):
+        return self._hash
 
     @property
     def biz_class(self):
@@ -329,6 +369,44 @@ class ResolverProperty(property):
         obj = instance.internal.state.pop(key, None)
         if self.resolver.on_del:
             self.resolver.on_del(resolver, obj)
+
+
+class FieldResolverProperty(ResolverProperty):
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def __eq__(self, other: Predicate) -> Predicate:
+        return ConditionalPredicate(OP_CODE.EQ, self, other)
+
+    def __ne__(self, other: Predicate) -> Predicate:
+        return ConditionalPredicate(OP_CODE.NEQ, self, other)
+
+    def __lt__(self, other: Predicate) -> Predicate:
+        return ConditionalPredicate(OP_CODE.LT, self, other)
+
+    def __le__(self, other: Predicate) -> Predicate:
+        return ConditionalPredicate(OP_CODE.LEQ, self, other)
+
+    def __gt__(self, other: Predicate) -> Predicate:
+        return ConditionalPredicate(OP_CODE.GT, self, other)
+
+    def __ge__(self, other: Predicate) -> Predicate:
+        return ConditionalPredicate(OP_CODE.GEQ, self, other)
+
+    def including(self, *others) -> Predicate:
+        others = flatten_sequence(others)
+        others = {obj._id if is_biz_obj(obj) else obj for obj in others}
+        return ConditionalPredicate(OP_CODE.INCLUDING, self, others)
+
+    def excluding(self, *others) -> Predicate:
+        others = flatten_sequence(others)
+        others = {obj._id if is_biz_obj(obj) else obj for obj in others}
+        return ConditionalPredicate(OP_CODE.EXCLUDING, self, others)
+
+    @property
+    def field(self):
+        return self.resolver.field
 
 
 class ResolverDecorator(object):

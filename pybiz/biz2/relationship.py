@@ -19,24 +19,18 @@ class Relationship(Resolver):
         *args,
         **kwargs
     ):
+        super().__init__(*args, **kwargs)
+
         self.on_add = on_add or self.on_add
         self.on_rem = on_rem or self.on_rem
+
+        self.BizList = None  # <- computed in bind
 
         # If `many` is set, then we expect this relationship to return a a
         # collection (e.g. a list, BizList) instead of a single BizObject.  this
         # flag is set automatically during the bind lifecycle method of the this
         # Relationship.
         self._many = None
-
-        # wrap the raw on_execute callback in a dynamic function that ensures
-        # that Relationship return values are BizThing instances.
-        on_execute = kwargs.pop('on_execute', None)
-        if on_execute is not None:
-            on_execute_wrapper = self._wrap_on_execute(on_execute)
-        else:
-            on_execute_wrapper = None
-
-        super().__init__(on_execute=on_execute_wrapper, *args, **kwargs)
 
         # if `target` was not provided as a callback but as a class object,
         # we can eagerly set self._target. otherwise, we can only call the
@@ -49,23 +43,6 @@ class Relationship(Resolver):
         else:
             self._target_callback = target
             self._target = None
-
-        self._biz_list_class = None
-
-    def _wrap_on_execute(self, on_execute):
-        def wrapper(instance, *args, **kwargs):
-            value = on_execute(instance, *args, *kwargs)
-            if self.many and (value is not None):
-                return self._biz_list_class(
-                    biz_objects=value,
-                    relationship=self,
-                    owner=instance,
-                )
-            else:
-                return value
-
-        wrapper.__name__ = f'{on_execute.__name__}_wrapper'
-        return wrapper
 
     def on_bind(self, biz_class):
         if self._target_callback:
@@ -80,7 +57,7 @@ class Relationship(Resolver):
         else:
             if is_biz_list(self._target):
                 self._many = True
-                self._biz_list_class = type(
+                self.BizList = type(
                     'RelationshipBizList',
                     (RelationshipBizList, ),
                     {'biz_class': self._target}
@@ -90,8 +67,24 @@ class Relationship(Resolver):
 
             self._target = self._target
 
-        self._biz_list_class = type('RelationshipBizList', (RelationshipBizList, ), {})
-        self._biz_list_class.pybiz.biz_class = self._target
+        self.BizList = type('RelationshipBizList', (RelationshipBizList, ), {})
+        self.BizList.pybiz.biz_class = self._target
+
+    @staticmethod
+    def on_post_execute(
+        instance: 'BizObject',
+        relationship: 'Relationship',
+        result: object,
+        query: 'Query' = None,
+    ):
+        if relationship.many and (result is not None):
+            return relationship.BizList(
+                biz_objects=result,
+                relationship=relationship,
+                owner=instance,
+            )
+        else:
+            return result
 
     def generate(self, instance, query=None, *args, **kwarg):
         count = 1 if not self.many else None

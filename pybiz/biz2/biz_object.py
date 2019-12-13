@@ -37,6 +37,7 @@ from .resolver import (
     ResolverDecorator,
     ResolverManager,
     FieldResolver,
+    FieldResolverProperty,
 )
 
 
@@ -189,7 +190,10 @@ class BizObjectMeta(type):
 
     def _build_resolver_properties(biz_class):
         for resolver in biz_class.pybiz.resolvers.values():
-            resolver_prop = ResolverProperty(resolver)
+            if resolver.name in biz_class.pybiz.resolvers.fields:
+                resolver_prop = FieldResolverProperty(resolver)
+            else:
+                resolver_prop = ResolverProperty(resolver)
             setattr(biz_class, resolver.name, resolver_prop)
 
     def _build_biz_list(biz_class):
