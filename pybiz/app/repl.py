@@ -69,9 +69,9 @@ class Repl(Application):
         local_ns['repl'] = self
 
         local_ns.update(self._namespace)
-        local_ns.update(dict(self.endpoints))
-        local_ns.update(self.types.biz)
-        local_ns.update(self.types.dal)
+        local_ns.update(self.api)
+        local_ns.update(self.biz)
+        local_ns.update(self.dal)
 
         # enter an ipython shell
         self.shell.mainloop(local_ns=local_ns)
