@@ -5,6 +5,8 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import Text, Tuple, List, Set, Dict
 
+import venusian
+
 from appyratus.utils import DictObject
 from appyratus.enum import EnumValueStr
 
@@ -47,7 +49,6 @@ class BizObjectMeta(type):
         resolver_decorators = info['resolver_decorators']
 
         biz_class._pybiz_is_biz_object = True
-
         biz_class._init_pybiz_dict_object()
         biz_class._compute_is_abstract()
         biz_class._build_schema_class(fields, bases)
@@ -56,6 +57,15 @@ class BizObjectMeta(type):
         biz_class._build_resolver_properties()
         biz_class._build_biz_list()
         biz_class._extract_field_defaults()
+
+        def callback(scanner, name, biz_class):
+            """
+            Callback used by Venusian for BizObject class auto-discovery.
+            """
+            console.info(f'venusian scan found "{biz_class.__name__}" BizObject')
+            scanner.biz_classes.setdefault(name, biz_class)
+
+        venusian.attach(biz_class, callback, category='biz')
 
     def _analyze(biz_class):
         # TODO: structure this up
