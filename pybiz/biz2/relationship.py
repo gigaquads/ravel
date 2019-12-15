@@ -87,20 +87,9 @@ class Relationship(Resolver):
             return result
 
     def generate(self, instance, query=None, *args, **kwarg):
-        count = 1 if not self.many else None
-
-        if query is not None:
-            count = query.params.get('limit')
-            if not count:
-                count = randint(1, 10)
-
-        if self.many:
-            return self.target.BizList([
-                self.target.generate()
-                for _ in range(random.randrange(1, 10))
-            ])
-        else:
-            return self.target.generate()
+        if query is None:
+            query = ResolverQuery(relationship)
+        return query.generate(first=not self.many)
 
     def dump(self, dumper: 'Dumper', value):
         """

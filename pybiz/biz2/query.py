@@ -1,14 +1,24 @@
+from random import randint
 from typing import Dict, Type, Set
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+
+from appyratus.enum import EnumValueStr
 
 from pybiz.util.misc_functions import is_sequence
 from pybiz.constants import ID_FIELD_NAME
 
+from .util import is_biz_object, is_biz_list
 from .resolver import (
     Resolver,
     ResolverProperty,
     FieldResolver,
 )
+
+
+class Backfill(EnumValueStr):
+    @staticmethod
+    def values():
+        return {'persistent', 'ephemeral'}
 
 
 class QueryParameterAssignment(object):
@@ -38,6 +48,29 @@ class AbstractQuery(object):
         return self._parent
 
 
+class QueryBackfiller(object):
+    def __init__(self):
+        self._biz_class_2_objects = defaultdict(list)
+
+    def register(self, obj):
+        if is_biz_object(obj):
+            self._biz_class_2_objects[type(obj)].append(obj)
+        elif is_biz_list(obj):
+            self._biz_class_2_objects[obj.pybiz.biz_class].extend(obj)
+        elif isinstance(value, (list, tuple, set)):
+            for item in obj:
+                self.register(item)
+        elif isinstance(dict):
+            for val in obj.values():
+                self.register(val)
+        else:
+            raise Exception('unknown argument type')
+
+    def create_all(self):
+        for biz_class, biz_objects in self._biz_class_2_objects.items():
+            created = biz_class.create_many(biz_objects)
+
+
 class Query(AbstractQuery):
     def __init__(self, biz_class: Type['BizObject'], *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -55,7 +88,13 @@ class Query(AbstractQuery):
             )
         })
 
-    def execute(self, first=False):
+    def execute(self, first=False, backfill: Backfill = None):
+        backfiller = None
+        if backfill is not None:
+            if backfill is not True:
+                Backfill.validate(backfill)
+            backfiller = QueryBackfiller()
+
         predicate = self.params.get('where')
         if not predicate:
             predicate = (self.biz_class._id != None)
@@ -78,16 +117,33 @@ class Query(AbstractQuery):
         records = dao.query(
             predicate=predicate,
             fields=field_names,
+            limit=self.params.get('limit'),
+            offset=self.params.get('offset'),
         )
 
-        # TODO: apply FieldResolver transforms
-        biz_objects = [
-            cls(data=record) for record in records
-        ]
+        biz_objects = self._biz_class.BizList(
+            self.biz_class(data=record).clean() for record in records
+        )
+
+        if backfiller is not None:
+            if len(biz_objects) < self.params.get('limit', 1):
+                backfill_count = self.params.get('limit', 1) - len(biz_objects)
+                generated_biz_objects = self.generate(count=backfill_count)
+                backfiller.register(generated_biz_objects)
+                biz_objects.extend(generated_biz_objects)
 
         for biz_obj in biz_objects:
             for rq in resolver_queries:
-                rq.execute(biz_obj)
+                rq.execute(biz_obj, backfiller=backfiller)
+
+        if backfill == Backfill.persistent:
+            assert backfiller is not None
+            backfiller.create_all()
+
+        if first:
+            return biz_objects[0] if biz_objects else None
+        else:
+            return biz_objects
 
     def select(self, *selectors, append=True):
         if not append:
@@ -95,7 +151,7 @@ class Query(AbstractQuery):
 
         if not selectors:
             self.params['select'].update({
-                k: ResolverQuery(v)
+                k: self._new_resolver_query(v)
                 for k, v in self._biz_class.resolvers.fields.items()
             })
         else:
@@ -115,15 +171,16 @@ class Query(AbstractQuery):
                 if isinstance(x, str):
                     resolver = self._biz_class.resolvers[x]
                     if resolver:
-                        rq = ResolverQuery(resolver)
+                        rq = self._new_resolver_query(resolver)
                     else:
                         continue
                 elif isinstance(x, ResolverProperty):
                     resolver = x.resolver
-                    rq = ResolverQuery(x.resolver)
+                    rq = self._new_resolver_query(x.resolver)
                 elif isinstance(x, ResolverQuery):
                     resolver = x.resolver
                     rq = x
+                    rq.parent = self
 
                 if resolver and rq:
                     resolvers.append(resolver)
@@ -135,35 +192,50 @@ class Query(AbstractQuery):
 
         return self
 
-    def generate(self, count=1, first=False):
+    def generate(self, count=None, first=False):
         """
         This method is really just syntactic surgar for doing query.generate()
         instead of BizObject.generate(query).
         """
+        if count is None:
+            count = self.params.get('limit', randint(1, 10))
+
         biz_objects = self.biz_class.BizList(
-            self.biz_class.generate(query=self)
-            for i in range(count)
+            self.biz_class.generate(query=self) for i in range(count)
         )
         if first:
             return biz_objects[0]
         else:
             return biz_objects
 
-
+    def _new_resolver_query(self, resolver):
+        return ResolverQuery(resolver, parent=self)
 
 
 class ResolverQuery(Query):
-    def __init__(self, resolver, *args, **kwargs):
-        super().__init__(biz_class=resolver.biz_class, *args, **kwargs)
+    def __init__(
+        self,
+        resolver: 'Resolver',
+        parent: 'AbstractQuery' = None,
+        *args, **kwargs
+    ):
+        super().__init__(
+            biz_class=resolver.biz_class, parent=parent, *args, **kwargs
+        )
         self._resolver = resolver
 
     @property
-    def resolver(self):
+    def resolver(self) -> 'Resolver':
         return self._resolver
 
     def clear(self):
         self.params['select'] = OrderedDict()
 
-    def execute(self, instance: 'BizObject'):
+    def execute(self, instance: 'BizObject', backfiller=None):
         value = self._resolver.execute(instance, **self.params)
+        if (not value) and (backfiller is not None):
+            value = self._resolver.generate(
+                instance, query=self, backfiller=backfiller
+            )
+            backfiller.register(value)
         setattr(instance, self._resolver.name, value)

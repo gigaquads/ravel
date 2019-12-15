@@ -193,8 +193,8 @@ def test_save_many_correctly_partitions_objects(
     query = Thing.select(Thing.label, Thing.friend)
 
     # to_create and to_update are BizLists
-    to_create = query.generate(num_to_create)
-    to_update = query.generate(num_to_update).clean()
+    to_create = query.limit(num_to_create).generate()
+    to_update = query.limit(num_to_update).generate().clean()
 
     Thing.create_many = MagicMock()
     Thing.update_many = MagicMock()
@@ -217,7 +217,8 @@ def test_save_recurses_on_resolvers(
     Thing,
 ):
     query = Thing.select(Thing.label, Thing.friend)
-    things = query.generate(count=1)
+    query.limit(1)
+    things = query.generate()
     thing = things[0]
 
     Thing.create_many = MagicMock()
@@ -237,3 +238,49 @@ def test_save_recurses_on_resolvers(
 
     assert Thing.create_many.call_count == 2
     assert not Thing.update_many.call_count
+
+
+@pytest.mark.parametrize('created_thing_count, total', [
+    (0, 5),
+    (1, 5),
+    (5, 5),
+    (6, 5),
+])
+def test_backfill_generates_correct_number(Thing, created_thing_count, total):
+    query = Thing.select(Thing.label, Thing.friend)
+    existing_things = query.generate(count=created_thing_count).create()
+    all_things = query.limit(total).execute(backfill=True)
+
+    pp(all_things.dump())
+
+    assert len(all_things) == total
+
+    for idx, thing in enumerate(all_things):
+        if idx < created_thing_count:
+            assert thing.is_created
+        else:
+            assert not thing.is_created
+
+
+def test_backfill_persistent_mode_works(Thing):
+    query = Thing.select(Thing.label, Thing.friend)
+    backfilled_thing = query.limit(1).execute(
+        backfill='persistent',
+        first=True
+    )
+    assert backfilled_thing.is_created
+
+    thing = query.execute(first=True)
+    assert thing._id == backfilled_thing._id
+
+
+def test_backfill_ephemeral_mode_works(Thing):
+    query = Thing.select(Thing.label, Thing.friend)
+    backfilled_thing = query.limit(1).execute(
+        backfill='ephemeral',
+        first=True
+    )
+    assert not backfilled_thing.is_created
+
+    thing = query.execute(first=True)
+    assert thing is None

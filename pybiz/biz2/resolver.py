@@ -20,7 +20,7 @@ from pybiz.predicate import (
 )
 
 from .biz_thing import BizThing
-
+from .util import is_biz_object
 
 class Resolver(object):
     def __init__(
@@ -176,7 +176,10 @@ class Resolver(object):
         raise NotImplementedError()
 
     def generate(
-        self, instance: 'BizObject', query: 'Query' = None, *args, **kwargs
+        self,
+        instance: 'BizObject',
+        query: 'ResolverQuery' = None,
+        *args, **kwargs
     ):
         raise NotImplementedError()
 
@@ -396,12 +399,12 @@ class FieldResolverProperty(ResolverProperty):
 
     def including(self, *others) -> Predicate:
         others = flatten_sequence(others)
-        others = {obj._id if is_biz_obj(obj) else obj for obj in others}
+        others = {obj._id if is_biz_object(obj) else obj for obj in others}
         return ConditionalPredicate(OP_CODE.INCLUDING, self, others)
 
     def excluding(self, *others) -> Predicate:
         others = flatten_sequence(others)
-        others = {obj._id if is_biz_obj(obj) else obj for obj in others}
+        others = {obj._id if is_biz_object(obj) else obj for obj in others}
         return ConditionalPredicate(OP_CODE.EXCLUDING, self, others)
 
     @property
