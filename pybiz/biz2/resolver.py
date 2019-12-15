@@ -22,6 +22,7 @@ from pybiz.predicate import (
 from .biz_thing import BizThing
 from .util import is_biz_object
 
+
 class Resolver(object):
     def __init__(
         self,
@@ -322,6 +323,9 @@ class FieldResolver(Resolver):
         value = instance.internal.state.get(key)
         return value
 
+    def on_select(self, query: 'ResolverQuery', selectors):
+        pass
+
     def dump(self, dumper: 'Dumper', value):
         processed_value, errors = self._field.process(value)
         if errors:
@@ -352,6 +356,15 @@ class ResolverProperty(property):
     @property
     def biz_class(self):
         return self.resolver.biz_class if self.resolver else None
+
+    def select(self, *selectors, append=True):
+        from pybiz.biz2.query import ResolverQuery
+
+        query = ResolverQuery(self.resolver)
+        query.select(selectors, append=append)
+        self.resolver.on_select(query, selectors)
+
+        return query
 
     def _fget(self, instance):
         key = self.resolver.name

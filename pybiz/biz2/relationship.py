@@ -108,6 +108,11 @@ class Relationship(Resolver):
         else:
             return dump_one(biz_obj)
 
+    def on_select(self, query, selectors):
+        if '_id' not in query.params['select']:
+            query.select(self.biz_class._id)
+        if not selectors:
+            query.select(self.biz_class.Schema.fields.keys())
 
     @classmethod
     def tags(cls):
