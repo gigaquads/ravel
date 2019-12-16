@@ -389,7 +389,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         clone = type(self)(data=deepcopy(self.internal.state))
         return clone.clean()
 
-    def merge(self, other, **values) -> 'BizObject':
+    def merge(self, other=None, **values) -> 'BizObject':
         if isinstance(other, dict):
             for k, v in other.items():
                 setattr(self, k, v)
