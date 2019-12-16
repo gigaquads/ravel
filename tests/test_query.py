@@ -26,6 +26,7 @@ from pybiz.biz2.resolver import (
 from pybiz.biz2.query import (
     Query,
     QueryParameterAssignment,
+    QueryPrinter,
     ResolverQuery,
 )
 
@@ -111,8 +112,9 @@ def test_generate_recurses_correctly(Thing):
     )
     thing = Thing.generate(query)
 
-    #print(thing.internal.state)
-    #print(thing.friend.internal.state)
+    print(thing.internal.state)
+    print('-'*100)
+    print(thing.friend.internal.state)
 
     assert isinstance(thing._id, str)
     assert isinstance(thing.label, str)
@@ -154,14 +156,13 @@ def test_dump_outputs_expected_items(Thing, selectors):
     thing = Thing.generate(query)
     data = thing.dump()
 
-    pp(data)
-
     assert data is not None
     assert data.get('_id') == thing._id
 
     for k in selectors:
         assert k in data
 
+    query.printf()
 
 def test_dump_side_loaded_works_with_defaults(Thing):
     query = Thing.select(Thing.label, Thing.friend)

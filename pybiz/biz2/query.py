@@ -8,11 +8,7 @@ from pybiz.util.misc_functions import is_sequence, get_class_name
 from pybiz.constants import ID_FIELD_NAME
 
 from .util import is_biz_object, is_biz_list
-from .resolver import (
-    Resolver,
-    ResolverProperty,
-    FieldResolver,
-)
+from .resolver import Resolver, ResolverProperty
 
 
 class Backfill(EnumValueStr):
@@ -149,9 +145,9 @@ class QueryPrinter(object):
             rel = query.resolver
             s_biz_class = get_class_name(rel.target)
             if rel.many:
-                substrings.append(f' - {s_name}: [{s_biz_class}] = (')
+                substrings.append(f' - {s_name}: [{s_biz_class}] -> (')
             else:
-                substrings.append(f' - {s_name}: {s_biz_class} = (')
+                substrings.append(f' - {s_name}: {s_biz_class} -> (')
         else:
             substrings.append(f' - {s_name} = (')
         substrings.append(self.fprintf(query, indent=indent+5))
@@ -288,6 +284,9 @@ class AbstractQuery(object):
 
 
 class Query(AbstractQuery):
+
+    printer = QueryPrinter()
+
     def __init__(self, biz_class: Type['BizObject'], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._biz_class = biz_class
@@ -303,6 +302,12 @@ class Query(AbstractQuery):
                 self._biz_class.pybiz.resolvers[ID_FIELD_NAME]
             )
         })
+
+    def printf(self):
+        self.printer.printf(self)
+
+    def fprintf(self):
+        return self.printer.fprintf(self)
 
     def execute(self, first=False, backfill: Backfill = None):
         # initialize a QueryBackfiller if we need to backfill
@@ -454,7 +459,7 @@ class ResolverQuery(Query):
         self.params['select'] = OrderedDict()
 
     def execute(self, instance: 'BizObject', backfiller=None):
-        value = self._resolver.execute(instance, **self.params)
+        value = self._resolver.execute(instance, query=self, **self.params)
         if backfiller and (not value):
             value = backfiller.backfill_resolver(self, instance, value)
         setattr(instance, self._resolver.name, value)

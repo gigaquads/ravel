@@ -2,7 +2,7 @@ import sys
 import re
 
 from copy import deepcopy
-from typing import Text, Set, Dict, List
+from typing import Text, Set, Dict, List, Callable, Type
 from collections import defaultdict
 
 import pybiz.biz
@@ -26,15 +26,16 @@ from .util import is_biz_object
 class Resolver(object):
     def __init__(
         self,
-        biz_class=None,
-        name=None,
-        schema=None,
-        lazy=True,
-        on_execute=None,
-        on_post_execute=None,
-        on_get=None,
-        on_set=None,
-        on_del=None,
+        biz_class: Type['BizObject'] = None,
+        name: Text = None,
+        schema: 'Schema' = None,
+        lazy: bool = True,
+        on_select: Callable = None,
+        on_execute: Callable = None,
+        on_post_execute: Callable = None,
+        on_get: Callable = None,
+        on_set: Callable = None,
+        on_del: Callable = None,
     ):
         self._schema = schema
         self._name = name
@@ -45,6 +46,7 @@ class Resolver(object):
 
         self.on_execute = on_execute or self.on_execute
         self.on_post_execute = on_post_execute or self.on_post_execute
+        self.on_select = on_select or self.on_select
         self.on_get = on_get or self.on_set
         self.on_set = on_set or self.on_set
         self.on_del = on_del or self.on_del
@@ -147,6 +149,10 @@ class Resolver(object):
             clone._is_bound = False
         return clone
 
+    def select(self, query: 'ResolverQuery'):
+        new_query = self.on_select(self, query)
+        return (new_query or query)
+
     def execute(self, instance, query=None, *args, **kwargs):
         """
         Return the result of calling the on_execute callback. If self.state
@@ -155,11 +161,11 @@ class Resolver(object):
         """
         if self.on_execute is not None:
             if self.name not in instance.internal.state:
-                result = self.on_execute(instance, self, *args, **kwargs)
+                result = self.on_execute(instance, query, *args, **kwargs)
                 instance.internal.state[self.name] = result
             else:
                 result = instance.internal.state[self.name]
-            result = self.on_post_execute(instance, self, result, query)
+            result = self.on_post_execute(instance, query, result)
             return result
         else:
             console.warning(
@@ -177,29 +183,21 @@ class Resolver(object):
         raise NotImplementedError()
 
     def generate(
-        self,
-        instance: 'BizObject',
-        query: 'ResolverQuery' = None,
+        self, instance: 'BizObject', query: 'ResolverQuery',
         *args, **kwargs
     ):
         raise NotImplementedError()
 
     @staticmethod
     def on_execute(
-        instance: 'BizObject',
-        resolver: 'Resolver',
-        query: 'Query' = None,
-        *args,
-        **kwargs
+        instance: 'BizObject', query: 'ResolverQuery',
+        *args, **kwargs
     ):
         raise NotImplementedError()
 
     @staticmethod
     def on_post_execute(
-        instance: 'BizObject',
-        resolver: 'Resolver',
-        result: object,
-        query: 'Query' = None,
+        instance: 'BizObject', query: 'ResolverQuery', result
     ):
         return result
 
@@ -216,8 +214,16 @@ class Resolver(object):
         return
 
     @staticmethod
-    def on_save(resolver: 'Resolver', owner: 'BizObject', value) -> 'BizThing':
+    def on_save(
+        resolver: 'Resolver', owner: 'BizObject', value
+    ) -> 'BizThing':
         return value if isinstance(value, BizThing) else None
+
+    @staticmethod
+    def on_select(
+        resolver: 'Resolver', query: 'ResolverQuery'
+    ) -> 'ResolverQuery':
+        return query
 
 
 class ResolverManager(object):
@@ -323,9 +329,6 @@ class FieldResolver(Resolver):
         value = instance.internal.state.get(key)
         return value
 
-    def on_select(self, query: 'ResolverQuery', selectors):
-        pass
-
     def dump(self, dumper: 'Dumper', value):
         processed_value, errors = self._field.process(value)
         if errors:
@@ -357,18 +360,17 @@ class ResolverProperty(property):
     def biz_class(self):
         return self.resolver.biz_class if self.resolver else None
 
-    def select(self, *selectors, append=True):
+    def select(self, *targets, append=True):
         from pybiz.biz2.query import ResolverQuery
 
         query = ResolverQuery(self.resolver)
-        query.select(selectors, append=append)
-        self.resolver.on_select(query, selectors)
-
+        query.select(targets, append=append)
+        query = self.resolver.select(query)
         return query
 
     def _fget(self, instance):
-        key = self.resolver.name
-        obj = self.resolver.execute(instance, query=None)
+        query = self.select(self.resolver.name)
+        obj = self.resolver.execute(instance, query)
         if self.resolver.on_get:
             self.resolver.on_get(instance, resolver, obj)
         return obj

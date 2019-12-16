@@ -2,6 +2,10 @@ from random import randint
 
 from typing import Type, List, Set, Text, Callable
 
+from pybiz.constants import (
+    ID_FIELD_NAME,
+)
+
 from .util import is_biz_list, is_biz_object
 from .resolver import Resolver, ResolverDecorator
 from .biz_thing import BizThing
@@ -73,14 +77,14 @@ class Relationship(Resolver):
     @staticmethod
     def on_post_execute(
         instance: 'BizObject',
-        relationship: 'Relationship',
-        result: object,
-        query: 'Query' = None,
+        query: 'Query',
+        result
     ):
-        if relationship.many and (result is not None):
-            return relationship.BizList(
+        rel = query.resolver
+        if rel.many and (result is not None):
+            return rel.BizList(
                 biz_objects=result,
-                relationship=relationship,
+                relationship=rel,
                 owner=instance,
             )
         else:
@@ -108,11 +112,19 @@ class Relationship(Resolver):
         else:
             return dump_one(biz_obj)
 
-    def on_select(self, query, selectors):
-        if '_id' not in query.params['select']:
-            query.select(self.biz_class._id)
-        if not selectors:
-            query.select(self.biz_class.Schema.fields.keys())
+    @staticmethod
+    def on_select(relationship, query):
+        """
+        Ensure that at least _id is selected, and if nothing at all is selected,
+        then select all by default.
+        """
+        selected = query.params['select']
+        biz_class = query.biz_class
+        if not selected:
+            query = query.select(biz_class.Schema.fields.keys())
+        if ID_FIELD_NAME not in selected:
+            query = query.select(biz_class._id)
+        return query
 
     @classmethod
     def tags(cls):
