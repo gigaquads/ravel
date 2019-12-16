@@ -7,9 +7,14 @@ from typing import (
 
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.util.misc_functions import (
-    is_biz_obj, is_sequence, extract_biz_info_from_annotation
+    is_biz_obj,  # XXX: deprecated
+    is_sequence,
+    extract_biz_info_from_annotation
 )
 
+from pybiz.biz2.util import (
+    is_biz_object
+)
 
 class ApplicationArgumentLoader(object):
     """
@@ -44,8 +49,11 @@ class ApplicationArgumentLoader(object):
 
     class ArgumentSpec(object):
         def __init__(
-            self, position: int, arg_name: Text,
-            many: bool, biz_class: Type['BizObject']
+            self,
+            position: int,
+            arg_name: Text,
+            many: bool,
+            biz_class: Type['BizObject']
         ):
             self.position = position
             self.arg_name = arg_name
@@ -53,16 +61,20 @@ class ApplicationArgumentLoader(object):
             self.biz_class = biz_class
 
     def __init__(self, app: 'Application', on_load: Callable = None):
+        self._app = app
         self._on_load = (
             on_load or (lambda spec, raw_value, loaded_value: loaded_value)
         )
-        self._biz_classes = app.types.biz
         self._endpoint_2_specs = defaultdict(list)
-        for endpoint in app.endpoints.values():
+        self.bind()
+
+    def bind(self):
+        self._endpoint_2_specs = defaultdict(list)
+        for endpoint in self._app.endpoints.values():
             for idx, param in enumerate(endpoint.signature.parameters.values()):
                 ann = param.annotation
                 many, biz_class_name = extract_biz_info_from_annotation(ann)
-                biz_class = self._biz_classes.get(biz_class_name)
+                biz_class = self._app.biz.get(biz_class_name)
                 if biz_class is not None:
                     position = (
                         idx if param.default == Parameter.empty else None
@@ -71,6 +83,7 @@ class ApplicationArgumentLoader(object):
                         idx, param.name, many, biz_class
                     )
                     self._endpoint_2_specs[endpoint].append(spec)
+
 
     def load(self, endpoint: 'Endpoint', args: Tuple, kwargs: Dict) -> Tuple:
         """
@@ -117,7 +130,7 @@ class ApplicationArgumentLoader(object):
         if not (preloaded and biz_class):
             return preloaded
         elif not many:
-            if is_biz_obj(preloaded):
+            if is_biz_obj(preloaded) or is_biz_object(preloaded):
                 return preloaded
             elif isinstance(preloaded, dict):
                 if 'id' in preloaded:
@@ -130,7 +143,7 @@ class ApplicationArgumentLoader(object):
         elif is_sequence(preloaded):
             if isinstance(preloaded, set):
                 preloaded = list(preloaded)
-            if is_biz_obj(preloaded[0]):
+            if is_biz_obj(preloaded[0]) or is_biz_object(preloaded[0]):
                 return biz_class.BizList(preloaded)
             elif isinstance(preloaded[0], dict):
                 return biz_class.BizList(

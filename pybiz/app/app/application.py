@@ -187,6 +187,8 @@ class Application(object):
         for biz_class in biz_classes:
             bind_one(biz_class, dao_class)
 
+        self._arg_loader.bind()
+
         return self
 
     def bootstrap(
