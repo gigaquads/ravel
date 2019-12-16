@@ -56,3 +56,6 @@ class StringTransformer(Transformer):
 
     def upper(self, source: Text, is_set, *args: Tuple) -> Text:
         return source.upper() if is_set else source
+
+
+fields.Id = Id
