@@ -14,6 +14,7 @@ from pybiz.util.misc_functions import (
     is_sequence,
     get_class_name,
     repr_biz_id,
+    flatten_sequence,
 )
 from pybiz.schema import (
     Field, Schema, fields, String, Int, Id, UuidString,
@@ -341,6 +342,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def select(cls, *selectors):
+        selectors = flatten_sequence(selectors)
         return Query(cls).select(*selectors)
 
     @property
@@ -362,8 +364,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             fields = fields if is_sequence(fields) else {fields}
             keys = self._normalize_selectors(fields)
         else:
-            keys = set(self.Schema.fields.keys())
-            keys.add('_id')
+            keys = set(self.pybiz.resolvers.keys())
 
         self.internal.state.clean(keys=keys)
         return self
@@ -394,7 +395,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             for k, v in other.items():
                 setattr(self, k, v)
         elif isinstance(other, BizObject):
-            for k, v in other.pybiz.data.items():
+            for k, v in other.internal.state.items():
                 setattr(self, k, v)
 
         if values:
@@ -544,7 +545,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if not _ids:
             return cls.BizList()
         if not (select or offset or limit or order_by):
-            return cls.BizList(data for data in cls.get_dao().get(_ids))
+            id_2_data = cls.get_dao().fetch_many(_ids)
+            return cls.BizList(cls(data=data) for data in id_2_data.values())
         else:
             return cls.query(
                 select=select,
@@ -811,6 +813,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         # schema and those which do not. This is for the purpose of passing in
         # field selectors into the schema's built-in fixture data generation
         # method.
+        # TODO: make it respect "limit" param instad of inside Query.generate
         other_resolvers = set()
         field_names = set()
         if not query.params['select']:

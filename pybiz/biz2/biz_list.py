@@ -113,14 +113,14 @@ class BizList(BizThing, metaclass=BizListMeta):
         return self
 
     def delete(self):
-        self.biz_class.delete_many({
+        self.pybiz.biz_class.delete_many({
             biz_obj._id for biz_obj in self.internal.data
             if biz_obj and biz_obj.is_created
         })
         return self
 
     def save(self, depth=0):
-        self.biz_class.save_many(self.internal.data, depth=depth)
+        self.pybiz.biz_class.save_many(self.internal.data, depth=depth)
         return self
 
     def clean(self, fields=None):
@@ -150,7 +150,7 @@ class BizList(BizThing, metaclass=BizListMeta):
                 stale_id_2_object[biz_obj._id] = biz_obj
 
         if stale_id_2_object:
-            fresh_objects = self.biz_class.get_many(
+            fresh_objects = self.pybiz.biz_class.get_many(
                 stale_id_2_object.keys(), select=resolvers
             )
             for fresh_obj in fresh_objects:

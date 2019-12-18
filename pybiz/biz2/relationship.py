@@ -1,6 +1,7 @@
 from random import randint
-
 from typing import Type, List, Set, Text, Callable
+
+from appyratus.utils import DictObject
 
 from pybiz.constants import (
     ID_FIELD_NAME,
@@ -13,7 +14,41 @@ from .biz_object import DumpStyle
 from .biz_list import BizList
 
 
+class RelationshipBizList(BizList):
+    def __init__(self, biz_objects, owner: 'BizObject', *args, **kwargs):
+        super().__init__(biz_objects, *args, **kwargs)
+        self.internal.owner = owner
+
+    def append(self, biz_object: 'BizObject'):
+        super().append(biz_object)
+        self._perform_callback_on_add(max(0, len(self) - 1), [biz_object])
+        return self
+
+    def extend(self, biz_objects: List['BizObject']):
+        super().extend(biz_objects)
+        self._perform_callback_on_add(max(0, len(self) - 1), biz_objects)
+        return self
+
+    def insert(self, index: int, biz_object: 'BizObject'):
+        super().insert(index, biz_object)
+        self._perform_callback_on_add(index, [biz_object])
+        return self
+
+    def _perform_callback_on_add(self, offset, biz_objects):
+        rel = self.internal.relationship
+        for idx, biz_obj in enumerate(biz_objects):
+            self.pybiz.relationship.on_add(rel, offset + idx, biz_obj)
+
+    def _perform_callback_on_rem(self, offset, biz_objects):
+        rel = self.internal.relationship
+        for idx, biz_obj in enumerate(biz_objects):
+            self.pybiz.relationship.on_rem(rel, offset + idx, biz_obj)
+
+
 class Relationship(Resolver):
+
+    class BizList(RelationshipBizList):
+        pass
 
     def __init__(
         self,
@@ -48,6 +83,22 @@ class Relationship(Resolver):
             self._target_callback = target
             self._target = None
 
+    @classmethod
+    def tags(cls):
+        return {'relationships'}
+
+    @classmethod
+    def priority(cls):
+        return 10
+
+    @property
+    def target(self):
+        return self._target
+
+    @property
+    def many(self):
+        return self._many
+
     def on_bind(self, biz_class):
         if self._target_callback:
             biz_class.pybiz.app.inject(self._target_callback)
@@ -61,38 +112,60 @@ class Relationship(Resolver):
         else:
             if is_biz_list(self._target):
                 self._many = True
-                self.BizList = type(
-                    'RelationshipBizList',
-                    (RelationshipBizList, ),
-                    {'biz_class': self._target}
-                )
             else:
                 self._many = False
 
             self._target = self._target
 
-        self.BizList = type('RelationshipBizList', (RelationshipBizList, ), {})
+        class BizList(RelationshipBizList):
+            pass
+
+        self.BizList = BizList
         self.BizList.pybiz.biz_class = self._target
+        self.BizList.pybiz.relationship = self
 
-    @staticmethod
-    def on_post_execute(
-        instance: 'BizObject',
-        query: 'Query',
-        result
-    ):
-        rel = query.resolver
-        if rel.many and (result is not None):
-            return rel.BizList(
-                biz_objects=result,
-                relationship=rel,
-                owner=instance,
-            )
+    def on_post_execute(self, target, request: 'QueryRequest', result):
+        relationship = request.resolver
+        transformed_result = result
+        if relationship.many and (result is not None):
+            biz_objects = result
+            transformed_result = self.BizList(biz_objects, owner=target)
+        return transformed_result
+
+    def on_backfill(self, instance, request, result):
+        if self._many:
+            biz_list = result
+            limit = request.query.params.get('limit', 1)
+            if len(biz_list) < limit:
+                biz_list.extend(
+                    biz_list.pybiz.biz_class.generate(request.query)
+                    for _ in range(limit - len(biz_list))
+                )
+            return biz_list
+        elif result is None:
+            return biz_list.pybiz.biz_class.generate(request.query)
+
+    def on_select(self, selectors) -> 'ResolverQuery':
+        """
+        Ensure that at least _id is selected, and if nothing at all is selected,
+        then select all by default.
+        """
+        from pybiz.biz2.query import ResolverQuery
+
+        query = ResolverQuery(resolver=self, biz_class=self.target)
+        biz_class = query.resolver.target
+
+        if not selectors:
+            query = query.select(biz_class.pybiz.resolvers.fields.values())
         else:
-            return result
+            query = query.select(*selectors)
 
-    def generate(self, instance, query=None, *args, **kwarg):
-        if query is None:
-            query = ResolverQuery(relationship)
+        if ID_FIELD_NAME not in query.params['select']:
+            query = query.select(biz_class._id)
+
+        return query
+
+    def generate(self, instance, query):
         return query.generate(first=not self.many)
 
     def dump(self, dumper: 'Dumper', value):
@@ -113,80 +186,12 @@ class Relationship(Resolver):
             return dump_one(biz_obj)
 
     @staticmethod
-    def on_select(relationship, query):
-        """
-        Ensure that at least _id is selected, and if nothing at all is selected,
-        then select all by default.
-        """
-        selected = query.params['select']
-        biz_class = query.biz_class
-        if not selected:
-            query = query.select(biz_class.Schema.fields.keys())
-        if ID_FIELD_NAME not in selected:
-            query = query.select(biz_class._id)
-        return query
-
-    @classmethod
-    def tags(cls):
-        return {'relationships'}
-
-    @classmethod
-    def priority(cls):
-        return 10
-
-    @property
-    def target(self):
-        return self._target
-
-    @property
-    def many(self):
-        return self._many
-
-    @staticmethod
     def on_add(relationship, index, biz_object):
         pass
 
     @staticmethod
     def on_rem(relationship, index, biz_object):
         pass
-
-
-class RelationshipBizList(BizList):
-    def __init__(
-        self,
-        owner: 'BizObject',
-        relationship: 'Relationship',
-        *args,
-        **kwargs
-    ):
-        super().__init__(*args, **kwargs)
-        self.internal.owner = owner
-        self.internal.relationship = relationship
-
-    def append(self, biz_object: 'BizObject'):
-        super().append(biz_object)
-        self._perform_callback_on_add(max(0, len(self) - 1), [biz_object])
-        return self
-
-    def extend(self, biz_objects: List['BizObject']):
-        super().extend(biz_objects)
-        self._perform_callback_on_add(max(0, len(self) - 1), biz_objects)
-        return self
-
-    def insert(self, index: int, biz_object: 'BizObject'):
-        super().insert(index, biz_object)
-        self._perform_callback_on_add(index, [biz_object])
-        return self
-
-    def _perform_callback_on_add(self, offset, biz_objects):
-        rel = self.internal.relationship
-        for idx, biz_obj in enumerate(biz_objects):
-            self.internal.relationship.on_add(rel, offset + idx, biz_obj)
-
-    def _perform_callback_on_rem(self, offset, biz_objects):
-        rel = self.internal.relationship
-        for idx, biz_obj in enumerate(biz_objects):
-            self.internal.relationship.on_rem(rel, offset + idx, biz_obj)
 
 
 class relationship(ResolverDecorator):

@@ -3,6 +3,7 @@ from typing import Dict, Type, Set, Text
 from collections import OrderedDict, defaultdict
 
 from appyratus.enum import EnumValueStr
+from appyratus.utils import DictObject
 
 from pybiz.util.misc_functions import is_sequence, get_class_name
 from pybiz.constants import ID_FIELD_NAME
@@ -220,14 +221,56 @@ class QueryBackfiller(object):
         self.register(generated_biz_objects)
         return generated_biz_objects
 
-    def backfill_resolver(self, query, instance, value):
-        """
-        This is used internally by ResolverQuery when its Resolver returns None
-        or an empty BizList, calling for the backfilling of said value.
-        """
-        value = query.resolver.generate(instance, query=query, backfiller=self)
-        self.register(value)
-        return value
+
+class QueryRequest(object):
+    def __init__(
+        self,
+        query: 'AbstractQuery',
+        backfiller: 'QueryBackfiller' = None,
+        context: Dict = None,
+        parent: 'QueryRequest' = None,
+        root: 'QueryRequest' = None,
+    ):
+        self.query = query
+        self.backfiller = backfiller
+        self.context = context
+        self.parent = parent
+        self.root = root
+
+    def __repr__(self):
+        biz_class_name = get_class_name(self.query.biz_class)
+        return f'<Request({biz_class_name})>'
+
+    @property
+    def params(self):
+        return self.query.params
+
+
+class ResolverQueryRequest(QueryRequest):
+    def __init__(
+        self,
+        query: 'AbstractQuery',
+        source: 'BizObject',
+        parent: 'QueryRequest' = None,
+        resolver: 'Resolver' = None,
+        backfiller: 'QueryBackfiller' = None,
+        context: Dict = None,
+    ):
+        super().__init__(
+            query,
+            backfiller=backfiller,
+            context=context,
+            parent=parent,
+            root=parent.root if parent else None,
+        )
+        self.source = source
+        self.resolver = resolver
+
+    def __repr__(self):
+        biz_class_name = get_class_name(self.query.biz_class)
+        if self.resolver is not None:
+            return f'<Request({biz_class_name}.{self.resolver.name})>'
+        return super().__repr__()
 
 
 class QueryParameterAssignment(object):
@@ -259,7 +302,7 @@ class AbstractQuery(object):
     """
 
     def __init__(self, parent: 'AbstractQuery' = None, *args, **kwargs):
-        self._params = {}
+        self._params = DictObject()
         self._parent = parent
 
     def __getattr__(self, param_name):
@@ -296,12 +339,17 @@ class Query(AbstractQuery):
     def biz_class(self):
         return self._biz_class
 
+    @property
+    def biz_list_class(self):
+        return self._biz_class.BizList if self._biz_class else None
+
     def clear(self):
-        self.params['select'] = OrderedDict({
-            ID_FIELD_NAME: ResolverQuery(
-                self._biz_class.pybiz.resolvers[ID_FIELD_NAME]
-            )
-        })
+        self.params['select'] = OrderedDict()
+        self.params['select'][ID_FIELD_NAME] = ResolverQuery(
+            biz_class=self._biz_class,
+            resolver=self._biz_class.pybiz.resolvers[ID_FIELD_NAME],
+            parent=self,
+        )
 
     def printf(self):
         self.printer.printf(self)
@@ -309,113 +357,158 @@ class Query(AbstractQuery):
     def fprintf(self):
         return self.printer.fprintf(self)
 
-    def execute(self, first=False, backfill: Backfill = None):
-        # initialize a QueryBackfiller if we need to backfill
+    def execute(self, request=None, context=None, first=False, backfill: Backfill = None):
+        """
+        Execute the Query. This is not a recursive procedure in and of itself.
+        Any selected Resolver may or may not create and run its own Query within
+        its on_execute logic.
+        """
+        # init the request, which holds a ref to the query, a Backfiller and the
+        # context dict. the backfiller and context dict are passed along to each
+        # resolver on execute.
+        request = self._init_request(backfill, context, parent=request)
+
+        # fetch data from the DAL, create the BizObjects and execute their
+        # resolvers. call these objects the "targets" throughout the code.
+        records = self._execute_dal_query()
+        targets = self._instantiate_targets_and_resolve(records, request)
+
+        # save all backfilled objects if "persistent" mode is toggled
+        if backfill == Backfill.persistent:
+            request.backfiller.save_many()
+
+        # transform the final return value, which may
+        # be a single object or multiple.
+        retval = self._compute_exeecution_return_value(targets, first)
+        return retval
+
+    def _init_request(self, backfill, context, parent):
+        backfiller = self._init_backfiller(backfill)
+        return QueryRequest(
+            query=self,
+            backfiller=backfiller,
+            context=context or {},
+            parent=parent,
+        )
+
+    def _init_backfiller(self, backfill):
         backfiller = None
         if backfill is not None:
             if backfill is not True:
                 Backfill.validate(backfill)
             backfiller = QueryBackfiller()
+        return backfiller
 
+    def _compute_exeecution_return_value(self, targets, first):
+        """
+        Compute final return value.
+        """
+        retval = targets.clean()
+        if first:
+            retval = targets[0] if targets else None
+        return retval
+
+    def _instantiate_targets_and_resolve(self, target_records, request):
+        targets = self.biz_list_class(self.biz_class(x) for x in target_records)
+        self._execute_target_resolver_queries(targets, request)
+        return targets
+
+    def _execute_target_resolver_queries(self, targets, parent_request):
+        """
+        Call all ResolverQuery execute methods on all target BizObjects.
+        """
+        def build_request(query, source, parent, resolver):
+            return ResolverQueryRequest(
+                query=query,
+                source=source,
+                resolver=resolver,
+                backfiller=parent.backfiller,
+                context=parent.context,
+                parent=parent,
+            )
+
+        for query in self.params['select'].values():
+            for target in targets:
+                # resolve and set the value to set in the
+                # target BizObject's state dict
+                resolver = query.resolver
+                request = build_request(query, target, parent_request, resolver)
+                # Note below that the resolver sets the resolved
+                # value on the calling BizObject via resolver.execute
+                query.execute(request)
+
+    def _execute_dal_query(self):
+        fields = self._extract_selected_field_names()
+        predicate = self._compute_where_predicate()
+        return self.biz_class.get_dao().query(
+            predicate=predicate,
+            fields=fields,
+            limit=self.params.get('limit'),
+            offset=self.params.get('offset'),
+            order_by=self.params.get('order_by'),
+        )
+
+    def _extract_selected_field_names(self) -> Set[Text]:
+        resolver_queries = self.params.get('select')
+        if not resolver_queries:
+            dao_field_names = set(self.biz_class.pybiz.schema.fields.keys())
+        else:
+            dao_field_names = {
+                k for k in resolver_queries if k in
+                self.biz_class.pybiz.resolvers.fields
+            }
+
+        # Include fields maked as required to be safe, as these
+        # more than likely will be referenced by some Resolver's
+        # execution logic.
+        dao_field_names.update(
+            self.biz_class.Schema.required_fields.keys()
+        )
+
+        return dao_field_names
+
+    def _compute_where_predicate(self):
         # ensure we at least have a default "select *" predicate
         # to use when executing this Query in the Dao
         predicate = self.params.get('where')
         if not predicate:
             predicate = (self.biz_class._id != None)
-
-        # partition the "selected" objects contained in the "select" list param
-        # into a list of Field names to pass into the Dao and a list of
-        # ResolverQuery objects.
-        select_param = self.params.get('select')
-        if not select_param:
-            field_names = set(self.biz_class.pybiz.schema.fields.keys())
-            resolver_queries = []
-        else:
-            field_names = set()
-            resolver_queries = []
-            for k, v in select_param.items():
-                if k in self.biz_class.pybiz.schema.fields:
-                    field_names.add(k)
-                else:
-                    resolver_queries.append(v)
-
-        # Fetch the selected data from the DAL and instantiate
-        # the corresponding BizObjects.
-        dao = self.biz_class.get_dao()
-        dao_records = dao.query(
-            predicate=predicate,
-            fields=field_names,
-            limit=self.params.get('limit'),
-            offset=self.params.get('offset'),
-            order_by=self.params.get('order_by'),
-        )
-        biz_objects = self._biz_class.BizList(
-            self.biz_class(data=data).clean()
-            for data in dao_records
-        )
-
-        if backfiller and len(biz_objects) < self.params.get('limit', 1):
-            generated_biz_objects = backfiller.backfill_query(self, biz_objects)
-            if generated_biz_objects:
-                biz_objects.extend(generated_biz_objects)
-
-        for biz_obj in biz_objects:
-            for rq in resolver_queries:
-                rq.execute(biz_obj, backfiller=backfiller)
-
-        if backfill == Backfill.persistent:
-            assert backfiller is not None
-            backfiller.save()
-
-        if first:
-            return biz_objects[0] if biz_objects else None
-        else:
-            return biz_objects
+        return predicate
 
     def select(self, *selectors, append=True):
         if not append:
             self.clear()
 
-        if not selectors:
-            self.params['select'].update({
-                k: self._new_resolver_query(v)
-                for k, v in self._biz_class.resolvers.fields.items()
-            })
-        else:
-            flattened_selectors = []
-            for x in selectors:
-                if is_sequence(x):
-                    flattened_selectors.extend(x)
-                else:
-                    flattened_selectors.append(x)
+        flattened_selectors = []
+        for x in selectors:
+            if is_sequence(x):
+                flattened_selectors.extend(x)
+            else:
+                flattened_selectors.append(x)
 
-            resolver_queries = {}
-            resolvers = []
+        resolver_queries = {}
+        resolvers = []
 
-            for x in flattened_selectors:
-                rq = None
-                resolver = None
-                if isinstance(x, str):
-                    resolver = self._biz_class.resolvers[x]
-                    if resolver:
-                        rq = self._new_resolver_query(resolver)
-                    else:
-                        continue
-                elif isinstance(x, ResolverProperty):
-                    resolver = x.resolver
-                    rq = x.select()
-                elif isinstance(x, ResolverQuery):
-                    resolver = x.resolver
-                    rq = x
-                    rq.parent = self
+        for x in flattened_selectors:
+            rq = None
+            resolver = None
+            if isinstance(x, Resolver):
+                resolver = x
+                rq = resolver.select()
+            elif isinstance(x, ResolverProperty):
+                resolver = x.resolver
+                rq = x.select()
+            elif isinstance(x, ResolverQuery):
+                resolver = x.resolver
+                rq = x
 
-                if resolver and rq:
-                    resolvers.append(resolver)
-                    resolver_queries[resolver.name] = rq
+            if resolver and rq:
+                resolvers.append(resolver)
+                resolver_queries[resolver.name] = rq
 
-            for resolver in Resolver.sort(resolvers):
-                rq = resolver_queries[resolver.name]
-                self.params['select'][resolver.name] = rq
+        for resolver in Resolver.sort(resolvers):
+            rq = resolver_queries[resolver.name]
+            self.params['select'][resolver.name] = rq
 
         return self
 
@@ -447,9 +540,13 @@ class ResolverQuery(Query):
         *args, **kwargs
     ):
         super().__init__(
-            biz_class=resolver.biz_class, parent=parent, *args, **kwargs
+            parent=parent, *args, **kwargs
         )
         self._resolver = resolver
+
+    def __repr__(self):
+        resolver = self.resolver.name if self.resolver else ''
+        return f'<{get_class_name(self)}({resolver})>'
 
     @property
     def resolver(self) -> 'Resolver':
@@ -458,8 +555,17 @@ class ResolverQuery(Query):
     def clear(self):
         self.params['select'] = OrderedDict()
 
-    def execute(self, instance: 'BizObject', backfiller=None):
-        value = self._resolver.execute(instance, query=self, **self.params)
-        if backfiller and (not value):
-            value = backfiller.backfill_resolver(self, instance, value)
-        setattr(instance, self._resolver.name, value)
+    def execute(self, request: 'ResolverQueryRequest'):
+        # resolve the value to set in source BizObject's state
+        value = request.resolver.execute(request)
+
+        # if null or insufficient number of data elements are returned
+        # (according to the query's limit param), optionally backfill
+        # the missing values.
+        if request.backfiller:
+            limit = request.query.get('limit', 1)
+            has_len = hasattr(value, '__len__')
+            if (value is None) or (has_len and len(value) < limit):
+                value = request.resolver.backfill(request, value)
+
+        return value

@@ -40,10 +40,6 @@ class NestedDumper(Dumper):
 
     def dump(self, target: 'BizObject', keys: Set = None) -> Dict:
         return self._dump_recursive(target, keys)
-        return {
-            k: target.pybiz.resolvers[k].dump(self, v)
-            for k, v in target.internal.state.items()
-        }
 
     def _dump_recursive(
         self, parent_biz_object: 'BizObject', keys: Set

@@ -33,6 +33,7 @@ class Resolver(object):
         on_select: Callable = None,
         on_execute: Callable = None,
         on_post_execute: Callable = None,
+        on_backfill: Callable = None,
         on_get: Callable = None,
         on_set: Callable = None,
         on_del: Callable = None,
@@ -47,6 +48,7 @@ class Resolver(object):
         self.on_execute = on_execute or self.on_execute
         self.on_post_execute = on_post_execute or self.on_post_execute
         self.on_select = on_select or self.on_select
+        self.on_backfill = on_backfill or self.on_backfill
         self.on_get = on_get or self.on_set
         self.on_set = on_set or self.on_set
         self.on_del = on_del or self.on_del
@@ -149,56 +151,44 @@ class Resolver(object):
             clone._is_bound = False
         return clone
 
-    def select(self, query: 'ResolverQuery'):
-        new_query = self.on_select(self, query)
-        return (new_query or query)
+    def select(self, *selectors):
+        return self.on_select(selectors)
 
-    def execute(self, instance, query=None, *args, **kwargs):
+    def execute(self, request: 'ResolverQueryRequest'):
         """
         Return the result of calling the on_execute callback. If self.state
         is set, then we return any state data that may exist, in which case
         no new call is made.
         """
-        if self.on_execute is not None:
-            if self.name not in instance.internal.state:
-                result = self.on_execute(instance, query, *args, **kwargs)
-                instance.internal.state[self.name] = result
-            else:
-                result = instance.internal.state[self.name]
-            result = self.on_post_execute(instance, query, result)
-            return result
+        instance = request.source
+        if self.name not in instance.internal.state:
+            result = self.on_execute(request.source, request)
+            instance.internal.state[self.name] = result
         else:
-            console.warning(
-                message=(
-                    f'useless execution of {self}. '
-                    f'on_execute callback not defined',
-                ),
-                data={
-                    'instance': instance
-                }
-            )
-            return None
+            result = instance.internal.state[self.name]
+
+        result = self.on_post_execute(request.source, request, result)
+        return result
+
+    def backfill(self, request, result):
+        return self.on_backfill(request.source, request, result)
 
     def dump(self, dumper: 'Dumper', value):
         raise NotImplementedError()
 
-    def generate(
-        self, instance: 'BizObject', query: 'ResolverQuery',
-        *args, **kwargs
-    ):
+    def generate(self, instance: 'BizObject', query: 'ResolverQuery'):
         raise NotImplementedError()
 
-    @staticmethod
-    def on_execute(
-        instance: 'BizObject', query: 'ResolverQuery',
-        *args, **kwargs
-    ):
+    def on_select(self, selectors) -> 'ResolverQuery':
         raise NotImplementedError()
 
-    @staticmethod
-    def on_post_execute(
-        instance: 'BizObject', query: 'ResolverQuery', result
-    ):
+    def on_execute(self, instance, request: 'ResolverQueryRequest'):
+        raise NotImplementedError()
+
+    def on_post_execute(self, instance, request: 'ResolverQueryRequest', result):
+        return result
+
+    def on_backfill(self, instance, request, result):
         return result
 
     @staticmethod
@@ -218,12 +208,6 @@ class Resolver(object):
         resolver: 'Resolver', owner: 'BizObject', value
     ) -> 'BizThing':
         return value if isinstance(value, BizThing) else None
-
-    @staticmethod
-    def on_select(
-        resolver: 'Resolver', query: 'ResolverQuery'
-    ) -> 'ResolverQuery':
-        return query
 
 
 class ResolverManager(object):
@@ -318,7 +302,15 @@ class FieldResolver(Resolver):
     def priority(cls):
         return 1
 
-    def on_execute(self, instance, query=None):
+    def on_select(self, selectors) -> 'ResolverQuery':
+        from pybiz.biz2.query import ResolverQuery
+
+        query = ResolverQuery(resolver=self, biz_class=self.biz_class)
+        query.select(selectors)
+        return query
+
+    def on_execute(self, instance, request):
+        instance = request.source
         key = self._field.name
         is_value_loaded = key in instance.internal.state
         if self._lazy and (not is_value_loaded):
@@ -330,9 +322,12 @@ class FieldResolver(Resolver):
         return value
 
     def dump(self, dumper: 'Dumper', value):
-        processed_value, errors = self._field.process(value)
-        if errors:
-            raise Exception('ValidationError: ' + str(errors))
+        if value is None and self._field.nullable:
+            processed_value = None
+        else:
+            processed_value, errors = self._field.process(value)
+            if errors:
+                raise Exception('ValidationError: ' + str(errors))
         return processed_value
 
 
@@ -361,18 +356,23 @@ class ResolverProperty(property):
         return self.resolver.biz_class if self.resolver else None
 
     def select(self, *targets, append=True):
-        from pybiz.biz2.query import ResolverQuery
-
-        query = ResolverQuery(self.resolver)
-        query.select(targets, append=append)
-        query = self.resolver.select(query)
-        return query
+        targets = flatten_sequence(targets)
+        return self.resolver.select(*targets)
 
     def _fget(self, instance):
-        query = self.select(self.resolver.name)
-        obj = self.resolver.execute(instance, query)
+        from pybiz.biz2.query import ResolverQueryRequest
+
+        # TODO: this two-step process could be
+        # made more efficient somehow
+        request = ResolverQueryRequest(
+            query=self.select(),
+            source=instance,
+            resolver=self.resolver,
+        )
+        obj = self.resolver.execute(request)
         if self.resolver.on_get:
             self.resolver.on_get(instance, resolver, obj)
+
         return obj
 
     def _fset(self, instance, obj):
