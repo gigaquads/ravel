@@ -70,7 +70,12 @@ class NestedDumper(Dumper):
                     record[k] = self.dump(child_biz_obj)
             else:
                 # dump non-Relationship state
-                record[k] = resolver.dump(self, v)
+                try:
+                    record[k] = resolver.dump(self, v)
+                except:
+                    import ipdb; ipdb.set_trace()
+                    pass
+
 
         return record
 

@@ -18,6 +18,7 @@ from appyratus.enum import Enum
 from appyratus.utils import DictObject
 from appyratus.schema import RangeConstraint, ConstantValueConstraint
 
+from pybiz.util.misc_functions import flatten_sequence
 from pybiz.schema import Enum as EnumField
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
@@ -115,11 +116,11 @@ class Predicate(object):
 
     @staticmethod
     def _reduce(func, predicates: List['Predicate']) -> 'Predicate':
-        predicates = [p for p in predicates if p is not None]
+        predicates = flatten_sequence(p for p in predicates if p is not None)
         if not predicates:
             return None
         if len(predicates) == 1:
-            return predicates[0]
+            return list(predicates)[0]
         else:
             return reduce(func, predicates)
 

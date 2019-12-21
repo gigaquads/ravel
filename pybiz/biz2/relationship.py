@@ -52,13 +52,13 @@ class Relationship(Resolver):
 
     def __init__(
         self,
-        target: Callable,
+        target: Type['BizObject'],
         on_add: Callable = None,
         on_rem: Callable = None,
         *args,
         **kwargs
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(target=target, *args, **kwargs)
 
         self.on_add = on_add or self.on_add
         self.on_rem = on_rem or self.on_rem
@@ -71,18 +71,6 @@ class Relationship(Resolver):
         # Relationship.
         self._many = None
 
-        # if `target` was not provided as a callback but as a class object,
-        # we can eagerly set self._target. otherwise, we can only call the
-        # callback lazily, during the bind lifecycle method, after its lexical
-        # scope has been updated with references to the BizObject types picked
-        # up by the host Application.
-        if isinstance(target, type):
-            self._target_callback = None
-            self._target = target
-        else:
-            self._target_callback = target
-            self._target = None
-
     @classmethod
     def tags(cls):
         return {'relationships'}
@@ -92,39 +80,18 @@ class Relationship(Resolver):
         return 10
 
     @property
-    def target(self):
-        return self._target
-
-    @property
     def many(self):
         return self._many
 
     def on_bind(self, biz_class):
-        if self._target_callback:
-            biz_class.pybiz.app.inject(self._target_callback)
-            obj = self._target_callback()
-            if is_biz_list(obj):
-                self._target = obj.pybiz.biz_class
-                self._many = True
-            else:
-                self._target = obj
-                self._many = False
-        else:
-            if is_biz_list(self._target):
-                self._many = True
-            else:
-                self._many = False
-
-            self._target = self._target
-
         class BizList(RelationshipBizList):
             pass
 
         self.BizList = BizList
-        self.BizList.pybiz.biz_class = self._target
+        self.BizList.pybiz.biz_class = self.target
         self.BizList.pybiz.relationship = self
 
-    def on_post_execute(self, target, request: 'QueryRequest', result):
+    def on_post_execute(self, target, resolver, request: 'QueryRequest', result):
         relationship = request.resolver
         transformed_result = result
         if relationship.many and (result is not None):
@@ -145,23 +112,13 @@ class Relationship(Resolver):
         elif result is None:
             return biz_list.pybiz.biz_class.generate(request.query)
 
-    def on_select(self, selectors) -> 'ResolverQuery':
+    def on_select(self, query: 'Query', parent_query: 'Query') -> 'ResolverQuery':
         """
-        Ensure that at least _id is selected, and if nothing at all is selected,
-        then select all by default.
+        If no fields are selected explicity, then select all by default.
         """
-        from pybiz.biz2.query import ResolverQuery
-
-        query = ResolverQuery(resolver=self, biz_class=self.target)
-        biz_class = query.resolver.target
-
-        if not selectors:
-            query = query.select(biz_class.pybiz.resolvers.fields.values())
-        else:
-            query = query.select(*selectors)
-
-        if ID_FIELD_NAME not in query.params['select']:
-            query = query.select(biz_class._id)
+        if query.options.get('eager'):
+            required = self.target.pybiz.resolvers.required_resolvers
+            query.select(required)
 
         return query
 
@@ -195,6 +152,4 @@ class Relationship(Resolver):
 
 
 class relationship(ResolverDecorator):
-    def __init__(self, target, *args, **kwargs):
-        super().__init__(Relationship, *args, **kwargs)
-        self.kwargs['target'] = target
+    pass

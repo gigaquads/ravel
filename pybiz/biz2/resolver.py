@@ -1,9 +1,10 @@
 import sys
 import re
+import inspect
 
 from copy import deepcopy
-from typing import Text, Set, Dict, List, Callable, Type
-from collections import defaultdict
+from typing import Text, Set, Dict, List, Callable, Type, Tuple
+from collections import defaultdict, OrderedDict
 
 import pybiz.biz
 
@@ -11,6 +12,7 @@ from pybiz.util.loggers import console
 from pybiz.util.misc_functions import (
     is_sequence,
     flatten_sequence,
+    get_class_name
 )
 from pybiz.predicate import (
     Predicate,
@@ -20,16 +22,37 @@ from pybiz.predicate import (
 )
 
 from .biz_thing import BizThing
-from .util import is_biz_object
+from .util import is_biz_object, is_biz_list
+from .query import Query
+
+def EMPTY_FUNCTION():
+    pass
 
 
 class Resolver(object):
+
+    @classmethod
+    def Decorator(cls):
+        """
+        Class factory method for convenience when creating a new
+        ResolverDecorator for Resolvers.
+        """
+        class decorator_class(ResolverDecorator):
+            def __init__(self, *args, **kwargs):
+                super().__init__(cls, *args, **kwargs)
+
+        class_name = f'{get_class_name(cls)}ResolverDecorator'
+        decorator_class.__name__ = class_name
+        return decorator_class
+
     def __init__(
         self,
         biz_class: Type['BizObject'] = None,
+        target: Type['BizObject'] = None,
         name: Text = None,
-        schema: 'Schema' = None,
         lazy: bool = True,
+        private: bool = False,
+        required: bool = False,
         on_select: Callable = None,
         on_execute: Callable = None,
         on_post_execute: Callable = None,
@@ -38,12 +61,33 @@ class Resolver(object):
         on_set: Callable = None,
         on_del: Callable = None,
     ):
-        self._schema = schema
         self._name = name
         self._lazy = lazy
+        self._private = private
+        self._required = required
         self._biz_class = biz_class
+        self._target = None
         self._is_bootstrapped = False
         self._is_bound = False
+        self._many = None
+        self._target_callback = None
+
+        # if `target` was not provided as a callback but as a class object, we
+        # can eagerly set self._target. otherwise, we can only call the callback
+        # lazily, during the bind lifecycle method, after its lexical scope has
+        # been updated with references to the BizObject types picked up by the
+        # host Application.
+        if not isinstance(target, type):
+            self._target_callback = target
+        else:
+            self.target = target or biz_class
+
+        # If on_execute function is a stub, interpret this as an indication to
+        # use the on_execute method defined on this Resolver class.
+        if on_execute and hasattr(on_execute, '__code__'):
+            func_code = on_execute.__code__.co_code
+            if func_code == EMPTY_FUNCTION.__code__.co_code:
+                on_execute = None
 
         self.on_execute = on_execute or self.on_execute
         self.on_post_execute = on_post_execute or self.on_post_execute
@@ -53,13 +97,28 @@ class Resolver(object):
         self.on_set = on_set or self.on_set
         self.on_del = on_del or self.on_del
 
+        import inspect
+        print(name, self, inspect.getsource(self.on_bind))
+
     def __repr__(self):
+        source = ''
+        if self._biz_class is not None:
+            source += f'{get_class_name(self._biz_class)}'
+            if self._name is not None:
+                source += '.'
+        source += self._name or ''
+
+        target = ''
+        if self._target is not None:
+            target += get_class_name(self._target)
+
         return (
-            f'<Resolver('
-            f'name="{self.name}", '
-            f'tags={"|".join(self.tags())}, '
+            f'Resolver('
+            f'name={source}, '
+            f'target={target}, '
+            f'type={get_class_name(self)}, '
             f'priority={self.priority()}'
-            f'>'
+            f')'
         )
 
     @classmethod
@@ -76,11 +135,40 @@ class Resolver(object):
         return self._is_bootstrapped
 
     def bind(self, biz_class):
+        if self._target_callback:
+            biz_class.pybiz.app.inject(self._target_callback)
+            self.target = self._target_callback()
+
         self.on_bind(biz_class)
         self._is_bound = True
 
     def on_bind(self, biz_class):
         pass
+
+    @property
+    def target(self) -> Type['BizObject']:
+        return self._target
+
+    @target.setter
+    def target(self, target: Type['BizThing']):
+        if (not isinstance(target, type)) and callable(target):
+            target = target()
+
+        if target is None:
+            # default value
+            self._target = self._biz_class
+        elif is_biz_object(target):
+            self._target = target
+            self._many = False
+        elif is_biz_list(target):
+            self._target = target.pybiz.biz_class
+            self._many = True
+        else:
+            raise ValueError()
+
+    @property
+    def many(self) -> bool:
+        return self._many
 
     @property
     def is_bound(self):
@@ -95,8 +183,16 @@ class Resolver(object):
         return self._lazy
 
     @property
-    def schema(self):
-        return self._schema
+    def lazy(self):
+        return self._lazy
+
+    @property
+    def required(self):
+        return self._required
+
+    @property
+    def private(self):
+        return self._private
 
     @property
     def biz_class(self):
@@ -151,10 +247,17 @@ class Resolver(object):
             clone._is_bound = False
         return clone
 
-    def select(self, *selectors):
-        return self.on_select(selectors)
+    def select(self, parent_query: 'Query' = None, *selectors):
+        new_query = ResolverQuery(resolver=self, biz_class=self._target)
 
-    def execute(self, request: 'ResolverQueryRequest'):
+        if parent_query is not None:
+            new_query.configure(parent_query.options)
+        if selectors:
+            new_query.select(selectors)
+
+        return self.on_select(new_query, parent_query=parent_query)
+
+    def execute(self, request: 'ResolverRequest'):
         """
         Return the result of calling the on_execute callback. If self.state
         is set, then we return any state data that may exist, in which case
@@ -162,33 +265,56 @@ class Resolver(object):
         """
         instance = request.source
         if self.name not in instance.internal.state:
-            result = self.on_execute(request.source, request)
+            result = self.on_execute(request.source, self, request)
             instance.internal.state[self.name] = result
         else:
             result = instance.internal.state[self.name]
 
-        result = self.on_post_execute(request.source, request, result)
+        result = self.on_post_execute(request.source, self, request, result)
         return result
 
     def backfill(self, request, result):
         return self.on_backfill(request.source, request, result)
 
+    def on_select(self, query: 'ResolverQuery', parent_query: 'Query'):
+        return query
+
     def dump(self, dumper: 'Dumper', value):
-        raise NotImplementedError()
+        if value is None:
+            return None
+        elif self._target is not None:
+            assert isinstance(value, BizThing)
+            return value.dump()
+        else:
+            raise NotImplementedError()
 
     def generate(self, instance: 'BizObject', query: 'ResolverQuery'):
         raise NotImplementedError()
 
-    def on_select(self, selectors) -> 'ResolverQuery':
+    def on_execute(
+        self,
+        instance: 'BizObject',
+        resolver: 'Resolver',
+        request: 'ResolverRequest'
+    ):
         raise NotImplementedError()
 
-    def on_execute(self, instance, request: 'ResolverQueryRequest'):
-        raise NotImplementedError()
-
-    def on_post_execute(self, instance, request: 'ResolverQueryRequest', result):
+    def on_post_execute(
+        self,
+        instance: 'BizObject',
+        resolver: 'Resolver',
+        request: 'ResolverRequest',
+        result
+    ):
         return result
 
-    def on_backfill(self, instance, request, result):
+    def on_backfill(
+        self,
+        instance: 'BizObject',
+        resolver: 'Resolver',
+        request: 'ResolverRequest',
+        result
+    ):
         return result
 
     @staticmethod
@@ -214,24 +340,18 @@ class ResolverManager(object):
     def __init__(self):
         self._resolvers = {}
         self._tag_2_resolvers = defaultdict(dict)
+        self._required_resolvers = set()
+        self._private_resolvers = set()
 
     def __getattr__(self, tag):
         return self.by_tag(tag)
 
-    def __getitem__(self, resolver_name):
-        return self._resolvers.get(resolver_name)
+    def __getitem__(self, name):
+        return self._resolvers.get(name)
 
-    def __setitem__(self, resolver_name, resolver):
-        assert resolver_name == resolver.name
-        old_resolver = self._resolvers.get(resolver_name)
-        if old_resolver is not None:
-            del self._resolvers[resolver_name]
-            for tag in old_resolver.tags():
-                del self._tag_2_resolvers[tag][resolver_name]
-
-        self._resolvers[resolver_name] = resolver
-        for tag in resolver.tags():
-            self._tag_2_resolvers[tag][resolver_name] = resolver
+    def __setitem__(self, name, resolver):
+        assert name == resolver.name
+        self[name] = resolver
 
     def __iter__(self):
         return iter(self._resolvers)
@@ -245,6 +365,9 @@ class ResolverManager(object):
     def __len__(self):
         return len(self._resolvers)
 
+    def get(self, key, default=None):
+        return self._resolvers.get(key, default)
+
     def keys(self):
         return list(self._resolvers.keys())
 
@@ -254,10 +377,35 @@ class ResolverManager(object):
     def items(self):
         return list(self._resolvers.items())
 
+    @property
+    def required_resolvers(self) -> Set[Resolver]:
+        return self._required_resolvers
+
+    @property
+    def private_resolvers(self) -> Set[Resolver]:
+        return self._private_resolvers
+
     def register(self, resolver):
-        self._resolvers[resolver.name] = resolver
+        name = resolver.name
+        old_resolver = self._resolvers.get(name)
+        if old_resolver is not None:
+            del self._resolvers[name]
+            if old_resolver.required:
+                self._required_resolvers.remove(old_resolver)
+            if old_resolver.private:
+                self._private_resolvers.remove(old_resolver)
+            for tag in old_resolver.tags():
+                del self._tag_2_resolvers[tag][name]
+
+        self._resolvers[name] = resolver
+
+        if resolver.required:
+            self._required_resolvers.add(resolver)
+        if resolver.private:
+            self._private_resolvers.add(resolver)
+
         for tag in resolver.tags():
-            self._tag_2_resolvers[tag][resolver.name] = resolver
+            self._tag_2_resolvers[tag][name] = resolver
 
     def by_tag(self, tag, invert=False):
         if not invert:
@@ -270,65 +418,6 @@ class ResolverManager(object):
                     resolvers.update(resolver_dict)
             return resolvers
 
-
-class FieldResolver(Resolver):
-    def __init__(self, field, lazy=True, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._field = field
-        self._lazy = lazy
-
-    @property
-    def asc(self) -> 'OrderBy':
-        return pybiz.biz.OrderBy(self.field.source, desc=False)
-
-    @property
-    def desc(self) -> 'OrderBy':
-        return pybiz.biz.OrderBy(self.field.source, desc=True)
-
-
-    @property
-    def lazy(self):
-        return self._lazy
-
-    @property
-    def field(self):
-        return self._field
-
-    @classmethod
-    def tags(cls):
-        return {'fields'}
-
-    @classmethod
-    def priority(cls):
-        return 1
-
-    def on_select(self, selectors) -> 'ResolverQuery':
-        from pybiz.biz2.query import ResolverQuery
-
-        query = ResolverQuery(resolver=self, biz_class=self.biz_class)
-        query.select(selectors)
-        return query
-
-    def on_execute(self, instance, request):
-        instance = request.source
-        key = self._field.name
-        is_value_loaded = key in instance.internal.state
-        if self._lazy and (not is_value_loaded):
-            unloaded_field_names = (
-                instance.Schema.fields.keys() - instance.internal.state.keys()
-            )
-            instance.load(unloaded_field_names)
-        value = instance.internal.state.get(key)
-        return value
-
-    def dump(self, dumper: 'Dumper', value):
-        if value is None and self._field.nullable:
-            processed_value = None
-        else:
-            processed_value, errors = self._field.process(value)
-            if errors:
-                raise Exception('ValidationError: ' + str(errors))
-        return processed_value
 
 
 class ResolverProperty(property):
@@ -360,18 +449,18 @@ class ResolverProperty(property):
         return self.resolver.select(*targets)
 
     def _fget(self, instance):
-        from pybiz.biz2.query import ResolverQueryRequest
+        from pybiz.biz2.query import ResolverRequest
 
         # TODO: this two-step process could be
         # made more efficient somehow
-        request = ResolverQueryRequest(
+        request = ResolverRequest(
             query=self.select(),
             source=instance,
             resolver=self.resolver,
         )
         obj = self.resolver.execute(request)
         if self.resolver.on_get:
-            self.resolver.on_get(instance, resolver, obj)
+            self.resolver.on_get(instance, self.resolver, obj)
 
         return obj
 
@@ -380,13 +469,80 @@ class ResolverProperty(property):
         old_obj = instance.internal.state.pop(key, None)
         instance.internal.state[key] = obj
         if self.resolver.on_set:
-            self.resolver.on_set(resolver, old_obj, obj)
+            self.resolver.on_set(self.resolver, old_obj, obj)
 
     def _fdel(self, instance):
         key = self.resolver.name
         obj = instance.internal.state.pop(key, None)
         if self.resolver.on_del:
-            self.resolver.on_del(resolver, obj)
+            self.resolver.on_del(self.resolver, obj)
+
+
+class FieldResolver(Resolver):
+    def __init__(self, field, *args, **kwargs):
+        super().__init__(
+            target=kwargs.get('biz_class'),
+            private=field.meta.get('private', False),
+            required=field.required,
+            *args, **kwargs
+        )
+        self._field = field
+
+    @property
+    def asc(self) -> 'OrderBy':
+        return pybiz.biz.OrderBy(self.field.source, desc=False)
+
+    @property
+    def desc(self) -> 'OrderBy':
+        return pybiz.biz.OrderBy(self.field.source, desc=True)
+
+    @property
+    def lazy(self):
+        return self._lazy
+
+    @property
+    def field(self):
+        return self._field
+
+    @classmethod
+    def tags(cls):
+        return {'fields'}
+
+    @classmethod
+    def priority(cls):
+        return 1
+
+    def on_bind(self, biz_class):
+        """
+        For FieldResolvers, the target is this owner BizObject class, since the
+        field value comes from it, not some other type, as with Relationships,
+        for instance.
+        """
+        self.target = biz_class
+
+    def on_select(self, query: 'Query', parent_query=None) -> 'ResolverQuery':
+        return query
+
+    def on_execute(self, instance, resolver, request):
+        instance = request.source
+        key = self._field.name
+        is_value_loaded = key in instance.internal.state
+        if self._lazy and (not is_value_loaded):
+            unloaded_field_names = (
+                instance.Schema.fields.keys() - instance.internal.state.keys()
+            )
+            instance.load(unloaded_field_names)
+        value = instance.internal.state.get(key)
+        return value
+
+    def dump(self, dumper: 'Dumper', value):
+        if value is None and self._field.nullable:
+            processed_value = None
+        else:
+            processed_value, errors = self._field.process(value)
+            if errors:
+                raise Exception('ValidationError: ' + str(errors))
+        return processed_value
 
 
 class FieldResolverProperty(ResolverProperty):
@@ -445,7 +601,7 @@ class ResolverDecorator(object):
     the constructor of the Resolver type (self.resolver_class).
     """
 
-    def __init__(self, resolver: Resolver = None, schema=None, **kwargs):
+    def __init__(self, resolver: Type[Resolver] = None, **kwargs):
         if not isinstance(resolver, type):
             # in this case, the decorator was used like "@resolver"
             self.resolver_class = Resolver
@@ -459,7 +615,6 @@ class ResolverDecorator(object):
             self.name = None
 
         self.kwargs = kwargs.copy()
-        self.schema = schema
         self.on_get_func = None
         self.on_set_func = None
         self.on_del_func = None
@@ -486,5 +641,49 @@ class ResolverDecorator(object):
         return self
 
 
-class resolver(ResolverDecorator):
-    pass
+class ResolverQuery(Query):
+    def __init__(
+        self,
+        resolver: 'Resolver',
+        parent: 'AbstractQuery' = None,
+        *args, **kwargs
+    ):
+        super().__init__(
+            parent=parent, *args, **kwargs
+        )
+        self._resolver = resolver
+
+    def __repr__(self):
+        biz_class_name = ''
+        name = ''
+        if self._resolver is not None:
+            biz_class_name = get_class_name(self.resolver.biz_class)
+            name = self.resolver.name
+        return f'Query(target={biz_class_name}.{name})'
+
+    @property
+    def resolver(self) -> 'Resolver':
+        return self._resolver
+
+    def clear(self):
+        self.params.select = OrderedDict()
+
+    def execute(self, request: 'ResolverRequest'):
+        """
+        Execute Resolver.execute (and backfill its value if necessary).
+        """
+        # resolve the value to set in source BizObject's state
+        value = request.resolver.execute(request)
+
+        # if null or insufficient number of data elements are returned
+        # (according to the query's limit param), optionally backfill the
+        # missing values.
+        if request.backfiller:
+            limit = request.query.get('limit', 1)
+            has_len = hasattr(value, '__len__')
+            # since we don't know for sure what type of value the resolver
+            # returns, we have to resort to hacky introspection here
+            if (value is None) or (has_len and len(value) < limit):
+                value = request.resolver.backfill(request, value)
+
+        return value

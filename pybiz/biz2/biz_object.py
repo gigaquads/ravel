@@ -31,7 +31,7 @@ from .biz_thing import BizThing
 from .biz_list import BizList
 from .dirty import DirtyDict
 from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
-from .query import Query
+from .query import Query, ResolverRequest
 from .resolver import (
     Resolver,
     ResolverProperty,
@@ -117,8 +117,8 @@ class BizObjectMeta(type):
         for name, dec in resolver_decorators.items():
             resolver = dec.resolver_class(
                 biz_class=biz_class,
+                target=dec.kwargs.pop('target'),
                 name=name,
-                schema=dec.schema,
                 on_execute=dec.on_execute_func,
                 on_get=dec.on_get_func,
                 on_set=dec.on_set_func,
@@ -180,6 +180,7 @@ class BizObjectMeta(type):
         class_name = f'{biz_class.__name__}Schema'
 
         assert ID_FIELD_NAME in fields
+        assert REV_FIELD_NAME in fields
 
         biz_class.Schema = type(class_name, (Schema, ), fields)
         biz_class.pybiz.schema = biz_class.Schema()
@@ -232,6 +233,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     # built-in fields
     _id = Id()
+    _rev = String()
 
     def __init__(self, data: Dict = None, **more_data):
         self.internal = DictObject()
@@ -404,11 +406,20 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return self
 
     def load(self, selectors=None) -> 'BizObject':
+        if self._id is None:
+            return self
+
         if isinstance(selectors, str):
             selectors = {selectors}
 
-        fresh = self.get(_id=self._id, select=selectors)
+        # TODO: fix up Query so that even if the fresh object does exist in the
+        # DAL, it will still try to execute the resolvers on the uncreated
+        # object.
 
+        # resolve a fresh copy throught the DAL and merge state
+        # into this BizObject.
+        query = self.select(selectors).where(_id=self._id)
+        fresh = query.execute(first=True)
         if fresh:
             self.merge(fresh)
             self.clean(fresh.internal.state.keys())
@@ -461,6 +472,21 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 return False
 
         return True
+
+    def resolve(self, *selectors):
+        keys = self._normalize_selectors(selectors)
+        if not keys:
+            keys = self.pybiz.resolvers.keys()
+
+        data = {}
+        for key in keys:
+            resolver = self.pybiz.resolvers[key]
+            resolver_query = resolver.select()
+            request = ResolverRequest(resolver_query, self, resolver=resolver)
+            data[key] = resolver_query.execute(request)
+
+        self.merge(data)
+        return self
 
     def dump(self, resolvers: Set[Text] = None, style: DumpStyle = None) -> Dict:
         """
@@ -816,10 +842,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         # TODO: make it respect "limit" param instad of inside Query.generate
         other_resolvers = set()
         field_names = set()
-        if not query.params['select']:
+        if not query.params.select:
             field_names.update(cls.pybiz.resolvers.fields.keys())
         else:
-            for sel in query.params['select']:
+            for sel in query.params.select:
                 if isinstance(sel, str):
                     sel = cls.pybiz.resolvers[sel]
                     if sel is None:
@@ -833,7 +859,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                     other_resolvers.add(sel)
 
         field_resolvers = [
-            q.resolver for q in query.params['select'].values()
+            q.resolver for q in query.params.select.values()
             if q.resolver.name in cls.pybiz.resolvers.fields
         ]
 
@@ -846,7 +872,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for resolver in Resolver.sort(other_resolvers):
             subquery = None
             if query is not None:
-                subquery = query.params['select'].get(resolver.name)
+                subquery = query.params.select.get(resolver.name)
             value = resolver.generate(instance, query=subquery)
             generated_child_data[resolver.name] = value
 

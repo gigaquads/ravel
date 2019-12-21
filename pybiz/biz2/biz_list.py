@@ -7,6 +7,7 @@ from pybiz.constants import IS_BIZ_LIST_ANNOTATION
 
 from .biz_thing import BizThing
 from .dumper import Dumper, DumpStyle
+from .util import is_biz_object
 
 
 class BizListMeta(type):
@@ -24,7 +25,10 @@ class BizList(BizThing, metaclass=BizListMeta):
 
     def __init__(self, biz_objects: List = None):
         self.internal = DictObject()
-        self.internal.data = list(biz_objects or [])
+        self.internal.data = [
+            x if is_biz_object(x) else self.pybiz.biz_class(data=x)
+            for x in biz_objects or []
+        ]
 
     def __getitem__(self, index):
         return self.internal.data[index]

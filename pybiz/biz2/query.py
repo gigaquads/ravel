@@ -1,15 +1,23 @@
 from random import randint
 from typing import Dict, Type, Set, Text
 from collections import OrderedDict, defaultdict
+from copy import deepcopy
+from types import GeneratorType
 
 from appyratus.enum import EnumValueStr
 from appyratus.utils import DictObject
 
 from pybiz.util.misc_functions import is_sequence, get_class_name
 from pybiz.constants import ID_FIELD_NAME
+from pybiz.schema import String
+from pybiz.predicate import (
+    OP_CODE,
+    OP_CODE_2_DISPLAY_STRING,  # TODO: Turn OP_CODE into proper enum
+    ConditionalPredicate,
+    Predicate,
+)
 
 from .util import is_biz_object, is_biz_list
-from .resolver import Resolver, ResolverProperty
 
 
 class Backfill(EnumValueStr):
@@ -45,9 +53,11 @@ class QueryPrinter(object):
 
         substrings.append(self._build_substring_select_head(query))
         if query.params.get('select'):
+            substrings.append('SELECT (')
             substrings.extend(self._build_substring_select_body(query, indent))
+            substrings.append(')')
 
-        if 'where' in query.params:
+        if query.params.get('where'):
             substrings.extend(self._build_substring_where(query))
         if 'order_by' in query.params:
             substrings.append(self._build_substring_order_by(query))
@@ -60,7 +70,7 @@ class QueryPrinter(object):
 
     def _build_substring_select_head(self, query):
         if query.params.get('select'):
-            return f'FROM {get_class_name(query.biz_class)} SELECT'
+            return f'FROM {get_class_name(query.biz_class)}'
         else:
             return f'FROM {get_class_name(query.biz_class)}'
 
@@ -68,91 +78,121 @@ class QueryPrinter(object):
         substrings = []
         substrings.append('WHERE (')
         predicates = query.params['where']
+        if isinstance(predicates, Predicate):
+            predicates = [predicates]
         for idx, predicate in enumerate(predicates):
             if predicate.is_boolean_predicate:
                 substrings.extend(
-                    self._build_substring_bool_predicate(predicate)
+                    self._build_substring_bool_predicate(query, predicate)
                 )
             else:
                 assert predicate.is_conditional_predicate
                 substrings.append(
-                    self._build_substring_cond_predicate(predicate)
+                    self._build_substring_cond_predicate(query, predicate)
                 )
             substrings.append(')')
 
         return substrings
 
-    def _build_substring_cond_predicate(self, predicate, indent=1):
+    def _build_substring_cond_predicate(self, query, predicate, indent=1):
         s_op_code = OP_CODE_2_DISPLAY_STRING[predicate.op]
+        s_biz_class = get_class_name(query.biz_class)
         s_field = predicate.field.name
         s_value = str(predicate.value)
-        return f'{indent * " "}{s_field} {s_op_code} {s_value}'
+        if isinstance(predicate.field, String):
+            s_value = s_value.replace('"', '\"')
+            s_value = f'"{s_value}"'
+        return f'{indent * " "} {s_biz_class}.{s_field} {s_op_code} {s_value}'
 
     def _build_substring_bool_predicate(self, predicate, indent=1):
         s_op_code = OP_CODE_2_DISPLAY_STRING[predicate.op]
         if predicate.lhs.is_boolean_predicate:
             s_lhs = self._build_substring_bool_predicate(
-                predicate.lhs, indent=indent+1
+                query, predicate.lhs, indent=indent+1
             )
         else:
             s_lhs = self._build_substring_cond_predicate(
-                predicate.lhs, indent=indent+1
+                query, predicate.lhs, indent=indent+1
             )
 
         if predicate.rhs.is_boolean_predicate:
             s_rhs = self._build_substring_bool_predicate(
-                predicate.rhs, indent=indent+1
+                query, predicate.rhs, indent=indent+1
             )
         else:
             s_rhs = self._build_substring_cond_predicate(
-                predicate.rhs, indent=indent+1
+                query, predicate.rhs, indent=indent+1
             )
         return [
-            f'{indent * " "}(',
-            f'{indent * " "} {s_lhs} {s_op_code}',
-            f'{indent * " "} {s_rhs}',
-            f'{indent * " "})',
+            f'{indent * " "} (',
+            f'{indent * " "}   {s_lhs} {s_op_code}',
+            f'{indent * " "}   {s_rhs}',
+            f'{indent * " "} )',
         ]
 
     def _build_substring_select_body(self, query, indent: int):
         substrings = []
         resolvers = query.biz_class.pybiz.resolvers
-        for resolver_query in query.params.get('select', {}).values():
-            resolver = resolver_query.resolver
-            if resolver.name in resolvers.fields:
-                substrings.append(
-                    self._build_substring_selected_field(
-                        resolver_query, indent
-                    )
+        resolver_queries = query.params.get('select', {}).values()
+        if resolver_queries:
+            resolver_queries = sorted(
+                resolver_queries,
+                key=lambda query: (
+                    query.resolver.priority(),
+                    query.resolver.name,
+                    query.resolver.required,
+                    query.resolver.private,
                 )
-            else:
-                substrings.extend(
-                    self._build_substring_selected_resolver(
-                        resolver_query, indent
+            )
+            for resolver_query in resolver_queries:
+                resolver = resolver_query.resolver
+                target = resolver.target
+                if target is None:
+                    continue
+
+                if resolver.name in target.resolvers.fields:
+                    substrings.append(
+                        self._build_substring_selected_field(
+                            resolver_query, indent
+                        )
                     )
-                )
+                else:
+                    substrings.extend(
+                        self._build_substring_selected_resolver(
+                            resolver_query, indent
+                        )
+                    )
 
         return substrings
 
     def _build_substring_selected_field(self, query, indent: int):
         s_name = query.resolver.name
         s_type = get_class_name(query.resolver.field)
-        return f' - {s_name}: {s_type}'
+        return f'-  {s_name}: {s_type}'
 
     def _build_substring_selected_resolver(self, query, indent: int):
-        s_name = query.resolver.name
         substrings = []
-        if s_name in query.biz_class.pybiz.resolvers.relationships:
-            rel = query.resolver
-            s_biz_class = get_class_name(rel.target)
-            if rel.many:
-                substrings.append(f' - {s_name}: [{s_biz_class}] -> (')
-            else:
-                substrings.append(f' - {s_name}: {s_biz_class} -> (')
+
+        s_name = query.resolver.name
+        s_target = None
+        if query.resolver.target:
+            s_target = get_class_name(query.resolver.target)
+
+        if s_target is None:
+            return substrings
+
+        resolver = query.resolver
+        if resolver.target:
+            s_biz_class = get_class_name(resolver.target)
+            s_target = f'List[{s_target}]' if resolver.many else s_target
+            substrings.append(f'-  {s_name}: {s_target} ->')
         else:
-            substrings.append(f' - {s_name} = (')
-        substrings.append(self.fprintf(query, indent=indent+5))
-        substrings.append(f'   )')
+            substrings.append(f'-  {s_name} ->')
+
+        substrings[0]  += ' ' + self.fprintf(query, indent=indent+5).lstrip()
+        #substrings.append(self.fprintf(query, indent=indent+5))
+        #substrings.append(f'   )')
+
         return substrings
 
     def _build_substring_order_by(self, query):
@@ -171,6 +211,31 @@ class QueryPrinter(object):
 
     def _build_substring_limit(self, query):
         return f'LIMIT {query.params["limit"]}'
+
+
+class QueryOptions(object):
+    def __init__(self, eager=True):
+        self._data = {
+            'eager': eager,
+        }
+
+    def to_dict(self):
+        return deepcopy(self._data)
+
+    def update(self, obj):
+        if isinstance(obj, QueryOptions):
+            self._data.update(obj._data)
+        else:
+            self._data.update(obj)
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        self._data[key] = value
 
 
 class QueryBackfiller(object):
@@ -222,14 +287,14 @@ class QueryBackfiller(object):
         return generated_biz_objects
 
 
-class QueryRequest(object):
+class Request(object):
     def __init__(
         self,
         query: 'AbstractQuery',
         backfiller: 'QueryBackfiller' = None,
         context: Dict = None,
-        parent: 'QueryRequest' = None,
-        root: 'QueryRequest' = None,
+        parent: 'Request' = None,
+        root: 'Request' = None,
     ):
         self.query = query
         self.backfiller = backfiller
@@ -238,20 +303,19 @@ class QueryRequest(object):
         self.root = root
 
     def __repr__(self):
-        biz_class_name = get_class_name(self.query.biz_class)
-        return f'<Request({biz_class_name})>'
+        return f'Request(query={self.query})'
 
     @property
     def params(self):
         return self.query.params
 
 
-class ResolverQueryRequest(QueryRequest):
+class ResolverRequest(Request):
     def __init__(
         self,
         query: 'AbstractQuery',
         source: 'BizObject',
-        parent: 'QueryRequest' = None,
+        parent: 'Request' = None,
         resolver: 'Resolver' = None,
         backfiller: 'QueryBackfiller' = None,
         context: Dict = None,
@@ -265,12 +329,6 @@ class ResolverQueryRequest(QueryRequest):
         )
         self.source = source
         self.resolver = resolver
-
-    def __repr__(self):
-        biz_class_name = get_class_name(self.query.biz_class)
-        if self.resolver is not None:
-            return f'<Request({biz_class_name}.{self.resolver.name})>'
-        return super().__repr__()
 
 
 class QueryParameterAssignment(object):
@@ -301,9 +359,17 @@ class AbstractQuery(object):
     Abstract base class/interface for Query.
     """
 
-    def __init__(self, parent: 'AbstractQuery' = None, *args, **kwargs):
-        self._params = DictObject()
+    def __init__(
+        self,
+        parent: 'AbstractQuery' = None,
+        options: 'QueryOptions' = None,
+        *args,
+        **kwargs
+    ):
+        self._options = options or QueryOptions()
         self._parent = parent
+        self._params = DictObject()
+        self._params.select = OrderedDict()
 
     def __getattr__(self, param_name):
         return QueryParameterAssignment(param_name, self)
@@ -315,6 +381,19 @@ class AbstractQuery(object):
     @property
     def parent(self) -> 'AbstractQuery':
         return self._parent
+
+    @property
+    def options(self) -> 'QueryOptions':
+        return self._options
+
+    def configure(
+        self, options: 'QueryOptions' = None, **more_options
+    ) -> 'AbstractQuery':
+        if options is not None:
+            self._options.update(options)
+        if more_options:
+            self._options.update(more_options)
+        return self
 
     def select(self, *selectors, append=True):
         raise NotImplementedError()
@@ -335,6 +414,17 @@ class Query(AbstractQuery):
         self._biz_class = biz_class
         self.clear()
 
+    def __repr__(self):
+        biz_class_name = ''
+        if self._biz_class is not None:
+            biz_class_name = get_class_name(self._biz_class)
+        offset = str(self.params.get('offset') or '')
+        limit = str(self.params.get('limit') or '')
+        return (
+            f'Query'
+            f'(target={biz_class_name}[{offset}:{limit}])>'
+        )
+
     @property
     def biz_class(self):
         return self._biz_class
@@ -343,19 +433,52 @@ class Query(AbstractQuery):
     def biz_list_class(self):
         return self._biz_class.BizList if self._biz_class else None
 
-    def clear(self):
-        self.params['select'] = OrderedDict()
-        self.params['select'][ID_FIELD_NAME] = ResolverQuery(
-            biz_class=self._biz_class,
-            resolver=self._biz_class.pybiz.resolvers[ID_FIELD_NAME],
-            parent=self,
-        )
+    def clear(self, select=True, where=True):
+        from pybiz.biz2.resolver import ResolverQuery
+
+        if select:
+            self.params.select = OrderedDict()
+            self.params.select[ID_FIELD_NAME] = ResolverQuery(
+                biz_class=self._biz_class,
+                resolver=self._biz_class.pybiz.resolvers[ID_FIELD_NAME],
+                parent=self,
+            )
+        if where:
+            self.params.where = None
+
+        # Include fields maked as required to be safe, as these
+        # more than likely will be referenced by some Resolver's
+        # execution logic.
+        if self.options.get('eager', True):
+            self.select(self._biz_class.pybiz.resolvers.required_resolvers)
+
+        return self
 
     def printf(self):
         self.printer.printf(self)
 
     def fprintf(self):
         return self.printer.fprintf(self)
+
+    def where(self, *predicates, **equality_values):
+        computed_predicate = Predicate.reduce_and(predicates)
+        if equality_values:
+            equality_predicates = [
+                ConditionalPredicate(
+                    OP_CODE.EQ, getattr(self._biz_class, key), value
+                )
+                for key, value in equality_values.items()
+            ]
+            computed_predicate = Predicate.reduce_and(
+                computed_predicate, equality_predicates
+            )
+
+        if self.params.where is not None:
+            self.params.where &= computed_predicate
+        else:
+            self.params.where = computed_predicate
+
+        return self
 
     def execute(self, request=None, context=None, first=False, backfill: Backfill = None):
         """
@@ -384,7 +507,7 @@ class Query(AbstractQuery):
 
     def _init_request(self, backfill, context, parent):
         backfiller = self._init_backfiller(backfill)
-        return QueryRequest(
+        return Request(
             query=self,
             backfiller=backfiller,
             context=context or {},
@@ -418,7 +541,7 @@ class Query(AbstractQuery):
         Call all ResolverQuery execute methods on all target BizObjects.
         """
         def build_request(query, source, parent, resolver):
-            return ResolverQueryRequest(
+            return ResolverRequest(
                 query=query,
                 source=source,
                 resolver=resolver,
@@ -427,12 +550,14 @@ class Query(AbstractQuery):
                 parent=parent,
             )
 
-        for query in self.params['select'].values():
+        for query in self.params.select.values():
             for target in targets:
                 # resolve and set the value to set in the
                 # target BizObject's state dict
                 resolver = query.resolver
-                request = build_request(query, target, parent_request, resolver)
+                request = build_request(
+                    query, target, parent_request, resolver
+                )
                 # Note below that the resolver sets the resolved
                 # value on the calling BizObject via resolver.execute
                 query.execute(request)
@@ -458,13 +583,6 @@ class Query(AbstractQuery):
                 self.biz_class.pybiz.resolvers.fields
             }
 
-        # Include fields maked as required to be safe, as these
-        # more than likely will be referenced by some Resolver's
-        # execution logic.
-        dao_field_names.update(
-            self.biz_class.Schema.required_fields.keys()
-        )
-
         return dao_field_names
 
     def _compute_where_predicate(self):
@@ -476,39 +594,50 @@ class Query(AbstractQuery):
         return predicate
 
     def select(self, *selectors, append=True):
+        from pybiz.biz2.resolver import (
+            Resolver, ResolverProperty, ResolverQuery
+        )
         if not append:
             self.clear()
 
         flattened_selectors = []
-        for x in selectors:
-            if is_sequence(x):
-                flattened_selectors.extend(x)
+        for obj in selectors:
+            if is_sequence(obj):
+                flattened_selectors.extend(obj)
+            if isinstance(obj, GeneratorType):
+                flattened_selectors.extend(list(obj))
             else:
-                flattened_selectors.append(x)
+                flattened_selectors.append(obj)
 
         resolver_queries = {}
         resolvers = []
 
-        for x in flattened_selectors:
-            rq = None
+        for obj in flattened_selectors:
+            resolver_query = None
             resolver = None
-            if isinstance(x, Resolver):
-                resolver = x
-                rq = resolver.select()
-            elif isinstance(x, ResolverProperty):
-                resolver = x.resolver
-                rq = x.select()
-            elif isinstance(x, ResolverQuery):
-                resolver = x.resolver
-                rq = x
 
-            if resolver and rq:
+            if isinstance(obj, str):
+                obj = self._biz_class.pybiz.resolvers[obj]
+
+            if isinstance(obj, Resolver):
+                resolver = obj
+                resolver_query = resolver.select()
+                resolver_query.configure(self.options)
+            elif isinstance(obj, ResolverProperty):
+                resolver = obj.resolver
+                resolver_query = resolver.select()
+                resolver_query.configure(self.options)
+            elif isinstance(obj, ResolverQuery):
+                resolver = obj.resolver
+                resolver_query = obj
+
+            if resolver and resolver_query:
                 resolvers.append(resolver)
-                resolver_queries[resolver.name] = rq
+                resolver_queries[resolver.name] = resolver_query
 
         for resolver in Resolver.sort(resolvers):
-            rq = resolver_queries[resolver.name]
-            self.params['select'][resolver.name] = rq
+            resolver_query = resolver_queries[resolver.name]
+            self.params.select[resolver.name] = resolver_query
 
         return self
 
@@ -527,45 +656,3 @@ class Query(AbstractQuery):
             return biz_objects[0]
         else:
             return biz_objects
-
-    def _new_resolver_query(self, resolver):
-        return ResolverQuery(resolver, parent=self)
-
-
-class ResolverQuery(Query):
-    def __init__(
-        self,
-        resolver: 'Resolver',
-        parent: 'AbstractQuery' = None,
-        *args, **kwargs
-    ):
-        super().__init__(
-            parent=parent, *args, **kwargs
-        )
-        self._resolver = resolver
-
-    def __repr__(self):
-        resolver = self.resolver.name if self.resolver else ''
-        return f'<{get_class_name(self)}({resolver})>'
-
-    @property
-    def resolver(self) -> 'Resolver':
-        return self._resolver
-
-    def clear(self):
-        self.params['select'] = OrderedDict()
-
-    def execute(self, request: 'ResolverQueryRequest'):
-        # resolve the value to set in source BizObject's state
-        value = request.resolver.execute(request)
-
-        # if null or insufficient number of data elements are returned
-        # (according to the query's limit param), optionally backfill
-        # the missing values.
-        if request.backfiller:
-            limit = request.query.get('limit', 1)
-            has_len = hasattr(value, '__len__')
-            if (value is None) or (has_len and len(value) < limit):
-                value = request.resolver.backfill(request, value)
-
-        return value
