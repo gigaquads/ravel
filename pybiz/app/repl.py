@@ -53,7 +53,7 @@ class Repl(Application):
         """
         return sorted(self.endpoints.keys())
 
-    def on_decorate(self, endpoint: 'ReplFunction'):
+    def on_decorate(self, repl_function: 'ReplFunction'):
         pass
 
     def on_bootstrap(self, *args, **kwargs):
@@ -76,17 +76,27 @@ class Repl(Application):
         # enter an ipython shell
         self.shell.mainloop(local_ns=local_ns)
 
-    def on_request(self, endpoint: 'ReplFunction', *args, **kwargs):
+    def on_request(self, repl_function: 'ReplFunction', *args, **kwargs):
         return (args, kwargs)
 
-    def on_response(self, endpoint: 'ReplFunction', result, *args, **kwargs):
-        return super().on_response(endpoint, result, *args, **kwargs)
+    def on_response(self, repl_function: 'ReplFunction', result, *args, **kwargs):
+        if repl_function.memoized:
+            repl_function.memoize(result)
+        return super().on_response(repl_function, result, *args, **kwargs)
 
 
 class ReplFunction(Endpoint):
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
+        self.return_values = []
 
     @property
     def source(self) -> None:
         print(inspect.getsource(self.target))
+
+    @property
+    def memoized(self) -> bool:
+        return self.decorator.kwargs.get('memoized', False)
+
+    def memoize(self, value):
+        self.return_values.append(value)
