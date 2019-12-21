@@ -56,11 +56,12 @@ class Endpoint(object):
 
         self.decorator = decorator
         self.target = func.target if isinstance(func, Endpoint) else func
-        if inspect.isfunction(func):
+        if inspect.ismethod(func):
             self.func = func
             self.is_method = True
             self.signature = inspect.signature(self.target.__func__)
         else:
+            assert inspect.isfunction(func)
             self.is_method = False
             self.signature = inspect.signature(self.target)
 
