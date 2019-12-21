@@ -76,7 +76,6 @@ class Application(object):
                 pass
         ```
         """
-        # build and the decorator
         decorator = self.decorator_class(self, *args, **kwargs)
         self.decorators.append(decorator)
         return decorator

@@ -53,10 +53,16 @@ class Endpoint(object):
         - `target`: the native python function wrapped by this endpoint.
         - `signature`: metadata on target, like its parameters, name, etc.
         """
-        self.func = func
+
         self.decorator = decorator
         self.target = func.target if isinstance(func, Endpoint) else func
-        self.signature = inspect.signature(self.target)
+        if inspect.isfunction(func):
+            self.func = func
+            self.is_method = True
+            self.signature = inspect.signature(self.target.__func__)
+        else:
+            self.is_method = False
+            self.signature = inspect.signature(self.target)
 
     def __getattr__(self, key: Text):
         """
