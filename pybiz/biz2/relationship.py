@@ -52,24 +52,18 @@ class Relationship(Resolver):
 
     def __init__(
         self,
-        target: Type['BizObject'],
+        join: Callable,
         on_add: Callable = None,
         on_rem: Callable = None,
         *args,
         **kwargs
     ):
-        super().__init__(target=target, *args, **kwargs)
-
+        super().__init__(target=None, *args, **kwargs)
+        self.join_callback = join
+        self.joins = []
         self.on_add = on_add or self.on_add
         self.on_rem = on_rem or self.on_rem
-
-        self.BizList = None  # <- computed in bind
-
-        # If `many` is set, then we expect this relationship to return a a
-        # collection (e.g. a list, BizList) instead of a single BizObject.  this
-        # flag is set automatically during the bind lifecycle method of the this
-        # Relationship.
-        self._many = None
+        self.BizList = None
 
     @classmethod
     def tags(cls):
@@ -91,13 +85,43 @@ class Relationship(Resolver):
         self.BizList.pybiz.biz_class = self.target
         self.BizList.pybiz.relationship = self
 
+        # now that BizObject classes are available through the app,
+        # inject them into the lexical scope of the join callback.
+        biz_class.pybiz.app.inject(self.join_callback)
+        self.joins = self.join_callback()
+
+        assert self.joins
+
+        # if the join callback returned a single pair, normalize
+        # it to a list with the single pair as its only element.
+        if not isinstance(self.joins[0], (tuple, list)):
+            self.joins = [self.joins]
+
+        # set self._target, and self._many through the target property
+        if self.many:
+            self.target = self.joins[-1][-1].biz_class.BizList
+        else:
+            self.target = self.joins[-1][-1].biz_class
+
+    @staticmethod
+    def on_select(
+        resolver: 'Resolver',
+        query: 'ResolverQuery',
+        parent_query: 'Query'
+    ) -> 'ResolverQuery':
+        for (source_resolver_prop, target_resolver_prop) in self.joins:
+            source_resolver = source_resolver_prop.resolver
+            source_value = getattr(self.biz_class, source_resolver.name)
+            query.where(target_resolver_prop == source_value)
+        return query
+
     @staticmethod
     def on_execute(
         owner: 'BizObject',
         relationship: 'Resolver',
         request: 'QueryRequest'
     ):
-        return request.query.execute(first=not self.many)
+        return request.query.execute(first=not relationship.many)
 
     @staticmethod
     def post_execute(

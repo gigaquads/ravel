@@ -6,7 +6,7 @@ from pybiz.constants import (
     ID_FIELD_NAME,
 )
 
-from .util import is_biz_list
+from .util import is_biz_list, is_biz_object
 
 
 class DumpStyle(EnumValueStr):
@@ -65,16 +65,13 @@ class NestedDumper(Dumper):
                         for child_biz_obj in child_biz_list
                     ]
                 else:
-                    # TODO: assert is_biz_object(v)
+                    if v is not None:
+                        assert is_biz_object(v)
                     child_biz_obj = v
                     record[k] = self.dump(child_biz_obj)
             else:
                 # dump non-Relationship state
-                try:
-                    record[k] = resolver.dump(self, v)
-                except:
-                    import ipdb; ipdb.set_trace()
-                    pass
+                record[k] = resolver.dump(self, v)
 
 
         return record

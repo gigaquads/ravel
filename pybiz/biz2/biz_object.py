@@ -117,7 +117,6 @@ class BizObjectMeta(type):
         for name, dec in resolver_decorators.items():
             resolver = dec.resolver_class(
                 biz_class=biz_class,
-                target=dec.kwargs.pop('target'),
                 name=name,
                 on_execute=dec.on_execute_func,
                 on_get=dec.on_get_func,

@@ -51,6 +51,7 @@ class Resolver(object):
         biz_class: Type['BizObject'] = None,
         target: Type['BizObject'] = None,
         name: Text = None,
+        many: bool = False,
         lazy: bool = True,
         private: bool = False,
         required: bool = False,
@@ -70,7 +71,7 @@ class Resolver(object):
         self._target = None
         self._is_bootstrapped = False
         self._is_bound = False
-        self._many = None
+        self._many = many
         self._target_callback = None
 
         # if `target` was not provided as a callback but as a class object, we
