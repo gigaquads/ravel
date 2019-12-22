@@ -7,12 +7,11 @@ from typing import (
 
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.util.misc_functions import (
-    is_biz_obj,  # XXX: deprecated
+    extract_biz_info_from_annotation,
     is_sequence,
-    extract_biz_info_from_annotation
 )
 
-from pybiz.biz2.util import (
+from pybiz.biz.util import (
     is_biz_object
 )
 
@@ -130,7 +129,7 @@ class ApplicationArgumentLoader(object):
         if not (preloaded and biz_class):
             return preloaded
         elif not many:
-            if is_biz_obj(preloaded) or is_biz_object(preloaded):
+            if is_biz_object(preloaded):
                 return preloaded
             elif isinstance(preloaded, dict):
                 if 'id' in preloaded:
@@ -143,7 +142,7 @@ class ApplicationArgumentLoader(object):
         elif is_sequence(preloaded):
             if isinstance(preloaded, set):
                 preloaded = list(preloaded)
-            if is_biz_obj(preloaded[0]) or is_biz_object(preloaded[0]):
+            if is_biz_object(preloaded[0]):
                 return biz_class.BizList(preloaded)
             elif isinstance(preloaded[0], dict):
                 return biz_class.BizList(

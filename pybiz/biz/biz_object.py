@@ -31,15 +31,13 @@ from .biz_thing import BizThing
 from .biz_list import BizList
 from .dirty import DirtyDict
 from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
-from .query import Query, QueryRequest
-from .resolver import (
-    Resolver,
-    ResolverProperty,
-    ResolverDecorator,
-    ResolverManager,
-    FieldResolver,
-    FieldResolverProperty,
-)
+from .query.query import Query
+from .query.request import QueryRequest
+from .field_resolver import FieldResolver, FieldResolverProperty
+from .resolver.resolver import Resolver
+from .resolver.resolver_property import ResolverProperty
+from .resolver.resolver_decorator import ResolverDecorator
+from .resolver.resolver_manager import ResolverManager
 
 
 class BizObjectMeta(type):

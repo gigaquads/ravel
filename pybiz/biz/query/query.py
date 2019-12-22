@@ -1,466 +1,426 @@
-import random
+from random import randint
+from typing import Dict, Type, Set, Text
+from collections import OrderedDict, defaultdict
+from copy import deepcopy
+from types import GeneratorType
 
-from functools import reduce
-from typing import List, Dict, Set, Text, Type, Tuple, Callable
-from collections import defaultdict
+from appyratus.utils import DictObject
 
-from appyratus.enum import EnumValueStr
-from appyratus.utils import DictUtils
-
-import pybiz.biz
-
-from pybiz.util.misc_functions import (
-    is_sequence, is_biz_obj, is_biz_list, get_class_name
+from pybiz.util.misc_functions import is_sequence, get_class_name
+from pybiz.constants import ID_FIELD_NAME
+from pybiz.schema import String
+from pybiz.predicate import (
+    OP_CODE,
+    OP_CODE_2_DISPLAY_STRING,  # TODO: Turn OP_CODE into proper enum
+    ConditionalPredicate,
+    Predicate,
 )
-from pybiz.predicate import Predicate
-from pybiz.schema import fields, StringTransformer
-from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
-from ..field_property import FieldProperty
-from ..biz_list import BizList
+from ..resolver.resolver import Resolver
+from ..resolver.resolver_property import ResolverProperty
+from ..util import is_biz_object, is_biz_list
+from .request import QueryRequest
+from .backfill import Backfill, QueryBackfiller
+from .printer import QueryPrinter
 from .order_by import OrderBy
-from .query_loader import QueryLoader
-from .query_executor import QueryExecutor
-from .query_printer import QueryPrinter
-from .query_backfiller import QueryBackfiller, Backfill
+
+
+class QueryOptions(object):
+    def __init__(self, eager=True):
+        self._data = {
+            'eager': eager,
+        }
+
+    def to_dict(self):
+        return deepcopy(self._data)
+
+    def update(self, obj):
+        if isinstance(obj, QueryOptions):
+            self._data.update(obj._data)
+        else:
+            self._data.update(obj)
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __setitem__(self, key, value):
+        self._data[key] = value
+
+
+class QueryParameterAssignment(object):
+    """
+    This is an internal data structure, used to facilitate the syntactic sugar
+    that allows you to write to query.params via funcion call notation, like
+    query.foo('bar') instead of query.params['foo'] = bar.
+
+    Instances of this class just store the query whose parameter we are going to
+    set and the name of the dict key or "param name". When called, it writes the
+    single argument supplied in the call to the params dict of the query.
+    """
+
+    def __init__(self, param_name, query):
+        self._query = query
+        self._param_name = param_name
+
+    def __call__(self, param):
+        """
+        Store the `param` value in the Query's parameters dict.
+        """
+        self._query.params[self._param_name] = param
+        return self._query
+
+    def __repr__(self):
+        return (
+            f'QueryParameterBinder('
+            f'param={self._param_name}, '
+            f'query={self._query})'
+        )
 
 
 class AbstractQuery(object):
+    """
+    Abstract base class/interface for Query.
+    """
+
+    Options = QueryOptions
+
     def __init__(
         self,
-        alias: Text = None,
-        context: Dict = None
+        parent: 'AbstractQuery' = None,
+        options: 'QueryOptions' = None,
+        *args,
+        **kwargs
     ):
-        self._alias = alias
-        self._context = context if context is not None else {}
+        self._options = options or QueryOptions()
+        self._parent = parent
+        self._params = DictObject()
+        self._params.select = OrderedDict()
+
+    def __getattr__(self, param_name):
+        return QueryParameterAssignment(param_name, self)
 
     @property
-    def alias(self) -> Text:
-        return self._alias
-
-    @alias.setter
-    def alias(self, alias: Text):
-        if self._alias is not None:
-            raise ValueError('alias is readonly')
-        self._alias = alias
+    def params(self) -> Dict:
+        return self._params
 
     @property
-    def context(self) -> Dict:
-        return self._context
+    def parent(self) -> 'AbstractQuery':
+        return self._parent
 
-    def execute(self, source: 'BizThing') -> 'BizThing':
-        raise NotImplementedError('override in subclass')
+    @property
+    def options(self) -> 'QueryOptions':
+        return self._options
+
+    def configure(
+        self, options: 'QueryOptions' = None, **more_options
+    ) -> 'AbstractQuery':
+        if options is not None:
+            self._options.update(options)
+        if more_options:
+            self._options.update(more_options)
+        return self
+
+    def select(self, *selectors, append=True):
+        raise NotImplementedError()
+
+    def execute(self, first=False, backfill: Backfill = None):
+        raise NotImplementedError()
+
+    def generate(self, count=None, first=False):
+        raise NotImplementedError()
 
 
 class Query(AbstractQuery):
-    """
-    query = (
-        User.select(
-            User.account.select(Account.name)
-            User.email
-        ).where(
-            User.age > 14
-        ).orderby(
-            User.email.desc
-        ).limit(1)
-    )
-    """
 
-    class Assignment(object):
-        def __init__(self, name: Text, query: 'Query'):
-            self.name = name
-            self.query = query
+    printer = QueryPrinter()
 
-        def __call__(self, value):
-            self.query.params.custom[self.name] = value
-            return self.query
-
-    class Parameters(object):
-        def __init__(
-            self,
-            fields=None,
-            attributes=None,
-            order_by=None,
-            where=None,
-            limit=None,
-            offset=None,
-            custom=None,
-        ):
-            self.fields = fields or {ID_FIELD_NAME: None, REV_FIELD_NAME: None}
-            self.attributes = attributes or {}
-            self.order_by = order_by or tuple()
-            self.custom = custom or {}
-            self.where = tuple()
-            self.limit = None
-            self.offset = None
-
-        def keys(self):
-            return set(self.fields.keys() | self.attributes.keys())
-
-
-    loader = QueryLoader()
-    executor = QueryExecutor()
-    printer  = QueryPrinter()
-
-    def __init__(
-        self,
-        biz_class: Type['BizType'],
-        select: Set = None,
-        where: Set = None,
-        order_by: Tuple = None,
-        limit: int = None,
-        offset: int = None,
-        custom: Dict = None,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-
+    def __init__(self, biz_class: Type['BizObject'], *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._biz_class = biz_class
-        self._params = Query.Parameters(custom=custom)
-        self.select(biz_class.pybiz.default_selectors)
-
-        if where is not None:
-            self.where(where)
-        if offset is not None:
-            self.offset(offset)
-        if limit is not None:
-            self.limit(limit)
-        if order_by is not None:
-            self.order_by(order_by)
-        if select is not None:
-            self.select(select)
-
-    def __getattr__(self, param_name):
-        """
-        This is so you can do query.foo('bar'), resulting in a 'bar': 'foo'
-        entry in query.params.
-        """
-        return self.Assignment(param_name, self)
-
-    def __getitem__(self, key):
-        return getattr(self._params, key)
-
-    def __setitem__(self, key, value):
-        return setattr(self._params, key, value)
+        self.clear()
 
     def __repr__(self):
-        biz_class_name = (
-            get_class_name(self.biz_class) if self.biz_class else ''
+        biz_class_name = ''
+        if self._biz_class is not None:
+            biz_class_name = get_class_name(self._biz_class)
+        offset = str(self.params.get('offset') or '')
+        limit = str(self.params.get('limit') or '')
+        return (
+            f'Query'
+            f'(target={biz_class_name}[{offset}:{limit}])>'
         )
-        if self.alias:
-            alias_substr = f', alias="{self.alias}"'
-        else:
-            alias_substr = ''
-        return f'<Query({biz_class_name}{alias_substr})>'
-
-    def execute(
-        self,
-        first: bool = False,
-        context: Dict = None,
-        constraints: Dict[Text, 'Constraint'] = None,
-        backfill: Backfill = None,
-    ) -> 'BizThing':
-        """
-        Execute this Query, returning the target BizThing.
-        """
-        self.context.update(context or {})
-
-        backfiller = QueryBackfiller() if backfill is not None else None
-
-        targets = self.executor.execute(
-            query=self,
-            backfiller=backfiller,
-            constraints=constraints,
-            first=first,
-        )
-
-        if backfill is None:
-            targets.clean()
-        elif backfill == Backfill.persistent:
-            backfiller.persist()
-
-        if first:
-            return targets[0] if targets else None
-        else:
-            return targets
-
-    def select(self, *targets) -> 'Query':
-        self._add_selectors(targets)
-        return self
-
-    def where(self, *predicates: 'Predicate', **kwargs) -> 'Query':
-        """
-        Append or replace "where"-expression Predicates.
-        """
-        if not (predicates or kwargs):
-            return self
-        else:
-            additional_predicates = []
-            for obj in predicates:
-                if is_sequence(obj):
-                    additional_predicates.extend(obj)
-                elif isinstance(obj, Predicate):
-                    additional_predicates.append(obj)
-                else:
-                    raise ValueError(f'unrecognized Predicate type: {obj}')
-
-            # in this contact, kwargs are interpreted as Equality predicates,
-            # like user_id=1 would be interpreted as (User._id == 1)
-            for k, v in kwargs.items():
-                equality_predicate = (getattr(self.biz_class, k) == v)
-                additional_predicates.append(equality_predicate)
-
-            additional_predicates = tuple(additional_predicates)
-
-            if self._params.where is None:
-                self._params.where = tuple()
-
-            self._params.where += additional_predicates
-
-        return self
-
-    def limit(self, limit: int) -> 'Query':
-        """
-        Set or re-set the Query limit int, for pagination. Used in convert with
-        offset.
-        """
-        self._params.limit = max(limit, 1) if limit is not None else None
-        return self
-
-    def offset(self, offset: int) -> 'Query':
-        """
-        Set or re-set the Query offset int, for pagination, used in conjunction
-        with limit.
-        """
-        self._params.offset = max(0, offset) if offset is not None else None
-        return self
-
-    def order_by(self, *order_by) -> 'Query':
-        order_by_flattened = []
-        for obj in order_by:
-            if is_sequence(obj):
-                order_by_flattened.extend(obj)
-            else:
-                order_by_flattened.append(obj)
-        order_by_flattened = tuple(order_by_flattened)
-        self._params.order_by = order_by_flattened
-        return self
-
-    def show(self):
-        self.printer.print_query(query=self)
-
-    def dump(self):
-        return {
-            'class': get_class_name(self),
-            'alias': self.alias,
-            'limit': self.params.limit,
-            'offset': self.params.offset,
-            'order_by': [x.dump() for x in self.params.order_by],
-            'where': [x.dump() for x in (self.params.where or [])],
-            'target': {
-                'type': get_class_name(self.biz_class),
-                'fields': self.params.fields,
-                'attributes': {
-                    k: v.dump() for k, v
-                    in self.params.attributes.items()
-                }
-            }
-        }
 
     @property
-    def biz_class(self) -> Type['BizObject']:
+    def biz_class(self):
         return self._biz_class
 
     @property
-    def params(self) -> Parameters:
-        return self._params
+    def biz_list_class(self):
+        return self._biz_class.BizList if self._biz_class else None
 
-    def _add_selectors(self, selectors):
-        for selector in selectors:
-            if is_sequence(selector):
-                self._add_selectors(selector)
-            else:
-                self._add_selector(selector)
+    def clear(self, select=True, where=True):
+        if select:
+            self.params.select = OrderedDict()
+            self.params.select[ID_FIELD_NAME] = ResolverQuery(
+                biz_class=self._biz_class,
+                resolver=self._biz_class.pybiz.resolvers[ID_FIELD_NAME],
+                parent=self,
+            )
+        if where:
+            self.params.where = None
 
-    def _add_selector(self, selector):
-        """
-        """
-        # resolve pybiz type from string selector variable
-        try:
-            if isinstance(selector, str):
-                selector = getattr(self._biz_class, selector)
-        except AttributeError:
-            raise AttributeError(
-                f'{self._biz_class} has no attribute "{selector}"'
+        # Include fields maked as required to be safe, as these
+        # more than likely will be referenced by some Resolver's
+        # execution logic.
+        if self.options.get('eager', True):
+            self.select(self._biz_class.pybiz.resolvers.required_resolvers)
+
+        return self
+
+    def printf(self):
+        self.printer.printf(self)
+
+    def fprintf(self):
+        return self.printer.fprintf(self)
+
+    def where(self, *predicates, **equality_values):
+        computed_predicate = Predicate.reduce_and(predicates)
+        if equality_values:
+            equality_predicates = [
+                ConditionalPredicate(
+                    OP_CODE.EQ, getattr(self._biz_class, key), value
+                )
+                for key, value in equality_values.items()
+            ]
+            computed_predicate = Predicate.reduce_and(
+                computed_predicate, equality_predicates
             )
 
-        # add the selector to the appropriate collection
-        if isinstance(selector, FieldProperty):
-            assert selector.biz_class is self.biz_class
-            # avoid the overhead of creating a FieldPropertyQuery when no
-            # parameters are applied to this field query; hence, query is set
-            # to None.
-            query = None
-            self._params.fields[selector.field.name] = query
-        elif isinstance(selector, FieldPropertyQuery):
-            assert selector.fprop.biz_class is self.biz_class
-            self._params.fields[selector.alias] = selector
-        elif isinstance(selector, (Query, BizAttributeQuery)):
-            assert selector.alias in self.biz_class.pybiz.attributes
-            self._params.attributes[selector.alias] = selector
-        elif isinstance(selector, pybiz.biz.BizAttributeProperty):
-            assert selector.biz_attr.biz_class is self.biz_class
-            self._params.attributes[selector.biz_attr.name] = selector.select()
-        elif isinstance(selector, type) and is_biz_obj(selector):
-            # select everything but relationships
-            biz_class = selector
-            keys = (
-                set(biz_class.pybiz.all_selectors) -
-                biz_class.pybiz.attributes.relationships.keys()
+        if self.params.where is not None:
+            self.params.where &= computed_predicate
+        else:
+            self.params.where = computed_predicate
+
+        return self
+
+    def execute(self, request=None, context=None, first=False, backfill: Backfill = None):
+        """
+        Execute the Query. This is not a recursive procedure in and of itself.
+        Any selected Resolver may or may not create and run its own Query within
+        its on_execute logic.
+        """
+        # init the request, which holds a ref to the query, a Backfiller and the
+        # context dict. the backfiller and context dict are passed along to each
+        # resolver on execute.
+        request = self._init_request(backfill, context, parent=request)
+
+        # fetch data from the DAL, create the BizObjects and execute their
+        # resolvers. call these objects the "targets" throughout the code.
+        records = self._execute_dal_query()
+        targets = self._instantiate_targets_and_resolve(records, request)
+
+        # save all backfilled objects if "persistent" mode is toggled
+        if backfill == Backfill.persistent:
+            request.backfiller.save_many()
+
+        # transform the final return value, which may
+        # be a single object or multiple.
+        retval = self._compute_exeecution_return_value(targets, first)
+        return retval
+
+    def _init_request(self, backfill, context, parent):
+        backfiller = self._init_backfiller(backfill)
+        return QueryRequest(
+            query=self,
+            backfiller=backfiller,
+            context=context,
+            parent=parent,
+        )
+
+    def _init_backfiller(self, backfill):
+        backfiller = None
+        if backfill is not None:
+            if backfill is not True:
+                Backfill.validate(backfill)
+            backfiller = QueryBackfiller()
+        return backfiller
+
+    def _compute_exeecution_return_value(self, targets, first):
+        """
+        Compute final return value.
+        """
+        retval = targets.clean()
+        if first:
+            retval = targets[0] if targets else None
+        return retval
+
+    def _instantiate_targets_and_resolve(self, target_records, request):
+        targets = self.biz_list_class(self.biz_class(x) for x in target_records)
+        self._execute_target_resolver_queries(targets, request)
+        return targets
+
+    def _execute_target_resolver_queries(self, targets, parent_request):
+        """
+        Call all ResolverQuery execute methods on all target BizObjects.
+        """
+        def build_request(query, source, parent, resolver):
+            return QueryRequest(
+                query=query,
+                source=source,
+                resolver=resolver,
+                backfiller=parent.backfiller,
+                context=parent.context,
+                parent=parent,
             )
-            for k in keys:
-                self._params.fields[k] = None
 
+        for query in self.params.select.values():
+            for target in targets:
+                # resolve and set the value to set in the
+                # target BizObject's state dict
+                resolver = query.resolver
+                request = build_request(
+                    query, target, parent_request, resolver
+                )
+                # Note below that the resolver sets the resolved
+                # value on the calling BizObject via resolver.execute
+                query.execute(request)
+
+    def _execute_dal_query(self):
+        fields = self._extract_selected_field_names()
+        predicate = self._compute_where_predicate()
+        return self.biz_class.get_dao().query(
+            predicate=predicate,
+            fields=fields,
+            limit=self.params.get('limit'),
+            offset=self.params.get('offset'),
+            order_by=self.params.get('order_by'),
+        )
+
+    def _extract_selected_field_names(self) -> Set[Text]:
+        resolver_queries = self.params.get('select')
+        if not resolver_queries:
+            dao_field_names = set(self.biz_class.pybiz.schema.fields.keys())
         else:
-            raise ValueError(f'unrecognized query selector: {selector}')
+            dao_field_names = {
+                k for k in resolver_queries if k in
+                self.biz_class.pybiz.resolvers.fields
+            }
 
-    @classmethod
-    def load(cls, biz_class: Type['BizObject'], dumped: Dict) -> 'Query':
-        return cls.loader.load(biz_class, dumped)
+        return dao_field_names
 
-    @classmethod
-    def load_from_keys(
-        cls,
-        biz_class: Type['BizObject'],
-        keys: Set[Text] = None,
-        _tree: Dict = None,
-    ):
-        keys = keys or biz_class.Schema.fields.keys()
-        query = cls(biz_class)
+    def _compute_where_predicate(self):
+        # ensure we at least have a default "select *" predicate
+        # to use when executing this Query in the Dao
+        predicate = self.params.get('where')
+        if not predicate:
+            predicate = (self.biz_class._id != None)
+        return predicate
 
-        if _tree is None:
-            assert keys
-            _tree = DictUtils.unflatten_keys({k: None for k in keys})
+    def select(self, *selectors, append=True):
+        if not append:
+            self.clear()
 
-        if '*' in _tree:
-            del _tree['*']
-            _tree.update({k: None for k in biz_class.Schema.fields})
-        elif not _tree:
-            _tree = {ID_FIELD_NAME: None, REV_FIELD_NAME: None}
-
-        for k, v in _tree.items():
-            if isinstance(v, dict):
-                rel = biz_class.pybiz.attributes.relationships[k]
-                sub_query = cls.load_from_keys(rel.target_biz_class, _tree=v)
-                sub_query.alias = rel.name
-                query._add_selector(sub_query)
+        flattened_selectors = []
+        for obj in selectors:
+            if is_sequence(obj):
+                flattened_selectors.extend(obj)
+            if isinstance(obj, GeneratorType):
+                flattened_selectors.extend(list(obj))
             else:
-                query._add_selector(k)
+                flattened_selectors.append(obj)
 
-        return query
+        resolver_queries = {}
+        resolvers = []
 
+        for obj in flattened_selectors:
+            resolver_query = None
+            resolver = None
 
-class FieldPropertyQuery(AbstractQuery):
+            if isinstance(obj, str):
+                obj = self._biz_class.pybiz.resolvers[obj]
 
-    transformers = {
-        fields.String: StringTransformer(),
-    }
+            if isinstance(obj, Resolver):
+                resolver = obj
+                resolver_query = resolver.select()
+                resolver_query.configure(self.options)
+            elif isinstance(obj, ResolverProperty):
+                resolver = obj.resolver
+                resolver_query = resolver.select()
+                resolver_query.configure(self.options)
+            elif isinstance(obj, ResolverQuery):
+                resolver = obj.resolver
+                resolver_query = obj
 
-    def __init__(
-        self,
-        fprop: 'FieldProperty',
-        params: Dict = None,
-        callbacks: List = None,
-        clean: bool = False,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.fprop = fprop
-        self.params = params or {}
-        self.transformer = self._get_transformer()
-        self.callbacks = callbacks or tuple()
-        self.clean = clean
+            if resolver and resolver_query:
+                resolvers.append(resolver)
+                resolver_queries[resolver.name] = resolver_query
 
-    def dump(self) -> Dict:
-        record = {}
-        record['alias'] = self.alias
-        record['params'] = self.params.copy()
-        record['field'] = self.fprop.field.name
-        return record
+        for resolver in Resolver.sort(resolvers):
+            resolver_query = resolver_queries[resolver.name]
+            self.params.select[resolver.name] = resolver_query
 
-    def execute(self, source: 'BizThing') -> 'BizThing':
-        value = getattr(source, self.fprop.field.name)
-        if value is not None:
-            if self.params and (self.transformer is not None):
-                for transform_name, arg in self.params.items():
-                    value = self.transformer.transform(
-                        transform_name, value, args=[arg]
-                    )
-        if self.clean:
-            source.clean(self.fprop.field.name)
-        for func in self.callbacks:
-            value = func(source, value)
-        return value
+        return self
 
-    def _get_transformer(self):
-        if isinstance(self.fprop.field, pybiz.String):
-            return self.transformers[pybiz.String]
+    def generate(self, count=None, first=False):
+        """
+        This method is really just syntactic surgar for doing query.generate()
+        instead of BizObject.generate(query).
+        """
+        if count is None:
+            count = self.params.get('limit', randint(1, 10))
+
+        biz_objects = self.biz_class.BizList(
+            self.biz_class.generate(query=self) for i in range(count)
+        )
+        if first:
+            return biz_objects[0]
         else:
-            return None
+            return biz_objects
 
 
-class BizAttributeQuery(AbstractQuery):
-
-    class Assignment(object):
-        def __init__(self, name: Text, query: 'BizAttributeQuery'):
-            self.name = name
-            self.query = query
-
-        def __call__(self, value):
-            self.query.params[self.name] = value
-            return self.query
-
-
+class ResolverQuery(Query):
     def __init__(
         self,
-        biz_attr: 'BizAttribute',
-        params: Dict = None,
-        **kwargs
+        resolver: 'Resolver',
+        *args, **kwargs
     ):
-        super().__init__(**kwargs)
-        self.params = params or {}
-        self.biz_attr = biz_attr
+        super().__init__(*args, **kwargs)
+        self._resolver = resolver
 
     def __repr__(self):
-        biz_class_name = (
-            get_class_name(self.biz_attr.biz_class)
-            if self.biz_attr else ''
-        )
-        if self.alias:
-            alias_substr = f', alias="{self.alias}"'
-        else:
-            alias_substr = ''
+        biz_class_name = ''
+        name = ''
+        if self._resolver is not None:
+            biz_class_name = get_class_name(self.resolver.biz_class)
+            name = self.resolver.name
+        return f'Query(target={biz_class_name}.{name})'
 
-        return f'<BizAttributeQuery({biz_class_name}{alias_substr})>'
+    @property
+    def resolver(self) -> 'Resolver':
+        return self._resolver
 
-    def __getattr__(self, param_name):
+    def clear(self):
+        self.params.select = OrderedDict()
+
+    def execute(self, request: 'QueryRequest'):
         """
-        This is so you can do query.foo('bar'), resulting in a 'bar': 'foo'
-        entry in query.params.
+        Execute Resolver.execute (and backfill its value if necessary).
         """
-        return self.Assignment(param_name, self)
+        # resolve the value to set in source BizObject's state
+        value = request.resolver.execute(request)
 
-    def execute(self, source: 'BizObject'):
-        biz_thing = self.biz_attr.execute(source, **self.params)
-        return biz_thing
+        # if null or insufficient number of data elements are returned
+        # (according to the query's limit param), optionally backfill the
+        # missing values.
+        if request.backfiller:
+            limit = request.query.get('limit', 1)
+            has_len = hasattr(value, '__len__')
+            # since we don't know for sure what type of value the resolver
+            # returns, we have to resort to hacky introspection here
+            if (value is None) or (has_len and len(value) < limit):
+                value = request.resolver.backfill(request, value)
 
-    def dump(self) -> Dict:
-        record = {}
-        record['class'] = get_class_name(self)
-        record['alias'] = self.alias
-        record['params'] = self.params.copy()
-        record['target'] = {
-            'attribute': self.biz_attr.name,
-            'type': self.biz_attr.biz_class,
-        },
-        return record
+        return value

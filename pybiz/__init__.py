@@ -1,25 +1,33 @@
 import pybiz.app as app
 import pybiz.dao as dao
 
-from pybiz.biz import (
-    BizObject,
-    BizList,
-    BizAttribute,
-    BizAttributeProperty,
-    Query,
-    Relationship,
-    View,
-)
-from pybiz.manifest import Manifest
-from pybiz.logging import ConsoleLoggerInterface
-from pybiz.dao import Dao
-from pybiz.app import (
+from .schema import *
+
+from .manifest import Manifest
+from .logging import ConsoleLoggerInterface
+from .dao import Dao
+from .app import (
     Application,
     EndpointDecorator,
     Endpoint,
-    Repl,
     CliApplication,
+    Repl,
 )
 
-from pybiz.schema import *
-from pybiz.biz import components
+
+from .biz.biz_object import BizObject
+from .biz.biz_thing import BizThing
+from .biz.biz_list import BizList
+from .biz.resolver.resolver import Resolver
+from .biz.resolver.resolver_property import ResolverProperty
+from .biz.resolver.resolver_decorator import ResolverDecorator
+from .biz.resolver.resolver_manager import ResolverManager
+from .biz.field_resolver import FieldResolver
+from .biz.relationship import Relationship
+from .biz.query.query import Query, ResolverQuery
+from .biz.query.request import QueryRequest
+
+
+field = FieldResolver.decorator()
+resolver = Resolver.decorator()
+relationship = Relationship.decorator()

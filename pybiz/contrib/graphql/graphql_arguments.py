@@ -3,7 +3,7 @@ import re
 from typing import Dict, Set, Text, List, Type, Tuple
 
 from pybiz.predicate import Predicate
-from pybiz.biz import OrderBy
+from pybiz.biz.query.order_by import OrderBy
 
 
 class GraphQLArguments(object):

@@ -8,7 +8,8 @@ from pybiz.constants import (
 )
 
 from .util import is_biz_list, is_biz_object
-from .resolver import Resolver, ResolverDecorator
+from .resolver.resolver import Resolver
+from .resolver.resolver_decorator import ResolverDecorator
 from .biz_thing import BizThing
 from .biz_object import DumpStyle
 from .biz_list import BizList
@@ -208,6 +209,3 @@ class Relationship(Resolver):
         target: 'BizObject'
     ):
         pass
-
-
-relationship = Relationship.decorator()
