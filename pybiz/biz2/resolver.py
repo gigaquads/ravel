@@ -25,6 +25,7 @@ from .biz_thing import BizThing
 from .util import is_biz_object, is_biz_list
 from .query import Query
 
+
 def EMPTY_FUNCTION():
     pass
 
@@ -32,7 +33,7 @@ def EMPTY_FUNCTION():
 class Resolver(object):
 
     @classmethod
-    def Decorator(cls):
+    def decorator(cls):
         """
         Class factory method for convenience when creating a new
         ResolverDecorator for Resolvers.
@@ -55,7 +56,7 @@ class Resolver(object):
         required: bool = False,
         on_select: Callable = None,
         on_execute: Callable = None,
-        on_post_execute: Callable = None,
+        post_execute: Callable = None,
         on_backfill: Callable = None,
         on_get: Callable = None,
         on_set: Callable = None,
@@ -90,15 +91,12 @@ class Resolver(object):
                 on_execute = None
 
         self.on_execute = on_execute or self.on_execute
-        self.on_post_execute = on_post_execute or self.on_post_execute
+        self.post_execute = post_execute or self.post_execute
         self.on_select = on_select or self.on_select
         self.on_backfill = on_backfill or self.on_backfill
         self.on_get = on_get or self.on_set
         self.on_set = on_set or self.on_set
         self.on_del = on_del or self.on_del
-
-        import inspect
-        print(name, self, inspect.getsource(self.on_bind))
 
     def __repr__(self):
         source = ''
@@ -255,9 +253,9 @@ class Resolver(object):
         if selectors:
             new_query.select(selectors)
 
-        return self.on_select(new_query, parent_query=parent_query)
+        return self.on_select(self, new_query, parent_query)
 
-    def execute(self, request: 'ResolverRequest'):
+    def execute(self, request: 'QueryRequest'):
         """
         Return the result of calling the on_execute callback. If self.state
         is set, then we return any state data that may exist, in which case
@@ -270,14 +268,11 @@ class Resolver(object):
         else:
             result = instance.internal.state[self.name]
 
-        result = self.on_post_execute(request.source, self, request, result)
+        result = self.post_execute(request.source, self, request, result)
         return result
 
     def backfill(self, request, result):
         return self.on_backfill(request.source, request, result)
-
-    def on_select(self, query: 'ResolverQuery', parent_query: 'Query'):
-        return query
 
     def dump(self, dumper: 'Dumper', value):
         if value is None:
@@ -291,31 +286,39 @@ class Resolver(object):
     def generate(self, instance: 'BizObject', query: 'ResolverQuery'):
         raise NotImplementedError()
 
-    def on_execute(
-        self,
-        instance: 'BizObject',
+    @staticmethod
+    def on_select(
         resolver: 'Resolver',
-        request: 'ResolverRequest'
+        query: 'ResolverQuery',
+        parent_query: 'Query'
+    ) -> 'ResolverQuery':
+        return query
+
+    @staticmethod
+    def on_execute(
+        owner: 'BizObject',
+        resolver: 'Resolver',
+        request: 'QueryRequest'
     ):
         raise NotImplementedError()
 
-    def on_post_execute(
-        self,
-        instance: 'BizObject',
+    @staticmethod
+    def post_execute(
+        owner: 'BizObject',
         resolver: 'Resolver',
-        request: 'ResolverRequest',
+        request: 'QueryRequest',
         result
     ):
         return result
 
+    @staticmethod
     def on_backfill(
-        self,
-        instance: 'BizObject',
+        owner: 'BizObject',
         resolver: 'Resolver',
-        request: 'ResolverRequest',
+        request: 'QueryRequest',
         result
     ):
-        return result
+        raise NotImplementedError()
 
     @staticmethod
     def on_get(resolver: 'Resolver', value):
@@ -432,9 +435,9 @@ class ResolverProperty(property):
             re.sub(r'[^a-zA-Z0-9]', '', self.resolver.name), 36
         )
         super().__init__(
-            fget=self._fget,
-            fset=self._fset,
-            fdel=self._fdel,
+            fget=self.on_get,
+            fset=self.on_set,
+            fdel=self.on_del,
         )
 
     def __hash__(self):
@@ -448,32 +451,32 @@ class ResolverProperty(property):
         targets = flatten_sequence(targets)
         return self.resolver.select(*targets)
 
-    def _fget(self, instance):
-        from pybiz.biz2.query import ResolverRequest
+    def on_get(self, owner: 'BizObject'):
+        from pybiz.biz2.query import QueryRequest
 
         # TODO: this two-step process could be
         # made more efficient somehow
-        request = ResolverRequest(
+        request = QueryRequest(
             query=self.select(),
-            source=instance,
+            source=owner,
             resolver=self.resolver,
         )
         obj = self.resolver.execute(request)
         if self.resolver.on_get:
-            self.resolver.on_get(instance, self.resolver, obj)
+            self.resolver.on_get(owner, self.resolver, obj)
 
         return obj
 
-    def _fset(self, instance, obj):
+    def on_set(self, owner: 'BizObject', obj):
         key = self.resolver.name
-        old_obj = instance.internal.state.pop(key, None)
-        instance.internal.state[key] = obj
+        old_obj = owner.internal.state.pop(key, None)
+        owner.internal.state[key] = obj
         if self.resolver.on_set:
             self.resolver.on_set(self.resolver, old_obj, obj)
 
-    def _fdel(self, instance):
+    def on_del(self, owner: 'BizObject'):
         key = self.resolver.name
-        obj = instance.internal.state.pop(key, None)
+        obj = owner.internal.state.pop(key, None)
         if self.resolver.on_del:
             self.resolver.on_del(self.resolver, obj)
 
@@ -512,7 +515,7 @@ class FieldResolver(Resolver):
     def priority(cls):
         return 1
 
-    def on_bind(self, biz_class):
+    def on_bind(self, biz_class: Type['BizObject']):
         """
         For FieldResolvers, the target is this owner BizObject class, since the
         field value comes from it, not some other type, as with Relationships,
@@ -520,29 +523,38 @@ class FieldResolver(Resolver):
         """
         self.target = biz_class
 
-    def on_select(self, query: 'Query', parent_query=None) -> 'ResolverQuery':
-        return query
+    @staticmethod
+    def on_execute(
+        owner: 'BizObject',
+        resolver: 'Resolver',
+        request: 'QueryRequest'
+    ):
+        raise NotImplementedError()
 
-    def on_execute(self, instance, resolver, request):
-        instance = request.source
-        key = self._field.name
-        is_value_loaded = key in instance.internal.state
-        if self._lazy and (not is_value_loaded):
-            unloaded_field_names = (
-                instance.Schema.fields.keys() - instance.internal.state.keys()
-            )
-            instance.load(unloaded_field_names)
-        value = instance.internal.state.get(key)
+        """
+        Return the field value from the owner object's state dict. Lazy load the
+        field if necessary.
+        """
+        # lazily fetch this field if not present in the owner BizObject's state
+        # dict. at the same time, eagerly fetch all other non-loaded fields.
+        field_name = self._field.name
+        is_value_loaded = owner.is_loaded(field_name)
+        if self._lazy and (not owner.is_loaded(field_name)):
+            all_field_names = owner.pybiz.resolvers.fields.keys()
+            loaded_field_names = instance.internal.state.keys()
+            lazy_loaded_field_names = all_field_names - field_names_not_loaded
+            instance.load(lazy_loaded_field_names)
+
+        value = instance.internal.state.get(field_name)
         return value
 
     def dump(self, dumper: 'Dumper', value):
-        if value is None and self._field.nullable:
-            processed_value = None
-        else:
-            processed_value, errors = self._field.process(value)
-            if errors:
-                raise Exception('ValidationError: ' + str(errors))
-        return processed_value
+        """
+        Run the raw value stored in the state dict through the corresponding
+        Field object's process method, which validates and possibly transforms
+        the data somehow, depending on how the Field was declared.
+        """
+        return value
 
 
 class FieldResolverProperty(ResolverProperty):
@@ -577,6 +589,15 @@ class FieldResolverProperty(ResolverProperty):
         others = flatten_sequence(others)
         others = {obj._id if is_biz_object(obj) else obj for obj in others}
         return ConditionalPredicate(OP_CODE.EXCLUDING, self, others)
+
+    def on_set(self, owner: 'BizObject', value):
+        if value is None and self.field.nullable:
+            processed_value = None
+        else:
+            processed_value, errors = self.field.process(value)
+            if errors:
+                raise Exception('ValidationError: ' + str(errors))
+        super().on_set(owner, processed_value)
 
     @property
     def field(self):
@@ -645,7 +666,7 @@ class ResolverQuery(Query):
     def __init__(
         self,
         resolver: 'Resolver',
-        parent: 'AbstractQuery' = None,
+        parent: 'Query' = None,
         *args, **kwargs
     ):
         super().__init__(
@@ -668,7 +689,7 @@ class ResolverQuery(Query):
     def clear(self):
         self.params.select = OrderedDict()
 
-    def execute(self, request: 'ResolverRequest'):
+    def execute(self, request: 'QueryRequest'):
         """
         Execute Resolver.execute (and backfill its value if necessary).
         """

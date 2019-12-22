@@ -91,18 +91,38 @@ class Relationship(Resolver):
         self.BizList.pybiz.biz_class = self.target
         self.BizList.pybiz.relationship = self
 
-    def on_post_execute(self, target, resolver, request: 'QueryRequest', result):
-        relationship = request.resolver
-        transformed_result = result
-        if relationship.many and (result is not None):
-            biz_objects = result
-            transformed_result = self.BizList(biz_objects, owner=target)
-        return transformed_result
+    @staticmethod
+    def on_execute(
+        owner: 'BizObject',
+        relationship: 'Resolver',
+        request: 'QueryRequest'
+    ):
+        return request.query.execute(first=not self.many)
 
-    def on_backfill(self, instance, request, result):
+    @staticmethod
+    def post_execute(
+        owner : 'BizObject',
+        relationship: 'Relationship',
+        request: 'QueryRequest',
+        result
+    ):
+        if not isinstance(result, BizThing):
+            if relationship.many and (not is_biz_list(result)):
+                result = self.BizList(value)
+            elif (not relationship.many) and isinstance(result, dict):
+                result = self.target(data=result)
+        return result
+
+    @staticmethod
+    def on_backfill(
+        owner: 'BizObject',
+        relationship: 'Relationship',
+        request: 'QueryRequest',
+        result
+    ):
         if self._many:
             biz_list = result
-            limit = request.query.params.get('limit', 1)
+            limit = request.params.get('limit', 1)
             if len(biz_list) < limit:
                 biz_list.extend(
                     biz_list.pybiz.biz_class.generate(request.query)
@@ -112,17 +132,22 @@ class Relationship(Resolver):
         elif result is None:
             return biz_list.pybiz.biz_class.generate(request.query)
 
-    def on_select(self, query: 'Query', parent_query: 'Query') -> 'ResolverQuery':
+    @staticmethod
+    def on_select(
+        relationship: 'Relationship',
+        query: 'Query',
+        parent_query: 'Query'
+    ) -> 'ResolverQuery':
         """
         If no fields are selected explicity, then select all by default.
         """
+        target = relationship.target
         if query.options.get('eager'):
-            required = self.target.pybiz.resolvers.required_resolvers
+            required = target.pybiz.resolvers.required_resolvers
             query.select(required)
-
         return query
 
-    def generate(self, instance, query):
+    def generate(self, owner, query):
         return query.generate(first=not self.many)
 
     def dump(self, dumper: 'Dumper', value):
@@ -143,13 +168,22 @@ class Relationship(Resolver):
             return dump_one(biz_obj)
 
     @staticmethod
-    def on_add(relationship, index, biz_object):
+    def on_add(
+        owner: 'BizObject',
+        relationship: 'Relationship',
+        index: int,
+        target: 'BizObject'
+    ):
         pass
 
     @staticmethod
-    def on_rem(relationship, index, biz_object):
+    def on_rem(
+        owner: 'BizObject',
+        relationship: 'Relationship',
+        index: int,
+        target: 'BizObject'
+    ):
         pass
 
 
-class relationship(ResolverDecorator):
-    pass
+relationship = Relationship.decorator()

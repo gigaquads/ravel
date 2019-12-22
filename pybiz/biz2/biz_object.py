@@ -31,7 +31,7 @@ from .biz_thing import BizThing
 from .biz_list import BizList
 from .dirty import DirtyDict
 from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
-from .query import Query, ResolverRequest
+from .query import Query, QueryRequest
 from .resolver import (
     Resolver,
     ResolverProperty,
@@ -482,7 +482,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         for key in keys:
             resolver = self.pybiz.resolvers[key]
             resolver_query = resolver.select()
-            request = ResolverRequest(resolver_query, self, resolver=resolver)
+            request = QueryRequest(resolver_query, self, resolver=resolver)
             data[key] = resolver_query.execute(request)
 
         self.merge(data)

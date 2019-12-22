@@ -6,6 +6,7 @@ from types import GeneratorType
 
 from appyratus.enum import EnumValueStr
 from appyratus.utils import DictObject
+from appyratus.memoize import memoized_property
 
 from pybiz.util.misc_functions import is_sequence, get_class_name
 from pybiz.constants import ID_FIELD_NAME
@@ -287,48 +288,43 @@ class QueryBackfiller(object):
         return generated_biz_objects
 
 
-class Request(object):
+class QueryRequest(object):
     def __init__(
         self,
-        query: 'AbstractQuery',
-        backfiller: 'QueryBackfiller' = None,
-        context: Dict = None,
-        parent: 'Request' = None,
-        root: 'Request' = None,
-    ):
-        self.query = query
-        self.backfiller = backfiller
-        self.context = context
-        self.parent = parent
-        self.root = root
-
-    def __repr__(self):
-        return f'Request(query={self.query})'
-
-    @property
-    def params(self):
-        return self.query.params
-
-
-class ResolverRequest(Request):
-    def __init__(
-        self,
-        query: 'AbstractQuery',
-        source: 'BizObject',
-        parent: 'Request' = None,
+        query: 'Query',
+        source: 'BizObject' = None,
         resolver: 'Resolver' = None,
         backfiller: 'QueryBackfiller' = None,
         context: Dict = None,
+        parent: 'QueryRequest' = None,
+        root: 'QueryRequest' = None,
     ):
-        super().__init__(
-            query,
-            backfiller=backfiller,
-            context=context,
-            parent=parent,
-            root=parent.root if parent else None,
-        )
+        self.source_query = query
         self.source = source
+
+        self.backfiller = backfiller
+        self.context = context if context is not None else {}
+        self.parent = parent
+        self.root = root
         self.resolver = resolver
+
+    def __repr__(self):
+        return f'Request(query={self._query})'
+
+    @property
+    def params(self):
+        return self._query.params
+
+    @memoized_property
+    def query(self) -> 'Query':
+        query = self.source_query.biz_class.select()
+        query.configure(self.source_query.options)
+        query.select(self.source_query.params.select)
+        query.where(self.source_query.params.where)
+        query.order_by(self.source_query.params.order_by)
+        query.limit(self.source_query.params.limit)
+        query.offset(self.source_query.params.offset)
+        return query
 
 
 class QueryParameterAssignment(object):
@@ -507,10 +503,10 @@ class Query(AbstractQuery):
 
     def _init_request(self, backfill, context, parent):
         backfiller = self._init_backfiller(backfill)
-        return Request(
+        return QueryRequest(
             query=self,
             backfiller=backfiller,
-            context=context or {},
+            context=context,
             parent=parent,
         )
 
@@ -541,7 +537,7 @@ class Query(AbstractQuery):
         Call all ResolverQuery execute methods on all target BizObjects.
         """
         def build_request(query, source, parent, resolver):
-            return ResolverRequest(
+            return QueryRequest(
                 query=query,
                 source=source,
                 resolver=resolver,
