@@ -21,6 +21,10 @@ from appyratus.schema import RangeConstraint, ConstantValueConstraint
 from pybiz.util.misc_functions import flatten_sequence
 from pybiz.schema import Enum as EnumField
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from pybiz.biz.resolver.resolver_property import ResolverProperty
+
+from .biz.util import is_biz_object
+
 
 OP_CODE = Enum(
     EQ='eq',
@@ -73,6 +77,8 @@ class Predicate(object):
     def __init__(self, code):
         self.code = code
         self.fields = set()
+        self.targets = set()
+        self.unbound_predicates = set()
 
     def serialize(self) -> Text:
         """
@@ -97,6 +103,9 @@ class Predicate(object):
             raise ValueError(str(obj))
 
     def dump(self):
+        raise NotImplementedError()
+
+    def bind(self, data: Dict[Text, 'BizObject']) -> 'Predicate':
         raise NotImplementedError()
 
     @classmethod
@@ -125,6 +134,10 @@ class Predicate(object):
             return reduce(func, predicates)
 
     @property
+    def is_unbound(self):
+        return bool(self.unbound_predicates)
+
+    @property
     def is_conditional_predicate(self):
         return self.code == TYPE_CONDITIONAL
 
@@ -132,6 +145,8 @@ class Predicate(object):
     def is_boolean_predicate(self):
         return self.code == TYPE_BOOLEAN
 
+    # XXX: deprecated
+    """
     def compute_constraints(self) -> 'Constraint':
         constraints = defaultdict(dict)
         self._compute_constraint(self, constraints)
@@ -142,7 +157,7 @@ class Predicate(object):
             self._compute_constraint(predicate.lhs, constraints)
             self._compute_constraint(predicate.rhs, constraints)
         elif predicate.code == TYPE_CONDITIONAL:
-            field = predicate.fprop.field
+            field = predicate.prop.field
             if predicate.op == OP_CODE.EQ:
                 constraints[field.name] = ConstantValueConstraint(
                     value=predicate.value,
@@ -200,7 +215,7 @@ class Predicate(object):
                 f'unrecogized predicate type: {predicate.code}'
             )
         return constraints
-
+    """
 
 class ConditionalPredicate(Predicate):
     """
@@ -211,9 +226,14 @@ class ConditionalPredicate(Predicate):
     def __init__(self, op: Text, prop: 'FieldProperty', value):
         super().__init__(code=TYPE_CONDITIONAL)
         self.op = op
-        self.fprop = prop
+        self.prop = prop
         self.value = value
-        self.fields.add(self.fprop.field)
+        self.fields.add(self.prop.field)
+        self.targets.add(self.prop.biz_class)
+
+        is_bound = not isinstance(value, ResolverAlias)
+        if not is_bound:
+            self.unbound_predicates.add(self)
 
     def __repr__(self):
         return '<{}({})>'.format(
@@ -222,9 +242,9 @@ class ConditionalPredicate(Predicate):
         )
 
     def __str__(self):
-        if self.fprop:
-            biz_class_name = self.fprop.biz_class.__name__
-            lhs = f'{biz_class_name}.{self.fprop.field.name}'
+        if self.prop:
+            biz_class_name = self.prop.biz_class.__name__
+            lhs = f'{biz_class_name}.{self.prop.field.name}'
         else:
             lhs = '[NULL]'
 
@@ -238,15 +258,22 @@ class ConditionalPredicate(Predicate):
 
     @property
     def field(self):
-        return self.fprop.field
+        return self.prop.field
 
     def dump(self):
         return {
             'op': self.op,
-            'field': self.fprop.field.name,
+            'field': self.prop.field.name,
             'value': self.value,
             'code': self.code,
         }
+
+    def bind(self, data: Dict[Text, 'BizObject']) -> 'Predicate':
+        resolver_alias = self.value
+        source = data[resolver_alias.alias_name]
+        self.value = getattr(source, resolver_alias.resolver_name)
+        self.unbound_predicates.remove(self)
+        return self
 
     @classmethod
     def load(cls, biz_class: Type['BizObject'], data: Dict):
@@ -265,10 +292,12 @@ class BooleanPredicate(Predicate):
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
+        self._unbound_predicates.update(lhs.unbound_predicates)
+        self._unbound_predicates.update(rhs.unbound_predicates)
         if lhs.code == TYPE_CONDITIONAL:
-            self.fields.add(lhs.fprop.field)
+            self.fields.add(lhs.prop.field)
         if rhs.code == TYPE_CONDITIONAL:
-            self.fields.add(rhs.fprop.field)
+            self.fields.add(rhs.prop.field)
 
     def __or__(self, other):
         return BooleanPredicate(OP_CODE.OR, self, other)
@@ -308,6 +337,11 @@ class BooleanPredicate(Predicate):
             'rhs': self.rhs.dump(),
             'code': self.code,
         }
+
+    def bind(self, data: Dict[Text, 'BizObject']) -> 'Predicate':
+        self.lhs.bind(data)
+        self.rhs.bind(data)
+        return self
 
     @classmethod
     def load(cls, biz_class: Type['BizObject'], data: Dict):
@@ -378,7 +412,7 @@ class PredicateParser(object):
 
         target = target.strip("'")
         ident = self.pybiz_field_name_transform_inversions.get(ident, ident)
-        fprop = getattr(self._biz_class, ident)
+        prop = getattr(self._biz_class, ident)
 
         op_code = None
         for token in comp:
@@ -387,17 +421,17 @@ class PredicateParser(object):
                 break
 
         if op_code == '=':
-            return fprop == target
+            return prop == target
         if op_code == '!=':
-            return fprop != target
+            return prop != target
         if op_code == '<':
-            return fprop < target
+            return prop < target
         if op_code == '>':
-            return fprop > target
+            return prop > target
         if op_code == '>=':
-            return fprop >= target
+            return prop >= target
         if op_code == '<=':
-            return fprop <= target
+            return prop <= target
 
         raise Exception()
 
@@ -415,12 +449,39 @@ class PredicateParser(object):
                     ident = self.pybiz_field_name_transform_inversions.get(
                         ident, ident
                     )
-                    fprop = getattr(self._biz_class, ident)
+                    prop = getattr(self._biz_class, ident)
                     value_list = [
-                        fprop.field.process(x.strip("'").strip())[0]
+                        prop.field.process(x.strip("'").strip())[0]
                         for x in token.value[1:-1].split(',')
                     ]
                     if is_negative:
-                        return fprop.excluding(value_list)
+                        return prop.excluding(value_list)
                     else:
-                        return fprop.including(value_list)
+                        return prop.including(value_list)
+
+
+class AliasFactory(object):
+    def __getattr__(self, name):
+        return Alias(name)
+
+
+class Alias(object):
+    def __init__(self, name: Text):
+        self._name = name
+
+    def __getattr__(self, resolver_name):
+        return ResolverAlias(self._name, resolver_name)
+
+
+class ResolverAlias(object):
+    def __init__(self, alias_name: Text, resolver_name: Text):
+        self._alias_name = alias_name
+        self._resolver_name = resolver_name
+
+    @property
+    def alias_name(self):
+        return self._alias_name
+
+    @property
+    def resolver_name(self):
+        return self._resolver_name

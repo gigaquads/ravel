@@ -53,7 +53,10 @@ class NestedDumper(Dumper):
         record = {}
         for k in keys_to_dump:
             v = parent_biz_object.internal.state.get(k)
-            resolver = parent_biz_object.pybiz.resolvers[k]
+            resolver = parent_biz_object.internal.resolvers.get(k)
+            if resolver is None:
+                resolver = parent_biz_object.pybiz.resolvers.get(k)
+            assert resolver is not None
             if k in parent_biz_object.pybiz.resolvers.relationships:
                 # handle the dumping of Relationships specially
                 rel = resolver

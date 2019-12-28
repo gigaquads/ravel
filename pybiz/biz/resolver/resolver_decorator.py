@@ -1,5 +1,7 @@
 from typing import Type
 
+import pybiz.biz.resolver.resolver as resolver_module
+
 
 class ResolverDecorator(object):
     """
@@ -20,6 +22,7 @@ class ResolverDecorator(object):
     """
 
     def __init__(self, resolver: Type['Resolver'] = None, **kwargs):
+        Resolver = resolver_module.Resolver
         if not isinstance(resolver, type):
             # in this case, the decorator was used like "@resolver"
             self.resolver_class = Resolver

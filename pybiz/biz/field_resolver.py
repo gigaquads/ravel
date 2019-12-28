@@ -37,19 +37,19 @@ class FieldResolver(Resolver):
         return OrderBy(self.field.source, desc=True)
 
     @property
-    def lazy(self):
+    def lazy(self) -> bool:
         return self._lazy
 
     @property
-    def field(self):
+    def field(self) -> 'Field':
         return self._field
 
     @classmethod
-    def tags(cls):
+    def tags(cls) -> Set[Text]:
         return {'fields'}
 
     @classmethod
-    def priority(cls):
+    def priority(cls) -> int:
         return 1
 
     def on_bind(self, biz_class: Type['BizObject']):
@@ -90,6 +90,12 @@ class FieldResolver(Resolver):
         the data somehow, depending on how the Field was declared.
         """
         return value
+
+    def generate(self, owner: 'BizObject', query: 'ResolverQuery'):
+        if query.parent and query.parent.params.where:
+            pass # TODO
+        else:
+            return self._field.generate()
 
 
 class FieldResolverProperty(ResolverProperty):

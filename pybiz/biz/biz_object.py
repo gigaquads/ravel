@@ -20,6 +20,7 @@ from pybiz.schema import (
     Field, Schema, fields, String, Int, Id, UuidString,
 )
 from pybiz.dao import Dao, PythonDao
+from pybiz.util.loggers import console
 from pybiz.exceptions import ValidationError
 from pybiz.constants import (
     ID_FIELD_NAME,
@@ -235,6 +236,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def __init__(self, data: Dict = None, **more_data):
         self.internal = DictObject()
         self.internal.state = DirtyDict()
+        self.internal.resolvers = ResolverManager()
 
         # merge more_data into data
         data = data or {}
@@ -265,6 +267,11 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             delattr(self, key)
         else:
             raise KeyError(key)
+
+    def __getattr__(self, key):
+        if key in self.internal.state:
+            return self.internal.state[key]
+        raise AttributeError(key)
 
     def __iter__(self):
         return iter(self.internal.state)
@@ -316,10 +323,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         cls.pybiz.is_bootstrapped = True
 
     @classmethod
-    def is_bootstrapped(cls):
-        return cls.pybiz.is_bootstrapped
-
-    @classmethod
     def bind(cls, binder: 'ApplicationDaoBinder', **kwargs):
         cls.binder = binder
         cls.pybiz.dao = cls.pybiz.app.binder.get_binding(cls).dao_instance
@@ -329,7 +332,11 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         cls.on_bind()
 
     @classmethod
-    def is_bound(cls):
+    def is_bootstrapped(cls) -> bool:
+        return cls.pybiz.is_bootstrapped
+
+    @classmethod
+    def is_bound(cls) -> bool:
         return cls.pybiz.is_bound
 
     @classmethod
@@ -340,12 +347,16 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return cls.pybiz.dao
 
     @classmethod
-    def select(cls, *selectors):
-        selectors = flatten_sequence(selectors)
-        return Query(cls).select(*selectors)
+    def select(
+        cls,
+        *targets: Tuple['ResolverProperty'],
+        **subqueries: Dict[Text, 'Query']
+    ) -> 'Query':
+        flattened_targets = flatten_sequence(targets)
+        return Query(cls).select(flattened_targets, **subqueries)
 
     @property
-    def dao(self):
+    def dao(self) -> 'Dao':
         return self.get_dao()
 
     @property
@@ -440,13 +451,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         else:
             keys = set(
                 self.internal.state.keys() |
-                self.internal.resolvers.keys()
+                self.pybiz.resolvers.keys()
             )
         for k in keys:
             if k in self.internal.state:
                 del self.internal.state[k]
-            elif k in self.internal.resolvers:
-                del self.internal.resolvers[k]
+            elif k in self.pybiz.resolvers:
+                del self.pybiz.resolvers[k]
 
     def is_loaded(self, selectors: Set) -> bool:
         """
@@ -459,12 +470,12 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         else:
             keys = set(
                 self.internal.state.keys() |
-                self.internal.resolvers.keys()
+                self.pybiz.resolvers.keys()
             )
 
         for k in keys:
             is_key_in_data = k in self.internal.state
-            is_key_in_resolvers = k in self.internal.resolvers
+            is_key_in_resolvers = k in self.pybiz.resolvers
             if not (is_key_in_data or is_key_in_resolvers):
                 return False
 
@@ -753,19 +764,12 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             records, _ids = [], []
 
             for biz_obj in biz_obj_partition:
-                record = biz_obj.dirty_data
+                record = biz_obj.dirty.copy()
                 record.pop(REV_FIELD_NAME, None)
                 record.pop(ID_FIELD_NAME, None)
                 records.append(record)
                 _ids.append(biz_obj._id)
 
-            console.info(
-                message='performing update_many',
-                data={
-                    'partition_size': len(_ids),
-                    'total_size': len(biz_objs),
-                }
-            )
             updated_records = cls.get_dao().update_many(_ids, records)
 
             for biz_obj, record in zip(biz_obj_partition, updated_records):
@@ -830,50 +834,15 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def generate(cls, query: Query = None) -> 'BizObject':
+        instance = cls()
         query = query or cls.select()
-
-        # partition selectors into those which select fields declared on the
-        # schema and those which do not. This is for the purpose of passing in
-        # field selectors into the schema's built-in fixture data generation
-        # method.
-        # TODO: make it respect "limit" param instad of inside Query.generate
-        other_resolvers = set()
-        field_names = set()
-        if not query.params.select:
-            field_names.update(cls.pybiz.resolvers.fields.keys())
-        else:
-            for sel in query.params.select:
-                if isinstance(sel, str):
-                    sel = cls.pybiz.resolvers[sel]
-                    if sel is None:
-                        continue
-                elif isinstance(sel, ResolverProperty):
-                    sel = sel.resolver
-
-                if sel.name in cls.pybiz.schema.fields:
-                    field_names.add(sel.name)
-                elif sel.name in cls.pybiz.resolvers:
-                    other_resolvers.add(sel)
-
-        field_resolvers = [
-            q.resolver for q in query.params.select.values()
-            if q.resolver.name in cls.pybiz.resolvers.fields
-        ]
-
-        # generate all field data requested
-        data = cls.pybiz.schema.generate(fields=field_names)
-        instance = cls(data=data)
-
-        # recursively generate all other resolvers
-        generated_child_data = {}
-        for resolver in Resolver.sort(other_resolvers):
-            subquery = None
-            if query is not None:
-                subquery = query.params.select.get(resolver.name)
-            value = resolver.generate(instance, query=subquery)
-            generated_child_data[resolver.name] = value
-
-        instance.merge(generated_child_data)
+        resolvers = Resolver.sort(
+            cls.pybiz.resolvers[k] for k in query.params.select
+        )
+        for resolver in resolvers:
+            resolver_query = query.params.select[resolver.name]
+            generated_value = resolver.generate(instance, resolver_query)
+            setattr(instance, resolver.name, generated_value)
         return instance
 
     def _prepare_record_for_create(self):

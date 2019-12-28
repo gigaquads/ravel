@@ -26,7 +26,7 @@ class Resolver(object):
         """
         class decorator_class(ResolverDecorator):
             def __init__(self, *args, **kwargs):
-                super().__init__(cls, *args, **kwargs)
+                super().__init__(resolver=cls, *args, **kwargs)
 
         class_name = f'{get_class_name(cls)}ResolverDecorator'
         decorator_class.__name__ = class_name
@@ -239,6 +239,11 @@ class Resolver(object):
 
         if parent_query is not None:
             new_query.configure(parent_query.options)
+            if parent_query.root is not None:
+                new_query.root = parent_query.root
+            else:
+                new_query.root = parent_query
+
         if selectors:
             new_query.select(selectors)
 
@@ -272,7 +277,7 @@ class Resolver(object):
         else:
             raise NotImplementedError()
 
-    def generate(self, instance: 'BizObject', query: 'ResolverQuery'):
+    def generate(self, owner: 'BizObject', query: 'ResolverQuery'):
         raise NotImplementedError()
 
     @staticmethod
@@ -326,3 +331,28 @@ class Resolver(object):
         resolver: 'Resolver', owner: 'BizObject', value
     ) -> 'BizThing':
         return value if isinstance(value, BizThing) else None
+
+
+class StoredQueryResolver(Resolver):
+    def __init__(self, query, *args, **kwargs):
+        super().__init__(target=query.biz_class, *args, **kwargs)
+        self._query = query
+
+    @staticmethod
+    def on_execute(
+        owner: 'BizObject',
+        resolver: 'Resolver',
+        request: 'QueryRequest'
+    ):
+        merged_query = self._query.merge(request.query)
+        return merged_query.execute()
+
+    @staticmethod
+    def on_backfill(
+        owner: 'BizObject',
+        resolver: 'Resolver',
+        request: 'QueryRequest',
+        result
+    ):
+        merged_query = self._query.merge(request.query)
+        return merged_query.generate()

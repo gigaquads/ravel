@@ -5,6 +5,7 @@ from .schema import *
 
 from .manifest import Manifest
 from .logging import ConsoleLoggerInterface
+from .predicate import AliasFactory
 from .dao import Dao
 from .app import (
     Application,
@@ -31,3 +32,4 @@ from .biz.query.request import QueryRequest
 field = FieldResolver.decorator()
 resolver = Resolver.decorator()
 relationship = Relationship.decorator()
+alias = AliasFactory()

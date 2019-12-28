@@ -35,26 +35,31 @@ class ResolverProperty(property):
         return self.resolver.select(*targets)
 
     def on_get(self, owner: 'BizObject'):
-        request = QueryRequest(
-            query=self.select(),
-            source=owner,
-            resolver=self.resolver,
-        )
-        obj = self.resolver.execute(request)
+        value = None
+        if self.resolver.name in owner.internal.state:
+            value = owner.internal.state[self.resolver.name]
+        elif self.resolver.lazy:
+            query = self.select()
+            request = QueryRequest(query, source=owner, resolver=self.resolver)
+            value = self.resolver.execute(request)
+        else:
+            # TODO: raise custom exception
+            raise Exception(f'{self.resolver.name} not loaded')
+
         if self.resolver.on_get:
-            self.resolver.on_get(owner, self.resolver, obj)
+            self.resolver.on_get(owner, self.resolver, value)
 
-        return obj
+        return value
 
-    def on_set(self, owner: 'BizObject', obj):
+    def on_set(self, owner: 'BizObject', value):
         key = self.resolver.name
-        old_obj = owner.internal.state.pop(key, None)
-        owner.internal.state[key] = obj
+        old_value = owner.internal.state.pop(key, None)
+        owner.internal.state[key] = value
         if self.resolver.on_set:
-            self.resolver.on_set(self.resolver, old_obj, obj)
+            self.resolver.on_set(self.resolver, old_value, value)
 
     def on_del(self, owner: 'BizObject'):
         key = self.resolver.name
-        obj = owner.internal.state.pop(key, None)
+        value = owner.internal.state.pop(key, None)
         if self.resolver.on_del:
-            self.resolver.on_del(self.resolver, obj)
+            self.resolver.on_del(self.resolver, value)

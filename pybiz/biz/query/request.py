@@ -19,11 +19,11 @@ class QueryRequest(object):
         self.backfiller = backfiller
         self.context = context if context is not None else {}
         self.parent = parent
-        self.root = root
+        self.root = root or parent
         self.resolver = resolver
 
     def __repr__(self):
-        return f'Request(query={self._query})'
+        return f'Request(query={self.source_query})'
 
     @property
     def params(self):
@@ -39,3 +39,13 @@ class QueryRequest(object):
         query.limit(self.source_query.params.limit)
         query.offset(self.source_query.params.offset)
         return query
+
+
+class QueryResponse(object):
+    def __init__(self, query, body):
+        self.query = query
+        self.body = body
+        self.aliased = {}
+
+    def __repr__(self):
+        return f'Response(query={self._query})'

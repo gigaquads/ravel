@@ -2,11 +2,14 @@ from random import randint
 from typing import Dict, Type, Set, Text
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
-from types import GeneratorType
 
 from appyratus.utils import DictObject
 
-from pybiz.util.misc_functions import is_sequence, get_class_name
+from pybiz.util.misc_functions import (
+    is_sequence,
+    get_class_name,
+    flatten_sequence,
+)
 from pybiz.constants import ID_FIELD_NAME
 from pybiz.schema import String
 from pybiz.predicate import (
@@ -16,19 +19,20 @@ from pybiz.predicate import (
     Predicate,
 )
 
-from ..resolver.resolver import Resolver
+from ..resolver.resolver import Resolver, StoredQueryResolver
 from ..resolver.resolver_property import ResolverProperty
 from ..util import is_biz_object, is_biz_list
-from .request import QueryRequest
+from .request import QueryRequest, QueryResponse
 from .backfill import Backfill, QueryBackfiller
 from .printer import QueryPrinter
 from .order_by import OrderBy
 
 
 class QueryOptions(object):
-    def __init__(self, eager=True):
+    def __init__(self, first=False, eager=True):
         self._data = {
             'eager': eager,
+            'first': first,
         }
 
     def to_dict(self):
@@ -80,6 +84,7 @@ class QueryParameterAssignment(object):
         )
 
 
+# TODO:Merge AbstractQuery into Query
 class AbstractQuery(object):
     """
     Abstract base class/interface for Query.
@@ -91,13 +96,13 @@ class AbstractQuery(object):
         self,
         parent: 'AbstractQuery' = None,
         options: 'QueryOptions' = None,
-        *args,
-        **kwargs
+        *args, **kwargs
     ):
         self._options = options or QueryOptions()
         self._parent = parent
         self._params = DictObject()
         self._params.select = OrderedDict()
+        self._params.subqueries = OrderedDict()
 
     def __getattr__(self, param_name):
         return QueryParameterAssignment(param_name, self)
@@ -110,9 +115,24 @@ class AbstractQuery(object):
     def parent(self) -> 'AbstractQuery':
         return self._parent
 
+    @parent.setter
+    def parent(self, parent) -> 'AbstractQuery':
+        self._parent = parent
+
     @property
     def options(self) -> 'QueryOptions':
         return self._options
+
+    def merge(self, other, in_place=False) -> 'AbstractQuery':
+        if in_place:
+            self._params.update(deepcopy(other._params))
+            self._options.update(deepcopy(other._options))
+            return self
+        else:
+            merged_query = type(self)()
+            merged_query.merge(self, in_place=True)
+            merged_query.merge(other, in_place=True)
+            return merged_query
 
     def configure(
         self, options: 'QueryOptions' = None, **more_options
@@ -123,7 +143,7 @@ class AbstractQuery(object):
             self._options.update(more_options)
         return self
 
-    def select(self, *selectors, append=True):
+    def select(self, *resolvers, append=True, **subqueries):
         raise NotImplementedError()
 
     def execute(self, first=False, backfill: Backfill = None):
@@ -140,6 +160,7 @@ class Query(AbstractQuery):
     def __init__(self, biz_class: Type['BizObject'], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._biz_class = biz_class
+        self._response = None
         self.clear()
 
     def __repr__(self):
@@ -150,12 +171,16 @@ class Query(AbstractQuery):
         limit = str(self.params.get('limit') or '')
         return (
             f'Query'
-            f'(target={biz_class_name}[{offset}:{limit}])>'
+            f'({biz_class_name}[{offset}:{limit}])'
         )
 
     @property
     def biz_class(self):
         return self._biz_class
+
+    @property
+    def response(self):
+        return self._response
 
     @property
     def biz_list_class(self):
@@ -164,6 +189,7 @@ class Query(AbstractQuery):
     def clear(self, select=True, where=True):
         if select:
             self.params.select = OrderedDict()
+            self.params.subqueries = OrderedDict()
             self.params.select[ID_FIELD_NAME] = ResolverQuery(
                 biz_class=self._biz_class,
                 resolver=self._biz_class.pybiz.resolvers[ID_FIELD_NAME],
@@ -206,21 +232,24 @@ class Query(AbstractQuery):
 
         return self
 
-    def execute(self, request=None, context=None, first=False, backfill: Backfill = None):
+    def execute(self, request=None, context=None, first=None, backfill: Backfill = None):
         """
         Execute the Query. This is not a recursive procedure in and of itself.
         Any selected Resolver may or may not create and run its own Query within
         its on_execute logic.
         """
+        if first is not None:
+            self._options['first'] = first
+
         # init the request, which holds a ref to the query, a Backfiller and the
         # context dict. the backfiller and context dict are passed along to each
         # resolver on execute.
-        request = self._init_request(backfill, context, parent=request)
+        request = self._init_request(backfill, context, parent_request=request)
 
         # fetch data from the DAL, create the BizObjects and execute their
         # resolvers. call these objects the "targets" throughout the code.
-        records = self._execute_dal_query()
-        targets = self._instantiate_targets_and_resolve(records, request)
+        records = self._execute_dal_query(request)
+        targets = self._instantiate_targets_and_resolve(records, request, first)
 
         # save all backfilled objects if "persistent" mode is toggled
         if backfill == Backfill.persistent:
@@ -228,16 +257,19 @@ class Query(AbstractQuery):
 
         # transform the final return value, which may
         # be a single object or multiple.
-        retval = self._compute_exeecution_return_value(targets, first)
+        retval = self._compute_exeecution_return_value(request, targets)
+
+        self._execute_subqueries(targets, request)
+
         return retval
 
-    def _init_request(self, backfill, context, parent):
+    def _init_request(self, backfill, context, parent_request):
         backfiller = self._init_backfiller(backfill)
         return QueryRequest(
             query=self,
             backfiller=backfiller,
             context=context,
-            parent=parent,
+            parent=parent_request,
         )
 
     def _init_backfiller(self, backfill):
@@ -248,49 +280,77 @@ class Query(AbstractQuery):
             backfiller = QueryBackfiller()
         return backfiller
 
-    def _compute_exeecution_return_value(self, targets, first):
+    def _compute_exeecution_return_value(self, request, targets):
         """
         Compute final return value.
         """
         retval = targets.clean()
-        if first:
+        if self._options.get('first', False):
             retval = targets[0] if targets else None
+
+        # if this query has an alias, store it in the root query
+        # response's "aliased" dict.
+        if self.params.alias:
+            if request.root:
+                resp = request.root.response
+                resp.aliased[self.params.alias] = retval
+            else:
+                resp = request.response
+                resp.aliased[self.params.alias] = retval
+
         return retval
 
-    def _instantiate_targets_and_resolve(self, target_records, request):
+    def _instantiate_targets_and_resolve(self, target_records, request, first):
         targets = self.biz_list_class(self.biz_class(x) for x in target_records)
+
+        if first:
+            request.response = QueryResponse(
+                self, targets[0] if targets else None
+            )
+        else:
+            request.response = QueryResponse(self, targets)
+
+        self._response = request.response
         self._execute_target_resolver_queries(targets, request)
         return targets
+
+    def _build_request(self, query, source, parent, resolver):
+        return QueryRequest(
+            query=query,
+            source=source,
+            resolver=resolver,
+            backfiller=parent.backfiller,
+            context=parent.context,
+            parent=parent,
+        )
 
     def _execute_target_resolver_queries(self, targets, parent_request):
         """
         Call all ResolverQuery execute methods on all target BizObjects.
         """
-        def build_request(query, source, parent, resolver):
-            return QueryRequest(
-                query=query,
-                source=source,
-                resolver=resolver,
-                backfiller=parent.backfiller,
-                context=parent.context,
-                parent=parent,
-            )
-
         for query in self.params.select.values():
             for target in targets:
                 # resolve and set the value to set in the
                 # target BizObject's state dict
                 resolver = query.resolver
-                request = build_request(
+                request = self._build_request(
                     query, target, parent_request, resolver
                 )
                 # Note below that the resolver sets the resolved
                 # value on the calling BizObject via resolver.execute
                 query.execute(request)
 
-    def _execute_dal_query(self):
+    def _execute_subqueries(self, targets, request):
+        for name, subquery in self.params.subqueries.items():
+            for target in targets:
+                value = subquery.execute(request=request)
+                resolver = StoredQueryResolver(subquery, name=name)
+                target.internal.resolvers.register(resolver)
+                target.internal.state[name] = value
+
+    def _execute_dal_query(self, request):
         fields = self._extract_selected_field_names()
-        predicate = self._compute_where_predicate()
+        predicate = self._compute_where_predicate(request)
         return self.biz_class.get_dao().query(
             predicate=predicate,
             fields=fields,
@@ -311,31 +371,29 @@ class Query(AbstractQuery):
 
         return dao_field_names
 
-    def _compute_where_predicate(self):
-        # ensure we at least have a default "select *" predicate
-        # to use when executing this Query in the Dao
+    def _compute_where_predicate(self, request):
         predicate = self.params.get('where')
+
         if not predicate:
+            # ensure we at least have a default "select *" predicate
+            # to use when executing this Query in the Dao
             predicate = (self.biz_class._id != None)
+        elif self.parent is not None and predicate.is_unbound:
+            if request.root is None:  # TODO: and top-down:
+                raise Exception('no parent data to bind')
+            predicate.bind(request.root.response.aliased)
+
         return predicate
 
-    def select(self, *selectors, append=True):
+    def select(self, *targets, append=True, **subqueries):
         if not append:
             self.clear()
 
-        flattened_selectors = []
-        for obj in selectors:
-            if is_sequence(obj):
-                flattened_selectors.extend(obj)
-            if isinstance(obj, GeneratorType):
-                flattened_selectors.extend(list(obj))
-            else:
-                flattened_selectors.append(obj)
-
+        targets = flatten_sequence(targets)
         resolver_queries = {}
         resolvers = []
 
-        for obj in flattened_selectors:
+        for obj in targets:
             resolver_query = None
             resolver = None
 
@@ -355,6 +413,7 @@ class Query(AbstractQuery):
                 resolver_query = obj
 
             if resolver and resolver_query:
+                resolver_query.parent = self
                 resolvers.append(resolver)
                 resolver_queries[resolver.name] = resolver_query
 
@@ -362,20 +421,25 @@ class Query(AbstractQuery):
             resolver_query = resolver_queries[resolver.name]
             self.params.select[resolver.name] = resolver_query
 
+        for name, subquery in subqueries.items():
+            subquery.parent = self
+            self.params.subqueries[name] = subquery
+
         return self
 
-    def generate(self, count=None, first=False):
+    def generate(self, count=None):
         """
         This method is really just syntactic surgar for doing query.generate()
         instead of BizObject.generate(query).
         """
+        # TODO: extend to support subqueries
         if count is None:
             count = self.params.get('limit', randint(1, 10))
 
         biz_objects = self.biz_class.BizList(
             self.biz_class.generate(query=self) for i in range(count)
         )
-        if first:
+        if self._options.get('first', False):
             return biz_objects[0]
         else:
             return biz_objects

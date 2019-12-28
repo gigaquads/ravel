@@ -106,13 +106,16 @@ class Relationship(Resolver):
 
     @staticmethod
     def on_select(
-        resolver: 'Resolver',
+        relationship: 'Resolver',
         query: 'ResolverQuery',
         parent_query: 'Query'
     ) -> 'ResolverQuery':
-        for (source_resolver_prop, target_resolver_prop) in self.joins:
+        joins = relationship.joins
+        for (source_resolver_prop, target_resolver_prop) in joins:
             source_resolver = source_resolver_prop.resolver
-            source_value = getattr(self.biz_class, source_resolver.name)
+            source_value = getattr(
+                source_resolver.biz_class, source_resolver.name
+            )
             query.where(target_resolver_prop == source_value)
         return query
 
@@ -156,21 +159,6 @@ class Relationship(Resolver):
             return biz_list
         elif result is None:
             return biz_list.pybiz.biz_class.generate(request.query)
-
-    @staticmethod
-    def on_select(
-        relationship: 'Relationship',
-        query: 'Query',
-        parent_query: 'Query'
-    ) -> 'ResolverQuery':
-        """
-        If no fields are selected explicity, then select all by default.
-        """
-        target = relationship.target
-        if query.options.get('eager'):
-            required = target.pybiz.resolvers.required_resolvers
-            query.select(required)
-        return query
 
     def generate(self, owner, query):
         return query.generate(first=not self.many)

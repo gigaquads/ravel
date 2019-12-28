@@ -1,5 +1,6 @@
 from uuid import UUID
 from importlib import import_module
+from types import GeneratorType
 from typing import (
     List, Dict, ForwardRef, Text, Tuple, Set, Type,
     _GenericAlias as GenericAlias, Callable
@@ -144,13 +145,15 @@ def extract_biz_info_from_annotation(annotation) -> Tuple[bool, Text]:
     return (many, key)
 
 
-def flatten_sequence(target) -> Set:
+def flatten_sequence(seq) -> Set:
     flattened = set()
-    for child_target in target:
-        if is_sequence(child_target):
-            flattened.update(flatten_sequence(child_target))
+    for obj in seq:
+        if is_sequence(obj):
+            flattened.update(flatten_sequence(obj))
+        elif isinstance(obj, GeneratorType):
+            flattened.extend(list(obj))
         else:
-            flattened.add(child_target)
+            flattened.add(obj)
     return flattened
 
 

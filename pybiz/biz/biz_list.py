@@ -67,8 +67,8 @@ class BizList(BizThing, metaclass=BizListMeta):
     def __repr__(self):
         dirty_count = sum(1 for x in self if x and x.dirty)
         return (
-            f'<BizList(type={get_class_name(self.pybiz.biz_class)}, '
-            f'size={len(self)}, dirty={dirty_count})>'
+            f'{get_class_name(self.pybiz.biz_class)}.BizList('
+            f'size={len(self)}, dirty={dirty_count})'
         )
 
     def __add__(self, other):
