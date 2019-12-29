@@ -19,8 +19,14 @@ class QueryRequest(object):
         self.backfiller = backfiller
         self.context = context if context is not None else {}
         self.parent = parent
-        self.root = root or parent
         self.resolver = resolver
+
+        if root:
+            self.root = root
+        elif parent is not None:
+            self.root = parent.root or parent
+        else:
+            self.root = None
 
     def __repr__(self):
         return f'Request(query={self.source_query})'

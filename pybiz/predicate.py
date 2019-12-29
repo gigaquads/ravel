@@ -248,7 +248,12 @@ class ConditionalPredicate(Predicate):
         else:
             lhs = '[NULL]'
 
-        return f'({lhs} {OP_CODE_2_DISPLAY_STRING[self.op]} {self.value})'
+        if isinstance(self.value, ResolverAlias):
+            val = f'{self.value.alias_name}.{self.value.resolver_name}'
+        else:
+            val = self.value
+
+        return f'({lhs} {OP_CODE_2_DISPLAY_STRING[self.op]} {val})'
 
     def __or__(self, other):
         return BooleanPredicate(OP_CODE.OR, self, other)
@@ -477,6 +482,9 @@ class ResolverAlias(object):
     def __init__(self, alias_name: Text, resolver_name: Text):
         self._alias_name = alias_name
         self._resolver_name = resolver_name
+
+    def __repr__(self):
+        return f'ResolverAlias(target={self._alias_name}.{self._resolver_name})'
 
     @property
     def alias_name(self):

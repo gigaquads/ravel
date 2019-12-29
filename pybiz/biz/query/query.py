@@ -29,14 +29,15 @@ from .order_by import OrderBy
 
 
 class QueryOptions(object):
-    def __init__(self, first=False, eager=True):
+    def __init__(
+        self,
+        first=False,
+        eager=True,
+    ):
         self._data = {
             'eager': eager,
             'first': first,
         }
-
-    def to_dict(self):
-        return deepcopy(self._data)
 
     def update(self, obj):
         if isinstance(obj, QueryOptions):
@@ -171,7 +172,7 @@ class Query(AbstractQuery):
         limit = str(self.params.get('limit') or '')
         return (
             f'Query'
-            f'({biz_class_name}[{offset}:{limit}])'
+            f'(target={biz_class_name}[{offset}:{limit}])'
         )
 
     @property
@@ -201,8 +202,9 @@ class Query(AbstractQuery):
         # Include fields maked as required to be safe, as these
         # more than likely will be referenced by some Resolver's
         # execution logic.
-        if self.options.get('eager', True):
-            self.select(self._biz_class.pybiz.resolvers.required_resolvers)
+        if self.options['eager']:
+            all_field_names = self._biz_class.pybiz.resolvers.fields.keys()
+            self.select(all_field_names)
 
         return self
 
@@ -379,7 +381,7 @@ class Query(AbstractQuery):
             # to use when executing this Query in the Dao
             predicate = (self.biz_class._id != None)
         elif self.parent is not None and predicate.is_unbound:
-            if request.root is None:  # TODO: and top-down:
+            if request.root is None:
                 raise Exception('no parent data to bind')
             predicate.bind(request.root.response.aliased)
 

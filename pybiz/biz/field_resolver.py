@@ -21,7 +21,7 @@ from .resolver.resolver_property import ResolverProperty
 class FieldResolver(Resolver):
     def __init__(self, field, *args, **kwargs):
         super().__init__(
-            target=kwargs.get('biz_class'),
+            target_biz_class=kwargs.get('biz_class'),
             private=field.meta.get('private', False),
             required=field.required,
             *args, **kwargs
@@ -58,7 +58,7 @@ class FieldResolver(Resolver):
         field value comes from it, not some other type, as with Relationships,
         for instance.
         """
-        self.target = biz_class
+        self.target_biz_class = biz_class
 
     @staticmethod
     def on_execute(

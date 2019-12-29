@@ -59,7 +59,7 @@ class Relationship(Resolver):
         *args,
         **kwargs
     ):
-        super().__init__(target=None, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.join_callback = join
         self.joins = []
         self.on_add = on_add or self.on_add
@@ -83,7 +83,7 @@ class Relationship(Resolver):
             pass
 
         self.BizList = BizList
-        self.BizList.pybiz.biz_class = self.target
+        self.BizList.pybiz.biz_class = self.target_biz_class
         self.BizList.pybiz.relationship = self
 
         # now that BizObject classes are available through the app,
@@ -98,11 +98,11 @@ class Relationship(Resolver):
         if not isinstance(self.joins[0], (tuple, list)):
             self.joins = [self.joins]
 
-        # set self._target, and self._many through the target property
+        # set self._target_biz_class, and self._many through the target_biz_class property
         if self.many:
-            self.target = self.joins[-1][-1].biz_class.BizList
+            self.target_biz_class = self.joins[-1][-1].biz_class.BizList
         else:
-            self.target = self.joins[-1][-1].biz_class
+            self.target_biz_class = self.joins[-1][-1].biz_class
 
     @staticmethod
     def on_select(
@@ -111,12 +111,12 @@ class Relationship(Resolver):
         parent_query: 'Query'
     ) -> 'ResolverQuery':
         joins = relationship.joins
-        for (source_resolver_prop, target_resolver_prop) in joins:
+        for (source_resolver_prop, target_biz_class_resolver_prop) in joins:
             source_resolver = source_resolver_prop.resolver
             source_value = getattr(
                 source_resolver.biz_class, source_resolver.name
             )
-            query.where(target_resolver_prop == source_value)
+            query.where(target_biz_class_resolver_prop == source_value)
         return query
 
     @staticmethod
@@ -138,7 +138,7 @@ class Relationship(Resolver):
             if relationship.many and (not is_biz_list(result)):
                 result = self.BizList(value)
             elif (not relationship.many) and isinstance(result, dict):
-                result = self.target(data=result)
+                result = self.target_biz_class(data=result)
         return result
 
     @staticmethod
@@ -185,7 +185,7 @@ class Relationship(Resolver):
         owner: 'BizObject',
         relationship: 'Relationship',
         index: int,
-        target: 'BizObject'
+        obj: 'BizObject'
     ):
         pass
 
@@ -194,6 +194,6 @@ class Relationship(Resolver):
         owner: 'BizObject',
         relationship: 'Relationship',
         index: int,
-        target: 'BizObject'
+        obj: 'BizObject'
     ):
         pass

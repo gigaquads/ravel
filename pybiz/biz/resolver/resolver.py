@@ -35,7 +35,7 @@ class Resolver(object):
     def __init__(
         self,
         biz_class: Type['BizObject'] = None,
-        target: Type['BizObject'] = None,
+        target_biz_class: Type['BizObject'] = None,
         name: Text = None,
         many: bool = False,
         lazy: bool = True,
@@ -54,21 +54,21 @@ class Resolver(object):
         self._private = private
         self._required = required
         self._biz_class = biz_class
-        self._target = None
+        self._target_biz_class = None
         self._is_bootstrapped = False
         self._is_bound = False
         self._many = many
-        self._target_callback = None
+        self._target_biz_class_callback = None
 
-        # if `target` was not provided as a callback but as a class object, we
-        # can eagerly set self._target. otherwise, we can only call the callback
+        # if `target_biz_class` was not provided as a callback but as a class object, we
+        # can eagerly set self._target_biz_class. otherwise, we can only call the callback
         # lazily, during the bind lifecycle method, after its lexical scope has
         # been updated with references to the BizObject types picked up by the
         # host Application.
-        if not isinstance(target, type):
-            self._target_callback = target
+        if not isinstance(target_biz_class, type):
+            self._target_biz_class_callback = target_biz_class
         else:
-            self.target = target or biz_class
+            self.target_biz_class = target_biz_class or biz_class
 
         # If on_execute function is a stub, interpret this as an indication to
         # use the on_execute method defined on this Resolver class.
@@ -93,14 +93,14 @@ class Resolver(object):
                 source += '.'
         source += self._name or ''
 
-        target = ''
-        if self._target is not None:
-            target += get_class_name(self._target)
+        target_biz_class = ''
+        if self._target_biz_class is not None:
+            target_biz_class += get_class_name(self._target_biz_class)
 
         return (
             f'Resolver('
             f'name={source}, '
-            f'target={target}, '
+            f'target_biz_class={target_biz_class}, '
             f'type={get_class_name(self)}, '
             f'priority={self.priority()}'
             f')'
@@ -120,9 +120,9 @@ class Resolver(object):
         return self._is_bootstrapped
 
     def bind(self, biz_class):
-        if self._target_callback:
-            biz_class.pybiz.app.inject(self._target_callback)
-            self.target = self._target_callback()
+        if self._target_biz_class_callback:
+            biz_class.pybiz.app.inject(self._target_biz_class_callback)
+            self.target_biz_class = self._target_biz_class_callback()
 
         self.on_bind(biz_class)
         self._is_bound = True
@@ -131,22 +131,25 @@ class Resolver(object):
         pass
 
     @property
-    def target(self) -> Type['BizObject']:
-        return self._target
+    def target_biz_class(self) -> Type['BizObject']:
+        return self._target_biz_class
 
-    @target.setter
-    def target(self, target: Type['BizThing']):
-        if (not isinstance(target, type)) and callable(target):
-            target = target()
+    @target_biz_class.setter
+    def target_biz_class(self, target_biz_class: Type['BizThing']):
+        if (
+            (not isinstance(target_biz_class, type)) and
+            callable(target_biz_class)
+        ):
+            target_biz_class = target_biz_class()
 
-        if target is None:
+        if target_biz_class is None:
             # default value
-            self._target = self._biz_class
-        elif is_biz_object(target):
-            self._target = target
+            self._target_biz_class = self._biz_class
+        elif is_biz_object(target_biz_class):
+            self._target_biz_class = target_biz_class
             self._many = False
-        elif is_biz_list(target):
-            self._target = target.pybiz.biz_class
+        elif is_biz_list(target_biz_class):
+            self._target_biz_class = target_biz_class.pybiz.biz_class
             self._many = True
         else:
             raise ValueError()
@@ -234,7 +237,7 @@ class Resolver(object):
 
     def select(self, parent_query: 'Query' = None, *selectors):
         new_query = query_module.ResolverQuery(
-            resolver=self, biz_class=self._target
+            resolver=self, biz_class=self._target_biz_class
         )
 
         if parent_query is not None:
@@ -271,7 +274,7 @@ class Resolver(object):
     def dump(self, dumper: 'Dumper', value):
         if value is None:
             return None
-        elif self._target is not None:
+        elif self._target_biz_class is not None:
             assert isinstance(value, BizThing)
             return value.dump()
         else:
@@ -335,7 +338,7 @@ class Resolver(object):
 
 class StoredQueryResolver(Resolver):
     def __init__(self, query, *args, **kwargs):
-        super().__init__(target=query.biz_class, *args, **kwargs)
+        super().__init__(target_biz_class=query.biz_class, *args, **kwargs)
         self._query = query
 
     @staticmethod

@@ -2,10 +2,12 @@ from typing import Text
 
 from pybiz.util.misc_functions import is_sequence, get_class_name
 from pybiz.schema import String
+from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.predicate import (
     OP_CODE,
     OP_CODE_2_DISPLAY_STRING,  # TODO: Turn OP_CODE into proper enum
     Predicate,
+    ResolverAlias
 )
 
 
@@ -28,9 +30,10 @@ class QueryPrinter(object):
 
         substrings.append(self._build_substring_select_head(query))
         if query.params.get('select'):
-            substrings.append('SELECT (')
+            substrings.append('SELECT')
             substrings.extend(self._build_substring_select_body(query, indent))
-            substrings.append(')')
+            if query.params.alias:
+                substrings.append(f'AS {query.params.alias}')
 
         if query.params.get('where'):
             substrings.extend(self._build_substring_where(query))
@@ -51,7 +54,7 @@ class QueryPrinter(object):
 
     def _build_substring_where(self, query):
         substrings = []
-        substrings.append('WHERE (')
+        substrings.append('WHERE')
         predicates = query.params['where']
         if isinstance(predicates, Predicate):
             predicates = [predicates]
@@ -65,7 +68,6 @@ class QueryPrinter(object):
                 substrings.append(
                     self._build_substring_cond_predicate(query, predicate)
                 )
-            substrings.append(')')
 
         return substrings
 
@@ -73,10 +75,14 @@ class QueryPrinter(object):
         s_op_code = OP_CODE_2_DISPLAY_STRING[predicate.op]
         s_biz_class = get_class_name(query.biz_class)
         s_field = predicate.field.name
-        s_value = str(predicate.value)
-        if isinstance(predicate.field, String):
-            s_value = s_value.replace('"', '\"')
-            s_value = f'"{s_value}"'
+        if isinstance(predicate.value, ResolverAlias):
+            alias = predicate.value
+            s_value = f'{alias.alias_name}.{alias.resolver_name}'
+        else:
+            s_value = f'{predicate.value}'
+            if isinstance(predicate.field, String):
+                s_value = s_value.replace('"', '\"')
+                s_value = f'"{s_value}"'
         return f'{indent * " "} {s_biz_class}.{s_field} {s_op_code} {s_value}'
 
     def _build_substring_bool_predicate(self, predicate, indent=1):
@@ -108,61 +114,71 @@ class QueryPrinter(object):
     def _build_substring_select_body(self, query, indent: int):
         substrings = []
         resolvers = query.biz_class.pybiz.resolvers
-        resolver_queries = query.params.get('select', {}).values()
-        if resolver_queries:
-            resolver_queries = sorted(
-                resolver_queries,
-                key=lambda query: (
-                    query.resolver.priority(),
-                    query.resolver.name,
-                    query.resolver.required,
-                    query.resolver.private,
-                )
+        resolver_queries = query.params.get('select', {})
+        resolver_queries = sorted(
+            resolver_queries.values(),
+            key=lambda query: (
+                query.resolver.priority(),
+                query.resolver.name,
+                query.resolver.required,
+                query.resolver.private,
             )
-            for resolver_query in resolver_queries:
-                resolver = resolver_query.resolver
-                target = resolver.target
-                if target is None:
-                    continue
+        )
+        for resolver_query in resolver_queries:
+            resolver = resolver_query.resolver
+            target = resolver.target_biz_class
+            if target is None:
+                continue
 
-                if resolver.name in target.resolvers.fields:
-                    substrings.append(
-                        self._build_substring_selected_field(
-                            resolver_query, indent
-                        )
+            if resolver.name in target.resolvers.fields:
+                if resolver.name in (ID_FIELD_NAME, REV_FIELD_NAME):
+                    continue
+                substrings.append(
+                    self._build_substring_selected_field(
+                        resolver_query, indent
                     )
+                )
+            else:
+                substrings.extend(
+                    self._build_substring_selected_resolver(
+                        resolver_query, indent
+                    )
+                )
+
+        if query.params.subqueries:
+            for name, subquery in query.params.subqueries.items():
+                if not subquery.options['first']:
+                    target = f'List[{get_class_name(subquery.biz_class)}]'
                 else:
-                    substrings.extend(
-                        self._build_substring_selected_resolver(
-                            resolver_query, indent
-                        )
-                    )
+                    target = f'{get_class_name(subquery.biz_class)}'
+                substrings.append(f'- {name}: {target} ->')
+                substrings.append(self.fprintf(subquery, indent+5))
 
         return substrings
 
     def _build_substring_selected_field(self, query, indent: int):
         s_name = query.resolver.name
         s_type = get_class_name(query.resolver.field)
-        return f'-  {s_name}: {s_type}'
+        return f'- {s_name}: {s_type}'
 
     def _build_substring_selected_resolver(self, query, indent: int):
         substrings = []
 
         s_name = query.resolver.name
         s_target = None
-        if query.resolver.target:
-            s_target = get_class_name(query.resolver.target)
+        if query.resolver.target_biz_class:
+            s_target = get_class_name(query.resolver.target_biz_class)
 
         if s_target is None:
             return substrings
 
         resolver = query.resolver
-        if resolver.target:
-            s_biz_class = get_class_name(resolver.target)
+        if resolver.target_biz_class:
+            s_biz_class = get_class_name(resolver.target_biz_class)
             s_target = f'List[{s_target}]' if resolver.many else s_target
-            substrings.append(f'-  {s_name}: {s_target} ->')
+            substrings.append(f'- {s_name}: {s_target} ->')
         else:
-            substrings.append(f'-  {s_name} ->')
+            substrings.append(f'- {s_name} ->')
 
         substrings[0]  += ' ' + self.fprintf(query, indent=indent+5).lstrip()
         #substrings.append(self.fprintf(query, indent=indent+5))

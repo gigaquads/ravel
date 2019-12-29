@@ -1,6 +1,25 @@
-import os
+import pytest
 
-os.environ['PYBIZ_CONSOLE_LOG_LEVEL'] = 'WARN'
+from pybiz import alias
+
+
+def test_query(Tree, Node, tree, parent, children):
+    query = Tree.select(
+        children=Node.select(
+            Node.name,
+        ).where(
+            Node.tree_id == alias.tree._id
+        )
+    ).alias('tree')
+
+    query.printf()
+    tree = query.execute(first=True)
+
+
+
+
+'''
+import os
 
 from mock import MagicMock
 from appyratus.test import mark
@@ -12,18 +31,19 @@ import pybiz
 
 from pybiz import Application
 from pybiz.constants import ID_FIELD_NAME
-from pybiz.biz2.biz_object import BizObject, fields
-from pybiz.biz2.relationship import (
+from pybiz.biz import (
+    BizObject,
+    Resolver,
+    ResolverProperty,
+    resolver,
+    fields
+)
+from pybiz.biz.relationship import (
     Relationship,
     RelationshipBizList,
     relationship,
 )
-from pybiz.biz2.resolver import (
-    Resolver,
-    ResolverProperty,
-    resolver,
-)
-from pybiz.biz2.query import (
+from pybiz.biz.query.query import (
     Query,
     QueryParameterAssignment,
     QueryPrinter,
@@ -285,3 +305,5 @@ def test_backfill_ephemeral_mode_works(Thing):
 
     thing = query.execute(first=True)
     assert thing is None
+
+'''

@@ -10,17 +10,17 @@ import pybiz
 
 from pybiz import Application
 from pybiz.constants import ID_FIELD_NAME
-from pybiz.biz2.biz_object import BizObject
-from pybiz.biz2.query import Query
-from pybiz.biz2.relationship import (
+from pybiz.biz.biz_object import BizObject
+from pybiz.biz.query.query import Query
+from pybiz.biz.relationship import (
     Relationship,
-    relationship,
     RelationshipBizList,
 )
-from pybiz.biz2.resolver import (
+from pybiz import (
     Resolver,
     ResolverProperty,
     resolver,
+    relationship,
 )
 
 
@@ -48,20 +48,23 @@ def Dog(app, Person):
         age = pybiz.Int()
 
         @resolver
-        def mother(self, resolver, query=None):
+        def mother(self, resolver, request):
             return Dog(color='brown', age=12)
 
         @mother.on_get
         def mother(self, resolver, mother):
             print(f'Getting mother of {self}')
 
-        @relationship(Person)
-        def owner(self, relationship, query=None, *args, **kwargs):
+        """
+        @relationship(join=lambda: Dog.owner_id, Person._id))
+        def owner(self, relationship, request):
             return Person(name='Todd')
 
-        @relationship(Person.BizList)
-        def friends(self, relationship, query=None, *args, **kwargs):
+        @relationship()
+        @relationship(join=lambda: Dog.owner_id, Person._id))
+        def friends(self, relationship, request):
             return [Person(name='Todd')]
+        """
 
     app.bind(Dog)
     return Dog
@@ -165,7 +168,7 @@ def test_resolver_decorator_is_replaced_with_property(Dog):
 
 
 def test_resolver_executes_correct_method(Dog):
-    mother = Dog.pybiz.resolvers['mother'].execute(instance=MagicMock())
+    mother = Dog.pybiz.resolvers['mother'].execute(MagicMock())
     assert mother.color == 'brown'
     assert mother.age == 12
 
@@ -196,48 +199,3 @@ def test_update(Dog, lassie):
 def test_resolvers_correctly_assembled(Dog):
     assert Dog.pybiz.resolvers['mother'] is Dog.mother.resolver
     assert Dog.pybiz.resolvers.untagged['mother'] is Dog.mother.resolver
-
-
-def test_relationship_executes(Dog):
-    dog = Dog(color='purple', age=12).save()
-    owner = dog.owner
-
-
-def test_relationship_does_append(Dog):
-    dog = Dog(color='purple', age=12).save()
-    cat = Dog(color='green', age=21).save()
-
-    Dog.resolvers['friends'].on_add = MagicMock()
-
-    friends = dog.friends
-    original_len = len(friends)
-
-    friends.append(cat)
-
-    # ensure returns a RelationshipBizList with the right length
-    assert isinstance(friends, RelationshipBizList)
-    assert len(friends) == original_len + 1
-
-    # ensure the on_add callback was called
-    Dog.resolvers['friends'].on_add.assert_called_once_with(
-        Dog.resolvers['friends'], 1, cat
-    )
-
-
-@pytest.mark.parametrize('field_names', [
-    [],
-    ['color'],
-    ['color', 'age']
-])
-def test_basic_fixture_generate_ok(Dog, field_names):
-    query = Query(Dog).select(field_names)
-    fixture = Dog.generate(query)
-    assert fixture._id is not None
-    for k in field_names:
-        assert getattr(fixture, k) is not None
-
-
-def test_relationship_does_insert(Dog): pass
-def test_relationship_does_remove(Dog): pass
-def test_fixture_generates_resolvers_ok(Dog): pass
-
