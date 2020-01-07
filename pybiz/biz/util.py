@@ -28,6 +28,10 @@ def is_biz_list(obj) -> bool:
     )
 
 
+def is_biz_class(obj):
+    return isinstance(obj, type) and is_biz_object(obj)
+
+
 def repr_biz_id(biz_obj: 'BizObject') -> Text:
     """
     Return a string version of a BizObject ID.

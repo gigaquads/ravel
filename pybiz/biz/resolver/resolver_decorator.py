@@ -21,8 +21,12 @@ class ResolverDecorator(object):
     the constructor of the Resolver type (self.resolver_class).
     """
 
-    def __init__(self, resolver: Type['Resolver'] = None, **kwargs):
+    def __init__(self, resolver: Type['Resolver'] = None, target=None, **kwargs):
         Resolver = resolver_module.Resolver
+
+        if target is not None:
+            kwargs['target_biz_class'] = target
+
         if not isinstance(resolver, type):
             # in this case, the decorator was used like "@resolver"
             self.resolver_class = Resolver

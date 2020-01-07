@@ -89,6 +89,12 @@ class BizList(BizThing, metaclass=BizListMeta):
 
         return clone
 
+    def pprint(self):
+        print('[')
+        for obj in self.internal.data:
+            obj.pprint()
+        print(']')
+
     def append(self, biz_object: 'BizObject'):
         self.internal.data.append(biz_object)
         return self

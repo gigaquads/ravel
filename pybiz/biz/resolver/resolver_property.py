@@ -30,18 +30,22 @@ class ResolverProperty(property):
     def biz_class(self):
         return self.resolver.biz_class if self.resolver else None
 
-    def select(self, *targets, append=True) -> 'ResolverQuery':
+    def select(self, *targets) -> 'ResolverQuery':
         targets = flatten_sequence(targets)
         return self.resolver.select(*targets)
 
     def on_get(self, owner: 'BizObject'):
+        key = self.resolver.name
         value = None
-        if self.resolver.name in owner.internal.state:
-            value = owner.internal.state[self.resolver.name]
+        if key in owner.internal.state:
+            value = owner.internal.state[key]
         elif self.resolver.lazy:
-            query = self.select()
+            query = self.select().select(key).alias(key)
             request = QueryRequest(query, source=owner, resolver=self.resolver)
+            if query.options['echo']:
+                query.log()
             value = self.resolver.execute(request)
+            setattr(owner, key, value)
         else:
             # TODO: raise custom exception
             raise Exception(f'{self.resolver.name} not loaded')

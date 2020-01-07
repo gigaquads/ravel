@@ -42,6 +42,7 @@ class Manifest(object):
         self.app = None
         self.package = None
         self.bindings = []
+        self._biz_2_dao_name = {}
         self.bootstraps = {}
         self.env = env or Environment()
         self.types = DictObject({
@@ -108,6 +109,7 @@ class Manifest(object):
             params = binding_data.get('params', {})
             binding = ManifestBinding(biz=biz, dao=dao, params=params)
             self.bindings.append(binding)
+            self._biz_2_dao_name[biz] = dao
 
         # create self.bootstraps
         self.bootstraps = {}
@@ -147,17 +149,35 @@ class Manifest(object):
                 console.debug(
                     f'bootstrapping "{biz_class.__name__}" BizObject...'
                 )
+                biz_class_name = get_class_name(biz_class)
+                dao_class_name = self._biz_2_dao_name.get(biz_class_name)
+                if dao_class_name is None:
+                    dao_class = biz_class.__dao__()
+                    dao_class_name = get_class_name(dao_class)
+                else:
+                    assert dao_class_name in self.types.dal
+                    dao_class = self.types.dal[dao_class_name]
+
                 biz_class.bootstrap(app=self.app)
-                dao = biz_class.get_dao(bind=False)
-                dao_class = dao.__class__
+
+                if dao_class_name not in self.types.dal:
+                    self.types.dal[dao_class_name] = dao_class
+
+                if biz_class_name not in self._biz_2_dao_name:
+                    self._biz_2_dao_name[biz_class_name] = dao_class_name
+                    self.bindings.append(
+                        ManifestBinding(biz=biz_class_name, dao=dao_class_name)
+                    )
+                    self.app.binder.register(
+                        biz_class=biz_class, dao_class=dao_class
+                    )
 
                 # don't bootstrap the dao class if we've done so already
                 if dao_class in visited_dao_classes:
                     continue
+                else:
+                    visited_dao_classes.add(dao_class)
 
-                visited_dao_classes.add(dao_class)
-
-                dao_class_name = get_class_name(dao_class)
                 console.debug(f'bootstrapping "{dao_class_name}" Dao...')
                 bootstrap_object = self.bootstraps.get(dao_class_name)
                 bootstrap_kwargs = bootstrap_object.params if bootstrap_object else {}
@@ -251,7 +271,7 @@ class Manifest(object):
         Populate self.types from namespace dict.
         """
         from pybiz.dao import Dao
-        from pybiz.biz import BizObject
+        from pybiz import BizObject
 
         for k, v in (namespace or {}).items():
             if isinstance(v, type):

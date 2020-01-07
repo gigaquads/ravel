@@ -51,7 +51,7 @@ def repr_biz_id(biz_obj: 'BizObject') -> Text:
     """
     if biz_obj is None:
         return 'None'
-    _id = biz_obj[ID_FIELD_NAME]
+    _id = biz_obj.internal.state.get(ID_FIELD_NAME)
     if _id is None:
         return '?'
     elif isinstance(_id, str):
@@ -145,15 +145,17 @@ def extract_biz_info_from_annotation(annotation) -> Tuple[bool, Text]:
     return (many, key)
 
 
-def flatten_sequence(seq) -> Set:
-    flattened = set()
+def flatten_sequence(seq) -> List:
+    flattened = []
     for obj in seq:
         if is_sequence(obj):
-            flattened.update(flatten_sequence(obj))
+            flattened.extend(flatten_sequence(obj))
         elif isinstance(obj, GeneratorType):
             flattened.extend(list(obj))
+        elif isinstance(obj, dict):
+            flattened.extend(obj.values())
         else:
-            flattened.add(obj)
+            flattened.append(obj)
     return flattened
 
 

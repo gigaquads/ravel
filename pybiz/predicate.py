@@ -297,8 +297,9 @@ class BooleanPredicate(Predicate):
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
-        self._unbound_predicates.update(lhs.unbound_predicates)
-        self._unbound_predicates.update(rhs.unbound_predicates)
+        self.unbound_predicates = (
+            lhs.unbound_predicates | rhs.unbound_predicates
+        )
         if lhs.code == TYPE_CONDITIONAL:
             self.fields.add(lhs.prop.field)
         if rhs.code == TYPE_CONDITIONAL:

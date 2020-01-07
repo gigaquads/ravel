@@ -1,7 +1,7 @@
 from typing import Text
 
 from pybiz.util.misc_functions import is_sequence, get_class_name
-from pybiz.schema import String
+from pybiz.schema import String, Id
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.predicate import (
     OP_CODE,
@@ -34,17 +34,21 @@ class QueryPrinter(object):
             substrings.extend(self._build_substring_select_body(query, indent))
             if query.params.alias:
                 substrings.append(f'AS {query.params.alias}')
+        else:
+            substrings[-1] += ' SELECT VOID'
 
         if query.params.get('where'):
             substrings.extend(self._build_substring_where(query))
-        if 'order_by' in query.params:
+        if query.params.get('order_by'):
             substrings.append(self._build_substring_order_by(query))
-        if 'offset' in query.params:
+        if query.params.get('offset') is not None:
             substrings.append(self._build_substring_offset(query))
-        if 'limit' in query.params:
+        if query.params.get('limit') is not None:
             substrings.append(self._build_substring_limit(query))
 
-        return '\n'.join([f'{indent * " "}{s}' for s in substrings])
+        substrings.append(';')
+
+        return '\n'.join([f'{indent * " "}{s.rstrip()}' for s in substrings])
 
     def _build_substring_select_head(self, query):
         if query.params.get('select'):
@@ -85,7 +89,7 @@ class QueryPrinter(object):
                 s_value = f'"{s_value}"'
         return f'{indent * " "} {s_biz_class}.{s_field} {s_op_code} {s_value}'
 
-    def _build_substring_bool_predicate(self, predicate, indent=1):
+    def _build_substring_bool_predicate(self, query, predicate, indent=1):
         s_op_code = OP_CODE_2_DISPLAY_STRING[predicate.op]
         if predicate.lhs.is_boolean_predicate:
             s_lhs = self._build_substring_bool_predicate(
@@ -106,9 +110,9 @@ class QueryPrinter(object):
             )
         return [
             f'{indent * " "} (',
-            f'{indent * " "}   {s_lhs} {s_op_code}',
-            f'{indent * " "}   {s_rhs}',
-            f'{indent * " "} )',
+            f'{indent * " "}{s_lhs} {s_op_code}',
+            f'{indent * " "}{s_rhs}',
+            f'{indent * " "} ) ',
         ]
 
     def _build_substring_select_body(self, query, indent: int):
@@ -130,7 +134,7 @@ class QueryPrinter(object):
             if target is None:
                 continue
 
-            if resolver.name in target.resolvers.fields:
+            if resolver.name in target.pybiz.resolvers.fields:
                 if resolver.name in (ID_FIELD_NAME, REV_FIELD_NAME):
                     continue
                 substrings.append(
@@ -152,13 +156,17 @@ class QueryPrinter(object):
                 else:
                     target = f'{get_class_name(subquery.biz_class)}'
                 substrings.append(f'- {name}: {target} ->')
-                substrings.append(self.fprintf(subquery, indent+5))
+                substrings.append(self.fprintf(subquery, indent+5)).rstrip(';')
 
         return substrings
 
     def _build_substring_selected_field(self, query, indent: int):
+        field = query.resolver.field
         s_name = query.resolver.name
-        s_type = get_class_name(query.resolver.field)
+        if isinstance(field, Id):
+            s_type = get_class_name(field.target_field_class)
+        else:
+            s_type = get_class_name(field)
         return f'- {s_name}: {s_type}'
 
     def _build_substring_selected_resolver(self, query, indent: int):
@@ -180,9 +188,9 @@ class QueryPrinter(object):
         else:
             substrings.append(f'- {s_name} ->')
 
-        substrings[0]  += ' ' + self.fprintf(query, indent=indent+5).lstrip()
-        #substrings.append(self.fprintf(query, indent=indent+5))
-        #substrings.append(f'   )')
+        substrings[0]  += ' ' + self.fprintf(
+            query, indent=indent+5
+        ).lstrip().rstrip(';')
 
         return substrings
 

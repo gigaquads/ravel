@@ -2,6 +2,9 @@ from __future__ import absolute_import
 
 import json
 import logging
+import sys
+import os
+
 import yaml
 
 from logging import Formatter, StreamHandler, INFO
@@ -60,6 +63,13 @@ class LoggerInterface(object):
         self._logger.critical(self.process_message('error', message, data))
 
     def exception(self, message=None, data: Dict = None):
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        data = (data if data is not None else{}).update({
+            'exc_type': exc_type,
+            'fname': fname,
+            'lineno': exc_tb.tb_lineno
+        })
         self._logger.exception(self.process_message('error', message, data))
 
 

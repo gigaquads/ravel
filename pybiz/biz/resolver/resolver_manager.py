@@ -9,6 +9,15 @@ from .resolver import Resolver
 
 
 class ResolverManager(object):
+    @classmethod
+    def copy(cls, manager):
+        copy = cls()
+        copy._resolvers = manager._resolvers.copy()
+        copy._tag_2_resolvers = manager._tag_2_resolvers.copy()
+        copy._required_resolvers = manager._required_resolvers.copy()
+        copy._private_resolvers = manager._private_resolvers.copy()
+        return copy
+
     def __init__(self):
         self._resolvers = {}
         self._tag_2_resolvers = defaultdict(dict)

@@ -3,31 +3,58 @@ from typing import Text, Tuple, Callable, Type
 from appyratus.schema import Schema, fields
 from appyratus.schema.fields import *
 
+from pybiz.util.misc_functions import get_class_name
 
-class Id(fields.UuidString):
+
+class Id(fields.Field):
     """
     This is a special Field recognized internally by Pybiz. When an Application
     bootstraps, all Id fields declared on BizObject classes are replaced with a
     concrete Field class determined by the Applciation.id_field_class property.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, target: Type['BizObject'] = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.meta['pybiz_is_fk'] = True  # "is foriegn key"
+        if isinstance(target, type):
+            self.target_biz_class_callback = None
+            self.target_biz_class = target
+            self.target_field_class = target.get_id_class()
+        elif target is None:
+            self.target_biz_class_callback = None
+            self.target_biz_class = None
+            self.target_field_class = UuidString
+            self.target_field = self.target_field_class(
+                name=self.name,
+                source=self.source,
+                required=self.required,
+                default=self.default,
+                meta=self.meta
+            )
+        else:
+            self.target_biz_class_callback = target
+            self.target_biz_class = None
+            self.target_field_class = None
+            self.target_field = None
 
-    def replace_with(self, replacement_field_class: Type[Field]):
-        """
-        This is used internally when Pybiz replaces all Id fields declared on
-        BizObject classes with the custom Field type specified by the host
-        Pybiz Application, via the `id_field_class` property.
-        """
-        return replacement_field_class(
-            name=self.name,
-            source=self.source,
-            required=self.required,
-            nullable=self.nullable,
-            default=self.default,
-            meta=self.meta
+    def process(self, value):
+        if self.target_field is None:
+            self.target_biz_class = self.target_biz_class_callback()
+            self.target_field_class = self.target_biz_class.get_id_field_class()
+            self.target_field = self.target_field_class(
+                name=self.name,
+                source=self.source,
+                required=self.required,
+                default=self.default,
+                meta=self.meta
+            )
+        return self.target_field.process(value)
+
+    def __repr__(self):
+        return (
+            f'Id('
+            f'type={get_class_name(self.target_field_class)}, '
+            f'target={get_class_name(self.target_biz_class)}'
+            f')'
         )
 
 

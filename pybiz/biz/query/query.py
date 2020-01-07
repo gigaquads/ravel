@@ -4,7 +4,9 @@ from collections import OrderedDict, defaultdict
 from copy import deepcopy
 
 from appyratus.utils import DictObject
+from appyratus.env import Environment
 
+from pybiz.util.loggers import console
 from pybiz.util.misc_functions import (
     is_sequence,
     get_class_name,
@@ -29,14 +31,20 @@ from .order_by import OrderBy
 
 
 class QueryOptions(object):
+
+    env = Environment()
+
     def __init__(
         self,
         first=False,
-        eager=True,
+        echo=None,
     ):
         self._data = {
-            'eager': eager,
             'first': first,
+            'echo': (
+                echo if echo is not None else
+                bool(self.env.PYBIZ_ECHO_QUERY)
+            )
         }
 
     def update(self, obj):
@@ -100,6 +108,7 @@ class AbstractQuery(object):
         *args, **kwargs
     ):
         self._options = options or QueryOptions()
+
         self._parent = parent
         self._params = DictObject()
         self._params.select = OrderedDict()
@@ -144,7 +153,7 @@ class AbstractQuery(object):
             self._options.update(more_options)
         return self
 
-    def select(self, *resolvers, append=True, **subqueries):
+    def select(self, *resolvers, **subqueries):
         raise NotImplementedError()
 
     def execute(self, first=False, backfill: Backfill = None):
@@ -168,11 +177,8 @@ class Query(AbstractQuery):
         biz_class_name = ''
         if self._biz_class is not None:
             biz_class_name = get_class_name(self._biz_class)
-        offset = str(self.params.get('offset') or '')
-        limit = str(self.params.get('limit') or '')
         return (
-            f'Query'
-            f'(target={biz_class_name}[{offset}:{limit}])'
+            f'Query(target={biz_class_name})'
         )
 
     @property
@@ -191,20 +197,8 @@ class Query(AbstractQuery):
         if select:
             self.params.select = OrderedDict()
             self.params.subqueries = OrderedDict()
-            self.params.select[ID_FIELD_NAME] = ResolverQuery(
-                biz_class=self._biz_class,
-                resolver=self._biz_class.pybiz.resolvers[ID_FIELD_NAME],
-                parent=self,
-            )
         if where:
             self.params.where = None
-
-        # Include fields maked as required to be safe, as these
-        # more than likely will be referenced by some Resolver's
-        # execution logic.
-        if self.options['eager']:
-            all_field_names = self._biz_class.pybiz.resolvers.fields.keys()
-            self.select(all_field_names)
 
         return self
 
@@ -234,6 +228,21 @@ class Query(AbstractQuery):
 
         return self
 
+    def order_by(self, *objects):
+        objects = flatten_sequence(objects)
+        if objects:
+            self.params.order_by = []
+        for obj in objects:
+            if isinstance(obj, OrderBy):
+                self.params.order_by.append(obj)
+            elif isinstance(obj, str):
+                if obj.lower().endswith(' desc'):
+                    order_by_obj = OrderBy(obj.split()[0], desc=True)
+                else:
+                    order_by_obj = OrderBy(obj.split()[0], desc=False)
+                self.params.order_by.append(order_by_obj)
+        return self
+
     def execute(self, request=None, context=None, first=None, backfill: Backfill = None):
         """
         Execute the Query. This is not a recursive procedure in and of itself.
@@ -247,6 +256,8 @@ class Query(AbstractQuery):
         # context dict. the backfiller and context dict are passed along to each
         # resolver on execute.
         request = self._init_request(backfill, context, parent_request=request)
+
+        self.log()
 
         # fetch data from the DAL, create the BizObjects and execute their
         # resolvers. call these objects the "targets" throughout the code.
@@ -264,6 +275,13 @@ class Query(AbstractQuery):
         self._execute_subqueries(targets, request)
 
         return retval
+
+    def log(self, message=None):
+        if self.options['echo']:
+            base_message = message or f'executing query {self}'
+            console.info(
+                message=f'{base_message}:\n{self.fprintf()}',
+            )
 
     def _init_request(self, backfill, context, parent_request):
         backfiller = self._init_backfiller(backfill)
@@ -303,7 +321,7 @@ class Query(AbstractQuery):
         return retval
 
     def _instantiate_targets_and_resolve(self, target_records, request, first):
-        targets = self.biz_list_class(self.biz_class(x) for x in target_records)
+        targets = self.biz_list_class(self._biz_class(x) for x in target_records)
 
         if first:
             request.response = QueryResponse(
@@ -353,7 +371,7 @@ class Query(AbstractQuery):
     def _execute_dal_query(self, request):
         fields = self._extract_selected_field_names()
         predicate = self._compute_where_predicate(request)
-        return self.biz_class.get_dao().query(
+        return self._biz_class.get_dao().query(
             predicate=predicate,
             fields=fields,
             limit=self.params.get('limit'),
@@ -364,11 +382,11 @@ class Query(AbstractQuery):
     def _extract_selected_field_names(self) -> Set[Text]:
         resolver_queries = self.params.get('select')
         if not resolver_queries:
-            dao_field_names = set(self.biz_class.pybiz.schema.fields.keys())
+            dao_field_names = set(self._biz_class.pybiz.schema.fields.keys())
         else:
             dao_field_names = {
                 k for k in resolver_queries if k in
-                self.biz_class.pybiz.resolvers.fields
+                self._biz_class.pybiz.resolvers.fields
             }
 
         return dao_field_names
@@ -379,7 +397,7 @@ class Query(AbstractQuery):
         if not predicate:
             # ensure we at least have a default "select *" predicate
             # to use when executing this Query in the Dao
-            predicate = (self.biz_class._id != None)
+            predicate = (self._biz_class._id != None)
         elif self.parent is not None and predicate.is_unbound:
             if request.root is None:
                 raise Exception('no parent data to bind')
@@ -387,10 +405,7 @@ class Query(AbstractQuery):
 
         return predicate
 
-    def select(self, *targets, append=True, **subqueries):
-        if not append:
-            self.clear()
-
+    def select(self, *targets, **subqueries):
         targets = flatten_sequence(targets)
         resolver_queries = {}
         resolvers = []
@@ -413,6 +428,9 @@ class Query(AbstractQuery):
             elif isinstance(obj, ResolverQuery):
                 resolver = obj.resolver
                 resolver_query = obj
+            elif is_biz_class(obj):
+                assert obj is self._biz_class
+                self.select(obj.pybiz.resolvers.values())
 
             if resolver and resolver_query:
                 resolver_query.parent = self
@@ -438,8 +456,8 @@ class Query(AbstractQuery):
         if count is None:
             count = self.params.get('limit', randint(1, 10))
 
-        biz_objects = self.biz_class.BizList(
-            self.biz_class.generate(query=self) for i in range(count)
+        biz_objects = self._biz_class.BizList(
+            self._biz_class.generate(query=self) for i in range(count)
         )
         if self._options.get('first', False):
             return biz_objects[0]
@@ -470,6 +488,7 @@ class ResolverQuery(Query):
 
     def clear(self):
         self.params.select = OrderedDict()
+        return self
 
     def execute(self, request: 'QueryRequest'):
         """

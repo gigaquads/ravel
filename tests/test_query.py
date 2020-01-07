@@ -5,6 +5,7 @@ from pybiz import alias
 
 def test_query(Tree, Node, tree, parent, children):
     query = Tree.select(
+        Tree.name,
         children=Node.select(
             Node.name,
         ).where(
@@ -13,6 +14,7 @@ def test_query(Tree, Node, tree, parent, children):
     ).alias('tree')
 
     query.printf()
+    import ipdb; ipdb.set_trace()
     tree = query.execute(first=True)
 
 

@@ -5,6 +5,7 @@ from pybiz.util.misc_functions import (
     is_sequence,
     flatten_sequence,
 )
+from pybiz.constants import ID_FIELD_NAME
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -26,6 +27,8 @@ class FieldResolver(Resolver):
             required=field.required,
             *args, **kwargs
         )
+        if field.name is None:
+            field.name = self.name
         self._field = field
 
     @property
@@ -70,18 +73,26 @@ class FieldResolver(Resolver):
         Return the field value from the owner object's state dict. Lazy load the
         field if necessary.
         """
-        # lazily fetch this field if not present in the owner BizObject's state
-        # dict. at the same time, eagerly fetch all other non-loaded fields.
-        field_name = self._field.name
-        is_value_loaded = owner.is_loaded(field_name)
-        if self._lazy and (not owner.is_loaded(field_name)):
-            all_field_names = owner.pybiz.resolvers.fields.keys()
-            loaded_field_names = instance.internal.state.keys()
-            lazy_loaded_field_names = all_field_names - field_names_not_loaded
-            instance.load(lazy_loaded_field_names)
+        owner_id = owner.internal.state.get(ID_FIELD_NAME)
+        if owner_id is None:
+            return None
 
-        value = instance.internal.state.get(field_name)
-        return value
+        field_name = resolver.field.name
+
+        # lazy load this field and any other lazily loaded field
+        request.query.select(field_name)
+        request.query.select(
+            k for k, r in owner.pybiz.resolvers.fields.items()
+            if k not in owner.internal.state
+        )
+
+        field_values = owner.dao.fetch(
+            _id=owner_id,
+            fields=request.query.params.select.keys()
+        )
+        owner.merge(field_values)
+
+        return field_values[field_name]
 
     def dump(self, dumper: 'Dumper', value):
         """
@@ -139,6 +150,14 @@ class FieldResolverProperty(ResolverProperty):
             if errors:
                 raise Exception('ValidationError: ' + str(errors))
         super().on_set(owner, processed_value)
+
+    @property
+    def asc(self):
+        return OrderBy(self.resolver.field.name, desc=False)
+
+    @property
+    def desc(self):
+        return OrderBy(self.resolver.field.name, desc=True)
 
     @property
     def field(self):

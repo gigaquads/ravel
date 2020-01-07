@@ -258,15 +258,11 @@ class Resolver(object):
         is set, then we return any state data that may exist, in which case
         no new call is made.
         """
-        instance = request.source
-        if self.name not in instance.internal.state:
-            result = self.on_execute(request.source, self, request)
-            instance.internal.state[self.name] = result
-        else:
-            result = instance.internal.state[self.name]
-
-        result = self.post_execute(request.source, self, request, result)
-        return result
+        owner = request.source  # TODO: rename request.source to requrest.owner
+        result = self.on_execute(request.source, self, request)
+        post_processed_result = self.post_execute(request.source, self, request, result)
+        setattr(owner, self.name, post_processed_result)
+        return owner.internal.state[self.name]
 
     def backfill(self, request, result):
         return self.on_backfill(request.source, request, result)

@@ -146,6 +146,7 @@ class Application(object):
                 f'{self.__class__.__name__}...'
             )
             self._endpoints[endpoint.name] = endpoint
+            self._api[endpoint.name] = endpoint
         else:
             raise ApplicationError(
                 message=f'endpoint already registered, {endpoint.name}',

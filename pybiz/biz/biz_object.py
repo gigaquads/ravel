@@ -1,9 +1,10 @@
 import inspect
 import uuid
 
+from typing import Text, Tuple, List, Set, Dict, Type
+from pprint import pprint
 from collections import defaultdict
 from copy import deepcopy
-from typing import Text, Tuple, List, Set, Dict
 
 import venusian
 
@@ -53,7 +54,7 @@ class BizObjectMeta(type):
         biz_class._init_pybiz_dict_object()
         biz_class._compute_is_abstract()
         biz_class._build_schema_class(fields, bases)
-        biz_class._build_field_properties(resolvers)
+        biz_class._build_field_resolvers(resolvers)
         biz_class._build_resolvers(bases, resolvers, resolver_decorators)
         biz_class._build_resolver_properties()
         biz_class._build_biz_list()
@@ -125,11 +126,6 @@ class BizObjectMeta(type):
             )
             resolvers.register(resolver)
 
-        # alias Relationship BizAttributes for access development convenience,
-        # since relationships are a built-in BizAttribute type:
-        biz_class.relationships = resolvers.relationships
-        biz_class.resolvers = resolvers
-
     def _init_pybiz_dict_object(biz_class):
         biz_class.pybiz = DictObject()
         biz_class.pybiz.app = None
@@ -172,8 +168,17 @@ class BizObjectMeta(type):
         fields.update(extract_fields(biz_class))
 
         for k, field in fields.items():
-            if isinstance(field, Id):
-                fields[k] = biz_class.replace_id_field(field)
+            if field.source is None:
+                field.source = field.name
+            # TODO: clean up this mess:
+            if isinstance(field, Id) and not biz_class.pybiz.is_abstract:
+                if not (
+                    field.target_biz_class_callback or
+                    field.target_biz_class
+                ):
+                    field.target_biz_class = biz_class
+                if k == ID_FIELD_NAME:
+                    field.required = True
 
         class_name = f'{biz_class.__name__}Schema'
 
@@ -183,7 +188,7 @@ class BizObjectMeta(type):
         biz_class.Schema = type(class_name, (Schema, ), fields)
         biz_class.pybiz.schema = biz_class.Schema()
 
-    def _build_field_properties(biz_class, resolvers: dict):
+    def _build_field_resolvers(biz_class, resolvers: dict):
         for k, field in biz_class.Schema.fields.items():
             resolver = FieldResolver(field, name=k)
             resolvers[k] = resolver
@@ -290,19 +295,12 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return True
 
     @classmethod
-    def __dao__(cls) -> Dao:
-        return PythonDao()
+    def __dao__(cls) -> Type[Dao]:
+        return PythonDao
 
     @classmethod
-    def replace_id_field(cls, stub: 'Field') -> Dao:
-        return UuidString(
-            name=stub.name,
-            source=stub.source,
-            default=lambda: uuid.uuid4().hex,
-            nullable=stub.nullable,
-            required=True,
-            meta=stub.meta,
-        )
+    def get_id_field_class(cls) -> Type[Field]:
+        return UuidString
 
     @classmethod
     def on_bootstrap(cls, app, *args, **kwargs):
@@ -326,7 +324,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def bind(cls, binder: 'ApplicationDaoBinder', **kwargs):
         cls.binder = binder
         cls.pybiz.dao = cls.pybiz.app.binder.get_binding(cls).dao_instance
-        for resolver in cls.resolvers.values():
+        for resolver in cls.pybiz.resolvers.values():
             resolver.bind(cls)
         cls.pybiz.is_bound = True
         cls.on_bind()
@@ -367,6 +365,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             if k in self.Schema.fields
         }
 
+    def pprint(self):
+        pprint(self.internal.state)
+
     def clean(self, fields=None) -> 'BizObject':
         if fields is not None:
             if not fields:
@@ -380,8 +381,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return self
 
     def mark(self, fields=None) -> 'BizObject':
-        # TODO: perhaps find a better name that means "make dirty" for this
-        # method
+        # TODO: rename to "touch"
         if fields is not None:
             if not fields:
                 return self
@@ -398,6 +398,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Create a clone of this BizObject
         """
         clone = type(self)(data=deepcopy(self.internal.state))
+        clone.internal.resolvers = self.internal.resolvers.copy()
         return clone.clean()
 
     def merge(self, other=None, **values) -> 'BizObject':
@@ -687,10 +688,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         self.internal.state.update(updated_record)
         return self.clean()
 
-    @property
-    def is_created(self):
-        return not (self._id is None or ID_FIELD_NAME in self.dirty)
-
     @classmethod
     def create_many(cls, biz_objs: List['BizObject']) -> 'BizList':
         """
@@ -787,13 +784,19 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         Essentially a bulk upsert.
         """
+        def seems_created(biz_obj):
+            return (
+                (ID_FIELD_NAME in biz_obj.internal.state) and
+                (ID_FIELD_NAME not in biz_obj.internal.state.dirty)
+            )
+
         # partition biz_objects into those that are "uncreated" and those which
         # simply need to be updated.
         to_update = []
         to_create = []
         for biz_obj in biz_objects:
             # TODO: merge duplicates
-            if not biz_obj.is_created:
+            if not seems_created(biz_obj):
                 to_create.append(biz_obj)
             else:
                 to_update.append(biz_obj)

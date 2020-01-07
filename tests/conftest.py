@@ -35,6 +35,7 @@ def Tree(app, Node):
     class Tree(pybiz.BizObject):
 
         root_node_id = pybiz.Id(required=True)
+        name = pybiz.String(required=True)
 
         @relationship(join=lambda: (Tree.root_node_id, Node._id))
         def root(self):
@@ -46,7 +47,7 @@ def Tree(app, Node):
 
 @pytest.fixture(scope='function')
 def tree(Tree):
-    return Tree().save()
+    return Tree(name='Test Tree').save()
 
 
 @pytest.fixture(scope='function')
