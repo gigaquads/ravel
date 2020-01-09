@@ -3,10 +3,10 @@ from inspect import Parameter
 
 import pybiz.app.web
 
-from ..application_middleware import ApplicationMiddleware
+from ..base import Middleware
 
 
-class CookieSessionMiddleware(ApplicationMiddleware):
+class CookieSessionMiddleware(Middleware):
     """
     This middleware will try to extract a session ID from an HTTP cookie header
     and load the corresponding Session business object into the raw kwargs

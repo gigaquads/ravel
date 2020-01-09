@@ -172,7 +172,7 @@ Generally speaking, setting up the `SqlalchemyDao` for use in an Pybiz applicati
 We can use middleware for this, doing something like this:
 
 ```python
-class SqlalchemyTransactionMiddleware(ApplicationMiddleware):
+class SqlalchemyTransactionMiddleware(Middleware):
   def __init__(self, profile: Text):
     self.profile = SqlalchemyDao.profiles[profile]
     self.profile.initialize()

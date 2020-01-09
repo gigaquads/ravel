@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Type, Text
 from inspect import Parameter
 from pybiz.contrib.falcon.constants import HTTP_METHODS
 
-from ..application_middleware import ApplicationMiddleware
+from ..base import Middleware
 
 DEFAULT_ALLOW_ORIGIN = '*'
 DEFAULT_ALLOW_METHODS = HTTP_METHODS
@@ -25,7 +25,7 @@ DEFAULT_ALLOW_HEADERS = (
 )
 
 
-class CorsMiddleware(ApplicationMiddleware):
+class CorsMiddleware(Middleware):
     """
     CORS
     """

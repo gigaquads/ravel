@@ -6,10 +6,10 @@ from appyratus.memoize import memoized_property
 
 from pybiz.util.loggers import console
 
-from .application_middleware import ApplicationMiddleware
+from .base import Middleware
 
 
-class DaoHistoryMiddleware(ApplicationMiddleware):
+class DaoHistoryMiddleware(Middleware):
     """
     Keep history for each request, clearing it at the end.
     """

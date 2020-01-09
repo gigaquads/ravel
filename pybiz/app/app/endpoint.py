@@ -2,278 +2,261 @@ import inspect
 import traceback
 import logging
 
-from typing import Dict, Text, Tuple
+from inspect import Signature
+from typing import Dict, Text, Tuple, Callable
+
+from appyratus.utils import TimeUtils
 
 from pybiz.util.loggers import console
+from pybiz.util.misc_functions import get_class_name
 
 from pybiz.exceptions import PybizError
 
 
 class EndpointError(PybizError):
-    def __init__(self, errors=None, *args, **kwargs):
-        super().__init__('error endpointing request')
-        self.errors = errors
+    """
+    An `Error` simply keeps a record of an Exception that occurs and the
+    middleware object which raised it, provided there was one. This is used
+    in the processing of requests, where the existence of errors has
+    implications on control flow for middleware.
+    """
+
+    def __init__(self, exc, middleware=None):
+        self.middleware = middleware
+        self.trace = traceback.format_exc().strip().split('\n')
+        self.timestamp = TimeUtils.utc_now()
+        self.exc_message = self.trace.pop()[len(get_class_name(exc))+2:]
+        self.exc = exc
+
+    def to_dict(self):
+        data = {
+            'type': get_class_name(self.exc),
+            'timestamp': self.timestamp.isoformat(),
+            'traceback': self.trace,
+            'message': self.exc_message,
+        }
+        if self.middleware is not None:
+            data['middleware'] = str(self.middleware)
+        return data
+
+
+class BadRequest(Exception):
+    def __init__(
+        self,
+        endpoint: 'Endpoint',
+        state: 'ExecutionState',
+        *args,
+        **kwargs
+    ):
+        super().__init__(
+            f'error/s occured in endpoint '
+            f'"{endpoint.name}" (see logs above)'
+        )
+
+        self.endpoint = endpoint
+        self.state = state
+
+        console.error(
+            message=f'error/s occured in {endpoint}',
+            data={
+                'exceptions': [
+                    error.to_dict() for error in state.errors
+                ]
+            }
+        )
+
+
+class ExecutionState(object):
+    def __init__(self, raw_args, raw_kwargs):
+        self.errors = []
+        self.target_error = None
+        self.middleware = []
+        self.raw_args = raw_args
+        self.raw_kwargs = raw_kwargs
+        self.processed_args = None
+        self.processed_kwargs = None
+        self.raw_result = None
+        self.result = None
 
 
 class Endpoint(object):
-    """
-    When a function is decorated with a `Application` object, the result is a
-    `Endpoint`. Its job is to transform the inputs received from an
-    external client into the positional and keyword arguments expected by the
-    wrapped function. Proxies also run middleware.
-    """
+    Error = EndpointError
+    State = ExecutionState
 
-    class Error(object):
-        """
-        An `Error` simply keeps a record of an Exception that occurs and the
-        middleware object which raised it, provided there was one. This is used
-        in the processing of requests, where the existence of errors has
-        implications on control flow for middleware.
-        """
-
-        def __init__(self, exc, middleware=None):
-            self.middleware = middleware
-            self.trace = traceback.format_exc().split('\n')
-            self.exc = exc
-
-        def to_dict(self):
-            return {
-                'middleware': str(self.middleware),
-                'exception': self.exc.__class__.__name__,
-                'trace': self.trace,
-            }
-
-    def __init__(self, func, decorator: 'EndpointDecorator'):
-        """
-        Args:
-        - `func`: the callable being wrapped by this endpoint (or another endpoint).
-        - `decorator`: the decorator that created this endpoint.
-
-        Attributes:
-        - `target`: the native python function wrapped by this endpoint.
-        - `signature`: metadata on target, like its parameters, name, etc.
-        """
-
-        self.decorator = decorator
-        self.target = func.target if isinstance(func, Endpoint) else func
+    def __init__(self, func: Callable, decorator: 'EndpointDecorator'):
+        self._decorator = decorator
+        self._target = func.target if isinstance(func, Endpoint) else func
         if inspect.ismethod(func):
-            self.func = func
-            self.is_method = True
-            self.signature = inspect.signature(self.target.__func__)
+            self._func = func
+            self._is_method = True
+            self._signature = inspect.signature(self.target.__func__)
         else:
             assert inspect.isfunction(func)
-            self.is_method = False
-            self.signature = inspect.signature(self.target)
+            self._func = func
+            self._is_method = False
+            self._signature = inspect.signature(self.target)
+
+    def __repr__(self):
+        return f'{get_class_name(self)}(name={self.name})'
 
     def __getattr__(self, key: Text):
-        """
-        Any keyword argument passed into the decorator which created this endpoint
-        are accessible via dot-notation on the endpoint itself. For example,
-
-        ```python
-        @repl(foo='bar')
-        def do_something():
-            return 'something'
-
-        assert repl.endpoints['do_something'].foo == 'bar'
-        ```
-        """
         return self.decorator.kwargs.get(key)
 
     def __call__(self, *raw_args, **raw_kwargs):
-        """
-        If any middleware in pre_request, on_request, or during the invocation
-        of the endpoint target function, we do not raise the exception but pass it
-        forward into post_request, so that we may still execute middleware
-        post_request logic up to the middleware that failed earlier.
+        state = Endpoint.State(raw_args, raw_kwargs)
 
-        During post_request, we aggregate any existing error with all errors
-        generated by any middleware while running its post_request method. If
-        any errors exist at this, point an exception is finally raised.
-        """
-        raw_args = list(raw_args)
-        args, kwargs, error = self.pre_call(raw_args, raw_kwargs)
-        raw_result = None
-        if error is None:
-            try:
-                #  self.target is the wrapped function. we call it here!
-                raw_result = self.target(*args, **kwargs)
-            except Exception as exc:
-                error = self.handle_target_exception(exc)
-        result = self.post_call(
-            raw_args, raw_kwargs, args, kwargs, raw_result, error
-        )
-        return result
+        for func in (
+            self._apply_middleware_pre_request,
+            self._apply_app_on_request,
+            self._apply_middleware_on_request,
+            self._apply_target_callable,
+            self._apply_app_on_response,
+        ):
+            error = func(state)
+            if error is not None:
+                break
 
-    def __repr__(self):
-        return f'<{self.__class__.__name__}({self.name})>'
-
-    @property
-    def app(self) -> 'Application':
-        """
-        Get the `Application` instance with which this endpoint is registered.
-        """
-        return self.decorator.app
-
-    @property
-    def name(self) -> Text:
-        """
-        Return the name of the underlying function to which this endpoint endpoints.
-        """
-        return self.target.__name__
-
-    @property
-    def docstring(self) -> Text:
-        """
-        Return a formmated string of the target endpoint function's source code.
-        """
-        return inspect.getdoc(self.target)
-
-    def handle_target_exception(self, exc: Exception) -> Error:
-        """
-        This is where we go when an exception is raised in self.target when
-        called in self.__call__.
-        """
-        error = Endpoint.Error(exc)
-        console.error(
-            message=f'{self} failed',
-            data=error.to_dict()
-        )
-        return error
-
-    def pre_call(self, raw_args, raw_kwargs) -> Tuple[Tuple, Dict, Error]:
-        """
-        This is where we apply all logic in self.__call__ that precedes the
-        actual calling of the wrapped "target" function. This is where we
-        process raw inputs into expected args and kwargs.
-        """
-        # apply pre_request middleware, etc
-        error = self.pre_request(raw_args, raw_kwargs)
-        if error is None:
-            # get prepared args and kwargs from Application.on_request,
-            # followed by middleware on_request.
-            args, kwargs, error = self.on_request(raw_args, raw_kwargs)
+        if state.target_error is None:
+            self._apply_middleware_post_request(state)
         else:
-            args = tuple()
-            kwargs = {}
-        return (args, kwargs, error)
+            self._apply_middleware_post_bad_request(state)
 
-    def post_call(
-        self, raw_args, raw_kwargs, args, kwargs, raw_result, error
-    ) -> object:
-        """
-        Here we apply any clean up logic, finalization and data marshaling that
-        may need to occur at the end on self.__call__, after the wrapped
-        "target" function has been called.
-        """
-        result, errors = self.post_request(
-            raw_args, raw_kwargs, args, kwargs, raw_result, error
-        )
-        # if any exceptions were raised in the processing of the request
-        # we raise a higher-level exception that contains a list of all errors,
-        # which in turn contain a stack trace and Exception object.
-        if errors:
-            console.error(data=[
-                err.to_dict() for err in errors
-            ])
-            raise EndpointError(errors)
-        return result
+        if state.errors:
+            raise BadRequest(self, state)
 
-    def pre_request(self, raw_args, raw_kwargs):
-        """
-        Apply middleware pre_request methods, which take raw args and kwargs
-        received from the client.
-        """
-        # middleware pre-request logic
-        try:
-            for mware in self.app.middleware:
-                if isinstance(self.app, mware.app_types):
-                    mware.pre_request(self, raw_args, raw_kwargs)
-        except Exception as exc:
-            error = Endpoint.Error(exc, mware)
-            console.error(
-                message=f'{mware.__class__.__name__}.pre_request failed',
-                data=error.to_dict()
-            )
-            return error
-        return None
+        return state.result
 
-    def on_request(self, raw_args, raw_kwargs) -> Tuple[Tuple, Dict, Error]:
-        """
-        Transforms raw positional and keyword arguments according to what the
-        wrapped (target) function expects and then executes on_request
-        middleware methods.
-        """
-        # get args and kwargs from native inputs
-        try:
-            params = self.app.on_request(self, *raw_args, **raw_kwargs)
-            args, kwargs = params if params else (raw_args, raw_kwargs)
-        except Exception as exc:
-            return (tuple(), {}, Endpoint.Error(exc))
-
-        # load BizObjects from ID's passed into the endpoint in place
-        args, kwargs = self.app.loader.load(self, args, kwargs)
-        args = args if isinstance(args, list) else list(args)
-
-        # middleware on_request logic
-        try:
-            for mware in self.app.middleware:
-                if isinstance(self.app, mware.app_types):
-                    mware.on_request(self, args, kwargs)
-            return (args, kwargs, None)
-        except Exception as exc:
-            error = Endpoint.Error(exc, mware)
-            console.error(
-                message=f'{mware.__class__.__name__}.on_request failed',
-                data=error.to_dict()
-            )
-            return (args, kwargs, error)
-
-    def post_request(
-        self, raw_args, raw_kwargs, args, kwargs, raw_result, error
-    ):
-        """
-        Transform the native output from the wrapped function into the data
-        structure expected by the external client. Afterwards, run middleware
-        post_request logic (up to the point in the middleware sequence where an
-        error occurred, assuming one did).
-        """
-        errors = [] if not error else [error]
-
-        # prepare the endpoint "result" return value
-        try:
-            result = self.decorator.app.on_response(
-                self, raw_result, raw_args, raw_kwargs, *args, **kwargs
-            )
-        except Exception as exc:
-            result = None
-            errors.append(Endpoint.Error(exc))
-            console.error(
-                message=f'{self.app}.on_response failed',
-                data=errors[-1].to_dict()
-            )
-
-        # run middleware post-request logic
+    def _apply_middleware_pre_request(self, state):
+        error = None
         for mware in self.app.middleware:
             if isinstance(self.app, mware.app_types):
                 try:
-                    mware.post_request(
-                        self, raw_args, raw_kwargs, args, kwargs, result
-                    )
+                    mware.pre_request(self, state.raw_args, state.raw_kwargs)
+                    state.middleware.append(mware)
                 except Exception as exc:
-                    errors.append(PybizError(exc, mware))
-                    console.error(
-                        message=(
-                            f'{mware.__class__.__name__}.post_request failed'
-                        ),
-                        data=errors[-1].to_dict()
-                    )
-            if (error is not None) and (mware is error.middleware):
-                # only process middleware up to the point where middleware
-                # failed in either pre_request or on_request.
-                break
+                    error = EndpointError(exc, mware)
+                    state.errors.append(error)
+                    break
+        return error
 
-        return (result, errors)
+    def _apply_middleware_on_request(self, state):
+        error = None
+        for mware in state.middleware:
+            try:
+                mware.on_request(
+                    self,
+                    state.raw_args, state.raw_kwargs,
+                    state.processed_args, state.processed_kwargs,
+                )
+            except Exception as exc:
+                error = Endpoint.Error(exc, mware)
+                state.errors.append(error)
+        return error
+
+    def _apply_middleware_post_request(self, state):
+        error = None
+        for mware in state.middleware:
+            try:
+                mware.post_request(
+                    self,
+                    state.raw_args, state.raw_kwargs,
+                    state.processed_args, state.processed_kwargs,
+                    state.result
+                )
+            except Exception as exc:
+                error = Endpoint.Error(exc, mware)
+                state.errors.append(error)
+        return error
+
+    def _apply_middleware_post_bad_request(self, state):
+        error = None
+        for mware in state.middleware:
+            try:
+                mware.post_bad_request(
+                    self,
+                    state.raw_args, state.raw_kwargs,
+                    state.processed_args, state.processed_kwargs,
+                    state.target_error.exc
+                )
+            except Exception as exc:
+                error = Endpoint.Error(exc, mware)
+                state.errors.append(error)
+        return error
+
+    def _apply_target_callable(self, state):
+        try:
+            error = None
+            state.raw_result = self._target(
+                *state.processed_args, **state.processed_kwargs
+            )
+        except Exception as exc:
+            error = Endpoint.Error(exc)
+            state.target_error = error
+            state.errors.append(error)
+
+        return error
+
+    def _apply_app_on_response(self, state):
+        try:
+            error = None
+            state.result = self.decorator.app.on_response(
+                self,
+                state.raw_result,
+                state.raw_args,
+                state.raw_kwargs,
+                *state.procssed_args,
+                **state.procssed_kwargs
+            )
+        except Exception as exc:
+            error = Endpoint.Error(exc)
+            state.errors.append(error)
+
+        return error
+
+    def _apply_app_on_request(self, state):
+        try:
+            error = None
+            params = self.app.on_request(
+                self, *state.raw_args, **state.raw_kwargs
+            )
+            args, kwargs = (
+                params if params else (state.raw_args, state.raw_kwargs)
+            )
+            if params:
+                state.processed_args = params[0]
+                state.processed_kwargs = params[1]
+            else:
+                state.processed_args = raw_args
+                state.processed_kwargs = processed_kwargs
+        except Exception as exc:
+            error = Endpoint.Error(exc)
+            state.errors.append(error)
+
+        return error
+
+    @property
+    def target(self):
+        return self._target
+
+    @property
+    def decorator(self):
+        return self._decorator
+
+    @property
+    def app(self) -> 'Application':
+        return self._decorator.app
+
+    @property
+    def name(self) -> Text:
+        return self._target.__name__
+
+    @property
+    def docstring(self) -> Text:
+        return inspect.getdoc(self._target)
+
+    @property
+    def signature(self) -> Signature:
+        return self._signature
 
 
 class AsyncEndpoint(Endpoint):
@@ -281,20 +264,4 @@ class AsyncEndpoint(Endpoint):
     This specialized `Endpoint` can be used by any new `Application` type
     whose wrapped functions are coroutines.
     """
-
-    async def __call__(self, *raw_args, **raw_kwargs):
-        args, kwargs, error = self.pre_call(raw_args, raw_kwargs)
-        raw_result = None
-        if error is None:
-            try:
-                # self.target is the wrapped function. we call it here!
-                raw_result = await self.target(*args, **kwargs)
-            except Exception as exc:
-                error = self.handle_target_exception(exc)
-        result = self.post_call(
-            raw_args, raw_kwargs, args, kwargs, raw_result, error
-        )
-        return result
-
-    def __repr__(self):
-        return f'<{self.__class__.__name__}(async {self.name})>'
+    # TODO: Implement

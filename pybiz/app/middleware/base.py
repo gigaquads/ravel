@@ -5,7 +5,13 @@ from typing import Dict, Tuple, Set, Type, List
 from appyratus.memoize import memoized_property
 
 
-class ApplicationMiddleware(object):
+class MiddlewareError(Exception):
+    def __init__(self, middleware, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.middleware = middleware
+
+
+class Middleware(object):
     def __init__(self, *args, **kwargs):
         self._is_bootstrapped = False
 
@@ -40,23 +46,54 @@ class ApplicationMiddleware(object):
 
         return (pybiz.Application, )
 
-    def pre_request(self, endpoint: 'Endpoint', raw_args: List, raw_kwargs: Dict):
+    def pre_request(
+        self,
+        endpoint: 'Endpoint',
+        raw_args: Tuple,
+        raw_kwargs: Dict
+    ):
         """
         In pre_request, args and kwargs are in the raw form before being
         processed by app.on_request.
         """
 
-    def on_request(self, endpoint: 'Endpoint', args: List, kwargs: Dict):
+    def on_request(
+        self,
+        endpoint: 'Endpoint',
+        raw_args: Tuple,
+        raw_kwargs: Dict,
+        processed_args: Tuple,
+        processed_kwargs: Dict
+    ):
         """
         In on_request, args and kwargs are in the form output by
         api.on_request.
         """
 
     def post_request(
-        self, endpoint: 'ApplicationObject', raw_args: List, raw_kwargs: Dict,
-        args: List, kwargs: Dict, result, exc: Exception = None
+        self,
+        endpoint: 'ApplicationObject',
+        raw_args: Tuple,
+        raw_kwargs: Dict,
+        processed_args: Tuple,
+        processed_kwargs: Dict,
+        result,
     ):
         """
         In post_request, args and kwargs are in the form output by
         app.on_request.
+        """
+    def post_bad_request(
+        self,
+        endpoint: 'ApplicationObject',
+        raw_args: Tuple,
+        raw_kwargs: Dict,
+        processed_args: Tuple,
+        processed_kwargs: Dict,
+        exc: Exception,
+    ):
+        """
+        We come here when an exception is raised within the Endpoint's target
+        callable. Exceptions raised within preceding Middleware do no result in
+        this method being called.
         """

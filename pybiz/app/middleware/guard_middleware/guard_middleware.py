@@ -3,11 +3,11 @@ from typing import Dict, Tuple
 from pybiz.exceptions import NotAuthorized
 from pybiz.util.misc_functions import is_sequence
 
-from ..application_middleware import ApplicationMiddleware
+from ..base import Middleware
 from .guard import Guard, GuardFailed
 
 
-class GuardMiddleware(ApplicationMiddleware):
+class GuardMiddleware(Middleware):
     """
     Apply the Guard(s) associated with a endpoint, set via the `auth`
     EndpointDecorator keyword argument, e.g., repl(auth=IsFoo()).

@@ -25,7 +25,7 @@ class Application(object):
 
     def __init__(
         self,
-        middleware: List['ApplicationMiddleware'] = None,
+        middleware: List['Middleware'] = None,
         id_field_class: Type[Field] = None,
     ):
         self._decorators = []
@@ -97,7 +97,7 @@ class Application(object):
         return self._manifest
 
     @property
-    def middleware(self) -> List['ApplicationMiddleware']:
+    def middleware(self) -> List['Middleware']:
         return self._middleware
 
     @property
