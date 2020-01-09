@@ -80,8 +80,10 @@ class ExecutionState(object):
 
 
 class Endpoint(object):
+
     Error = EndpointError
     State = ExecutionState
+    BadRequest = BadRequest
 
     def __init__(self, func: Callable, decorator: 'EndpointDecorator'):
         self._decorator = decorator

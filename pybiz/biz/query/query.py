@@ -366,7 +366,6 @@ class Query(AbstractQuery):
                 value = subquery.execute(request=request)
                 resolver = StoredQueryResolver(subquery, name=name)
                 target.internal.resolvers.register(resolver)
-                setattr(target, name, ResolverProperty(resolver))
                 target.internal.state[name] = value
 
     def _execute_dal_query(self, request):
