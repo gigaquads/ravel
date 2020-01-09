@@ -273,10 +273,15 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         else:
             raise KeyError(key)
 
-    def __getattr__(self, key):
-        if key in self.internal.state:
-            return self.internal.state[key]
-        raise AttributeError(key)
+    def __getattribute__(self, key):
+        try:
+            return super().__getattribute__(key)
+        except AttributeError as exc:
+            # chance to handle the attribute differently
+            # if not, re-raise the exception
+            if key in self.internal.state:
+                return self.internal.state[key]
+            raise exc
 
     def __iter__(self):
         return iter(self.internal.state)
@@ -881,4 +886,3 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             elif isinstance(k, ResolverProperty):
                 keys.add(k.name)
         return keys
-

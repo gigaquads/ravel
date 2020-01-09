@@ -29,7 +29,7 @@ class QueryPrinter(object):
         substrings = []
 
         substrings.append(self._build_substring_select_head(query))
-        if query.params.get('select'):
+        if query.params.get('select') or query.params.get('subqueries'):
             substrings.append('SELECT')
             substrings.extend(self._build_substring_select_body(query, indent))
             if query.params.alias:
@@ -156,7 +156,7 @@ class QueryPrinter(object):
                 else:
                     target = f'{get_class_name(subquery.biz_class)}'
                 substrings.append(f'- {name}: {target} ->')
-                substrings.append(self.fprintf(subquery, indent+5)).rstrip(';')
+                substrings.append(self.fprintf(subquery, indent+5).rstrip(';'))
 
         return substrings
 

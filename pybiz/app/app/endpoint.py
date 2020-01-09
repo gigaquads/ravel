@@ -204,8 +204,8 @@ class Endpoint(object):
                 state.raw_result,
                 state.raw_args,
                 state.raw_kwargs,
-                *state.procssed_args,
-                **state.procssed_kwargs
+                *state.processed_args,
+                **state.processed_kwargs
             )
         except Exception as exc:
             error = Endpoint.Error(exc)

@@ -41,14 +41,19 @@ class ResolverProperty(property):
             value = owner.internal.state[key]
         elif self.resolver.lazy:
             query = self.select().select(key).alias(key)
-            request = QueryRequest(query, source=owner, resolver=self.resolver)
             if query.options['echo']:
-                query.log()
+                query.log(
+                    message=(
+                        f'lazy execution of resolver '
+                        f'"{self.resolver}" on {owner}'
+                    )
+                )
+            request = QueryRequest(query, source=owner, resolver=self.resolver)
             value = self.resolver.execute(request)
             setattr(owner, key, value)
         else:
             # TODO: raise custom exception
-            raise Exception(f'{self.resolver.name} not loaded')
+            raise AttributeError(f'{key} not loaded')
 
         if self.resolver.on_get:
             self.resolver.on_get(owner, self.resolver, value)
