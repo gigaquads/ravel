@@ -48,8 +48,8 @@ class EndpointError(PybizError):
 
 class BadRequest(PybizError):
     """
-    If any exception is raised during the execution of Middleware or an endpoint
-    callable itself, we raise BadRequest.
+    If any exceptions are raised during the execution of Middleware or an
+    endpoint callable itself, we raise BadRequest.
     """
 
     def __init__(self,

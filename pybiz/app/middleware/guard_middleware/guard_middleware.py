@@ -25,7 +25,7 @@ class GuardMiddleware(Middleware):
         If the requested endpoint has a guard, we execute it here. If it fails,
         we raise a GuardFailure exception.
         """
-        guard = self._extract_guard(endpoint)
+        guard = self._resolve_guard(endpoint)
         if guard is not None:
             #
             arguments = self._extract_args(
@@ -36,7 +36,12 @@ class GuardMiddleware(Middleware):
             if not guard_passed:
                 raise GuardFailure(guard, "guard failure")
 
-    def _extract_guard(self, endpoint):
+    def _resolve_guard(self, endpoint):
+        """
+        Return the guard associated with the endpoint if it exists. The argument
+        is expected to be a Guard instance or a callback function that returns
+        one.
+        """
         guard = endpoint.guard
         if not guard:
             return None
@@ -46,7 +51,8 @@ class GuardMiddleware(Middleware):
 
     def _extract_args(self, endpoint, args, kwargs) -> Dict:
         """
-        Merge all args and kwargs into a single Dict.
+        Merge all args and kwargs into a single Dict. This is is passed into
+        each executed Guard as **kwargs.
         """
         arg_names = [k for k in endpoint.signature.parameters][:len(args)]
         merged = dict(zip(arg_names, args))

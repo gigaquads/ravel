@@ -1,2 +1,2 @@
-from .guard import Guard
+from .guard import Guard, GuardFailure
 from .guard_middleware import GuardMiddleware
