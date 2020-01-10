@@ -147,6 +147,8 @@ def extract_biz_info_from_annotation(annotation) -> Tuple[bool, Text]:
 
 def flatten_sequence(seq) -> List:
     flattened = []
+    if not seq:
+        return flattened
     for obj in seq:
         if is_sequence(obj):
             flattened.extend(flatten_sequence(obj))

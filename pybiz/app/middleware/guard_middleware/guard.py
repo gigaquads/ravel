@@ -1,8 +1,10 @@
-from typing import Dict, Text
+from typing import Dict, Text, Callable
 
 from appyratus.enum import Enum
 
-from .exceptions import GuardFailed
+from pybiz.util.misc_functions import get_class_name
+
+from .exceptions import GuardFailure
 from .argument_specification import ArgumentSpecification
 
 
@@ -24,31 +26,57 @@ class Guard(object):
     required `context` dict argument).
 
     The context dict is shared by all Guards composed in a
-    CompositeGuard boolean expression.
+    BooleanGuard boolean expression.
     """
 
-    def __init__(self):
-        self.spec = ArgumentSpecification(self)
+    def __init__(self, execute: Callable = None, parent: 'Guard' = None):
+        self.parent = parent
+        self.callback = execute
+        if self.callback is not None:
+            self.spec = ArgumentSpecification(self.callback)
+        else:
+            self.spec = ArgumentSpecification(self)
 
     def __repr__(self):
-        return f'<Guard({self.display_string})>'
+        return f'{get_class_name(self)}(description=\'{self.description}\')'
 
     def __call__(self, context: Dict, arguments: Dict) -> bool:
         args, kwargs = self.spec.extract(arguments)
         return self.execute(context, *args, **kwargs)
 
-    def __and__(self, other) -> 'CompositeGuard':
-        return CompositeGuard(OP_CODE.AND, self, other)
+    def __and__(self, other) -> 'BooleanGuard':
+        boolean_guard = BooleanGuard(OP_CODE.AND, self, other)
+        self.parent = boolean_guard
+        other.parent = boolean_guard
+        return boolean_guard
 
-    def __or__(self, other) -> 'CompositeGuard':
-        return CompositeGuard(OP_CODE.OR, self, other)
+    def __or__(self, other) -> 'BooleanGuard':
+        boolean_guard = BooleanGuard(OP_CODE.OR, self, other)
+        self.parent = boolean_guard
+        other.parent = boolean_guard
+        return boolean_guard
 
-    def __invert__(self) -> 'CompositeGuard':
-        return CompositeGuard(OP_CODE.NOT, self, None)
+    def __invert__(self) -> 'BooleanGuard':
+        boolean_guard = BooleanGuard(OP_CODE.NOT, self, None)
+        self.parent = boolean_guard
+        other.parent = boolean_guard
+        return boolean_guard
+
+    def fail(self, message=None) -> GuardFailure:
+        return GuardFailure(self, message=message, traceback_depth=1)
 
     @property
-    def display_string(self) -> Text:
-        return f'{self.__class__.__name__}'
+    def description(self) -> Text:
+        return get_class_name(self)
+
+    @property
+    def root(self) -> 'Guard':
+        child = self
+        while True:
+            if child.parent is None:
+                return child
+            else:
+                child = child.parent
 
     def execute(self, context: Dict, *args, **kwargs) -> bool:
         """
@@ -80,13 +108,15 @@ class Guard(object):
             post.delete()
         ```
         """
-        raise NotImplemented('override in subclass')
+        if self.callback is None:
+            raise NotImplemented('override in subclass')
+        return self.callback(context, *args, **kwargs)
 
 
-class CompositeGuard(Guard):
+class BooleanGuard(Guard):
     """
-    A CompositeGuard represents a boolean expression involving one or
-    more Guard, which can themselves be other CompositeGuard. This
+    A BooleanGuard represents a boolean expression involving one or
+    more Guard, which can themselves be other BooleanGuard. This
     subclass is used to form logical predicates involving multiple
     Guards.
     """
@@ -101,13 +131,25 @@ class CompositeGuard(Guard):
         return self.execute(context, arguments)
 
     @property
-    def display_string(self):
+    def op_code(self):
+        return self._op
+
+    @property
+    def lhs(self):
+        return self._lhs
+
+    @property
+    def rhs(self):
+        return self._rhs
+
+    @property
+    def description(self):
         if self._op == OP_CODE.NOT:
-            return f'~{self._lhs.display_string}'
+            return f'NOT ({self._lhs.description})'
         if self._op == OP_CODE.AND:
-            return f'({self._lhs.display_string} & {self._rhs.display_string})'
+            return f'({self._lhs.description} AND {self._rhs.description})'
         if self._op == OP_CODE.OR:
-            return f'({self._lhs.display_string} | {self._rhs.display_string})'
+            return f'({self._lhs.description} OR {self._rhs.description})'
 
     def execute(self, context: Dict, arguments: Dict):
         """

@@ -23,26 +23,36 @@ class EndpointError(PybizError):
 
     def __init__(self, exc, middleware=None):
         self.middleware = middleware
-        self.trace = traceback.format_exc().strip().split('\n')
+        self.trace = traceback.format_exc().strip().split('\n')[1:]
         self.timestamp = TimeUtils.utc_now()
-        self.exc_message = self.trace.pop()[len(get_class_name(exc))+2:]
+        self.exc_message = self.trace.pop().split(': ', 1)[1]
         self.exc = exc
 
     def to_dict(self):
         data = {
-            'type': get_class_name(self.exc),
+            'exception': get_class_name(self.exc),
             'timestamp': self.timestamp.isoformat(),
             'traceback': self.trace,
             'message': self.exc_message,
         }
+        if isinstance(self.exc, PybizError):
+            if self.exc.traceback_depth is not None:
+                depth = self.exc.traceback_depth
+                data['traceback'] = data['traceback'][-2*depth:]
         if self.middleware is not None:
-            data['middleware'] = str(self.middleware)
+            data['middleware'] = get_class_name(self.middleware)
+        if isinstance(self.exc, PybizError):
+            data.update(self.exc.data)
         return data
 
 
-class BadRequest(Exception):
-    def __init__(
-        self,
+class BadRequest(PybizError):
+    """
+    If any exception is raised during the execution of Middleware or an endpoint
+    callable itself, we raise BadRequest.
+    """
+
+    def __init__(self,
         endpoint: 'Endpoint',
         state: 'ExecutionState',
         *args,
@@ -50,20 +60,11 @@ class BadRequest(Exception):
     ):
         super().__init__(
             f'error/s occured in endpoint '
-            f'"{endpoint.name}" (see logs above)'
+            f'"{endpoint.name}" (see logs)'
         )
 
         self.endpoint = endpoint
         self.state = state
-
-        console.error(
-            message=f'error/s occured in {endpoint}',
-            data={
-                'exceptions': [
-                    error.to_dict() for error in state.errors
-                ]
-            }
-        )
 
 
 class ExecutionState(object):
@@ -124,6 +125,14 @@ class Endpoint(object):
             self._apply_middleware_post_bad_request(state)
 
         if state.errors:
+            console.error(
+                message=f'error/s occured in {self}',
+                data={
+                    'errors': [
+                        error.to_dict() for error in state.errors
+                    ]
+                }
+            )
             raise BadRequest(self, state)
 
         return state.result

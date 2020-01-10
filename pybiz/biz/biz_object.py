@@ -637,16 +637,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def delete_all(cls) -> None:
         cls.get_dao().delete_all()
 
-    @classmethod
-    def exists(cls, _id) -> bool:
+    def exists(self) -> bool:
         """
         Does a simple check if a BizObject exists by id.
         """
-        if is_biz_object(_id):
-            obj = _id
-            _id = getattr(obj, ID_FIELD_NAME)
-
-        return cls.get_dao().exists(_id=_id)
+        if self._id is not None:
+            return self.dao.exists(self._id)
+        return False
 
     def save(self, depth=0):
         return self.save_many([self], depth=depth)[0]

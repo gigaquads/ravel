@@ -195,6 +195,7 @@ class Application(object):
         self,
         manifest: Manifest = None,
         namespace: Dict = None,
+        middleware: List = None,
         *args,
         **kwargs
     ):
@@ -206,6 +207,11 @@ class Application(object):
 
         console.debug(f'bootstrapping "{get_class_name(self)}" Application...')
 
+        if middleware:
+            self._middleware.extend(
+                m for m in middleware if isinstance(self, m.app_types)
+            )
+            
         # merge additional namespace data into namespace accumulator
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
@@ -269,6 +275,9 @@ class Application(object):
             inject(func, self.dal)
         if api:
             inject(func, self.api)
+
+    def register_middleware(self, middleware: 'Middleware'):
+        self._middleware.append(middleware)
 
     def on_bootstrap(self, *args, **kwargs):
         pass

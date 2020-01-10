@@ -4,6 +4,8 @@ from typing import Dict, Tuple, Set, Type, List
 
 from appyratus.memoize import memoized_property
 
+from pybiz.util.misc_functions import get_class_name
+
 
 class MiddlewareError(Exception):
     def __init__(self, middleware, *args, **kwargs):
@@ -17,7 +19,7 @@ class Middleware(object):
 
     def __repr__(self):
         return (
-            f'<Middleware({self.__class__.__name__})>'
+            f'Middleware(name={get_class_name(self)})'
         )
 
     def bootstrap(self, app: 'Application'):

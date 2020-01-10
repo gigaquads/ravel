@@ -1,7 +1,8 @@
 class PybizError(Exception):
-    def __init__(self, message, data=None):
+    def __init__(self, message, data=None, traceback_depth=None):
         super().__init__(message)
         self.data = data or {}
+        self.traceback_depth = traceback_depth
 
     def to_dict(self):
         return {

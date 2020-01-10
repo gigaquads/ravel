@@ -1,10 +1,9 @@
 from typing import Dict, Tuple
 
 from pybiz.exceptions import NotAuthorized
-from pybiz.util.misc_functions import is_sequence
-
+from pybiz.util.misc_functions import is_sequence, normalize_to_tuple
 from ..base import Middleware
-from .guard import Guard, GuardFailed
+from .guard import Guard, GuardFailure
 
 
 class GuardMiddleware(Middleware):
@@ -14,35 +13,42 @@ class GuardMiddleware(Middleware):
     NotAuthorized is raised if not authorized.
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def on_request(self, endpoint: 'Endpoint', args: Tuple, kwargs: Dict):
+    def on_request(
+        self,
+        endpoint: 'Endpoint',
+        raw_args: Tuple,
+        raw_kwargs: Dict,
+        processed_args: Tuple,
+        processed_kwargs: Dict,
+    ):
         """
-        In on_request, args and kwargs are in the form output by app.on_request.
+        If the requested endpoint has a guard, we execute it here. If it fails,
+        we raise a GuardFailure exception.
         """
-        guards = endpoint.guards
-        if not guards:
-            return
-        arguments = self._compute_arguments_dict(endpoint, args, kwargs)
-        context = dict()
+        guard = self._extract_guard(endpoint)
+        if guard is not None:
+            #
+            arguments = self._extract_args(
+                endpoint, processed_args, processed_kwargs
+            )
+            # recursively execute the guard
+            guard_passed = guard(context={}, arguments=arguments)
+            if not guard_passed:
+                raise GuardFailure(guard, "guard failure")
 
-        # ensure guards is a sequence for following for-loop
-        if not is_sequence(guards):
-            guards = [guards]
-        # execute each Guard, raising
-        # NotAuthorized as soon as possible
-        for guard in guards:
-            ok = guard(context, arguments)
-            if not ok:
-                raise GuardFailed(guard)
+    def _extract_guard(self, endpoint):
+        guard = endpoint.guard
+        if not guard:
+            return None
+        elif not isinstance(guard, Guard) and callable(guard):
+            guard = guard()
+        return guard
 
-    def _compute_arguments_dict(self, endpoint, args, kwargs) -> Dict:
+    def _extract_args(self, endpoint, args, kwargs) -> Dict:
         """
         Merge all args and kwargs into a single Dict.
         """
-        arguments = dict(
-            zip([k for k in endpoint.signature.parameters][:len(args)], args)
-        )
-        arguments.update(kwargs)
-        return arguments
+        arg_names = [k for k in endpoint.signature.parameters][:len(args)]
+        merged = dict(zip(arg_names, args))
+        merged.update(kwargs)
+        return merged
