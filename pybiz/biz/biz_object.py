@@ -131,7 +131,7 @@ class BizObjectMeta(type):
         biz_class.pybiz.app = None
         biz_class.pybiz.dao = None
         biz_class.pybiz.resolvers = ResolverManager()
-        biz_class.pybiz.id_field_names = set()
+        biz_class.pybiz.fk_id_fields = {}
         biz_class.pybiz.is_biz_object = True
         biz_class.pybiz.is_abstract = False
         biz_class.pybiz.is_bootstrapped = False
@@ -169,13 +169,23 @@ class BizObjectMeta(type):
         for k, field in fields.items():
             if field.source is None:
                 field.source = field.name
-            if isinstance(field, Id):
-                biz_class.pybiz.id_field_names.add(field.name)
+            if isinstance(field, Id) and field.name != ID_FIELD_NAME:
+                    biz_class.pybiz.fk_id_fields[field.name] = field
 
         class_name = f'{biz_class.__name__}Schema'
 
         assert ID_FIELD_NAME in fields
         assert REV_FIELD_NAME in fields
+
+        id_field = fields[ID_FIELD_NAME]
+
+        if isinstance(id_field, Id):
+            replacement_id_field = biz_class.id_field_factory()
+            replacement_id_field.required = True
+            replacement_id_field.name = ID_FIELD_NAME
+            replacement_id_field.source = id_field.source or ID_FIELD_NAME
+            replacement_id_field.meta.update(id_field.meta)
+            fields[ID_FIELD_NAME] = replacement_id_field
 
         biz_class.Schema = type(class_name, (Schema, ), fields)
         biz_class.pybiz.schema = biz_class.Schema()
@@ -237,7 +247,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         # merge more_data into data
         data = data or {}
-        data.update(more_data)
+        if more_data:
+            data.update(more_data)
 
         # unlike other fields, whose defaults are generated upon calling
         # self.create or cls.create_many, the _id field default is generated up
@@ -308,9 +319,16 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def bootstrap(cls, app, *args, **kwargs):
         cls.pybiz.app = app
 
+        # resolve the concrete Field class to use for each "foreign key"
+        # ID field referenced by this class.
+        for id_field in cls.pybiz.fk_id_fields.values():
+            id_field.replace_self_in_biz_class(app, cls)
+
+        # bootstrap all resolvers owned by this class
         for resolver in cls.pybiz.resolvers.values():
             resolver.bootstrap(cls)
 
+        # lastly perform custom developer logic
         cls.on_bootstrap(app, *args, **kwargs)
         cls.pybiz.is_bootstrapped = True
 
@@ -555,7 +573,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             return None
         if not select:
             data = cls.get_dao().fetch(_id)
-            return cls(data=data) if data else None
+            return cls(data=data).clean() if data else None
         else:
             return cls.query(
                 select=select,

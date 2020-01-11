@@ -7,23 +7,19 @@ from pybiz.exceptions import PybizError
 
 from .argument_specification import ArgumentSpecification
 
-
-OP_CODE = Enum(
-    AND='AND',
-    OR='OR',
-    NOT='NOT',
-)
+OP_CODE = Enum(AND='AND', OR='OR', NOT='NOT')
 
 
 class GuardFailure(PybizError):
-    def __init__(self, guard, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, guard, message=None, *args, **kwargs):
+        super().__init__(message or 'guard failed', *args, **kwargs)
         self.guard = guard
         self.data['guard'] = {}
         self.data['guard']['class'] = get_class_name(guard)
-        self.data['guard']['expected'] = guard.description
+        self.data['guard']['failed'] = guard.description
         if guard is not guard.root:
-            self.data['guard']['context'] = guard.root.description
+            self.data['guard']['description'] = guard.root.description
+
 
 class Guard(object):
     """
@@ -36,12 +32,18 @@ class Guard(object):
     required `context` dict argument).
 
     The context dict is shared by all Guards composed in a
-    BooleanGuard boolean expression.
+    CompositeGuard boolean expression.
     """
 
-    def __init__(self, execute: Callable = None, parent: 'Guard' = None):
+    def __init__(
+        self,
+        execute: Callable = None,
+        parent: 'Guard' = None,
+        **kwargs
+    ):
         self.parent = parent
         self.callback = execute
+        self.kwargs = kwargs
         if self.callback is not None:
             self.spec = ArgumentSpecification(self.callback)
         else:
@@ -54,23 +56,23 @@ class Guard(object):
         args, kwargs = self.spec.extract(arguments)
         return self.execute(context, *args, **kwargs)
 
-    def __and__(self, other) -> 'BooleanGuard':
-        boolean_guard = BooleanGuard(OP_CODE.AND, self, other)
-        self.parent = boolean_guard
-        other.parent = boolean_guard
-        return boolean_guard
+    def __and__(self, other) -> 'CompositeGuard':
+        composite_guard = CompositeGuard(OP_CODE.AND, self, other)
+        self.parent = composite_guard
+        other.parent = composite_guard
+        return composite_guard
 
-    def __or__(self, other) -> 'BooleanGuard':
-        boolean_guard = BooleanGuard(OP_CODE.OR, self, other)
-        self.parent = boolean_guard
-        other.parent = boolean_guard
-        return boolean_guard
+    def __or__(self, other) -> 'CompositeGuard':
+        composite_guard = CompositeGuard(OP_CODE.OR, self, other)
+        self.parent = composite_guard
+        other.parent = composite_guard
+        return composite_guard
 
-    def __invert__(self) -> 'BooleanGuard':
-        boolean_guard = BooleanGuard(OP_CODE.NOT, self, None)
-        self.parent = boolean_guard
-        other.parent = boolean_guard
-        return boolean_guard
+    def __invert__(self) -> 'CompositeGuard':
+        composite_guard = CompositeGuard(OP_CODE.NOT, self, None)
+        self.parent = composite_guard
+        other.parent = composite_guard
+        return composite_guard
 
     def fail(self, message=None) -> GuardFailure:
         return GuardFailure(self, message=message, logged_traceback_depth=1)
@@ -123,10 +125,10 @@ class Guard(object):
         return self.callback(context, *args, **kwargs)
 
 
-class BooleanGuard(Guard):
+class CompositeGuard(Guard):
     """
-    A BooleanGuard represents a boolean expression involving one or
-    more Guard, which can themselves be other BooleanGuard. This
+    A CompositeGuard represents a boolean expression involving one or
+    more Guard, which can themselves be other CompositeGuard. This
     subclass is used to form logical predicates involving multiple
     Guards.
     """
@@ -167,26 +169,23 @@ class BooleanGuard(Guard):
         Compute the boolean value of one or more nested Guard in a
         depth-first manner.
         """
-        is_authorized = False    # retval
-
         # compute LHS for both & and |.
-        lhs_ok = self._lhs(context, arguments)
+        lhs_is_ok = self._lhs(context, arguments)
 
         if self._op == OP_CODE.AND:
             # We only need to check RHS if LHS isn't already False.
-            if lhs_ok:
-                rhs_ok = self._rhs(context, arguments)
-                if not rhs_ok:
-                    raise GuardFailed(self._rhs)
-            else:
-                raise GuardFailed(self._lhs)
+            if lhs_is_ok is False:
+                raise GuardFailure(self._lhs)
+            rhs_is_ok = self._rhs(context, arguments)
+            if rhs_is_ok is False:
+                raise GuardFailure(self._rhs)
         elif self._op == OP_CODE.OR:
-            if not lhs_ok:
-                rhs_ok = self._rhs(context, arguments)
-                if not rhs_ok:
-                    raise GuardFailed(self)
+            if lhs_is_ok is not False:
+                rhs_is_ok = self._rhs(context, arguments)
+                if rhs_is_ok is False:
+                    raise GuardFailure(self)
         elif self._op == OP_CODE.NOT:
-            if lhs_ok:
-                raise GuardFailed(self)
+            if lhs_is_ok is not False:
+                raise GuardFailure(self)
 
         return True

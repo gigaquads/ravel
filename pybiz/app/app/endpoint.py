@@ -220,8 +220,8 @@ class Endpoint(object):
         return error
 
     def _apply_app_on_response(self, state):
+        error = None
         try:
-            error = None
             state.result = self.decorator.app.on_response(
                 self,
                 state.raw_result,
@@ -237,20 +237,18 @@ class Endpoint(object):
         return error
 
     def _apply_app_on_request(self, state):
+        error = None
         try:
-            error = None
             params = self.app.on_request(
                 self, *state.raw_args, **state.raw_kwargs
             )
             args, kwargs = (
-                params if params else (state.raw_args, state.raw_kwargs)
+                params if params
+                else (state.raw_args, state.raw_kwargs)
             )
-            if params:
-                state.processed_args = params[0]
-                state.processed_kwargs = params[1]
-            else:
-                state.processed_args = raw_args
-                state.processed_kwargs = processed_kwargs
+            state.processed_args, state.processed_kwargs = (
+                self.app.loader.load(self, args, kwargs)
+            )
         except Exception as exc:
             error = Endpoint.Error(exc)
             state.errors.append(error)

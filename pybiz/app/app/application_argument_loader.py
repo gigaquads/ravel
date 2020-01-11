@@ -96,10 +96,12 @@ class ApplicationArgumentLoader(object):
                 raw_arg_value = args[spec.position]
                 loaded_args_or_kwargs = loaded_args
                 key = spec.position
+                is_positional = True
             else:
                 raw_arg_value = kwargs.get(spec.arg_name)
                 loaded_args_or_kwargs = loaded_kwargs
                 key = spec.arg_name
+                is_positional = False
 
             # Note that "key" is either a position integer offset
             # of the name of a keyword argument.
@@ -112,10 +114,16 @@ class ApplicationArgumentLoader(object):
             if loaded_biz_thing is not None:
                 loaded_biz_thing.internal.arg = raw_arg_value
 
-            loaded_args_or_kwargs[key] = self._on_load(
+            loaded_biz_thing = self._on_load(
                 spec, raw_arg_value, loaded_biz_thing
             )
-        return (loaded_args, loaded_kwargs)
+
+            if is_positional:
+                loaded_args[key] = loaded_biz_thing
+            else:
+                loaded_kwargs[key] = loaded_biz_thing
+        
+        return (tuple(loaded_args), loaded_kwargs)
 
     def load_param(self, many: bool, biz_class: Type['BizObject'], preloaded):
         """

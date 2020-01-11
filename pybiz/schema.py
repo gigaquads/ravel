@@ -17,12 +17,46 @@ class Id(fields.Field):
 
     def __init__(self, target: Type['BizObject'] = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.target_biz_class_name = None
+        self.target_biz_class_callback = None
+        self.target_biz_class = None
+
         if isinstance(target, type):
-            self.target_biz_class_callback = None
             self.target_biz_class = target
-        elif target is None:
-            self.target_biz_class_callback = None
-            self.target_biz_class = None
+        elif isinstance(target, str):
+            self.target_biz_class_name = target
+        elif callable(target):
+            self.target_biz_class_callback = target
+
+    def resolve_target_biz_class(self, app: 'Application') -> Type['BizObject']:
+        if self.target_biz_class is None:
+            if self.target_biz_class_callback is not None:
+                app.inject(self.target_biz_class_callback)
+                self.target_biz_class = self.target_biz_class_callback()
+            else:
+                self.target_biz_class = app.biz[self.target_biz_class_name]
+        return self.target_biz_class
+
+    def replace_self_in_biz_class(
+        self,
+        app: 'Application',
+        source_biz_class: Type['BizObject'],
+    ):
+        # compute the replacement field to use in place of Id
+        target_biz_class = self.resolve_target_biz_class(app)
+        replacement_field = type(target_biz_class._id.field)(
+            name=self.name,
+            source=self.source,
+            required=self.required,
+            meta=self.meta,
+        )
+        # dynamically replace the existing field in Schema class
+        source_biz_class.Schema.replace_field(replacement_field)
+
+        # update existing FieldResolver to use the replacement field
+        field_resolver = source_biz_class.pybiz.resolvers.fields[self.name]
+        field_resolver.field = replacement_field
 
     def process(self, value):
         raise NotImplementedError()

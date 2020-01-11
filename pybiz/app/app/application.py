@@ -228,44 +228,6 @@ class Application(object):
         self._dal.update(self._manifest.types.dal)
         self._api.update(self._endpoints)
 
-        # TODO: replace the field for _id in the metaclass
-        # TODO: move logic below into BizObject.bootstrap
-        # TODO: in BizObject.bootstrap, replace Id field with
-        # type(target_biz_class.Schema.fields['_id']) instead of calling its id
-        # factory.
-        for biz_class in self._biz.values():
-            for field_name in biz_class.pybiz.id_field_names:
-                id_field = biz_class.Schema.fields[field_name]
-                if field_name == ID_FIELD_NAME:
-                    target_biz_class = biz_class
-                    repl_id_field = target_biz_class.id_field_factory()
-                    repl_id_field.required = True
-                else:
-                    if id_field.target_biz_class is not None:
-                        target_biz_class = id_field.target_biz_class
-                    else:
-                        assert id_field.target_biz_class_callback is not None
-                        callback = id_field.target_biz_class_callback
-                        callback = self.inject(callback)
-                        target_biz_class = callback()
-                    repl_id_field = target_biz_class.id_field_factory()
-                    repl_id_field.required = id_field.required
-
-                repl_id_field.meta.update(id_field.meta)
-                repl_id_field.name = id_field.name
-                repl_id_field.source = id_field.source
-
-                if field_name not in biz_class.pybiz.defaults:
-                    if repl_id_field.default is not None:
-                        default = repl_id_field.default
-                        biz_class.pybiz.defaults[field_name] = default
-                        repl_id_field.default = None
-
-                biz_class.Schema.replace_field(repl_id_field)
-
-                resolver = biz_class.pybiz.resolvers.fields[field_name]
-                resolver.field = repl_id_field
-
         self._manifest.bootstrap()
         self._manifest.bind(rebind=True)
 
@@ -322,15 +284,17 @@ class Application(object):
         can add the decorated function to, say, a web framework as a route.
         """
 
-    def on_request(self, endpoint, *args, **kwargs) -> Tuple[Tuple, Dict]:
+    def on_request(
+        self, endpoint, *raw_args, **raw_kwargs
+    ) -> Tuple[Tuple, Dict]:
         """
         This executes immediately before calling a registered function. You
         must return re-packaged args and kwargs here. However, if nothing is
         returned, the raw args and kwargs are used.
         """
-        return (args, kwargs)
+        return (raw_args, raw_kwargs)
 
-    def on_response(self, endpoint, result, *args, **kwargs) -> object:
+    def on_response(self, endpoint, result, *raw_args, **raw_kwargs) -> object:
         """
         The return value of registered callables come here as `result`. Here
         any global post-processing can be done. Args and kwargs consists of
