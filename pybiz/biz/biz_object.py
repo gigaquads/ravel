@@ -51,7 +51,7 @@ class BizObjectMeta(type):
         resolver_decorators = info['resolver_decorators']
 
         biz_class._pybiz_is_biz_object = True
-        biz_class._init_pybiz_dict_object()
+        biz_class._init_pybiz_dict_object(info)
         biz_class._compute_is_abstract()
         biz_class._build_schema_class(fields, bases)
         biz_class._build_field_resolvers(resolvers)
@@ -126,11 +126,12 @@ class BizObjectMeta(type):
             )
             resolvers.register(resolver)
 
-    def _init_pybiz_dict_object(biz_class):
+    def _init_pybiz_dict_object(biz_class, info):
         biz_class.pybiz = DictObject()
         biz_class.pybiz.app = None
         biz_class.pybiz.dao = None
         biz_class.pybiz.resolvers = ResolverManager()
+        biz_class.pybiz.id_field_names = set()
         biz_class.pybiz.is_biz_object = True
         biz_class.pybiz.is_abstract = False
         biz_class.pybiz.is_bootstrapped = False
@@ -152,8 +153,6 @@ class BizObjectMeta(type):
             for k, field in inspect.getmembers(class_obj, predicate=is_field):
                 if k.startswith('_pybiz'):
                     continue
-                if isinstance(field, Id):
-                    pass
                 fields[k] = deepcopy(field)
             return fields
 
@@ -170,15 +169,8 @@ class BizObjectMeta(type):
         for k, field in fields.items():
             if field.source is None:
                 field.source = field.name
-            # TODO: clean up this mess:
-            if isinstance(field, Id) and not biz_class.pybiz.is_abstract:
-                if not (
-                    field.target_biz_class_callback or
-                    field.target_biz_class
-                ):
-                    field.target_biz_class = biz_class
-                if k == ID_FIELD_NAME:
-                    field.required = True
+            if isinstance(field, Id):
+                biz_class.pybiz.id_field_names.add(field.name)
 
         class_name = f'{biz_class.__name__}Schema'
 
@@ -253,6 +245,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         # object by _id when defining relationships and such.
         if ID_FIELD_NAME not in data:
             if ID_FIELD_NAME in self.pybiz.defaults:
+                # TODO: why doesnt this raise if _id not in defaults
                 data[ID_FIELD_NAME] = self.pybiz.defaults['_id']()
 
         self.merge(data)
@@ -304,10 +297,6 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return PythonDao
 
     @classmethod
-    def get_id_field_class(cls) -> Type[Field]:
-        return UuidString
-
-    @classmethod
     def on_bootstrap(cls, app, *args, **kwargs):
         pass
 
@@ -341,6 +330,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     @classmethod
     def is_bound(cls) -> bool:
         return cls.pybiz.is_bound
+
+    @classmethod
+    def id_field_factory(cls) -> 'Field':
+        return UuidString(default=lambda: uuid.uuid4().hex)
 
     @classmethod
     def get_dao(cls, bind=True) -> 'Dao':
@@ -585,7 +578,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if not _ids:
             return cls.BizList()
         if not (select or offset or limit or order_by):
-            id_2_data = cls.get_dao().fetch_many(_ids)
+            dao = cls.get_dao()
+            id_2_data = dao.dispatch('fetch_many', (_ids, ))
             return cls.BizList(cls(data=data) for data in id_2_data.values())
         else:
             return cls.query(
@@ -619,30 +613,36 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         Call delete on this object's dao and therefore mark all fields as dirty
         and delete its _id so that save now triggers Dao.create.
         """
-        self.dao.delete(_id=self._id)
+        self.dao.dispatch('delete', (self._id, ))
         self.mark(self.internal.state.keys())
         self._id = None
         return self
 
     @classmethod
     def delete_many(cls, biz_objs) -> None:
+        # extract ID's of all objects to delete and clear
+        # them from the instance objects' state dicts
         biz_obj_ids = []
         for obj in biz_objs:
             obj.mark(obj.internal.state.keys())
             biz_obj_ids.append(obj._id)
             obj._id = None
-        cls.get_dao().delete_many(biz_obj_ids)
+
+        # delete the records in the DAL
+        dao = cls.get_dao()
+        dao.dispatch('delete_many', args=(biz_obj_ids, ))
 
     @classmethod
     def delete_all(cls) -> None:
-        cls.get_dao().delete_all()
+        dao = cls.get_dao()
+        dao.dispatch('delete_all')
 
     def exists(self) -> bool:
         """
         Does a simple check if a BizObject exists by id.
         """
         if self._id is not None:
-            return self.dao.exists(self._id)
+            return self.dao.dispatch('exists', args=(self._id, ))
         return False
 
     def save(self, depth=0):
@@ -654,10 +654,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         prepared_record = self._prepare_record_for_create()
         prepared_record.pop(REV_FIELD_NAME, None)
-        created_record = self.get_dao().create(prepared_record)
+
+        created_record = self.dao.dispatch('create', (prepared_record, ))
 
         self.internal.state.update(created_record)
-
         return self.clean()
 
     def update(self, data: Dict = None, **more_data) -> 'BizObject':
@@ -686,7 +686,11 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                     'errors': errors,
                 }
             )
-        updated_record = self.get_dao().update(self._id, prepared_record)
+
+        updated_record = self.dao.dispatch(
+            'update', (self._id, prepared_record)
+        )
+
         self.internal.state.update(updated_record)
         return self.clean()
 
@@ -708,7 +712,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             records.append(record)
 
         dao = cls.get_dao()
-        created_records = dao.create_many(records)
+        created_records = dao.dispatch('create_many', (records, ))
+
         for biz_obj, record in zip(biz_objs, created_records):
             biz_obj.internal.state.update(record)
             biz_obj.clean()
@@ -741,7 +746,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         assert part2 == {user2}
         ```
 
-        A spearate call to `dao.update_many` will be made for each partition.
+        A spearate DAO call to `update_many` will be made for each partition.
         """
         # common_values are values that should be updated
         # across all objects.
@@ -769,7 +774,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 records.append(record)
                 _ids.append(biz_obj._id)
 
-            updated_records = cls.get_dao().update_many(_ids, records)
+            dao = cls.get_dao()
+            updated_records = dao.dispatch('update_many', (_ids, records))
 
             for biz_obj, record in zip(biz_obj_partition, updated_records):
                 biz_obj.internal.state.update(record)
@@ -826,10 +832,14 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                     biz_thing_to_save = resolver.on_save(resolver, biz_obj, value)
                     if biz_thing_to_save:
                         if is_biz_object(biz_thing_to_save):
-                            class_2_objects[resolver.biz_class].add(biz_thing_to_save)
+                            class_2_objects[resolver.biz_class].add(
+                                biz_thing_to_save
+                            )
                         else:
                             assert is_sequence(biz_thing_to_save)
-                            class_2_objects[resolver.biz_class].update(biz_thing_to_save)
+                            class_2_objects[resolver.biz_class].update(
+                                biz_thing_to_save
+                            )
 
         # recursively call save_many for each type of BizObject
         for biz_class, biz_objects in class_2_objects.items():
@@ -840,14 +850,17 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     @classmethod
     def generate(cls, query: Query = None) -> 'BizObject':
         instance = cls()
-        query = query or cls.select()
+        query = query or cls.select(cls.pybiz.resolvers.fields)
         resolvers = Resolver.sort(
             cls.pybiz.resolvers[k] for k in query.params.select
         )
         for resolver in resolvers:
-            resolver_query = query.params.select[resolver.name]
-            generated_value = resolver.generate(instance, resolver_query)
-            setattr(instance, resolver.name, generated_value)
+            if resolver.name == REV_FIELD_NAME:
+                setattr(instance, resolver.name, '0')
+            else:
+                resolver_query = query.params.select[resolver.name]
+                generated_value = resolver.generate(instance, resolver_query)
+                setattr(instance, resolver.name, generated_value)
         return instance
 
     def _prepare_record_for_create(self):

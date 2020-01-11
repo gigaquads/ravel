@@ -1,3 +1,5 @@
+import inspect
+
 from uuid import UUID
 from importlib import import_module
 from types import GeneratorType
@@ -89,6 +91,13 @@ def get_class_name(obj):
     else:
         return obj.__class__.__name__
 
+def get_callable_name(obj):
+    if inspect.isfunction(obj):
+        return obj.__name__
+    elif inspect.ismethod(obj):
+        obj.__func__.__name__
+    else:
+        raise ValueError(str(obj))
 
 def remove_keys(
     records: List[Dict], keys: Set[Text], in_place=True

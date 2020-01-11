@@ -1,4 +1,3 @@
-from appyratus.exc import BaseError
 import os
 import glob
 
@@ -17,12 +16,13 @@ from appyratus.utils import (
 
 from pybiz.util.misc_functions import import_object
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from pybiz.exceptions import PybizError
 
 from .base import Dao
 from .python_dao import PythonDao
 
 
-class DaoError(BaseError):
+class DaoError(PybizError):
     pass
 
 

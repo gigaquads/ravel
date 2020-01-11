@@ -27,9 +27,9 @@ class FieldResolver(Resolver):
             required=field.required,
             *args, **kwargs
         )
+        self.field = field
         if field.name is None:
             field.name = self.name
-        self._field = field
 
     @property
     def asc(self) -> 'OrderBy':
@@ -42,10 +42,6 @@ class FieldResolver(Resolver):
     @property
     def lazy(self) -> bool:
         return self._lazy
-
-    @property
-    def field(self) -> 'Field':
-        return self._field
 
     @classmethod
     def tags(cls) -> Set[Text]:
@@ -86,10 +82,12 @@ class FieldResolver(Resolver):
             if k not in owner.internal.state
         )
 
-        field_values = owner.dao.fetch(
-            _id=owner_id,
-            fields=request.query.params.select.keys()
+        field_values = owner.dao.dispatch(
+            method_name='fetch',
+            args=(owner_id, ),
+            kwargs={'fields': request.query.params.select.keys()}
         )
+
         owner.merge(field_values)
 
         return field_values[field_name]
@@ -106,7 +104,7 @@ class FieldResolver(Resolver):
         if query.parent and query.parent.params.where:
             pass # TODO
         else:
-            return self._field.generate()
+            return self.field.generate()
 
 
 class FieldResolverProperty(ResolverProperty):

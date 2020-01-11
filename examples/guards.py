@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from pybiz import BizObject, String, Int
-from pybiz.app import Application
+from pybiz.app import Application, Repl
 from pybiz.app.middleware import GuardMiddleware, Guard
 
 app = Application()
@@ -41,5 +41,7 @@ if __name__ == '__main__':
         middleware=[GuardMiddleware()]
     ).start()
 
+    dog = Dog.generate().save()
+    
     dog_id = uuid4().hex
     dog = app.api.get_dog(dog_id)

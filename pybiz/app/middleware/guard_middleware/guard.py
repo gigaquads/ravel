@@ -5,16 +5,25 @@ from appyratus.enum import Enum
 from pybiz.util.misc_functions import get_class_name
 from pybiz.exceptions import PybizError
 
-from .exceptions import GuardFailure
 from .argument_specification import ArgumentSpecification
 
 
 OP_CODE = Enum(
-    AND='&',
-    OR='|',
-    NOT='~',
+    AND='AND',
+    OR='OR',
+    NOT='NOT',
 )
 
+
+class GuardFailure(PybizError):
+    def __init__(self, guard, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.guard = guard
+        self.data['guard'] = {}
+        self.data['guard']['class'] = get_class_name(guard)
+        self.data['guard']['expected'] = guard.description
+        if guard is not guard.root:
+            self.data['guard']['context'] = guard.root.description
 
 class Guard(object):
     """
@@ -64,7 +73,7 @@ class Guard(object):
         return boolean_guard
 
     def fail(self, message=None) -> GuardFailure:
-        return GuardFailure(self, message=message, traceback_depth=1)
+        return GuardFailure(self, message=message, logged_traceback_depth=1)
 
     @property
     def description(self) -> Text:
@@ -145,12 +154,13 @@ class BooleanGuard(Guard):
 
     @property
     def description(self):
+        opc = self._op
         if self._op == OP_CODE.NOT:
-            return f'NOT ({self._lhs.description})'
+            return f'{opc} ({self._lhs.description})'
         if self._op == OP_CODE.AND:
-            return f'({self._lhs.description} AND {self._rhs.description})'
+            return f'({self._lhs.description} {opc} {self._rhs.description})'
         if self._op == OP_CODE.OR:
-            return f'({self._lhs.description} OR {self._rhs.description})'
+            return f'({self._lhs.description} {opc} {self._rhs.description})'
 
     def execute(self, context: Dict, arguments: Dict):
         """
@@ -180,14 +190,3 @@ class BooleanGuard(Guard):
                 raise GuardFailed(self)
 
         return True
-
-
-class GuardFailure(PybizError):
-    def __init__(self, guard, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.guard = guard
-        self.data['guard'] = {}
-        self.data['guard']['class'] = get_class_name(guard)
-        self.data['guard']['description'] = guard.description
-        if guard is not guard.root:
-            self.data['guard']['owner'] = guard.root.description

@@ -9,9 +9,14 @@ from appyratus.env import Environment
 from appyratus.schema.fields import UuidString
 
 from pybiz.util.loggers import console
+from pybiz.exceptions import PybizError
 from pybiz.constants import ID_FIELD_NAME
 
 from .dao_history import DaoHistory, DaoEvent
+
+
+class DaoError(PybizError):
+    pass
 
 
 class DaoMeta(ABCMeta):
@@ -27,10 +32,6 @@ class DaoMeta(ABCMeta):
             console.info(f'venusian scan found "{dao_class.__name__}" Dao')
 
         venusian.attach(cls, callback, category='dao')
-
-        # wrap each DAO interface method in a decorator that appends
-        # to the instance's DaoHistory when set.
-        DaoHistory.decorate(dao_class=cls)
 
 
 class Dao(object, metaclass=DaoMeta):
@@ -52,27 +53,62 @@ class Dao(object, metaclass=DaoMeta):
         else:
             return (f'<{self.__class__.__name__}>')
 
+    def dispatch(
+        self,
+        method_name: Text,
+        args: Tuple = None,
+        kwargs: Dict = None
+    ):
+        """
+        Delegate a Dao call to the named method, performing any side-effects,
+        like creating a DaoHistory event if need be. This is used internally
+        by BizObject to call into DAO methods.
+        """
+        # call the requested Dao method
+        func = getattr(self, method_name)
+        exc = None
+        try:
+            result = func(*(args or tuple()), **(kwargs or {}))
+        except Exception as exc:
+            raise exc
+
+        # create and store the Dao call in a history event
+        if self.history.is_recording_method(method_name):
+            event = DaoEvent(method_name, args, kwargs, result, exc)
+            self._history.append(event)
+
+        # finally faise the exception if one was generated
+        if exc is not None:
+            data = {'method': method_name, 'args': args, 'kwargs': kwargs}
+            if not isinstance(exc, PybizError):
+                raise PybizError(data=data, wrapped_exception=exc)
+            else:
+                exc.data.update(data)
+                raise exc
+
+        return result
+
     @property
-    def is_bound(self):
+    def is_bound(self) -> bool:
         return self._is_bound
 
     @property
-    def biz_class(self):
+    def biz_class(self) -> Type['BizObject']:
         return self._biz_class
 
     @property
-    def app(self):
+    def app(self) -> 'Application':
         return self._app
 
     @property
-    def history(self):
+    def history(self) -> 'DaoHistory':
         return self._history
 
     def play(self, history: DaoHistory, reads=True, writes=True) -> List:
         results = []
         for event in history:
-            is_read = event.method in DaoHistory.read_method_names
-            is_write = event.method in DaoHistory.write_method_names
+            is_read = event.method in self.history.read_method_names
+            is_write = event.method in self.history.write_method_names
             if (is_read and reads) or (is_write and writes):
                 func = getattr(self, event.method)
                 result = func(*event.args, **event.kwargs)

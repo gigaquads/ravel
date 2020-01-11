@@ -11,6 +11,7 @@ from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import get_class_name, inject, is_sequence
 from pybiz.schema import Field, UuidString
+from pybiz.constants import ID_FIELD_NAME
 
 from .exceptions import ApplicationError
 from .endpoint_decorator import EndpointDecorator
@@ -26,7 +27,6 @@ class Application(object):
     def __init__(
         self,
         middleware: List['Middleware'] = None,
-        id_field_class: Type[Field] = None,
     ):
         self._decorators = []
         self._endpoints = {}
@@ -38,8 +38,6 @@ class Application(object):
         self._is_bootstrapped = False
         self._is_started = False
         self._namespace = {}
-
-        self._id_field_class = id_field_class or DEFAULT_ID_FIELD_CLASS  # XXX reprecated
         self._json_encoder = JsonEncoder()
         self._binder = ApplicationDaoBinder()
         self._middleware = deque([
@@ -87,10 +85,6 @@ class Application(object):
     @property
     def endpoint_class(self) -> Type[Endpoint]:
         return Endpoint
-
-    @property
-    def id_field_class(self) -> Type[Field]:
-        return self._id_field_class
 
     @property
     def manifest(self) -> Manifest:
@@ -211,7 +205,7 @@ class Application(object):
             self._middleware.extend(
                 m for m in middleware if isinstance(self, m.app_types)
             )
-            
+
         # merge additional namespace data into namespace accumulator
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
@@ -233,6 +227,44 @@ class Application(object):
         self._biz.update(self._manifest.types.biz)
         self._dal.update(self._manifest.types.dal)
         self._api.update(self._endpoints)
+
+        # TODO: replace the field for _id in the metaclass
+        # TODO: move logic below into BizObject.bootstrap
+        # TODO: in BizObject.bootstrap, replace Id field with
+        # type(target_biz_class.Schema.fields['_id']) instead of calling its id
+        # factory.
+        for biz_class in self._biz.values():
+            for field_name in biz_class.pybiz.id_field_names:
+                id_field = biz_class.Schema.fields[field_name]
+                if field_name == ID_FIELD_NAME:
+                    target_biz_class = biz_class
+                    repl_id_field = target_biz_class.id_field_factory()
+                    repl_id_field.required = True
+                else:
+                    if id_field.target_biz_class is not None:
+                        target_biz_class = id_field.target_biz_class
+                    else:
+                        assert id_field.target_biz_class_callback is not None
+                        callback = id_field.target_biz_class_callback
+                        callback = self.inject(callback)
+                        target_biz_class = callback()
+                    repl_id_field = target_biz_class.id_field_factory()
+                    repl_id_field.required = id_field.required
+
+                repl_id_field.meta.update(id_field.meta)
+                repl_id_field.name = id_field.name
+                repl_id_field.source = id_field.source
+
+                if field_name not in biz_class.pybiz.defaults:
+                    if repl_id_field.default is not None:
+                        default = repl_id_field.default
+                        biz_class.pybiz.defaults[field_name] = default
+                        repl_id_field.default = None
+
+                biz_class.Schema.replace_field(repl_id_field)
+
+                resolver = biz_class.pybiz.resolvers.fields[field_name]
+                resolver.field = repl_id_field
 
         self._manifest.bootstrap()
         self._manifest.bind(rebind=True)
@@ -275,6 +307,8 @@ class Application(object):
             inject(func, self.dal)
         if api:
             inject(func, self.api)
+
+        return func
 
     def register_middleware(self, middleware: 'Middleware'):
         self._middleware.append(middleware)

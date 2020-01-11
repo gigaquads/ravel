@@ -23,26 +23,38 @@ class EndpointError(PybizError):
 
     def __init__(self, exc, middleware=None):
         self.middleware = middleware
-        self.trace = traceback.format_exc().strip().split('\n')[1:]
         self.timestamp = TimeUtils.utc_now()
-        self.exc_message = self.trace.pop().split(': ', 1)[1]
         self.exc = exc
+        if isinstance(exc, PybizError) and exc.wrapped_traceback:
+            self.trace = self.exc.wrapped_traceback.strip().split('\n')[1:]
+            self.exc_message = self.trace.pop().split(': ', 1)[1]
+        else:
+            self.trace = traceback.format_exc().strip().split('\n')[1:]
+            self.exc_message = self.trace.pop().split(': ', 1)[1]
 
     def to_dict(self):
         data = {
-            'exception': get_class_name(self.exc),
             'timestamp': self.timestamp.isoformat(),
-            'traceback': self.trace,
             'message': self.exc_message,
+            'traceback': self.trace,
         }
+
         if isinstance(self.exc, PybizError):
-            if self.exc.traceback_depth is not None:
-                depth = self.exc.traceback_depth
+            if not self.exc.wrapped_exception:
+                data['exception'] = get_class_name(self.exc)
+            else:
+                data['exception'] = get_class_name(self.exc.wrapped_exception)
+
+            if self.exc.logged_traceback_depth is not None:
+                depth = self.exc.logged_traceback_depth
                 data['traceback'] = data['traceback'][-2*depth:]
+
         if self.middleware is not None:
             data['middleware'] = get_class_name(self.middleware)
+
         if isinstance(self.exc, PybizError):
             data.update(self.exc.data)
+
         return data
 
 

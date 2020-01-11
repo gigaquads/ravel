@@ -320,3 +320,6 @@ class CacheDao(Dao):
             self.be.delete_many(_ids)
         elif self.mode == CacheMode.writeback:
             self.executor.enqueue('delete_many', args=(_ids, ))
+
+    def delete_all(self) -> None:
+        raise NotImplementedError()
