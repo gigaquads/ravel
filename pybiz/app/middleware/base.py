@@ -5,6 +5,7 @@ from typing import Dict, Tuple, Set, Type, List
 from appyratus.memoize import memoized_property
 
 from pybiz.util.misc_functions import get_class_name
+from pybiz.util.loggers import console
 
 
 class MiddlewareError(Exception):
@@ -24,6 +25,11 @@ class Middleware(object):
 
     def bootstrap(self, app: 'Application'):
         self._app = app
+
+        console.debug(
+            f'bootstrapping "{get_class_name(self)}" middleware'
+        )
+
         self.on_bootstrap()
         self._is_bootstrapped = True
 
@@ -55,8 +61,10 @@ class Middleware(object):
         raw_kwargs: Dict
     ):
         """
-        In pre_request, args and kwargs are in the raw form before being
-        processed by app.on_request.
+        In `pre_request`, `raw_args` and `raw_kwargs` contain the raw args and
+        kwargs made available to us by the host Application. For example, in a a
+        Pybiz application backed by a web framework, the contents of `raw_args`
+        could be the request and response objects.
         """
 
     def on_request(
@@ -68,13 +76,15 @@ class Middleware(object):
         processed_kwargs: Dict
     ):
         """
-        In on_request, args and kwargs are in the form output by
-        api.on_request.
+        At the point `on_request` runs, the host application has transformed the
+        `raw_args` and `raw_kwargs` into their processed counterparts, which
+        represent the args and kwargs expected by the underyling endpoint
+        callable.
         """
 
     def post_request(
         self,
-        endpoint: 'ApplicationObject',
+        endpoint: 'Endpoint',
         raw_args: Tuple,
         raw_kwargs: Dict,
         processed_args: Tuple,
@@ -82,12 +92,12 @@ class Middleware(object):
         result,
     ):
         """
-        In post_request, args and kwargs are in the form output by
-        app.on_request.
+        If no exception was raised in the endpoint callable, we come here.
         """
+
     def post_bad_request(
         self,
-        endpoint: 'ApplicationObject',
+        endpoint: 'Endpoint',
         raw_args: Tuple,
         raw_kwargs: Dict,
         processed_args: Tuple,
@@ -95,7 +105,5 @@ class Middleware(object):
         exc: Exception,
     ):
         """
-        We come here when an exception is raised within the Endpoint's target
-        callable. Exceptions raised within preceding Middleware do no result in
-        this method being called.
+        If any exception was raised in the endpoint callable, we come here.
         """

@@ -1,0 +1,190 @@
+@import url('https://fonts.googleapis.com/css?family=Roboto|Roboto+Condensed|Roboto+Mono|Roboto+Slab&display=swap');
+@import url('https://fonts.googleapis.com/css?family=Noto+Sans:400|Noto+Sans:800&display=swap');
+html {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-size: 10pt;
+  margin: 0px;
+  color: #3c3a39;
+  background-color: #798db8;
+  font-family: "Roboto", sans-serif;
+}
+
+#gradient {
+  width: 100%;
+  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  /* Permalink - use to edit and share this gradient: https://colorzilla.com/gradient-editor/#a57c3a+0,77b5ab+100 */
+ background: #a57c3a; /* Old browsers */
+ background: -moz-linear-gradient(45deg,  #a57c3a 0%, #77b5ab 100%); /* FF3.6-15 */
+ background: -webkit-linear-gradient(45deg,  #a57c3a 0%,#77b5ab 100%); /* Chrome10-25,Safari5.1-6 */
+ background: linear-gradient(45deg,  #116058 0%,#5db9ae 100%); /* W3C, IE10+, FF16+, Chrome26+, Opera12+, Safari7+ */
+ background: linear-gradient(45deg,  #0c2b28 0%,#5db9ae 100%); /* W3C, IE10+, FF16+, Chrome26+, Opera12+, Safari7+ */
+ filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#a57c3a', endColorstr='#77b5ab',GradientType=1 ); /* IE6-9 fallback on horizontal gradient */
+
+  opacity: 0.90;
+}
+
+h1, h2, h3, h4 {
+  color: #064644;
+  font-family: "Noto Sans";
+}
+
+h1 {
+  margin-bottom: 0em;
+  margin-top: 0.1em;
+  padding: 0;
+  display: inline-block;
+  /* color: #1c1c1c; */
+}
+
+h2 {
+  margin-top: 1.5em;
+}
+
+h3 {
+  margin-top: 1.5em;
+  margin-bottom: 0em;
+  padding-bottom: 0em;
+}
+
+h4 {
+  margin-bottom: .25em;
+}
+
+a {
+  color: rgb(190, 70, 18);
+}
+
+p, a, span, li {
+  font-size: 11pt;
+}
+
+p {
+  margin: 1.5em 0;
+}
+
+#steps-overview-list > li {
+  margin-bottom: 0.5em;
+}
+#steps-overview-list p {
+  margin: 0;
+  margin-top: 0.25em;
+}
+
+h2 a {
+  color:  #064644;
+  font-size: 1.05em;
+}
+
+pre * {
+  font-family: "Roboto Mono", monospace !important;
+}
+
+.toc h2 {
+  color: #133333;
+  font-weight: normal;
+  margin-top: -0.3em;
+  margin-bottom: -0.2em;
+}
+
+.toc li {
+  font-size: 1.2em;
+}
+
+.toc a {
+  color: #064644;
+}
+
+code {
+  font-family: "Roboto Mono", monospace;
+  color: rgb(42, 77, 68);
+  font-style: normal;
+  padding: 0 .2em;
+  background-color: rgba(85, 147, 153, 0.19)
+}
+
+
+.faded {
+  color: #1116;
+}
+
+.underlined {
+  text-decoration: underline;
+}
+
+#card-column {
+  margin-top: 2.5em;
+}
+
+a.card-anchor {
+  color: inherit;
+}
+
+.card {
+  min-width: 740px;
+  max-width: 1100px;
+  width: 93%;
+  text-align: left;
+  margin: 1em auto;
+  background-color: #fffef5b6;
+  box-shadow: .2em .3em 2.0em #1e234a44;
+  padding: 0.1em 0em;
+}
+
+.card div {
+  margin: 2.0em 2.2em;
+}
+
+.card > p {
+  margin-top: 0;
+}
+
+pre.prettyprint {
+  padding-left: 1.5em !important;
+  padding-right: 1.5em !important;
+  padding-top: 1.7em !important;
+  border: 0 !important;
+  background-color: #fffdf641 !important;
+  box-shadow: 2px 2px 8px #18152f0c;
+  border-radius: 0px !important;
+  margin-top: 1.2em !important;
+  margin-bottom: 1.2em !important;
+  width: 92% !important;
+}
+pre.prettyprint * {
+  font-size: 1.0em !important;
+}
+
+.footer {
+  padding: 1em;
+}
+
+.footer-menu {
+  text-align: center;
+}
+
+.footer-menu a {
+  text-decoration: none;
+}
+
+.footer-menu a span:hover {
+  text-decoration: underline;
+}
+
+.footer-menu span {
+  margin: 0 1em;
+  font-size: 16pt;
+}
+
+.header {
+  margin-left: none !important;
+  padding-left: none !important;
+  vertical-align: middle;
+}

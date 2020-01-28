@@ -5,7 +5,7 @@ from appyratus.test import mark
 
 from pybiz.biz import BizObject
 from pybiz.schema import fields
-from pybiz.dao.python_dao import PythonDao
+from pybiz.dao.simulation_dao import SimulationDao
 from pybiz.dao.cache_dao import CacheDao
 
 
@@ -19,7 +19,7 @@ def Thing():
 
 @pytest.fixture(scope='function')
 def dao(Thing):
-    dao = CacheDao(persistence=PythonDao(), cache=PythonDao())
+    dao = CacheDao(persistence=SimulationDao(), cache=SimulationDao())
     dao.bind(Thing)
     return dao
 

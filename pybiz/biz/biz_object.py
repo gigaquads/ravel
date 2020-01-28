@@ -20,7 +20,7 @@ from pybiz.util.misc_functions import (
 from pybiz.schema import (
     Field, Schema, fields, String, Int, Id, UuidString,
 )
-from pybiz.dao import Dao, PythonDao
+from pybiz.dao import Dao, SimulationDao
 from pybiz.util.loggers import console
 from pybiz.exceptions import ValidationError
 from pybiz.constants import (
@@ -305,7 +305,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     @classmethod
     def __dao__(cls) -> Type[Dao]:
-        return PythonDao
+        return SimulationDao
 
     @classmethod
     def on_bootstrap(cls, app, *args, **kwargs):

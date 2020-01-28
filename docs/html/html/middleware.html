@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../css/base.css">
+    <link rel="stylesheet" href="../css/sunburst.css">
+    <link href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/gh/google/code-prettify@master/loader/run_prettify.js"></script>
+    <title>Middleware</title>
+  </head>
+  <body>
+    <div id="gradient">.</div>
+    <div id="card-column">
+      <div class="card">
+        <div>
+          <h1>Middleware</h1>
+
+          <div class="toc">
+            <h2>Table of Contents</h2>
+            <ol>
+              <li><a href="#registering">Registering Middleware With Applications</a></li>
+              <li><a href="#sharing">Sharing Middleware Between Applications</a></li>
+              <li><a href="#arguments">Transforming Endpoint Arguments</a></li>
+            </ol>
+          </div>
+
+          <p>
+          <a href="">Middleware</a> is common design pattern in frameworks of many kinds and is responsible
+          for performing custom logic upon receiving a request and sending a response.
+          Despite its ubiquity, there is little to no standardization of the
+          middleware interface and therefore little to no reusability of
+          components across different frameworks. In contrast, Pybiz
+          middleware is reusable across any type of Pybiz application, whether an
+          RPC service a or REST API.
+          </p>
+          <p>
+          To illustrate the downside of non-standardization, imagine that you
+          currently rely on a web framework to manage database
+          transactions using middleware. Imagine now that the need arises to execute the
+          same endpoint inside an <a href="">Celery</a> task or a
+          command-line application where your web framework's middleware is not in
+          play. At this point, you have no choice but to decouple transaction
+          management from the middleware of your framework in order to
+          manage transactions explicitly in external contexts.
+          </p>
+
+          <p>
+          This is exactly the problem Pybiz middleware solves. Pybiz middleware is
+          actually "meta-middleware" in the sense that it can be reused with absolutely no
+          code change across different types of applications, like web apps,
+          command-line apps, REPL sessions, or RPC services.
+          </p>
+
+          <h2>The Middleware Interface</h2>
+
+          <p> To implement middleware, one need only override one or more methods
+            on the <span class="inline-code">Middleware</span> base class. These
+            methods are described in the doc strings below. In overview, they are
+            as follows:
+          </p>
+
+          <ul>
+            <li><span>pre_request</span> - before raw arguments are processed</li>
+            <li><span>on_request</span> - after raw arguments are processed</li>
+            <li><span>post_request</span> - after endpoint returns</li>
+            <li><span>post_bad_request</span> - after endpoint raises an exception</li>
+          </ul>
+
+          <pre class="prettyprint">
+  class Middleware(object):
+
+      def pre_request(
+          self,
+          endpoint: 'Endpoint',
+          raw_args: Tuple,
+          raw_kwargs: Dict
+      ):
+          """
+          In `pre_request`, `raw_args` and `raw_kwargs` contain the raw args and
+          kwargs made available to us by the host Application. For example, in a a
+          Pybiz application backed by a web framework, the cards of `raw_args`
+          could be the request and response objects.
+          """
+
+      def on_request(
+          self,
+          endpoint: 'Endpoint',
+          raw_args: Tuple,
+          raw_kwargs: Dict,
+          processed_args: Tuple,
+          processed_kwargs: Dict
+      ):
+          """
+          At the point `on_request` runs, the host application has transformed the
+          `raw_args` and `raw_kwargs` into their processed counterparts, which
+          represent the args and kwargs expected by the underyling endpoint
+          callable.
+          """
+
+      def post_request(
+          self,
+          endpoint: 'Endpoint',
+          raw_args: Tuple,
+          raw_kwargs: Dict,
+          processed_args: Tuple,
+          processed_kwargs: Dict,
+          result,
+      ):
+          """
+          If no exception was raised in the endpoint callable, we come here.
+          """
+
+      def post_bad_request(
+          self,
+          endpoint: 'Endpoint',
+          raw_args: Tuple,
+          raw_kwargs: Dict,
+          processed_args: Tuple,
+          processed_kwargs: Dict,
+          exc: Exception,
+      ):
+          """
+          If any exception was raised in the endpoint callable, we come here.
+          """
+          </pre>
+
+        </div>
+      </div>
+
+
+      <div class="card">
+        <div>
+          <h2><a name="registering">Registering Middleware With Applications</a></h2>
+          <p>
+            Using middleware in Pybiz applications is simple. You simply pass a
+            list of middleware objects to the constructor or bootstrap method of
+            an Application, as seen below. There is no functional difference
+            between the two methods. It's up to you to determine which approach
+            makes the most sense in your own system.
+          </p>
+          <h3>Passing Middleware Via Constuctor</h3>
+          <pre class="prettyprint">
+  app = Application(middleware=[MyMiddleware()])
+          </pre>
+
+          <h3>Passing Middleware Via Bootstrap</h3>
+          <pre class="prettyprint">
+  app = Application().bootstrap(middleware=[MyMiddleware()])
+          </pre>
+        </div>
+      </div>
+
+
+      <div class="card">
+        <div>
+          <h2><a name="sharing">Sharing Middleware Between Applications</a></h2>
+          <p>
+            In some case, you might want to share middleware between multiple
+            Application types. For example, you may want to execute an endpoint
+            both within a Pybiz REPL for internal development purposes as well as
+            in a web app through an HTTP server. When it comes to defining
+            middleware for use in these applications, you have a couple options.
+            The most explicit approach would consist of defining two separate
+            middleware lists for each application, respectively, giving you something like this:
+            </p>
+
+            <pre class="prettyprint">
+  repl = Repl(middleware=[MyMiddleware()])
+  web = WebService(middleware=[MyMiddleware()])
+            </pre>
+
+            <p>
+              Alternatively, for convenience, you may optionally override the
+              app_types property on the Middleware base class, which returns a
+              tuple of pybiz Application subclasses that recognize and bootstrap
+              middleware instances. Here is the base property definition:
+
+            <pre class="prettyprint">
+  @property
+  def app_types(self) -> Tuple[Type['Application']]:
+      """
+      Return a tuple of Application classes for which this middleware applies.
+      """
+      return (Application, )
+            </pre>
+
+            <p>This is useful for defining a single list of middleware that is
+            shared across your Pybiz applications. For example, if you create
+            Middleware that inspects HTTP headers upon each request, then outside
+            the context of web apps, this middleware would break; therefore, you
+            would want to disable it when running your application as, say, a
+            command-line application.
+            </p>
+
+            <p>The following example code illustrates this:</p>
+
+            <pre class="prettyprint">
+  # define middleware that applies only to Application subclasses of HttpService
+  class HttpHeadersMiddleware(Middleware):
+
+      @property
+      def app_types(self):
+          return (HttpService, )
+
+  # create a list of shared middleware
+  middleware = [HttpHeadersMiddleware()]
+
+  # intantiate applications with shared middleware
+  repl = Repl(middleware=middleware)
+  web = WebService(middleware=middleware)
+        </div>
+      </div>
+
+
+      <div class="card">
+        <div>
+          <h2><a name="arguments">Transforming Endpoint Arguments</a></h2>
+          <p>
+          </p>
+          <pre class="prettyprint">
+          </pre>
+        </div>
+      </div>
+
+    </div>
+  </body>
+</html>

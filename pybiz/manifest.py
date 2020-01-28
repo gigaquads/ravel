@@ -35,7 +35,7 @@ class Manifest(object):
         data: Dict = None,
         env: Environment = None,
     ):
-        from pybiz.dao import PythonDao
+        from pybiz.dao import SimulationDao
 
         self.data = data or {}
         self.path = path
@@ -47,7 +47,7 @@ class Manifest(object):
         self.env = env or Environment()
         self.types = DictObject({
             'dal': {
-                'PythonDao': PythonDao
+                'SimulationDao': SimulationDao
             },
             'biz': {},
         })
@@ -105,7 +105,7 @@ class Manifest(object):
 
         for binding_data in (self.data.get('bindings') or []):
             biz = binding_data['biz']
-            dao = binding_data.get('dao', 'PythonDao')
+            dao = binding_data.get('dao', 'SimulationDao')
             params = binding_data.get('params', {})
             binding = ManifestBinding(biz=biz, dao=dao, params=params)
             self.bindings.append(binding)

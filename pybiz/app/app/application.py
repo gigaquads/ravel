@@ -50,11 +50,11 @@ class Application(object):
 
     def __repr__(self):
         return (
-            f'<{self.__class__.__name__}('
+            f'{get_class_name(self)}('
             f'bootstrapped={self._is_bootstrapped}, '
             f'started={self._is_started}, '
             f'size={len(self._endpoints)}'
-            f')>'
+            f')'
         )
 
     def __call__(self, *args, **kwargs) -> EndpointDecorator:
@@ -127,17 +127,17 @@ class Application(object):
         return self._dal
 
     @property
-    def is_bootstrapped(self):
+    def is_bootstrapped(self) -> bool:
         return self._is_bootstrapped
 
-    def register(self, endpoint):
+    def register(self, endpoint: 'Endpoint') -> 'Application':
         """
         Add a Endpoint to this app.
         """
         if endpoint.name not in self._endpoints:
             console.debug(
-                f'registering "{endpoint.name}" with '
-                f'{self.__class__.__name__}...'
+                f'registering endpoint "{endpoint.name}" with '
+                f'{get_class_name(self)}...'
             )
             self._endpoints[endpoint.name] = endpoint
             self._api[endpoint.name] = endpoint
@@ -147,7 +147,11 @@ class Application(object):
                 data={'endpoint': endpoint}
             )
 
-    def bind(self, biz_classes, dao_class=None):
+    def bind(
+        self,
+        biz_classes: List[Type['BizObject']],
+        dao_class: Type['Dao'] = None
+    ) -> 'Application':
         """
         Dynamically register one or more BizObject classes with this
         bootstrapped Application. If a dao_class is specified, it will be used
@@ -157,10 +161,12 @@ class Application(object):
         assert self.is_bootstrapped
 
         def bind_one(biz_class, dao_class):
+            dao_instance = None
             if dao_class is None:
                 dao_obj = biz_class.__dao__()
                 if not isinstance(dao_obj, type):
                     dao_class = type(dao_obj)
+                    dao_instance = dao_obj
                 else:
                     dao_class = dao_obj
 
@@ -172,7 +178,11 @@ class Application(object):
             if not dao_class.is_bootstrapped():
                 dao_class.bootstrap(self)
 
-            binding = self.binder.register(biz_class=biz_class, dao_class=dao_class)
+            binding = self.binder.register(
+                biz_class=biz_class,
+                dao_class=dao_class,
+                dao_instance=dao_instance,
+            )
             binding.bind(self.binder)
 
         if not is_sequence(biz_classes):
@@ -190,9 +200,7 @@ class Application(object):
         manifest: Manifest = None,
         namespace: Dict = None,
         middleware: List = None,
-        *args,
-        **kwargs
-    ):
+    ) -> 'Application':
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
@@ -233,7 +241,6 @@ class Application(object):
 
         # bootstrap the middlware
         for mware in self.middleware:
-            console.debug(f'bootstrapping "{get_class_name(mware)}" middleware')
             mware.bootstrap(app=self)
 
         # execute custom lifecycle hook provided by this subclass
@@ -245,7 +252,7 @@ class Application(object):
         # passed in as ID's with their respective BizObjects
         self._arg_loader = ApplicationArgumentLoader(self)
 
-        console.debug(f'finished bootstrapping "{get_class_name(self)}" application')
+        console.debug(f'finished bootstrapping application')
 
         return self
 
@@ -258,7 +265,7 @@ class Application(object):
         self._is_started = True
         return self.on_start()
 
-    def inject(self, func: Callable, biz=True, dal=True, api=True):
+    def inject(self, func: Callable, biz=True, dal=True, api=True) -> Callable:
         """
         Inject BizObject, Dao, and/or Endpoint classes into the lexical scope of
         the given function.
@@ -272,11 +279,10 @@ class Application(object):
 
         return func
 
-    def register_middleware(self, middleware: 'Middleware'):
-        self._middleware.append(middleware)
-
     def on_bootstrap(self, *args, **kwargs):
-        pass
+        """
+        Developer logic to execute upon calling app.bootstrap.
+        """
 
     def on_decorate(self, endpoint: 'Endpoint'):
         """
@@ -284,8 +290,18 @@ class Application(object):
         can add the decorated function to, say, a web framework as a route.
         """
 
+    def on_start(self) -> object:
+        """
+        Custom logic to perform when app.start is called. The return value from
+        on_start is used at the return value of start.
+        """
+        return None
+
     def on_request(
-        self, endpoint, *raw_args, **raw_kwargs
+        self,
+        endpoint: 'Endpoint',
+        *raw_args,
+        **raw_kwargs
     ) -> Tuple[Tuple, Dict]:
         """
         This executes immediately before calling a registered function. You
@@ -294,7 +310,13 @@ class Application(object):
         """
         return (raw_args, raw_kwargs)
 
-    def on_response(self, endpoint, result, *raw_args, **raw_kwargs) -> object:
+    def on_response(
+        self,
+        endpoint: 'Endpoint',
+        result: object,
+        *raw_args,
+        **raw_kwargs
+    ) -> object:
         """
         The return value of registered callables come here as `result`. Here
         any global post-processing can be done. Args and kwargs consists of
@@ -302,6 +324,3 @@ class Application(object):
         executed.
         """
         return result
-
-    def on_start(self):
-        pass

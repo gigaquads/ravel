@@ -19,7 +19,7 @@ from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.exceptions import PybizError
 
 from .base import Dao
-from .python_dao import PythonDao
+from .simulation_dao import SimulationDao
 
 
 class DaoError(PybizError):
@@ -46,7 +46,7 @@ class FilesystemDao(Dao):
         super().__init__()
 
         self._paths = DictObject()
-        self._cache_dao = PythonDao()
+        self._cache_dao = SimulationDao()
 
         # convert the ftype string arg into a File class ref
         if not ftype:

@@ -1,6 +1,4 @@
-import inspect
-
-from typing import Dict, List, Text
+from typing import Dict, List, Text, Type
 
 from IPython.terminal.embed import InteractiveShellEmbed
 
@@ -20,7 +18,7 @@ class Repl(Application):
         self._namespace = {}
 
     @property
-    def endpoint_class(self):
+    def endpoint_class(self) -> Type['ReplFunction']:
         return ReplFunction
 
     @property
@@ -53,12 +51,6 @@ class Repl(Application):
         """
         return sorted(self.endpoints.keys())
 
-    def on_decorate(self, repl_function: 'ReplFunction'):
-        pass
-
-    def on_bootstrap(self, *args, **kwargs):
-        pass
-
     def on_start(self):
         """
         Start a new REPL with all registered functions available in the REPL
@@ -76,10 +68,13 @@ class Repl(Application):
         # enter an ipython shell
         self.shell.mainloop(local_ns=local_ns)
 
-    def on_request(self, repl_function: 'ReplFunction', *args, **kwargs):
-        return (args, kwargs)
-
-    def on_response(self, repl_function: 'ReplFunction', result, *args, **kwargs):
+    def on_response(
+        self,
+        repl_function: 'ReplFunction',
+        result,
+        *args,
+        **kwargs
+    ) -> object:
         if repl_function.memoized:
             repl_function.memoize(result)
         return super().on_response(repl_function, result, *args, **kwargs)
@@ -89,10 +84,6 @@ class ReplFunction(Endpoint):
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
         self.return_values = []
-
-    @property
-    def source(self) -> None:
-        print(inspect.getsource(self.target))
 
     @property
     def memoized(self) -> bool:

@@ -5,7 +5,7 @@ import pytest
 from pprint import pprint
 
 from pybiz import BizObject, fields
-from pybiz.dao import PythonDao, FilesystemDao
+from pybiz.dao import SimulationDao, FilesystemDao
 from pybiz.schema import String
 
 try:
@@ -20,7 +20,7 @@ except:
 
 
 DAO_TYPES = {
-    'py': PythonDao,
+    'py': SimulationDao,
     'fs': FilesystemDao,
     'redis': RedisDao,
     'sa': SqlalchemyDao,
@@ -36,7 +36,7 @@ def new_biz_class(fields=None, name=None):
 
 
 def bootstrap_all():
-    PythonDao.bootstrap()
+    SimulationDao.bootstrap()
     FilesystemDao.bootstrap(root='/tmp/dao-test')
     SqlalchemyDao.bootstrap(url='sqlite://')
     RedisDao.bootstrap(db=0)

@@ -3,6 +3,7 @@ from typing import Dict, List, Type, Set, Text
 from pybiz.util.misc_functions import is_sequence, get_class_name
 from pybiz.util.loggers import console
 
+# XXX: This stuff needs some refactoring. Too hacky.
 
 class BizBinding(object):
     def __init__(self, binder, biz_class, dao_instance, dao_bind_kwargs=None):
@@ -14,8 +15,8 @@ class BizBinding(object):
 
     def __repr__(self):
         return (
-            f'<BizBinding({self.biz_class_name}, {self.dao_class_name}, '
-            f'bound={self.is_bound})>'
+            f'BizBinding({self.biz_class_name}, {self.dao_class_name}, '
+            f'bound={self.is_bound})'
         )
 
     def bind(self, binder=None):
@@ -39,11 +40,11 @@ class BizBinding(object):
 
     @property
     def dao_class_name(self):
-        return self.dao_class.__name__
+        return get_class_name(self)
 
     @property
     def biz_class_name(self):
-        return self.biz_class.__name__
+        return get_class_name(self.biz_class)
 
 
 class ApplicationDaoBinder(object):
@@ -58,19 +59,7 @@ class ApplicationDaoBinder(object):
         self._named_biz_classes = {}
 
     def __repr__(self):
-        return f'<ApplicationDaoBinder(bindings={len(self.bindings)})>'
-
-    @classmethod
-    def get_instance(cls):
-        """
-        Get the global singleton instance.
-        """
-        attr_name = '_instance'
-        singleton = getattr(cls, attr_name, None)
-        if singleton is None:
-            singleton = cls()
-            setattr(cls, attr_name, singleton)
-        return singleton
+        return f'{get_class_name(self)}()'
 
     @property
     def bindings(self) -> List['BizBinding']:
@@ -93,21 +82,28 @@ class ApplicationDaoBinder(object):
         self,
         biz_class: Type['BizObject'],
         dao_class: Type['Dao'],
+        dao_instance: 'Dao' = None,
         dao_bind_kwargs: Dict = None,
     ):
-        dao_class_name = dao_class.__name__
+        dao_class_name = get_class_name(dao_class)
         if dao_class_name not in self._named_dao_classes:
             dao_class = type(dao_class_name, (dao_class, ), {})
             self._named_dao_classes[dao_class_name] = dao_class
+
             console.debug(
-                f'registered Dao "{dao_class_name}" with ApplicationDaoBinder'
+                f'registered Dao "{dao_class_name}" '
+                f'with {get_class_name(self)}'
             )
 
-        dao_instance = dao_class()
+        if dao_instance is not None:
+            assert isinstance(dao_instance, dao_class)
+        else:
+            dao_instance = dao_class()
 
         if biz_class is not None:
-            biz_class_name = biz_class.__name__
+            biz_class_name = get_class_name(biz_class)
             biz_class.binder = self
+
             self._named_biz_classes[biz_class_name] = biz_class
             self._bindings[biz_class_name] = binding = BizBinding(
                 self,
@@ -115,8 +111,10 @@ class ApplicationDaoBinder(object):
                 dao_instance=dao_instance,
                 dao_bind_kwargs=dao_bind_kwargs,
             )
+
             console.debug(
-                f'registered BizObject "{biz_class_name}" with ApplicationDaoBinder'
+                f'registered BizObject "{biz_class_name}" '
+                f'with {get_class_name(self)}'
             )
             return binding
 
@@ -133,18 +131,21 @@ class ApplicationDaoBinder(object):
                 self.get_dao_instance(biz_class, rebind=rebind)
 
     def get_dao_instance(
-        self, biz_class: Type['BizObject'], bind=True, rebind=False
+        self,
+        biz_class: Type['BizObject'],
+        bind=True,
+        rebind=False,
     ) -> 'Dao':
         if isinstance(biz_class, str):
             binding = self._bindings.get(biz_class)
         else:
-            binding = self._bindings.get(biz_class.__name__)
+            binding = self._bindings.get(get_class_name(biz_class))
 
         if binding is None:
             # lazily register a new binding
             base_dao_class = biz_class.__dao__()
             console.debug(
-                f'calling {biz_class.__name__}.__dao__()'
+                f'calling {get_class_name(biz_class)}.__dao__()'
             )
             binding = self.register(biz_class, base_dao_class)
 
@@ -167,10 +168,10 @@ class ApplicationDaoBinder(object):
         if isinstance(biz_class, str):
             return biz_class in self._bindings
         else:
-            return biz_class.__name__ in self._bindings
+            return get_class_name(biz_class) in self._bindings
 
     def is_bound(self, biz_class: Type['BizObject']) -> bool:
         if isinstance(biz_class, str):
             return self._bindings[biz_class].is_bound
         else:
-            return self._bindings[biz_class.__name__].is_bound
+            return self._bindings[get_class_name(biz_class)].is_bound

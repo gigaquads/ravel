@@ -59,11 +59,11 @@ class CacheDao(Dao):
 
     @classmethod
     def on_bootstrap(cls, prefetch=False, mode=None, front=None, back=None):
-        from .python_dao import PythonDao
+        from .simulation_dao import SimulationDao
 
         cls.prefetch = prefetch if prefetch is not None else cls.prefetch
         cls.mode = mode or cls.mode
-        cls.fe = PythonDao()
+        cls.fe = SimulationDao()
         cls.fe_params = front
         cls.be_params = back
 

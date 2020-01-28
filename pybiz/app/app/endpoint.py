@@ -8,7 +8,7 @@ from typing import Dict, Text, Tuple, Callable
 from appyratus.utils import TimeUtils
 
 from pybiz.util.loggers import console
-from pybiz.util.misc_functions import get_class_name
+from pybiz.util.misc_functions import get_class_name, get_callable_name
 
 from pybiz.exceptions import PybizError
 
@@ -269,7 +269,7 @@ class Endpoint(object):
 
     @property
     def name(self) -> Text:
-        return self._target.__name__
+        return get_callable_name(self._target)
 
     @property
     def docstring(self) -> Text:
@@ -278,6 +278,10 @@ class Endpoint(object):
     @property
     def signature(self) -> Signature:
         return self._signature
+
+    @property
+    def source(self) -> Text:
+        return inspect.getsource(self.target)
 
 
 class AsyncEndpoint(Endpoint):

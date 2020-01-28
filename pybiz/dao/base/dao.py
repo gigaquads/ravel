@@ -150,6 +150,7 @@ class Dao(object, metaclass=DaoMeta):
         """
         Generate and return a new ID for the given not-yet-created record.
         """
+        # TODO Make this use biz_class.pybiz.defaults['_id'] instead as default
         return record.get(ID_FIELD_NAME) or UuidString.next_id()
 
     @abstractmethod
@@ -172,6 +173,7 @@ class Dao(object, metaclass=DaoMeta):
         order_by: Tuple = None,
         **kwargs
     ) -> List[Dict]:
+        TODO: rename to "select"
         """
         Return all records whose fields match a logical predicate.
         """

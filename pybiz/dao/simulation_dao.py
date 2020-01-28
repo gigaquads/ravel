@@ -25,7 +25,7 @@ from pybiz.predicate import (
 from .base import Dao
 
 
-class PythonDao(Dao):
+class SimulationDao(Dao):
     """
     An in-memory Dao that stores data in Python dicts with BTrees indexes.
     """
