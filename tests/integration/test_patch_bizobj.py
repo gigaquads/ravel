@@ -3,7 +3,7 @@ import pytest
 from mock import MagicMock
 
 from pybiz.schema import Schema, Str, Int, List, Uuid, Dict
-from pybiz.biz import BizObject, Relationship
+from pybiz.biz import Resource, Relationship
 from pybiz.const import (
     OP_DELTA_REMOVE,
     OP_DELTA_ADD,
@@ -18,21 +18,21 @@ EMPTY_SET = set()
 @pytest.fixture(scope='function')
 def Album():
 
-    class Album(BizObject):
+    class Album(Resource):
 
         @classmethod
-        def __dao__(cls):
-            dao = MagicMock()
-            dao.update.return_value = {'_id': 1}
-            dao.create.return_value = {'_id': 1}
-            dao.fetch.return_value = {'public_id': MOCK_PUBLIC_ID}
-            return dao
+        def __store__(cls):
+            store = MagicMock()
+            store.update.return_value = {'_id': 1}
+            store.create.return_value = {'_id': 1}
+            store.fetch.return_value = {'public_id': MOCK_PUBLIC_ID}
+            return store
 
         @property
-        def dao(self):
-            if not getattr(self, '_dao', None):
-                self._dao = self.__dao__()
-            return self._dao
+        def store(self):
+            if not getattr(self, '_store', None):
+                self._store = self.__store__()
+            return self._store
 
         title = Str()
         year = Int()
@@ -44,21 +44,21 @@ def Album():
 @pytest.fixture(scope='function')
 def Artist(Album):
 
-    class Artist(BizObject):
+    class Artist(Resource):
 
         @classmethod
-        def __dao__(cls):
-            dao = MagicMock()
-            dao.update.return_value = {'_id': 1}
-            dao.create.return_value = {'_id': 1}
-            dao.fetch.return_value = {'public_id': MOCK_PUBLIC_ID}
-            return dao
+        def __store__(cls):
+            store = MagicMock()
+            store.update.return_value = {'_id': 1}
+            store.create.return_value = {'_id': 1}
+            store.fetch.return_value = {'public_id': MOCK_PUBLIC_ID}
+            return store
 
         @property
-        def dao(self):
-            if not getattr(self, '_dao', None):
-                self._dao = self.__dao__()
-            return self._dao
+        def store(self):
+            if not getattr(self, '_store', None):
+                self._store = self.__store__()
+            return self._store
 
         name = Str()
         age = Int(allow_none=True)
@@ -70,7 +70,7 @@ def Artist(Album):
     return Artist
 
 
-def test_patch_biz_obj_scalar(Artist, Album):
+def test_patch_resource_scalar(Artist, Album):
     albums = [
         Album(
             title='Passages',

@@ -20,7 +20,7 @@ from pybiz.util.misc_functions import (
 from pybiz.schema import (
     Field, Schema, fields, String, Int, Id, UuidString,
 )
-from pybiz.dao import Dao, SimulationDao
+from pybiz.store import Store, SimulationStore
 from pybiz.util.loggers import console
 from pybiz.exceptions import ValidationError
 from pybiz.constants import (
@@ -28,9 +28,9 @@ from pybiz.constants import (
     REV_FIELD_NAME,
 )
 
-from .util import is_biz_list, is_biz_object
-from .biz_thing import BizThing
-from .biz_list import BizList
+from .util import is_batch, is_resource
+from .entity import Entity
+from .batch import Batch
 from .dirty import DirtyDict
 from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
 from .query.query import Query
@@ -42,7 +42,7 @@ from .resolver.resolver_decorator import ResolverDecorator
 from .resolver.resolver_manager import ResolverManager
 
 
-class BizObjectMeta(type):
+class ResourceMeta(type):
     def __init__(biz_class, name, bases, attr_dict):
         super().__init__(name, bases, attr_dict)
         info = biz_class._analyze()
@@ -50,21 +50,21 @@ class BizObjectMeta(type):
         resolvers = info['resolvers']
         resolver_decorators = info['resolver_decorators']
 
-        biz_class._pybiz_is_biz_object = True
+        biz_class._pybiz_is_resource = True
         biz_class._init_pybiz_dict_object(info)
         biz_class._compute_is_abstract()
         biz_class._build_schema_class(fields, bases)
         biz_class._build_field_resolvers(resolvers)
         biz_class._build_resolvers(bases, resolvers, resolver_decorators)
         biz_class._build_resolver_properties()
-        biz_class._build_biz_list()
+        biz_class._build_batch()
         biz_class._extract_field_defaults()
 
         def callback(scanner, name, biz_class):
             """
-            Callback used by Venusian for BizObject class auto-discovery.
+            Callback used by Venusian for Resource class auto-discovery.
             """
-            console.info(f'venusian scan found "{biz_class.__name__}" BizObject')
+            console.info(f'venusian scan found "{biz_class.__name__}" Resource')
             scanner.biz_classes.setdefault(name, biz_class)
 
         venusian.attach(biz_class, callback, category='biz')
@@ -91,7 +91,7 @@ class BizObjectMeta(type):
     @staticmethod
     def _is_biz_class(class_obj):
         class_data = getattr(class_obj, 'pybiz', None)
-        return class_data and getattr(class_data, 'is_biz_object', False)
+        return class_data and getattr(class_data, 'is_resource', False)
 
     def _build_resolvers(
         biz_class,
@@ -129,10 +129,10 @@ class BizObjectMeta(type):
     def _init_pybiz_dict_object(biz_class, info):
         biz_class.pybiz = DictObject()
         biz_class.pybiz.app = None
-        biz_class.pybiz.dao = None
+        biz_class.pybiz.store = None
         biz_class.pybiz.resolvers = ResolverManager()
         biz_class.pybiz.fk_id_fields = {}
-        biz_class.pybiz.is_biz_object = True
+        biz_class.pybiz.is_resource = True
         biz_class.pybiz.is_abstract = False
         biz_class.pybiz.is_bootstrapped = False
         biz_class.pybiz.is_bound = False
@@ -158,7 +158,7 @@ class BizObjectMeta(type):
 
         fields = fields.copy()
 
-        # inherit Fields from base BizObject classes
+        # inherit Fields from base Resource classes
         for base_class in base_classes:
             if biz_class._is_biz_class(base_class):
                 fields.update(deepcopy(base_class.Schema.fields))
@@ -203,12 +203,12 @@ class BizObjectMeta(type):
                 resolver_prop = ResolverProperty(resolver)
             setattr(biz_class, resolver.name, resolver_prop)
 
-    def _build_biz_list(biz_class):
-        class CustomBizList(BizList):
+    def _build_batch(biz_class):
+        class CustomBatch(Batch):
             pass
 
-        CustomBizList.pybiz.biz_class = biz_class
-        biz_class.BizList = CustomBizList
+        CustomBatch.pybiz.biz_class = biz_class
+        biz_class.Batch = CustomBatch
 
     def _extract_field_defaults(biz_class):
         def build_default_func(field):
@@ -224,17 +224,17 @@ class BizObjectMeta(type):
                 field.default = None
 
 
-class BizObject(BizThing, metaclass=BizObjectMeta):
+class Resource(Entity, metaclass=ResourceMeta):
 
     # internal pybiz class-level data goes in cls.pybiz and is built by the
-    # BizObjectMeta metaclass.
+    # ResourceMeta metaclass.
     pybiz = None
 
     # these aliases are also build by the metaclass. Schema is the Schema
     # containing all fields defined on this class as well as inherited. List is
-    # a BizList class dynamically build around this class.
+    # a Batch class dynamically build around this class.
     Schema = None
-    BizList = None
+    Batch = None
 
     # built-in fields
     _id = Id()
@@ -252,7 +252,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         # unlike other fields, whose defaults are generated upon calling
         # self.create or cls.create_many, the _id field default is generated up
-        # front so that, as much as possible, other BizObjects can access this
+        # front so that, as much as possible, other Resources can access this
         # object by _id when defining relationships and such.
         if ID_FIELD_NAME not in data:
             if ID_FIELD_NAME in self.pybiz.defaults:
@@ -304,8 +304,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return True
 
     @classmethod
-    def __dao__(cls) -> Type[Dao]:
-        return SimulationDao
+    def __store__(cls) -> Type[Store]:
+        return SimulationStore
 
     @classmethod
     def on_bootstrap(cls, app, *args, **kwargs):
@@ -333,9 +333,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         cls.pybiz.is_bootstrapped = True
 
     @classmethod
-    def bind(cls, binder: 'ApplicationDaoBinder', **kwargs):
+    def bind(cls, binder: 'ResourceBinder', **kwargs):
         cls.binder = binder
-        cls.pybiz.dao = cls.pybiz.app.binder.get_binding(cls).dao_instance
+        cls.pybiz.store = cls.pybiz.app.binder.get_binding(cls).store_instance
         for resolver in cls.pybiz.resolvers.values():
             resolver.bind(cls)
         cls.pybiz.is_bound = True
@@ -354,11 +354,11 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return UuidString(default=lambda: uuid.uuid4().hex)
 
     @classmethod
-    def get_dao(cls, bind=True) -> 'Dao':
+    def get_store(cls, bind=True) -> 'Store':
         """
-        Get the global Dao reference associated with this class.
+        Get the global Store reference associated with this class.
         """
-        return cls.pybiz.dao
+        return cls.pybiz.store
 
     @classmethod
     def select(
@@ -370,8 +370,8 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return Query(cls).select(flattened_targets, **subqueries)
 
     @property
-    def dao(self) -> 'Dao':
-        return self.get_dao()
+    def store(self) -> 'Store':
+        return self.get_store()
 
     @property
     def dirty(self) -> Set[Text]:
@@ -384,7 +384,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
     def pprint(self):
         pprint(self.internal.state)
 
-    def clean(self, fields=None) -> 'BizObject':
+    def clean(self, fields=None) -> 'Resource':
         if fields is not None:
             if not fields:
                 return self
@@ -396,7 +396,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         self.internal.state.clean(keys=keys)
         return self
 
-    def mark(self, fields=None) -> 'BizObject':
+    def mark(self, fields=None) -> 'Resource':
         # TODO: rename to "touch"
         if fields is not None:
             if not fields:
@@ -409,19 +409,19 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         self.internal.state.mark(keys)
         return self
 
-    def copy(self) -> 'BizObject':
+    def copy(self) -> 'Resource':
         """
-        Create a clone of this BizObject
+        Create a clone of this Resource
         """
         clone = type(self)(data=deepcopy(self.internal.state))
         clone.internal.resolvers = self.internal.resolvers.copy()
         return clone.clean()
 
-    def merge(self, other=None, **values) -> 'BizObject':
+    def merge(self, other=None, **values) -> 'Resource':
         if isinstance(other, dict):
             for k, v in other.items():
                 setattr(self, k, v)
-        elif isinstance(other, BizObject):
+        elif isinstance(other, Resource):
             for k, v in other.internal.state.items():
                 setattr(self, k, v)
 
@@ -430,7 +430,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         return self
 
-    def load(self, selectors=None) -> 'BizObject':
+    def load(self, selectors=None) -> 'Resource':
         if self._id is None:
             return self
 
@@ -442,7 +442,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         # object.
 
         # resolve a fresh copy throught the DAL and merge state
-        # into this BizObject.
+        # into this Resource.
         query = self.select(selectors).where(_id=self._id)
         fresh = query.execute(first=True)
         if fresh:
@@ -451,13 +451,13 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
         return self
 
-    def reload(self, selectors=None) -> 'BizObject':
+    def reload(self, selectors=None) -> 'Resource':
         if isinstance(keys, str):
             keys = {keys}
         keys = {k for k in keys if self.is_loaded(k)}
         return self.load(keys)
 
-    def unload(self, selectors: Set) -> 'BizObject':
+    def unload(self, selectors: Set) -> 'Resource':
         """
         Remove the given keys from field data and/or relationship data.
         """
@@ -546,7 +546,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         """
         Alternate syntax for building Query objects manually.
         """
-        # select all BizObject fields by default
+        # select all Resource fields by default
         query = Query(cls)
 
         if select:
@@ -568,11 +568,11 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             return query.execute(first=first)
 
     @classmethod
-    def get(cls, _id, select=None) -> 'BizObject':
+    def get(cls, _id, select=None) -> 'Resource':
         if _id is None:
             return None
         if not select:
-            data = cls.get_dao().fetch(_id)
+            data = cls.get_store().fetch(_id)
             return cls(data=data).clean() if data else None
         else:
             return cls.query(
@@ -589,16 +589,16 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         offset=None,
         limit=None,
         order_by=None,
-    ) -> 'BizList':
+    ) -> 'Batch':
         """
-        Return a list of BizObjects in the store.
+        Return a list of Resources in the store.
         """
         if not _ids:
-            return cls.BizList()
+            return cls.Batch()
         if not (select or offset or limit or order_by):
-            dao = cls.get_dao()
-            id_2_data = dao.dispatch('fetch_many', (_ids, ))
-            return cls.BizList(cls(data=data) for data in id_2_data.values())
+            store = cls.get_store()
+            id_2_data = store.dispatch('fetch_many', (_ids, ))
+            return cls.Batch(cls(data=data) for data in id_2_data.values())
         else:
             return cls.query(
                 select=select,
@@ -614,9 +614,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         select: Set[Text] = None,
         offset: int = None,
         limit: int = None,
-    ) -> 'BizList':
+    ) -> 'Batch':
         """
-        Return a list of all BizObjects in the store.
+        Return a list of all Resources in the store.
         """
         return cls.query(
             select=select,
@@ -626,59 +626,59 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             limit=limit,
         )
 
-    def delete(self) -> 'BizObject':
+    def delete(self) -> 'Resource':
         """
-        Call delete on this object's dao and therefore mark all fields as dirty
-        and delete its _id so that save now triggers Dao.create.
+        Call delete on this object's store and therefore mark all fields as dirty
+        and delete its _id so that save now triggers Store.create.
         """
-        self.dao.dispatch('delete', (self._id, ))
+        self.store.dispatch('delete', (self._id, ))
         self.mark(self.internal.state.keys())
         self._id = None
         return self
 
     @classmethod
-    def delete_many(cls, biz_objs) -> None:
+    def delete_many(cls, resources) -> None:
         # extract ID's of all objects to delete and clear
         # them from the instance objects' state dicts
-        biz_obj_ids = []
-        for obj in biz_objs:
+        resource_ids = []
+        for obj in resources:
             obj.mark(obj.internal.state.keys())
-            biz_obj_ids.append(obj._id)
+            resource_ids.append(obj._id)
             obj._id = None
 
         # delete the records in the DAL
-        dao = cls.get_dao()
-        dao.dispatch('delete_many', args=(biz_obj_ids, ))
+        store = cls.get_store()
+        store.dispatch('delete_many', args=(resource_ids, ))
 
     @classmethod
     def delete_all(cls) -> None:
-        dao = cls.get_dao()
-        dao.dispatch('delete_all')
+        store = cls.get_store()
+        store.dispatch('delete_all')
 
     def exists(self) -> bool:
         """
-        Does a simple check if a BizObject exists by id.
+        Does a simple check if a Resource exists by id.
         """
         if self._id is not None:
-            return self.dao.dispatch('exists', args=(self._id, ))
+            return self.store.dispatch('exists', args=(self._id, ))
         return False
 
     def save(self, depth=0):
         return self.save_many([self], depth=depth)[0]
 
-    def create(self, data: Dict = None) -> 'BizObject':
+    def create(self, data: Dict = None) -> 'Resource':
         if data:
             self.merge(data)
 
         prepared_record = self._prepare_record_for_create()
         prepared_record.pop(REV_FIELD_NAME, None)
 
-        created_record = self.dao.dispatch('create', (prepared_record, ))
+        created_record = self.store.dispatch('create', (prepared_record, ))
 
         self.internal.state.update(created_record)
         return self.clean()
 
-    def update(self, data: Dict = None, **more_data) -> 'BizObject':
+    def update(self, data: Dict = None, **more_data) -> 'Resource':
         data = dict(data or {}, **more_data)
         if data:
             self.merge(data)
@@ -705,7 +705,7 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
                 }
             )
 
-        updated_record = self.dao.dispatch(
+        updated_record = self.store.dispatch(
             'update', (self._id, prepared_record)
         )
 
@@ -713,45 +713,45 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         return self.clean()
 
     @classmethod
-    def create_many(cls, biz_objs: List['BizObject']) -> 'BizList':
+    def create_many(cls, resources: List['Resource']) -> 'Batch':
         """
-        Call `dao.create_method` on input `BizObject` list and return them in
-        the form of a BizList.
+        Call `store.create_method` on input `Resource` list and return them in
+        the form of a Batch.
         """
         records = []
 
-        for biz_obj in biz_objs:
-            if biz_obj is None:
+        for resource in resources:
+            if resource is None:
                 continue
-            if isinstance(biz_obj, dict):
-                biz_obj = cls(data=biz_obj)
+            if isinstance(resource, dict):
+                resource = cls(data=resource)
 
-            record = biz_obj._prepare_record_for_create()
+            record = resource._prepare_record_for_create()
             records.append(record)
 
-        dao = cls.get_dao()
-        created_records = dao.dispatch('create_many', (records, ))
+        store = cls.get_store()
+        created_records = store.dispatch('create_many', (records, ))
 
-        for biz_obj, record in zip(biz_objs, created_records):
-            biz_obj.internal.state.update(record)
-            biz_obj.clean()
+        for resource, record in zip(resources, created_records):
+            resource.internal.state.update(record)
+            resource.clean()
 
-        return cls.BizList(biz_objs)
+        return cls.Batch(resources)
 
     @classmethod
     def update_many(
-        cls, biz_objs: List['BizObject'], data: Dict = None, **more_data
-    ) -> 'BizList':
+        cls, resources: List['Resource'], data: Dict = None, **more_data
+    ) -> 'Batch':
         """
-        Call the Dao's update_many method on the list of BizObjects. Multiple
-        Dao calls may be made. As a preprocessing step, the input biz_obj list
+        Call the Store's update_many method on the list of Resources. Multiple
+        Store calls may be made. As a preprocessing step, the input resource list
         is partitioned into groups, according to which subset of fields are
         dirty.
 
-        For example, consider this list of biz_objs,
+        For example, consider this list of resources,
 
         ```python
-        biz_objs = [
+        resources = [
             user1,     # dirty == {'email'}
             user2,     # dirty == {'email', 'name'}
             user3,     # dirty == {'email'}
@@ -770,62 +770,62 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         # across all objects.
         common_values = dict(data or {}, **more_data)
 
-        # in the procedure below, we partition all incoming BizObjects
+        # in the procedure below, we partition all incoming Resources
         # into groups, grouped by the set of fields being updated. In this way,
         # we issue an update_many datament for each partition in the DAL.
         partitions = defaultdict(list)
 
-        for biz_obj in biz_objs:
-            if biz_obj is None:
+        for resource in resources:
+            if resource is None:
                 continue
             if common_values:
-                biz_obj.merge(common_values)
-            partitions[tuple(biz_obj.dirty)].append(biz_obj)
+                resource.merge(common_values)
+            partitions[tuple(resource.dirty)].append(resource)
 
-        for biz_obj_partition in partitions.values():
+        for resource_partition in partitions.values():
             records, _ids = [], []
 
-            for biz_obj in biz_obj_partition:
-                record = biz_obj.dirty.copy()
+            for resource in resource_partition:
+                record = resource.dirty.copy()
                 record.pop(REV_FIELD_NAME, None)
                 record.pop(ID_FIELD_NAME, None)
                 records.append(record)
-                _ids.append(biz_obj._id)
+                _ids.append(resource._id)
 
-            dao = cls.get_dao()
-            updated_records = dao.dispatch('update_many', (_ids, records))
+            store = cls.get_store()
+            updated_records = store.dispatch('update_many', (_ids, records))
 
-            for biz_obj, record in zip(biz_obj_partition, updated_records):
-                biz_obj.internal.state.update(record)
-                biz_obj.clean()
+            for resource, record in zip(resource_partition, updated_records):
+                resource.internal.state.update(record)
+                resource.clean()
 
-        return cls.BizList(biz_objs)
+        return cls.Batch(resources)
 
     @classmethod
     def save_many(
         cls,
-        biz_objects: List['BizObject'],
+        resources: List['Resource'],
         depth: int = 0
-    ) -> 'BizList':
+    ) -> 'Batch':
         """
         Essentially a bulk upsert.
         """
-        def seems_created(biz_obj):
+        def seems_created(resource):
             return (
-                (ID_FIELD_NAME in biz_obj.internal.state) and
-                (ID_FIELD_NAME not in biz_obj.internal.state.dirty)
+                (ID_FIELD_NAME in resource.internal.state) and
+                (ID_FIELD_NAME not in resource.internal.state.dirty)
             )
 
-        # partition biz_objects into those that are "uncreated" and those which
+        # partition resources into those that are "uncreated" and those which
         # simply need to be updated.
         to_update = []
         to_create = []
-        for biz_obj in biz_objects:
+        for resource in resources:
             # TODO: merge duplicates
-            if not seems_created(biz_obj):
-                to_create.append(biz_obj)
+            if not seems_created(resource):
+                to_create.append(resource)
             else:
-                to_update.append(biz_obj)
+                to_update.append(resource)
 
         # perform bulk create and update
         if to_create:
@@ -833,40 +833,40 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
         if to_update:
             updated = cls.update_many(to_update)
 
-        retval = cls.BizList(to_update + to_create)
+        retval = cls.Batch(to_update + to_create)
 
         if depth < 1:
             # base case. do not recurse on Resolvers
             return retval
 
-        # aggregate and save all BizObjects referenced by all objects in
-        # `biz_object` via their resolvers.
+        # aggregate and save all Resources referenced by all objects in
+        # `resource` via their resolvers.
         class_2_objects = defaultdict(set)
         resolvers = cls.pybiz.resolvers.by_tag('fields', invert=True)
         for resolver in resolvers.values():
-            for biz_obj in biz_objects:
-                if resolver.name in biz_obj.internal.state:
-                    value = biz_obj.internal.state[resolver.name]
-                    biz_thing_to_save = resolver.on_save(resolver, biz_obj, value)
-                    if biz_thing_to_save:
-                        if is_biz_object(biz_thing_to_save):
+            for resource in resources:
+                if resolver.name in resource.internal.state:
+                    value = resource.internal.state[resolver.name]
+                    entity_to_save = resolver.on_save(resolver, resource, value)
+                    if entity_to_save:
+                        if is_resource(entity_to_save):
                             class_2_objects[resolver.biz_class].add(
-                                biz_thing_to_save
+                                entity_to_save
                             )
                         else:
-                            assert is_sequence(biz_thing_to_save)
+                            assert is_sequence(entity_to_save)
                             class_2_objects[resolver.biz_class].update(
-                                biz_thing_to_save
+                                entity_to_save
                             )
 
-        # recursively call save_many for each type of BizObject
-        for biz_class, biz_objects in class_2_objects.items():
-            biz_class.save_many(biz_objects, depth=depth-1)
+        # recursively call save_many for each type of Resource
+        for biz_class, resources in class_2_objects.items():
+            biz_class.save_many(resources, depth=depth-1)
 
         return retval
 
     @classmethod
-    def generate(cls, query: Query = None) -> 'BizObject':
+    def generate(cls, query: Query = None) -> 'Resource':
         instance = cls()
         query = query or cls.select(cls.pybiz.resolvers.fields)
         resolvers = Resolver.sort(
@@ -883,10 +883,10 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
 
     def _prepare_record_for_create(self):
         """
-        Prepares a a BizObject state dict for insertion via DAL.
+        Prepares a a Resource state dict for insertion via DAL.
         """
         # extract only those elements of state data that correspond to
-        # Fields declared on this BizObject class.
+        # Fields declared on this Resource class.
         record = {
             k: v for k, v in self.internal.state.items()
             if k in self.pybiz.resolvers.fields
@@ -902,6 +902,9 @@ class BizObject(BizThing, metaclass=BizObjectMeta):
             if k not in record:
                 def_val = default()
                 record[k] = def_val
+
+        if record.get(ID_FIELD_NAME) is None:
+            record[ID_FIELD_NAME] = self.store.create_id(record)
 
         return record
 

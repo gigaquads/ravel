@@ -1,2 +1,0 @@
-class BizThing(object):
-    pass

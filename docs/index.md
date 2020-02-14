@@ -12,17 +12,17 @@ Our example domain model consists of _users_ and _accounts_. Each account is _ow
 ```python
 # file: example.py
 
-from pybiz import BizObject, Relationship
+from pybiz import Resource, Relationship
 from pybiz.schema import Field, Email, String
 
 
-class Account(BizObject):
+class Account(Resource):
   members = Relationship(lambda self: User.account_id == self._id, many=True)
   owner = Relationship(lambda self: User._id == self.owner_id)
   owner_id = Field(private=True, required=True)
 
 
-class User(BizObject):
+class User(Resource):
   account = Relationship(lambda self: Account._id == self.account_id)
   account_id = Field(private=True, required=True)
   password = String(private=True)

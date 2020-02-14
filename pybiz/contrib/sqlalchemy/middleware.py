@@ -5,7 +5,7 @@ from pybiz.app.middleware import Middleware, MiddlewareError
 from pybiz.util.misc_functions import get_class_name
 from pybiz.util.loggers import console
 
-from .dao import SqlalchemyDao
+from .store import SqlalchemyStore
 
 
 class SqlalchemyMiddleware(Middleware):
@@ -13,17 +13,17 @@ class SqlalchemyMiddleware(Middleware):
     Manages a Sqlalchemy database transaction that encompasses the execution of
     an Endpoint.
     """
-    def __init__(self, dao_class_name: Text = None, *args, **kwargs):
+    def __init__(self, store_class_name: Text = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.env = Environment()
-        self.dao_class_name = dao_class_name or self.env.get(
-            'PYBIZ_SQLALCHEMY_DAO_CLASS', 'SqlalchemyDao'
+        self.store_class_name = store_class_name or self.env.get(
+            'PYBIZ_SQLALCHEMY_DAO_CLASS', 'SqlalchemyStore'
         )
 
     def on_bootstrap(self):
-        self.SqlalchemyDao = self.app.dal.get(self.dao_class_name)
-        if self.SqlalchemyDao is None:
-            raise MiddlewareError(self, 'SqlalchemyDao class not found')
+        self.SqlalchemyStore = self.app.dal.get(self.store_class_name)
+        if self.SqlalchemyStore is None:
+            raise MiddlewareError(self, 'SqlalchemyStore class not found')
 
     def pre_request(
         self,
@@ -35,8 +35,8 @@ class SqlalchemyMiddleware(Middleware):
         Get a connection from Sqlalchemy's connection pool and begin a
         transaction.
         """
-        self.SqlalchemyDao.connect()
-        self.SqlalchemyDao.begin()
+        self.SqlalchemyStore.connect()
+        self.SqlalchemyStore.begin()
 
     def post_request(
         self,
@@ -59,11 +59,11 @@ class SqlalchemyMiddleware(Middleware):
             console.debug(
                 f'{get_class_name(self)} trying to commit transaction'
             )
-            self.SqlalchemyDao.commit()
+            self.SqlalchemyStore.commit()
         except:
             console.error(
                 f'{get_class_name(self)} rolling back transaction'
             )
-            self.SqlalchemyDao.rollback()
+            self.SqlalchemyStore.rollback()
         finally:
-            self.SqlalchemyDao.close()
+            self.SqlalchemyStore.close()

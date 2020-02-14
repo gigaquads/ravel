@@ -1,4 +1,4 @@
-from pybiz import Application, BizObject, String, Int, Id
+from pybiz import Application, Resource, String, Int, Id
 from pybiz.app.middleware import Guard, GuardMiddleware
 
 
@@ -16,8 +16,9 @@ class Exists(Guard):
         return f'{self.arg} exists'
 
     def execute(self, context, **kwargs):
-        biz_obj = kwargs.get(self.arg)
-        if not ((biz_obj is not None) and biz_obj.exists()):
+        raise NotImplementedError() # TODO: fix .exists method as its a classmethod now
+        resource = kwargs.get(self.arg)
+        if not ((resource is not None) and resource.exists()):
             raise self.fail(f'{self.arg} does not exist')
 
 
@@ -40,9 +41,9 @@ class Matches(Guard):
         )
 
     def execute(self, context, **kwargs):
-        biz_object = kwargs.get(self.arg)
+        resource = kwargs.get(self.arg)
         for field_name, expected_value in self.expected.items():
-            actual_value = biz_object[field_name]
+            actual_value = resource[field_name]
             if actual_value != expected_value:
                 raise self.fail(
                     f'{self.arg}.{field_name} has expected '
@@ -55,7 +56,7 @@ if __name__ == '__main__':
     app = Application()
 
     # define a "dog" buisness object
-    class Dog(BizObject):
+    class Dog(Resource):
         name = String()
         color = String()
         age = Int()

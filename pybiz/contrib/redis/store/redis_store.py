@@ -5,7 +5,7 @@ from copy import deepcopy
 from redis import StrictRedis
 from appyratus.utils import StringUtils
 
-from pybiz.dao import Dao
+from pybiz.store import Store
 from pybiz.schema import fields
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.util.json_encoder import JsonEncoder
@@ -19,7 +19,7 @@ from pybiz.predicate import (
 from .redis_types import RedisClient, HashSet, StringIndex, NumericIndex
 
 
-class RedisDao(Dao):
+class RedisStore(Store):
 
     redis = None
     host = 'localhost'
@@ -46,7 +46,7 @@ class RedisDao(Dao):
         cls.db = db if db is not None else (cls.env.REDIS_DB or cls.db)
         cls.redis = RedisClient(host=cls.host, port=cls.port, db=cls.db)
 
-    def on_bind(self, biz_class: Type['BizObject'], **kwargs):
+    def on_bind(self, biz_class: Type['Resource'], **kwargs):
         self.type_name = StringUtils.snake(biz_class.__name__).lower()
         self.records = HashSet(self.redis, self.type_name)
         self.revs = HashSet(self.redis, f'{self.type_name}_revisions')

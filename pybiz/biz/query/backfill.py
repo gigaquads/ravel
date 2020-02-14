@@ -20,13 +20,13 @@ class QueryBackfiller(object):
 
     def register(self, obj):
         """
-        Recursively extract and store all BizObjects contained in the given
+        Recursively extract and store all Resources contained in the given
         `obj` argument. This method is called by the Query object that owns this
         instance and is in the process of executing.
         """
-        if is_biz_object(obj):
+        if is_resource(obj):
             self._biz_class_2_objects[type(obj)].append(obj)
-        elif is_biz_list(obj):
+        elif is_batch(obj):
             self._biz_class_2_objects[obj.pybiz.biz_class].extend(obj)
         elif isinstance(value, (list, tuple, set)):
             for item in obj:
@@ -39,24 +39,24 @@ class QueryBackfiller(object):
 
     def save(self):
         """
-        Save all BizObject instances created during the execution of the
+        Save all Resource instances created during the execution of the
         backfilled query utilizing this QueryBackfiller.
         """
-        for biz_class, biz_objects in self._biz_class_2_objects.items():
-            biz_class.save_many(biz_objects)
+        for biz_class, resources in self._biz_class_2_objects.items():
+            biz_class.save_many(resources)
 
     def backfill_query(
         self,
         query: 'Query',
-        existing_biz_objects: 'BizList'
-    ) -> 'BizList':
+        existing_resources: 'Batch'
+    ) -> 'Batch':
         """
-        This method is used internally by Query.execute when the Dao doesn't
+        This method is used internally by Query.execute when the Store doesn't
         return a sufficient number of records.
         """
         num_requested = query.params.get('limit', 1)
-        num_fetched = len(existing_biz_objects)
+        num_fetched = len(existing_resources)
         backfill_count = num_requested - num_fetched
-        generated_biz_objects = query.generate(count=backfill_count)
-        self.register(generated_biz_objects)
-        return generated_biz_objects
+        generated_resources = query.generate(count=backfill_count)
+        self.register(generated_resources)
+        return generated_resources

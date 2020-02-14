@@ -18,21 +18,21 @@ from pybiz.util.misc_functions import import_object
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.exceptions import PybizError
 
-from .base import Dao
-from .simulation_dao import SimulationDao
+from .base import Store
+from .simulation_store import SimulationStore
 
 
-class DaoError(PybizError):
+class StoreError(PybizError):
     pass
 
 
-class MissingBootstrapParameterError(DaoError):
+class MissingBootstrapParameterError(StoreError):
     error_code = 'missing-bootstrap-param'
     error_message = 'Missing Bootstrap Parameter `{id}`'
     error_help = "Add the missing parameter to your manifest's bootstrap settings"
 
 
-class FilesystemDao(Dao):
+class FilesystemStore(Store):
 
     env = Environment()
     root = None
@@ -46,7 +46,7 @@ class FilesystemDao(Dao):
         super().__init__()
 
         self._paths = DictObject()
-        self._cache_dao = SimulationDao()
+        self._cache_store = SimulationStore()
 
         # convert the ftype string arg into a File class ref
         if not ftype:
@@ -83,7 +83,7 @@ class FilesystemDao(Dao):
 
     def on_bind(self, biz_class, root: Text = None, ftype: BaseFile = None):
         """
-        Ensure the data dir exists for this BizObject type.
+        Ensure the data dir exists for this Resource type.
         """
         if isinstance(ftype, str):
             self.ftype = import_object(ftype)
@@ -94,9 +94,9 @@ class FilesystemDao(Dao):
         )
         os.makedirs(self.paths.records, exist_ok=True)
 
-        self._cache_dao.bootstrap(biz_class.app)
-        self._cache_dao.bind(biz_class)
-        self._cache_dao.create_many(self.fetch_all(ignore_cache=True).values())
+        self._cache_store.bootstrap(biz_class.app)
+        self._cache_store.bind(biz_class)
+        self._cache_store.create_many(self.fetch_all(ignore_cache=True).values())
 
     def create_id(self, record):
         return record.get(ID_FIELD_NAME, UuidString.next_id())
@@ -108,14 +108,14 @@ class FilesystemDao(Dao):
         _id = self.create_id(record)
         record = self.update(_id, record)
         record[ID_FIELD_NAME] = _id
-        self._cache_dao.create(record)
+        self._cache_store.create(record)
         return record
 
     def create_many(self, records):
         created_records = []
         for record in records:
             created_records.append(self.create(record))
-        self._cache_dao.create_many(created_records)
+        self._cache_store.create_many(created_records)
 
     def count(self) -> int:
         fnames = glob.glob(f'{self.paths.records}/*.{self.extension}')
@@ -130,7 +130,7 @@ class FilesystemDao(Dao):
             _ids = self._fetch_all_ids()
 
         if not ignore_cache:
-            cached_records = self._cache_dao.fetch_many(_ids)
+            cached_records = self._cache_store.fetch_many(_ids)
             if cached_records:
                 _ids -= cached_records.keys()
         else:
@@ -153,7 +153,7 @@ class FilesystemDao(Dao):
             else:
                 records[ID_FIELD_NAME] = None
 
-        self._cache_dao.create_many(records.values())
+        self._cache_store.create_many(records.values())
         records.update(cached_records)
         return records
 
@@ -177,7 +177,7 @@ class FilesystemDao(Dao):
         else:
             record[REV_FIELD_NAME] += 1
 
-        self._cache_dao.update(_id, record)
+        self._cache_store.update(_id, record)
         self.ftype.write(path=fpath, data=record)
         return record
 
@@ -188,7 +188,7 @@ class FilesystemDao(Dao):
         }
 
     def delete(self, _id) -> None:
-        self._cache_dao.delete(_id)
+        self._cache_store.delete(_id)
         fpath = self.mkpath(_id)
         os.unlink(fpath)
 
@@ -201,7 +201,7 @@ class FilesystemDao(Dao):
         self.delete_many(_ids)
 
     def query(self, *args, **kwargs):
-        return self._cache_dao.query(*args, **kwargs)
+        return self._cache_store.query(*args, **kwargs)
 
     def mkpath(self, fname: Text) -> Text:
         fname = self.ftype.format_file_name(fname)

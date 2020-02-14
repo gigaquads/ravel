@@ -34,7 +34,7 @@ import pybiz
 from pybiz import Application
 from pybiz.constants import ID_FIELD_NAME
 from pybiz.biz import (
-    BizObject,
+    Resource,
     Resolver,
     ResolverProperty,
     resolver,
@@ -42,7 +42,7 @@ from pybiz.biz import (
 )
 from pybiz.biz.relationship import (
     Relationship,
-    RelationshipBizList,
+    RelationshipBatch,
     relationship,
 )
 from pybiz.biz.query.query import (
@@ -61,7 +61,7 @@ def app():
 
 @pytest.fixture(scope='function')
 def Thing(app):
-    class Thing(BizObject):
+    class Thing(Resource):
         label = fields.String()
         size = fields.Int()
 
@@ -69,7 +69,7 @@ def Thing(app):
         def friend(self, query=None, *args, **kwargs):
             return Thing(label='friend', size=1)
 
-        @relationship(target=lambda: Thing.BizList)
+        @relationship(target=lambda: Thing.Batch)
         def owners(self, query=None, *args, **kwargs):
             return [Thing(label='owner', size=2)]
 
@@ -107,13 +107,13 @@ def test_resolvers_are_selected(Thing, thing_query):
 
 
 @mark.unit
-def test_query_generates_correct_dao_call(Thing, thing_query):
-    Thing.get_dao = MagicMock()
+def test_query_generates_correct_store_call(Thing, thing_query):
+    Thing.get_store = MagicMock()
     thing_query.select(Thing._id, Thing.label)
     thing_query.where(Thing._id != None)
     thing_query.execute()
 
-    assert Thing.get_dao.query.called_once_with(
+    assert Thing.get_store.query.called_once_with(
         predicate=thing_query.params['where'],
         fields={Thing._id, Thing.label}
     )
@@ -215,7 +215,7 @@ def test_save_many_correctly_partitions_objects(
     """
     query = Thing.select(Thing.label, Thing.friend)
 
-    # to_create and to_update are BizLists
+    # to_create and to_update are Batchs
     to_create = query.limit(num_to_create).generate()
     to_update = query.limit(num_to_update).generate().clean()
 

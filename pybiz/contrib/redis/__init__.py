@@ -1,1 +1,1 @@
-from .dao import RedisDao
+from .store import RedisStore

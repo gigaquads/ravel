@@ -149,6 +149,34 @@ class Endpoint(object):
 
         return state.result
 
+    @property
+    def target(self):
+        return self._target
+
+    @property
+    def decorator(self):
+        return self._decorator
+
+    @property
+    def app(self) -> 'Application':
+        return self._decorator.app
+
+    @property
+    def name(self) -> Text:
+        return get_callable_name(self._target)
+
+    @property
+    def docstring(self) -> Text:
+        return inspect.getdoc(self._target)
+
+    @property
+    def signature(self) -> Signature:
+        return self._signature
+
+    @property
+    def source(self) -> Text:
+        return inspect.getsource(self.target)
+
     def _apply_middleware_pre_request(self, state):
         error = None
         for mware in self.app.middleware:
@@ -254,34 +282,6 @@ class Endpoint(object):
             state.errors.append(error)
 
         return error
-
-    @property
-    def target(self):
-        return self._target
-
-    @property
-    def decorator(self):
-        return self._decorator
-
-    @property
-    def app(self) -> 'Application':
-        return self._decorator.app
-
-    @property
-    def name(self) -> Text:
-        return get_callable_name(self._target)
-
-    @property
-    def docstring(self) -> Text:
-        return inspect.getdoc(self._target)
-
-    @property
-    def signature(self) -> Signature:
-        return self._signature
-
-    @property
-    def source(self) -> Text:
-        return inspect.getsource(self.target)
 
 
 class AsyncEndpoint(Endpoint):

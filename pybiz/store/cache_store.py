@@ -11,7 +11,7 @@ from appyratus.enum import EnumValueStr
 from pybiz.util.misc_functions import remove_keys, import_object
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
-from .base import Dao, DaoEvent
+from .base import Store, StoreEvent
 
 
 class CacheMode(EnumValueStr):
@@ -25,26 +25,26 @@ class CacheMode(EnumValueStr):
         }
 
 
-class CacheDaoExecutor(ThreadPoolExecutor):
+class CacheStoreExecutor(ThreadPoolExecutor):
 
-    def __init__(self, dao: 'CacheDao'):
+    def __init__(self, store: 'CacheStore'):
         super().__init__(max_workers=1, initializer=self.initializer)
-        self.dao = dao
+        self.store = store
 
     def initializer(self):
-        self.dao.be.bootstrap(self.dao.be.app)
-        self.dao.be.bind(self.dao.be.biz_class)
+        self.store.be.bootstrap(self.store.be.app)
+        self.store.be.bind(self.store.be.biz_class)
 
     def enqueue(self, method: Text, args=None, kwargs=None):
 
-        def task(dao, event):
-            dao.play([event])
+        def task(store, event):
+            store.play([event])
 
-        event = DaoEvent(method=method, args=args, kwargs=kwargs)
-        return self.submit(task, dao=self.dao.be, event=event)
+        event = StoreEvent(method=method, args=args, kwargs=kwargs)
+        return self.submit(task, store=self.store.be, event=event)
 
 
-class CacheDao(Dao):
+class CacheStore(Store):
 
     prefetch = False
     mode = CacheMode.writethru
@@ -59,17 +59,17 @@ class CacheDao(Dao):
 
     @classmethod
     def on_bootstrap(cls, prefetch=False, mode=None, front=None, back=None):
-        from .simulation_dao import SimulationDao
+        from .simulation_store import SimulationStore
 
         cls.prefetch = prefetch if prefetch is not None else cls.prefetch
         cls.mode = mode or cls.mode
-        cls.fe = SimulationDao()
+        cls.fe = SimulationStore()
         cls.fe_params = front
         cls.be_params = back
 
     def on_bind(
         self,
-        biz_class: Type['BizObject'],
+        biz_class: Type['Resource'],
         prefetch=False,
         mode: CacheMode = None,
         front: Dict = None,
@@ -82,14 +82,14 @@ class CacheDao(Dao):
         front = front or self.fe_params
         back = back or self.be_params
 
-        self.fe = self._setup_inner_dao(
+        self.fe = self._setup_inner_store(
             biz_class,
-            front['dao'],
+            front['store'],
             front.get('params', {}),
         )
-        self.be = self._setup_inner_dao(
+        self.be = self._setup_inner_store(
             biz_class,
-            back['dao'],
+            back['store'],
             back.get('params', {}),
         )
 
@@ -97,26 +97,26 @@ class CacheDao(Dao):
             self.fetch_all()
 
         if self.mode == CacheMode.writeback:
-            self.executor = CacheDaoExecutor(self)
+            self.executor = CacheStoreExecutor(self)
 
     @property
     def binder(self):
         return self.app.binder if self.app is not None else None
 
-    def _setup_inner_dao(
-        self, biz_class: Type['BizType'], dao_class_name: Text, bind_params: Dict = None
+    def _setup_inner_store(
+        self, biz_class: Type['BizType'], store_class_name: Text, bind_params: Dict = None
     ):
-        # fetch the dao type from the ApplicationDaoBinder
-        dao_class = self.binder.get_dao_class(dao_class_name.split('.')[-1])
-        if dao_class is None:
-            raise Exception(f'{dao_class} not registered')
+        # fetch the store type from the ResourceBinder
+        store_class = self.binder.get_store_class(store_class_name.split('.')[-1])
+        if store_class is None:
+            raise Exception(f'{store_class} not registered')
 
-        # create an instance of this dao and bind it
-        dao = dao_class()
-        if not dao.is_bound:
-            dao.bind(biz_class, **(bind_params or {}))
+        # create an instance of this store and bind it
+        store = store_class()
+        if not store.is_bound:
+            store.bind(biz_class, **(bind_params or {}))
 
-        return dao
+        return store
 
     def create_id(self, record):
         raise NotImplementedError()
@@ -220,12 +220,12 @@ class CacheDao(Dao):
         """
         Create a new record with the _id. If the _id is contained is not
         contained in the data dict nor provided as the _id argument, it is the
-        responsibility of the Dao class to generate the _id.
+        responsibility of the Store class to generate the _id.
         """
         fe_record = self.fe.create(data)
 
-        # remove _rev from a copy of fe_record so that the BE dao doesn't
-        # increment it from what was set by the FE dao.
+        # remove _rev from a copy of fe_record so that the BE store doesn't
+        # increment it from what was set by the FE store.
         fe_record_no_rev = fe_record.copy()
         del fe_record_no_rev[REV_FIELD_NAME]
 
@@ -238,7 +238,7 @@ class CacheDao(Dao):
 
     def create_many(self, records: List[Dict]) -> None:
         """
-        Create a new record.  It is the responsibility of the Dao class to
+        Create a new record.  It is the responsibility of the Store class to
         generate the _id.
         """
         fe_records = self.fe.create_many(records)

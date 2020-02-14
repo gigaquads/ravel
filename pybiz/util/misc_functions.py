@@ -20,9 +20,9 @@ _dict_keys = {}.keys().__class__
 _dict_values = {}.values().__class__
 
 
-def is_biz_obj(obj):
+def is_resource(obj):
     """
-    Return True if obj is an instance of BizObject.
+    Return True if obj is an instance of Resource.
     """
     return (
         getattr(obj, IS_BIZ_OBJECT_ANNOTATION, False)
@@ -30,9 +30,9 @@ def is_biz_obj(obj):
     )
 
 
-def is_biz_list(obj) -> bool:
+def is_batch(obj) -> bool:
     """
-    Return True if obj is an instance of BizObject.
+    Return True if obj is an instance of Resource.
     """
     return (
         getattr(obj, IS_BIZ_LIST_ANNOTATION, False)
@@ -47,13 +47,13 @@ def is_sequence(obj) -> bool:
     return isinstance(obj, (list, tuple, set, _dict_keys, _dict_values))
 
 
-def repr_biz_id(biz_obj: 'BizObject') -> Text:
+def repr_biz_id(resource: 'Resource') -> Text:
     """
-    Return a string version of a BizObject ID.
+    Return a string version of a Resource ID.
     """
-    if biz_obj is None:
+    if resource is None:
         return 'None'
-    _id = biz_obj.internal.state.get(ID_FIELD_NAME)
+    _id = resource.internal.state.get(ID_FIELD_NAME)
     if _id is None:
         return '?'
     elif isinstance(_id, str):
@@ -175,3 +175,14 @@ def inject(func: Callable, data: Dict):
     Dynamically inject data dict into a function's lexcial scope.
     """
     func.__globals__.update(data)
+
+
+def union(sequences):
+    if sequences:
+        if len(sequences) == 1:
+            return sequences[0]
+        else:
+            return set.union(*sequences)
+    else:
+        return set()
+

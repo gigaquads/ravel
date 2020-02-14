@@ -14,7 +14,7 @@ from appyratus.cli import (
 from appyratus.files import Yaml
 from appyratus.utils import StringUtils, SysUtils
 
-from pybiz.util.misc_functions import is_biz_list, is_biz_obj
+from pybiz.util.misc_functions import is_batch, is_resource
 
 from .app import Application, EndpointDecorator, Endpoint
 
@@ -107,7 +107,7 @@ def _format_result_data(data, output_format):
 
 
 def _dump_result_obj(obj):
-    if is_biz_obj(obj) or is_biz_list(obj):
+    if is_resource(obj) or is_batch(obj):
         return obj.dump()
     elif isinstance(obj, (list, set, tuple)):
         return [_dump_result_obj(x) for x in obj]

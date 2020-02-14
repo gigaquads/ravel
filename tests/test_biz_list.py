@@ -10,11 +10,11 @@ import pybiz
 
 from pybiz import Application
 from pybiz.constants import ID_FIELD_NAME
-from pybiz.biz2.biz_object import BizObject
+from pybiz.biz2.resource import Resource
 from pybiz.biz2.relationship import (
     Relationship,
     relationship,
-    RelationshipBizList,
+    RelationshipBatch,
 )
 from pybiz.biz2.resolver import (
     Resolver,
@@ -31,7 +31,7 @@ def app():
 
 @pytest.fixture(scope='function')
 def Person(app):
-    class Person(BizObject):
+    class Person(Resource):
         name = pybiz.String()
 
     app.bind(Person)
@@ -40,7 +40,7 @@ def Person(app):
 
 @pytest.fixture(scope='function')
 def Dog(app, Person):
-    class Dog(BizObject):
+    class Dog(Resource):
         mother_id = pybiz.Id()
         color = pybiz.String()
         name = pybiz.String()
@@ -178,7 +178,7 @@ def test_resolver_executes_on_get_when_got(Dog):
 
 def test_create(Dog):
     dog = Dog(color='red', age=12).create()
-    dog_data = dog.dao.fetch(_id=dog._id)
+    dog_data = dog.store.fetch(_id=dog._id)
     assert dog_data == dog.internal.state
 
 
@@ -213,8 +213,8 @@ def test_relationship_does_append(Dog):
 
     friends.append(cat)
 
-    # ensure returns a RelationshipBizList with the right length
-    assert isinstance(friends, RelationshipBizList)
+    # ensure returns a RelationshipBatch with the right length
+    assert isinstance(friends, RelationshipBatch)
     assert len(friends) == original_len + 1
 
     # ensure the on_add callback was called

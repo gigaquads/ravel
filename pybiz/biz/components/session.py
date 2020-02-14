@@ -2,13 +2,13 @@ from typing import Type
 
 from appyratus.utils import TimeUtils
 
-from pybiz import BizObject, Relationship, fields
+from pybiz import Resource, Relationship, fields
 from pybiz.predicate import Predicate
 
 from .user import User
 
 
-class Session(BizObject):
+class Session(Resource):
     is_active = fields.Bool(nullable=False, default=True)
     logged_out_at = fields.DateTime(nullable=True)
     owner_id = fields.Field(required=True, nullable=True, private=True)

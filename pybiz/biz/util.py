@@ -8,19 +8,19 @@ from pybiz.constants import (
 )
 
 
-def is_biz_object(obj):
+def is_resource(obj):
     """
-    Return True if obj is an instance of BizObject.
+    Return True if obj is an instance of Resource.
     """
     return (
-        getattr(obj, '_pybiz_is_biz_object', False)
+        getattr(obj, IS_BIZ_OBJECT_ANNOTATION, False)
         if obj else False
     )
 
 
-def is_biz_list(obj) -> bool:
+def is_batch(obj) -> bool:
     """
-    Return True if obj is an instance of BizObject.
+    Return True if obj is an instance of Resource.
     """
     return (
         getattr(obj, IS_BIZ_LIST_ANNOTATION, False)
@@ -29,16 +29,16 @@ def is_biz_list(obj) -> bool:
 
 
 def is_biz_class(obj):
-    return isinstance(obj, type) and is_biz_object(obj)
+    return isinstance(obj, type) and is_resource(obj)
 
 
-def repr_biz_id(biz_obj: 'BizObject') -> Text:
+def repr_biz_id(resource: 'Resource') -> Text:
     """
-    Return a string version of a BizObject ID.
+    Return a string version of a Resource ID.
     """
-    if biz_obj is None:
+    if resource is None:
         return 'None'
-    _id = biz_obj[ID_FIELD_NAME]
+    _id = resource[ID_FIELD_NAME]
     if _id is None:
         return '?'
     elif isinstance(_id, str):

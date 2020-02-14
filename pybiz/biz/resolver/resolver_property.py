@@ -8,7 +8,7 @@ from ..query.request import QueryRequest
 
 class ResolverProperty(property):
     """
-    All Pybiz-aware attributes at the BizObject class level are instances of
+    All Pybiz-aware attributes at the Resource class level are instances of
     this class, including field properties, like `User.name`.
     """
 
@@ -34,7 +34,7 @@ class ResolverProperty(property):
         targets = flatten_sequence(targets)
         return self.resolver.select(*targets)
 
-    def on_get(self, owner: 'BizObject'):
+    def on_get(self, owner: 'Resource'):
         key = self.resolver.name
         value = None
         if key in owner.internal.state:
@@ -60,14 +60,14 @@ class ResolverProperty(property):
 
         return value
 
-    def on_set(self, owner: 'BizObject', value):
+    def on_set(self, owner: 'Resource', value):
         key = self.resolver.name
         old_value = owner.internal.state.pop(key, None)
         owner.internal.state[key] = value
         if self.resolver.on_set:
             self.resolver.on_set(self.resolver, old_value, value)
 
-    def on_del(self, owner: 'BizObject'):
+    def on_del(self, owner: 'Resource'):
         key = self.resolver.name
         value = owner.internal.state.pop(key, None)
         if self.resolver.on_del:

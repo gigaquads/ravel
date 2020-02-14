@@ -5,7 +5,7 @@ from typing import Text
 import pybiz
 
 
-class User(pybiz.BizObject):
+class User(pybiz.Resource):
 
     @classmethod
     def __abstract__(cls):

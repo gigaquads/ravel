@@ -6,7 +6,7 @@ from appyratus.schema import fields
 startrek = pybiz.Application()
 
 
-class Officer(pybiz.BizObject):
+class Officer(pybiz.Resource):
     first_name = pybiz.String()
     rank = pybiz.String(default='recruit')
     ship_id = pybiz.Field(private=True)
@@ -16,14 +16,14 @@ class Officer(pybiz.BizObject):
         nullable=False,
         default='human'
     )
-    ship = pybiz.Relationship(join=lambda biz_thing: (Officer.ship_id, Ship._id))
+    ship = pybiz.Relationship(join=lambda entity: (Officer.ship_id, Ship._id))
 
 
-class Ship(pybiz.BizObject):
+class Ship(pybiz.Resource):
     name = pybiz.String()
     crew = pybiz.Relationship(
-        join=lambda biz_thing: (Ship._id, Officer.ship_id),
-        order_by=lambda biz_thing: Officer.first_name.asc,
+        join=lambda entity: (Ship._id, Officer.ship_id),
+        order_by=lambda entity: Officer.first_name.asc,
         on_add=lambda self, officer: officer.update({'ship_id': self._id}),
         on_rem=lambda self, officer: officer.update({'ship_id': None}),
         on_del=lambda self, officer: officer.update({'ship_id': None}),
@@ -40,11 +40,11 @@ class Ship(pybiz.BizObject):
         field=pybiz.Int(),
     )
     missions = pybiz.Relationship(
-        join=lambda biz_thing: (Ship._id, Mission.ship_id), many=True
+        join=lambda entity: (Ship._id, Mission.ship_id), many=True
     )
 
 
-class Mission(pybiz.BizObject):
+class Mission(pybiz.Resource):
     name = pybiz.String(nullable=False)
     description = pybiz.String()
     started_at = pybiz.DateTime(default=TimeUtils.utc_now, nullable=False)
@@ -58,7 +58,7 @@ class Mission(pybiz.BizObject):
     )
 
 
-class Planet(pybiz.BizObject):
+class Planet(pybiz.Resource):
     resources = fields.Nested(
         {
             'water': fields.Bool(),

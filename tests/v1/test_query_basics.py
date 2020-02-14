@@ -155,5 +155,5 @@ class TestQueryBasics(object):
         the_enterprise.create()
 
         assert captain_picard.ship is None
-        assert isinstance(the_enterprise.crew, startrek.biz.Officer.BizList)
+        assert isinstance(the_enterprise.crew, startrek.biz.Officer.Batch)
         assert len(the_enterprise.crew) == 0

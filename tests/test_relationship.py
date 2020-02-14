@@ -9,7 +9,7 @@ def app():
 
 @pytest.fixture(scope='function')
 def Node(app):
-    class Node(pybiz.BizObject):
+    class Node(pybiz.Resource):
         name = pybiz.String(required=True)
         parent_id = pybiz.Id(required=True)
 
@@ -32,7 +32,7 @@ def parent(Node):
 
 @pytest.fixture(scope='function')
 def children(Node, parent):
-    return Node.BizList(
+    return Node.Batch(
         Node(name=f'child {c}', parent_id=parent._id)
         for c in 'ABC'
     ).save()

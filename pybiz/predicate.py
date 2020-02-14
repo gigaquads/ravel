@@ -18,12 +18,14 @@ from appyratus.enum import Enum
 from appyratus.utils import DictObject
 from appyratus.schema import RangeConstraint, ConstantValueConstraint
 
-from pybiz.util.misc_functions import flatten_sequence
+from pybiz.util.misc_functions import (
+    flatten_sequence, is_sequence, get_class_name
+)
 from pybiz.schema import Enum as EnumField
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.biz.resolver.resolver_property import ResolverProperty
 
-from .biz.util import is_biz_object
+from .biz.util import is_resource, is_batch
 
 
 OP_CODE = Enum(
@@ -105,11 +107,11 @@ class Predicate(object):
     def dump(self):
         raise NotImplementedError()
 
-    def bind(self, data: Dict[Text, 'BizObject']) -> 'Predicate':
+    def bind(self, data: Dict[Text, 'Resource']) -> 'Predicate':
         raise NotImplementedError()
 
     @classmethod
-    def load(cls, biz_class: Type['BizObject'], data: Dict):
+    def load(cls, biz_class: Type['Resource'], data: Dict):
         if data['code'] == TYPE_CONDITIONAL:
             return ConditionalPredicate.load(biz_class, data)
         elif data['code'] == TYPE_BOOLEAN:
@@ -223,28 +225,32 @@ class ConditionalPredicate(Predicate):
     and a value. The field name is made available through the FieldProperty
     objects that instantiated the predicate.
     """
-    def __init__(self, op: Text, prop: 'FieldProperty', value):
+    def __init__(self, op: Text, prop: 'FieldProperty', value, is_scalar=True):
         super().__init__(code=TYPE_CONDITIONAL)
         self.op = op
         self.prop = prop
         self.value = value
-        self.fields.add(self.prop.field)
-        self.targets.add(self.prop.biz_class)
+        self.fields.add(self.prop.resolver.field)
+        self.targets.add(self.prop.resolver.owner)
+        self.is_scalar = is_scalar
 
-        is_bound = not isinstance(value, ResolverAlias)
+        if is_sequence(value) or is_batch(value) and value:
+            is_bound = not isinstance(list(value)[0], ResolverAlias)
+        else:
+            is_bound = not isinstance(value, ResolverAlias)
         if not is_bound:
             self.unbound_predicates.add(self)
 
     def __repr__(self):
         return '<{}({})>'.format(
-            self.__class__.__name__,
+            get_class_name(self),
             str(self)[1:-1],
         )
 
     def __str__(self):
         if self.prop:
-            biz_class_name = self.prop.biz_class.__name__
-            lhs = f'{biz_class_name}.{self.prop.field.name}'
+            biz_class_name = get_class_name(self.prop.resolver.owner)
+            lhs = f'{biz_class_name}.{self.prop.resolver.field.name}'
         else:
             lhs = '[NULL]'
 
@@ -263,25 +269,43 @@ class ConditionalPredicate(Predicate):
 
     @property
     def field(self):
-        return self.prop.field
+        return self.prop.resolver.field
 
     def dump(self):
         return {
             'op': self.op,
-            'field': self.prop.field.name,
+            'field': self.prop.resolver.field.name,
             'value': self.value,
             'code': self.code,
         }
 
-    def bind(self, data: Dict[Text, 'BizObject']) -> 'Predicate':
+    def bind(self, data: Dict[Text, 'Resource']) -> 'Predicate':
         resolver_alias = self.value
-        source = data[resolver_alias.alias_name]
-        self.value = getattr(source, resolver_alias.resolver_name)
+
+        if resolver_alias.alias_name == '$parent':
+            data_key = resolver_alias.meta['query_id']
+        else:
+            data_key = resolver_alias.alias_name
+
+        source = data[data_key]
+
+        if self.is_scalar or is_batch(source):
+            self.value = getattr(source, resolver_alias.resolver_name)
+        elif is_resource(source):
+            self.value = [getattr(source, resolver_alias.resolver_name)]
+
         self.unbound_predicates.remove(self)
+
         return self
 
+        #resolver_alias = self.value
+        #source = data[resolver_alias.alias_name]
+        #self.value = getattr(source, resolver_alias.resolver_name)
+        #self.unbound_predicates.remove(self)
+        #return self
+
     @classmethod
-    def load(cls, biz_class: Type['BizObject'], data: Dict):
+    def load(cls, biz_class: Type['Resource'], data: Dict):
         field_prop = getattr(biz_class, data['field'])
         return cls(data['op'], field_prop, data['value'])
 
@@ -301,9 +325,9 @@ class BooleanPredicate(Predicate):
             lhs.unbound_predicates | rhs.unbound_predicates
         )
         if lhs.code == TYPE_CONDITIONAL:
-            self.fields.add(lhs.prop.field)
+            self.fields.add(lhs.prop.resolver.field)
         if rhs.code == TYPE_CONDITIONAL:
-            self.fields.add(rhs.prop.field)
+            self.fields.add(rhs.prop.resolver.field)
 
     def __or__(self, other):
         return BooleanPredicate(OP_CODE.OR, self, other)
@@ -344,13 +368,13 @@ class BooleanPredicate(Predicate):
             'code': self.code,
         }
 
-    def bind(self, data: Dict[Text, 'BizObject']) -> 'Predicate':
+    def bind(self, data: Dict[Text, 'Resource']) -> 'Predicate':
         self.lhs.bind(data)
         self.rhs.bind(data)
         return self
 
     @classmethod
-    def load(cls, biz_class: Type['BizObject'], data: Dict):
+    def load(cls, biz_class: Type['Resource'], data: Dict):
         return cls(
             data['op'],
             Predicate.load(biz_class, data['lhs']),
@@ -457,7 +481,7 @@ class PredicateParser(object):
                     )
                     prop = getattr(self._biz_class, ident)
                     value_list = [
-                        prop.field.process(x.strip("'").strip())[0]
+                        prop.resolver.field.process(x.strip("'").strip())[0]
                         for x in token.value[1:-1].split(',')
                     ]
                     if is_negative:
@@ -472,20 +496,30 @@ class AliasFactory(object):
 
 
 class Alias(object):
-    def __init__(self, name: Text):
+    def __init__(self, name: Text, meta: Dict = None):
         self._name = name
+        self._meta = meta or {}
 
     def __getattr__(self, resolver_name):
-        return ResolverAlias(self._name, resolver_name)
+        return ResolverAlias(self._name, self._meta, resolver_name)
+
+    @classmethod
+    def from_query(cls, query: 'Query') -> 'Alias':
+        return cls(str(id(query)))
 
 
 class ResolverAlias(object):
-    def __init__(self, alias_name: Text, resolver_name: Text):
+    def __init__(self, alias_name: Text, alias_meta: Dict, resolver_name: Text):
         self._alias_name = alias_name
+        self._alias_meta = alias_meta
         self._resolver_name = resolver_name
 
     def __repr__(self):
         return f'ResolverAlias(target={self._alias_name}.{self._resolver_name})'
+
+    @property
+    def meta(self):
+        return self._alias_meta
 
     @property
     def alias_name(self):

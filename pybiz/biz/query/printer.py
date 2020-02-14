@@ -2,6 +2,7 @@ from typing import Text
 
 from pybiz.util.misc_functions import is_sequence, get_class_name
 from pybiz.schema import String, Id
+from pybiz.biz.util import is_batch
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.predicate import (
     OP_CODE,
@@ -82,6 +83,16 @@ class QueryPrinter(object):
         if isinstance(predicate.value, ResolverAlias):
             alias = predicate.value
             s_value = f'{alias.alias_name}.{alias.resolver_name}'
+        elif is_sequence(predicate.value) or is_batch(predicate.value):
+            first_item = list(predicate.value)[0]
+            if isinstance(first_item, ResolverAlias):
+                alias = first_item
+                s_value = f'{alias.alias_name}.{alias.resolver_name}'
+            else:
+                s_value = f'{predicate.value}'
+                if isinstance(predicate.field, String):
+                    s_value = s_value.replace('"', '\"')
+                    s_value = f'"{s_value}"'
         else:
             s_value = f'{predicate.value}'
             if isinstance(predicate.field, String):

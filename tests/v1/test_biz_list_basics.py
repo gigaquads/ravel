@@ -4,7 +4,7 @@ import pybiz
 from appyratus.test import mark
 
 
-class TestBizListBasics(object):
+class TestBatchBasics(object):
     """
     TODO:
     """

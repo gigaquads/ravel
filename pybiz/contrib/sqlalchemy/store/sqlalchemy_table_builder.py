@@ -9,11 +9,11 @@ from pybiz.util.loggers import console
 
 
 class SqlalchemyTableBuilder(object):
-    def __init__(self, dao: 'SqlalchemyDao'):
-        self._dialect = dao.dialect
-        self._biz_class = dao.biz_class
-        self._adapters = dao.adapters
-        self._metadata = dao.get_metadata()
+    def __init__(self, store: 'SqlalchemyStore'):
+        self._dialect = store.dialect
+        self._biz_class = store.biz_class
+        self._adapters = store.adapters
+        self._metadata = store.get_metadata()
 
     @property
     def adapters(self):

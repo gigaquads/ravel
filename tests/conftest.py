@@ -3,7 +3,7 @@ import pybiz
 
 from pybiz import relationship
 
-
+"""
 @pytest.fixture(scope='function')
 def app():
     return pybiz.Application().bootstrap()
@@ -12,7 +12,7 @@ def app():
 @pytest.fixture(scope='function')
 def Node(app):
 
-    class Node(pybiz.BizObject):
+    class Node(pybiz.Resource):
         name = pybiz.String(required=True)
         parent_id = pybiz.Id(required=True)
         tree_id = pybiz.Id(required=True)
@@ -32,7 +32,7 @@ def Node(app):
 @pytest.fixture(scope='function')
 def Tree(app, Node):
 
-    class Tree(pybiz.BizObject):
+    class Tree(pybiz.Resource):
 
         root_node_id = pybiz.Id(required=True)
         name = pybiz.String(required=True)
@@ -59,7 +59,9 @@ def parent(Node, tree):
 
 @pytest.fixture(scope='function')
 def children(Node, tree, parent):
-    return Node.BizList(
+    return Node.Batch(
         Node(name=f'child {c}', parent_id=parent._id, tree_id=tree._id)
         for c in 'ABC'
     ).save()
+
+"""

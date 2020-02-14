@@ -1,2 +1,2 @@
-from .dao import SqlalchemyDao, Dialect
+from .store import SqlalchemyStore, Dialect
 from .middleware import SqlalchemyMiddleware

@@ -2,7 +2,7 @@ import inspect
 import logging
 
 from typing import List, Dict, Text, Tuple, Set, Type, Callable
-from collections import deque
+from collections import deque, OrderedDict, namedtuple
 
 from appyratus.utils import DictObject, DictUtils
 
@@ -17,7 +17,7 @@ from .exceptions import ApplicationError
 from .endpoint_decorator import EndpointDecorator
 from .endpoint import Endpoint
 from .application_argument_loader import ApplicationArgumentLoader
-from .application_dao_binder import ApplicationDaoBinder
+from .resource_binder import ResourceBinder
 
 DEFAULT_ID_FIELD_CLASS = UuidString
 
@@ -28,6 +28,7 @@ class Application(object):
         self,
         middleware: List['Middleware'] = None,
     ):
+        self._state = DictObject()
         self._decorators = []
         self._endpoints = {}
         self._biz = DictObject()
@@ -39,7 +40,7 @@ class Application(object):
         self._is_started = False
         self._namespace = {}
         self._json_encoder = JsonEncoder()
-        self._binder = ApplicationDaoBinder()
+        self._binder = ResourceBinder()
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.app_types)
@@ -91,6 +92,10 @@ class Application(object):
         return self._manifest
 
     @property
+    def state(self) -> DictObject:
+        return self._state
+
+    @property
     def middleware(self) -> List['Middleware']:
         return self._middleware
 
@@ -107,7 +112,7 @@ class Application(object):
         return self._arg_loader
 
     @property
-    def binder(self) -> 'ApplicationDaoBinder':
+    def binder(self) -> 'ResourceBinder':
         return self._binder
 
     @property
@@ -149,39 +154,39 @@ class Application(object):
 
     def bind(
         self,
-        biz_classes: List[Type['BizObject']],
-        dao_class: Type['Dao'] = None
+        biz_classes: List[Type['Resource']],
+        store_class: Type['Store'] = None
     ) -> 'Application':
         """
-        Dynamically register one or more BizObject classes with this
-        bootstrapped Application. If a dao_class is specified, it will be used
-        for all classes in biz_classes. Otherwise, the Dao class will come from
-        calling the __dao__ method on each BizClass.
+        Dynamically register one or more Resource classes with this
+        bootstrapped Application. If a store_class is specified, it will be used
+        for all classes in biz_classes. Otherwise, the Store class will come from
+        calling the __store__ method on each BizClass.
         """
         assert self.is_bootstrapped
 
-        def bind_one(biz_class, dao_class):
-            dao_instance = None
-            if dao_class is None:
-                dao_obj = biz_class.__dao__()
-                if not isinstance(dao_obj, type):
-                    dao_class = type(dao_obj)
-                    dao_instance = dao_obj
+        def bind_one(biz_class, store_class):
+            store_instance = None
+            if store_class is None:
+                store_obj = biz_class.__store__()
+                if not isinstance(store_obj, type):
+                    store_class = type(store_obj)
+                    store_instance = store_obj
                 else:
-                    dao_class = dao_obj
+                    store_class = store_obj
 
-            self._dal[get_class_name(dao_class)] = dao_class
+            self._dal[get_class_name(store_class)] = store_class
             self._biz[get_class_name(biz_class)] = biz_class
 
             if not biz_class.is_bootstrapped():
                 biz_class.bootstrap(self)
-            if not dao_class.is_bootstrapped():
-                dao_class.bootstrap(self)
+            if not store_class.is_bootstrapped():
+                store_class.bootstrap(self)
 
             binding = self.binder.register(
                 biz_class=biz_class,
-                dao_class=dao_class,
-                dao_instance=dao_instance,
+                store_class=store_class,
+                store_instance=store_instance,
             )
             binding.bind(self.binder)
 
@@ -189,7 +194,7 @@ class Application(object):
             biz_classes = [biz_classes]
 
         for biz_class in biz_classes:
-            bind_one(biz_class, dao_class)
+            bind_one(biz_class, store_class)
 
         self._arg_loader.bind()
 
@@ -200,6 +205,8 @@ class Application(object):
         manifest: Manifest = None,
         namespace: Dict = None,
         middleware: List = None,
+        *args,
+        **kwargs
     ) -> 'Application':
         """
         Bootstrap the data, business, and service layers, wiring them up.
@@ -219,7 +226,7 @@ class Application(object):
 
         # create, load, and process the manifest
         # bootstrap the biz and data access layers, and
-        # bind each BizObject class with its Dao object.
+        # bind each Resource class with its Store object.
         if manifest is None:
             self._manifest = Manifest()
         elif isinstance(manifest, str):
@@ -249,7 +256,7 @@ class Application(object):
         self._is_bootstrapped = True
 
         # init the arg loader, which is responsible for replacing arguments
-        # passed in as ID's with their respective BizObjects
+        # passed in as ID's with their respective Resources
         self._arg_loader = ApplicationArgumentLoader(self)
 
         console.debug(f'finished bootstrapping application')
@@ -267,7 +274,7 @@ class Application(object):
 
     def inject(self, func: Callable, biz=True, dal=True, api=True) -> Callable:
         """
-        Inject BizObject, Dao, and/or Endpoint classes into the lexical scope of
+        Inject Resource, Store, and/or Endpoint classes into the lexical scope of
         the given function.
         """
         if biz:
@@ -278,6 +285,17 @@ class Application(object):
             inject(func, self.api)
 
         return func
+
+    def on_extract(self, endpoint, index, parameter, raw_args, raw_kwargs):
+        """
+        Return a value for the given the name of the `inspect` module's
+        parameter object. This is used by on_request when extracting endpoint
+        arguments.
+        """
+        if index is not None:
+            return raw_args[index]
+        else:
+            return raw_kwargs.get(parameter.name)
 
     def on_bootstrap(self, *args, **kwargs):
         """
@@ -308,12 +326,41 @@ class Application(object):
         must return re-packaged args and kwargs here. However, if nothing is
         returned, the raw args and kwargs are used.
         """
-        return (raw_args, raw_kwargs)
+        args_dict = OrderedDict()
+        kwargs = {}
+
+        for idx, param in enumerate(endpoint.signature.parameters.values()):
+            target_dict = None
+            index = None
+            if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
+                if param.default is inspect._empty:
+                    target_dict = args_dict
+                    index = idx
+                else:
+                    target_dict = kwargs
+            elif param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                target_dict = args_dict
+                index = idx
+            elif param.kind == inspect.Parameter.KEYWORD_ONLY:
+                target_dict = kwargs
+
+            if target_dict is not None:
+                target_dict[param.name] = self.on_extract(
+                    endpoint, index, param, raw_args, raw_kwargs
+                )
+
+        # transform positional args dict into a named tuple
+        PositionalArguments = namedtuple(
+            typename='PositionalArguments', field_names=args_dict.keys()
+        )
+        args = PositionalArguments(*tuple(args_dict.values()))
+
+        return (args, kwargs)
 
     def on_response(
         self,
         endpoint: 'Endpoint',
-        result: object,
+        raw_result: object,
         *raw_args,
         **raw_kwargs
     ) -> object:
@@ -323,4 +370,4 @@ class Application(object):
         whatever raw data was passed into the callable *before* on_request
         executed.
         """
-        return result
+        return raw_result

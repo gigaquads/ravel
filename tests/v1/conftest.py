@@ -37,7 +37,7 @@ def random_recruit(startrek):
 
 @pytest.fixture(scope='function')
 def enterprise_crew(startrek, the_enterprise, captain_picard, lieutenant_worf):
-    return startrek.biz.Officer.BizList([
+    return startrek.biz.Officer.Batch([
         captain_picard,
         lieutenant_worf,
     ])
@@ -59,7 +59,7 @@ def the_enterprise_with_crew(the_enterprise, enterprise_crew):
 @pytest.fixture(scope='function')
 def missions(startrek):
     Mission = startrek.biz.Mission
-    return Mission.BizList(
+    return Mission.Batch(
         [
             Mission(name="Defeat the borg", description="Infiltrate unimatrix 01"),
             Mission(name="Escape Delta Quadrant", description="Steal transwarp drive"),

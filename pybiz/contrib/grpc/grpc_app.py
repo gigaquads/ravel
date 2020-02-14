@@ -23,7 +23,7 @@ from appyratus.schema import fields
 from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 
-from pybiz.util.misc_functions import is_biz_obj, is_biz_list
+from pybiz.util.misc_functions import is_resource, is_batch
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.app import Application
 
@@ -361,7 +361,7 @@ def _bind_message(message, source: Dict):
 
 
 def _dump_result_obj(obj):
-    if is_biz_obj(obj) or is_biz_list(obj):
+    if is_resource(obj) or is_batch(obj):
         return obj.dump()
     elif isinstance(obj, (list, set, tuple)):
         return [_dump_result_obj(x) for x in obj]

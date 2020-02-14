@@ -11,11 +11,11 @@ from pybiz.util.misc_functions import get_class_name
 class Id(fields.Field):
     """
     This is a special Field recognized internally by Pybiz. When an Application
-    bootstraps, all Id fields declared on BizObject classes are replaced with a
+    bootstraps, all Id fields declared on Resource classes are replaced with a
     concrete Field class.
     """
 
-    def __init__(self, target: Type['BizObject'] = None, *args, **kwargs):
+    def __init__(self, target: Type['Resource'] = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.target_biz_class_name = None
@@ -29,7 +29,7 @@ class Id(fields.Field):
         elif callable(target):
             self.target_biz_class_callback = target
 
-    def resolve_target_biz_class(self, app: 'Application') -> Type['BizObject']:
+    def resolve_target_biz_class(self, app: 'Application') -> Type['Resource']:
         if self.target_biz_class is None:
             if self.target_biz_class_callback is not None:
                 app.inject(self.target_biz_class_callback)
@@ -38,14 +38,16 @@ class Id(fields.Field):
                 self.target_biz_class = app.biz[self.target_biz_class_name]
         return self.target_biz_class
 
+    # TODO: rename replace_self_in_biz_class
     def replace_self_in_biz_class(
         self,
         app: 'Application',
-        source_biz_class: Type['BizObject'],
+        source_biz_class: Type['Resource'],
     ):
         # compute the replacement field to use in place of Id
         target_biz_class = self.resolve_target_biz_class(app)
-        replacement_field = type(target_biz_class._id.field)(
+        target_id_field_type = type(target_biz_class._id.resolver.field)
+        replacement_field = target_id_field_type(
             name=self.name,
             source=self.source,
             required=self.required,

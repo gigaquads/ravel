@@ -4,7 +4,7 @@ from collections import defaultdict
 
 from pybiz.util.loggers import console
 
-from ..util import is_biz_object, is_biz_list
+from ..util import is_resource, is_batch
 from .resolver import Resolver
 
 

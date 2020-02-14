@@ -65,7 +65,7 @@ class GraphQLArguments(object):
     @classmethod
     def _parse_where(
         cls,
-        biz_class: Type['BizObject'],
+        biz_class: Type['Resource'],
         predicate_strings: List[Text],
     ) -> List['Predicate']:
         if isinstance(predicate_strings, str):

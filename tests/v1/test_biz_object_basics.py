@@ -23,7 +23,7 @@ class TestBizBasics(object):
 
         assert captain_picard.ship is not None
         assert captain_picard.ship._id == the_enterprise._id
-        assert isinstance(the_enterprise.crew, startrek.biz.Officer.BizList)
+        assert isinstance(the_enterprise.crew, startrek.biz.Officer.Batch)
         assert len(the_enterprise.crew) == 1
         assert the_enterprise.crew[0]._id == captain_picard._id
 
@@ -99,7 +99,7 @@ class TestBizBasics(object):
     def test_ensure_default_field_values_generated_on_create_many(cls, startrek):
         # since the field is not nullable but has a default, it will use the
         # default if al works out.
-        recruits = startrek.biz.Officer.BizList([
+        recruits = startrek.biz.Officer.Batch([
             startrek.biz.Officer(first_name='Kompressor', rank=None),
             startrek.biz.Officer(first_name='Obama', rank=None),
         ]).create()

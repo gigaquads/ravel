@@ -10,8 +10,8 @@ from pybiz.constants import EMPTY_FUNCTION
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import get_class_name
 
-from ..biz_thing import BizThing
-from ..util import is_biz_object, is_biz_list
+from ..entity import Entity
+from ..util import is_resource, is_batch
 from .resolver_decorator import ResolverDecorator
 
 
@@ -26,7 +26,7 @@ class Resolver(object):
         """
         class decorator_class(ResolverDecorator):
             def __init__(self, *args, **kwargs):
-                super().__init__(resolver=cls, *args, **kwargs)
+                super().__init__(cls, *args, **kwargs)
 
         class_name = f'{get_class_name(cls)}ResolverDecorator'
         decorator_class.__name__ = class_name
@@ -34,14 +34,15 @@ class Resolver(object):
 
     def __init__(
         self,
-        biz_class: Type['BizObject'] = None,
-        target_biz_class: Type['BizObject'] = None,
+        biz_class: Type['Resource'] = None,
+        target_biz_class: Type['Resource'] = None,
         name: Text = None,
         many: bool = False,
         lazy: bool = True,
         private: bool = False,
         required: bool = False,
         on_select: Callable = None,
+        pre_execute: Callable = None,
         on_execute: Callable = None,
         post_execute: Callable = None,
         on_backfill: Callable = None,
@@ -63,7 +64,7 @@ class Resolver(object):
         # if `target_biz_class` was not provided as a callback but as a class object, we
         # can eagerly set self._target_biz_class. otherwise, we can only call the callback
         # lazily, during the bind lifecycle method, after its lexical scope has
-        # been updated with references to the BizObject types picked up by the
+        # been updated with references to the Resource types picked up by the
         # host Application.
         if not isinstance(target_biz_class, type):
             self._target_biz_class_callback = target_biz_class
@@ -77,6 +78,7 @@ class Resolver(object):
             if func_code == EMPTY_FUNCTION.__code__.co_code:
                 on_execute = None
 
+        self.pre_execute = pre_execute or self.pre_execute
         self.on_execute = on_execute or self.on_execute
         self.post_execute = post_execute or self.post_execute
         self.on_select = on_select or self.on_select
@@ -131,11 +133,11 @@ class Resolver(object):
         pass
 
     @property
-    def target_biz_class(self) -> Type['BizObject']:
+    def target_biz_class(self) -> Type['Resource']:
         return self._target_biz_class
 
     @target_biz_class.setter
-    def target_biz_class(self, target_biz_class: Type['BizThing']):
+    def target_biz_class(self, target_biz_class: Type['Entity']):
         if (
             (not isinstance(target_biz_class, type)) and
             callable(target_biz_class)
@@ -145,10 +147,10 @@ class Resolver(object):
         if target_biz_class is None:
             # default value
             self._target_biz_class = self._biz_class
-        elif is_biz_object(target_biz_class):
+        elif is_resource(target_biz_class):
             self._target_biz_class = target_biz_class
             self._many = False
-        elif is_biz_list(target_biz_class):
+        elif is_batch(target_biz_class):
             self._target_biz_class = target_biz_class.pybiz.biz_class
             self._many = True
         else:
@@ -165,6 +167,12 @@ class Resolver(object):
     @property
     def name(self):
         return self._name
+
+    @name.setter
+    def name(self, name):
+        if self._name is not None:
+            raise ValueError('Resolver.name is readonly')
+        self._name = name
 
     @property
     def lazy(self):
@@ -227,7 +235,7 @@ class Resolver(object):
     def copy(self, unbind=True) -> 'Resolver':
         """
         Return a copy of this resolver. If unbind is set, clear away the
-        reference to the BizObject class to which this resolver is bound.
+        reference to the Resource class to which this resolver is bound.
         """
         clone = deepcopy(self)
         if unbind:
@@ -235,13 +243,13 @@ class Resolver(object):
             clone._is_bound = False
         return clone
 
-    def select(self, parent_query: 'Query' = None, *selectors):
+    def select(self, *selectors, parent_query: 'Query' = None):
         new_query = query_module.ResolverQuery(
             resolver=self, biz_class=self._target_biz_class
         )
 
         if parent_query is not None:
-            new_query.configure(parent_query.options)
+            new_query.parent = parent_query
             if parent_query.root is not None:
                 new_query.root = parent_query.root
             else:
@@ -250,7 +258,8 @@ class Resolver(object):
         if selectors:
             new_query.select(selectors)
 
-        return self.on_select(self, new_query, parent_query)
+        self.on_select(self, new_query)
+        return new_query
 
     def execute(self, request: 'QueryRequest'):
         """
@@ -259,9 +268,21 @@ class Resolver(object):
         no new call is made.
         """
         owner = request.source  # TODO: rename request.source to requrest.owner
-        result = self.on_execute(request.source, self, request)
-        post_processed_result = self.post_execute(request.source, self, request, result)
-        setattr(owner, self.name, post_processed_result)
+
+        # pre_execute possibly mutates any of the parameters passed in. For
+        # instance,  the Relationship resolver defines this method to inject a
+        # predicate in the request.query object.
+        self.pre_execute(owner, self, request)
+
+        # here's where we actually "resolve" the data.
+        raw_result = self.on_execute(owner, self, request)
+        processed_result = self.post_execute(owner, self, request, raw_result)
+
+        # Instead of directly inserting the result in the source object's state
+        # dict, we use setattr here to ensure that the ResolverProperty performs
+        # its "fset" method.
+        setattr(owner, self.name, processed_result)
+
         return owner.internal.state[self.name]
 
     def backfill(self, request, result):
@@ -271,25 +292,32 @@ class Resolver(object):
         if value is None:
             return None
         elif self._target_biz_class is not None:
-            assert isinstance(value, BizThing)
+            assert isinstance(value, Entity)
             return value.dump()
         else:
             raise NotImplementedError()
 
-    def generate(self, owner: 'BizObject', query: 'ResolverQuery'):
+    def generate(self, owner: 'Resource', query: 'ResolverQuery'):
         raise NotImplementedError()
 
     @staticmethod
     def on_select(
         resolver: 'Resolver',
         query: 'ResolverQuery',
-        parent_query: 'Query'
     ) -> 'ResolverQuery':
         return query
 
     @staticmethod
+    def pre_execute(
+        owner: 'Resource',
+        resolver: 'Resolver',
+        request: 'QueryRequest',
+    ):
+        return
+
+    @staticmethod
     def on_execute(
-        owner: 'BizObject',
+        owner: 'Resource',
         resolver: 'Resolver',
         request: 'QueryRequest'
     ):
@@ -297,7 +325,7 @@ class Resolver(object):
 
     @staticmethod
     def post_execute(
-        owner: 'BizObject',
+        owner: 'Resource',
         resolver: 'Resolver',
         request: 'QueryRequest',
         result
@@ -306,7 +334,7 @@ class Resolver(object):
 
     @staticmethod
     def on_backfill(
-        owner: 'BizObject',
+        owner: 'Resource',
         resolver: 'Resolver',
         request: 'QueryRequest',
         result
@@ -327,9 +355,9 @@ class Resolver(object):
 
     @staticmethod
     def on_save(
-        resolver: 'Resolver', owner: 'BizObject', value
-    ) -> 'BizThing':
-        return value if isinstance(value, BizThing) else None
+        resolver: 'Resolver', owner: 'Resource', value
+    ) -> 'Entity':
+        return value if isinstance(value, Entity) else None
 
 
 class StoredQueryResolver(Resolver):
@@ -339,7 +367,7 @@ class StoredQueryResolver(Resolver):
 
     @staticmethod
     def on_execute(
-        owner: 'BizObject',
+        owner: 'Resource',
         resolver: 'Resolver',
         request: 'QueryRequest'
     ):
@@ -348,7 +376,7 @@ class StoredQueryResolver(Resolver):
 
     @staticmethod
     def on_backfill(
-        owner: 'BizObject',
+        owner: 'Resource',
         resolver: 'Resolver',
         request: 'QueryRequest',
         result

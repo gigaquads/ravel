@@ -5,29 +5,29 @@ from appyratus.utils import DictObject
 from pybiz.util.misc_functions import get_class_name, is_sequence
 from pybiz.constants import IS_BIZ_LIST_ANNOTATION
 
-from .biz_thing import BizThing
+from .entity import Entity
 from .dumper import Dumper, DumpStyle
-from .util import is_biz_object
+from .util import is_resource
 
 
-class BizListMeta(type):
-    def __init__(biz_list_class, name, bases, attr_dict):
+class BatchMeta(type):
+    def __init__(batch_class, name, bases, attr_dict):
         super().__init__(name, bases, attr_dict)
-        setattr(biz_list_class, IS_BIZ_LIST_ANNOTATION, True)
-        setattr(biz_list_class, 'pybiz', DictObject({'biz_class': None}))
+        setattr(batch_class, IS_BIZ_LIST_ANNOTATION, True)
+        setattr(batch_class, 'pybiz', DictObject({'biz_class': None}))
 
 
-class BizList(BizThing, metaclass=BizListMeta):
+class Batch(Entity, metaclass=BatchMeta):
     """
-    A multi-BizObject. A BizList represents a way of accessing field values and
-    other resolvers on a list of BizObjects.
+    A multi-Resource. A Batch represents a way of accessing field values and
+    other resolvers on a list of Resources.
     """
 
-    def __init__(self, biz_objects: List = None):
+    def __init__(self, resources: List = None):
         self.internal = DictObject()
         self.internal.data = [
-            x if is_biz_object(x) else self.pybiz.biz_class(data=x)
-            for x in biz_objects or []
+            x if is_resource(x) else self.pybiz.biz_class(data=x)
+            for x in resources or []
         ]
 
     def __getitem__(self, index):
@@ -35,8 +35,8 @@ class BizList(BizThing, metaclass=BizListMeta):
 
     def __getattr__(self, key):
         """
-        Access a resolver by attribute on all BizObjects contained in this
-        BizList. For example, if `users` is a BizList with 2 `User` objects,
+        Access a resolver by attribute on all Resources contained in this
+        Batch. For example, if `users` is a Batch with 2 `User` objects,
         then doing `users.name` would return `["daniel", "jeff"]`.
         """
         if key not in self.pybiz.biz_class.pybiz.resolvers:
@@ -67,7 +67,7 @@ class BizList(BizThing, metaclass=BizListMeta):
     def __repr__(self):
         dirty_count = sum(1 for x in self if x and x.dirty)
         return (
-            f'{get_class_name(self.pybiz.biz_class)}.BizList('
+            f'{get_class_name(self.pybiz.biz_class)}.Batch('
             f'size={len(self)}, dirty={dirty_count})'
         )
 
@@ -79,7 +79,7 @@ class BizList(BizThing, metaclass=BizListMeta):
 
         if isinstance(other, (list, tuple)):
             clone.internal.data.extend(other)
-        elif isinstance(other, BizList):
+        elif isinstance(other, Batch):
             assert other.pybiz.biz_class is self.pybiz.biz_class
             clone.internal.data.extend(other.internal.data)
         elif is_sequence(other):
@@ -95,16 +95,16 @@ class BizList(BizThing, metaclass=BizListMeta):
             obj.pprint()
         print(']')
 
-    def append(self, biz_object: 'BizObject'):
-        self.internal.data.append(biz_object)
+    def append(self, resource: 'Resource'):
+        self.internal.data.append(resource)
         return self
 
-    def extend(self, biz_objects: List['BizObject']):
-        self.internal.data.extend(biz_objects)
+    def extend(self, resources: List['Resource']):
+        self.internal.data.extend(resources)
         return self
 
-    def insert(self, index: int, biz_object: 'BizObject'):
-        self.internal.data.insert(index, biz_object)
+    def insert(self, index: int, resource: 'Resource'):
+        self.internal.data.insert(index, resource)
         return self
 
     def remove(self, target):
@@ -124,8 +124,8 @@ class BizList(BizThing, metaclass=BizListMeta):
 
     def delete(self):
         self.pybiz.biz_class.delete_many({
-            biz_obj._id for biz_obj in self.internal.data
-            if biz_obj and biz_obj.is_created
+            resource._id for resource in self.internal.data
+            if resource and resource.is_created
         })
         return self
 
@@ -134,13 +134,13 @@ class BizList(BizThing, metaclass=BizListMeta):
         return self
 
     def clean(self, fields=None):
-        for biz_obj in self.internal.data:
-            biz_obj.clean(fields=fields)
+        for resource in self.internal.data:
+            resource.clean(fields=fields)
         return self
 
     def mark(self, fields=None):
-        for biz_obj in self.internal.data:
-            biz_obj.mark(fields=fields)
+        for resource in self.internal.data:
+            resource.mark(fields=fields)
         return self
 
     def dump(
@@ -149,15 +149,15 @@ class BizList(BizThing, metaclass=BizListMeta):
         style: DumpStyle = None,
     ) -> List[Dict]:
         return [
-            biz_obj.dump(resolvers=resolvers, style=style)
-            for biz_obj in self.internal.data
+            resource.dump(resolvers=resolvers, style=style)
+            for resource in self.internal.data
         ]
 
     def load(self, resolvers: Set[Text] = None):
         stale_id_2_object = {}
-        for biz_obj in self.internal.data:
-            if biz_obj and biz_obj._id:
-                stale_id_2_object[biz_obj._id] = biz_obj
+        for resource in self.internal.data:
+            if resource and resource._id:
+                stale_id_2_object[resource._id] = resource
 
         if stale_id_2_object:
             fresh_objects = self.pybiz.biz_class.get_many(
@@ -171,7 +171,7 @@ class BizList(BizThing, metaclass=BizListMeta):
 
         return self
 
-    def unload(self, keys: Set[Text]) -> 'BizList':
-        for biz_obj in self.internal.data:
-            biz_obj.unload(keys)
+    def unload(self, keys: Set[Text]) -> 'Batch':
+        for resource in self.internal.data:
+            resource.unload(keys)
         return self

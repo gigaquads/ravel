@@ -2,7 +2,7 @@ import pytest
 import pybiz
 
 from appyratus.test import mark
-from pybiz.util.misc_functions import is_biz_list
+from pybiz.util.misc_functions import is_batch
 
 
 class TestRelationshipBasics(object):
@@ -22,7 +22,7 @@ class TestRelationshipBasics(object):
         ship.crew  # cause lazy loading
 
         # ensure we get the expected related data back
-        assert is_biz_list(ship.internal.attributes['crew'])
+        assert is_batch(ship.internal.attributes['crew'])
         assert len(ship.internal.attributes['crew']) == len(
             the_enterprise_with_crew.crew
         )
@@ -43,7 +43,7 @@ class TestRelationshipBasics(object):
         for officer in officers:
             assert 'ship' not in officer.internal.attributes
 
-        # lazy load all ship relationships via BizList bulk property
+        # lazy load all ship relationships via Batch bulk property
         officers.ship
 
         for officer in officers:
@@ -58,14 +58,14 @@ class TestRelationshipBasics(object):
         the_enterprise.save()
         captain_picard.save()
 
-        assert is_biz_list(the_enterprise.crew)
+        assert is_batch(the_enterprise.crew)
         assert len(the_enterprise.crew) == 0
 
         the_enterprise.crew.append(captain_picard)
 
         ship = startrek.biz.Ship.get(the_enterprise._id)
 
-        assert is_biz_list(ship.crew)
+        assert is_batch(ship.crew)
         assert len(ship.crew) == 1
         assert ship.crew[0]._id == captain_picard._id
 
@@ -76,14 +76,14 @@ class TestRelationshipBasics(object):
         the_enterprise.save()
         captain_picard.save()
 
-        assert is_biz_list(the_enterprise.crew)
+        assert is_batch(the_enterprise.crew)
         assert len(the_enterprise.crew) == 0
 
         the_enterprise.crew.extend([captain_picard])
 
         ship = startrek.biz.Ship.get(the_enterprise._id)
 
-        assert is_biz_list(ship.crew)
+        assert is_batch(ship.crew)
         assert len(ship.crew) == 1
         assert ship.crew[0]._id == captain_picard._id
 
@@ -94,14 +94,14 @@ class TestRelationshipBasics(object):
         the_enterprise.save()
         captain_picard.save()
 
-        assert is_biz_list(the_enterprise.crew)
+        assert is_batch(the_enterprise.crew)
         assert len(the_enterprise.crew) == 0
 
         the_enterprise.crew.insert(0, captain_picard)
 
         ship = startrek.biz.Ship.get(the_enterprise._id)
 
-        assert is_biz_list(ship.crew)
+        assert is_batch(ship.crew)
         assert len(ship.crew) == 1
         assert ship.crew[0]._id == captain_picard._id
 
@@ -116,14 +116,14 @@ class TestRelationshipBasics(object):
 
         ship = startrek.biz.Ship.get(the_enterprise._id)
 
-        assert is_biz_list(ship.crew)
+        assert is_batch(ship.crew)
         assert len(ship.crew) == 1
         assert ship.crew[0]._id == captain_picard._id
 
         ship.crew.pop()
         ship = startrek.biz.Ship.get(the_enterprise._id)
 
-        assert is_biz_list(ship.crew)
+        assert is_batch(ship.crew)
         assert len(ship.crew) == 0
 
     @mark.integration
@@ -137,21 +137,21 @@ class TestRelationshipBasics(object):
 
         ship = startrek.biz.Ship.get(the_enterprise._id)
 
-        assert is_biz_list(ship.crew)
+        assert is_batch(ship.crew)
         assert len(ship.crew) == 1
         assert ship.crew[0]._id == captain_picard._id
 
         ship.crew.remove(captain_picard)
         ship = startrek.biz.Ship.get(the_enterprise._id)
 
-        assert is_biz_list(ship.crew)
+        assert is_batch(ship.crew)
         assert len(ship.crew) == 0
 
     @mark.unit
-    def test_slicing_produces_another_biz_list(cls, startrek, enterprise_crew):
+    def test_slicing_produces_another_batch(cls, startrek, enterprise_crew):
         enterprise_crew.save()
         sliced = enterprise_crew[:1]
-        assert isinstance(sliced, startrek.biz.Officer.BizList)
+        assert isinstance(sliced, startrek.biz.Officer.Batch)
         assert sliced.source is None
         assert sliced[0]._id == enterprise_crew[0]._id
         assert sliced.relationship is None
@@ -159,7 +159,7 @@ class TestRelationshipBasics(object):
 
 
     @mark.unit
-    def test_concat_returns_new_biz_list(cls, enterprise_crew):
+    def test_concat_returns_new_batch(cls, enterprise_crew):
         enterprise_crew.save()
         concated = enterprise_crew + enterprise_crew
         assert concated is not enterprise_crew

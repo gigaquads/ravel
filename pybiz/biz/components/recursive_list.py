@@ -1,11 +1,11 @@
 from typing import Dict, List, Text, Set
 
-from pybiz import BizObject, Relationship, fields
+from pybiz import Resource, Relationship, fields
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 
 # TODO: implement updates to depth in insert and unlink
 
-class RecursiveList(BizObject):
+class RecursiveList(Resource):
     """
     # RecursiveList
     Each RecursiveList is essentially a linked list, where node that has a
@@ -83,7 +83,7 @@ class RecursiveList(BizObject):
         def copy_children(node, parent_id, fields):
             if not node.size:
                 return
-            copied_children = self.BizList([])
+            copied_children = self.Batch([])
             node.children.load(fields)
             for child in node.children:
                 copied_child = copy_one(child, parent_id, fields)
@@ -113,7 +113,7 @@ class RecursiveList(BizObject):
         if self.parent_id is None:
             return
 
-        dirty = self.BizList([self, self.parent])  # biz_objs to update
+        dirty = self.Batch([self, self.parent])  # resources to update
 
         # adjust remaining sibling's positions
         siblings = self.query(
@@ -140,7 +140,7 @@ class RecursiveList(BizObject):
         position = max(0, min(self.size, index))
         do_shift_sibling_positions = position < self.size
 
-        dirty = self.BizList([self])  # biz_objs to update
+        dirty = self.Batch([self])  # resources to update
 
         for j, child in enumerate(children):
             if copy:

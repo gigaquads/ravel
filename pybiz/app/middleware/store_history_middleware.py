@@ -9,30 +9,30 @@ from pybiz.util.loggers import console
 from .base import Middleware
 
 
-class DaoHistoryMiddleware(Middleware):
+class StoreHistoryMiddleware(Middleware):
     """
     Keep history for each request, clearing it at the end.
     """
 
     def __init__(self, echo=False, verbose=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._dao_instances = []
+        self._store_instances = []
         self._echo = echo
         self._echo_verbose = verbose
 
     def on_bootstrap(self):
         for biz_class in self.app.biz.values():
-            dao = biz_class.get_dao()
-            self._dao_instances.append(dao)
-            dao.history.start()
+            store = biz_class.get_store()
+            self._store_instances.append(store)
+            store.history.start()
 
     def pre_request(self, endpoint: 'Endpoint', raw_args: List, raw_kwargs: Dict):
         """
         In pre_request, args and kwargs are in the raw form before being
         processed by app.on_request.
         """
-        for dao in self._dao_instances:
-            dao.history.clear()
+        for store in self._store_instances:
+            store.history.clear()
 
     def on_request(self, endpoint: 'Endpoint', args: List, kwargs: Dict):
         """
@@ -49,14 +49,14 @@ class DaoHistoryMiddleware(Middleware):
         app.on_request.
         """
         if self._echo:
-            for dao in self._dao_instances:
+            for store in self._store_instances:
                 if not self._echo_verbose:
                     console.info(
-                        message=f'{dao} history',
-                        data={'events': dao.history.events}
+                        message=f'{store} history',
+                        data={'events': store.history.events}
                     )
                 else:
                     console.info(
-                        message=f'{dao} history',
-                        data={'events': [e.dump() for e in dao.history.events]}
+                        message=f'{store} history',
+                        data={'events': [e.dump() for e in store.history.events]}
                     )

@@ -4,16 +4,18 @@ from pybiz.util.loggers import console
 from pybiz.util.misc_functions import (
     is_sequence,
     flatten_sequence,
+    get_class_name,
 )
 from pybiz.constants import ID_FIELD_NAME
 from pybiz.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,
+    ResolverAlias,
     OP_CODE,
 )
 
-from .util import is_biz_object
+from .util import is_resource
 from .query.order_by import OrderBy
 from .resolver.resolver import Resolver
 from .resolver.resolver_property import ResolverProperty
@@ -51,9 +53,9 @@ class FieldResolver(Resolver):
     def priority(cls) -> int:
         return 1
 
-    def on_bind(self, biz_class: Type['BizObject']):
+    def on_bind(self, biz_class: Type['Resource']):
         """
-        For FieldResolvers, the target is this owner BizObject class, since the
+        For FieldResolvers, the target is this owner Resource class, since the
         field value comes from it, not some other type, as with Relationships,
         for instance.
         """
@@ -61,7 +63,7 @@ class FieldResolver(Resolver):
 
     @staticmethod
     def on_execute(
-        owner: 'BizObject',
+        owner: 'Resource',
         resolver: 'Resolver',
         request: 'QueryRequest'
     ):
@@ -73,24 +75,22 @@ class FieldResolver(Resolver):
         if owner_id is None:
             return None
 
-        field_name = resolver.field.name
-
-        # lazy load this field and any other lazily loaded field
-        request.query.select(field_name)
-        request.query.select(
+        field_names = {resolver.field.name}
+        field_names.update(
             k for k, r in owner.pybiz.resolvers.fields.items()
             if k not in owner.internal.state
         )
 
-        field_values = owner.dao.dispatch(
+        field_values = owner.store.dispatch(
             method_name='fetch',
             args=(owner_id, ),
-            kwargs={'fields': request.query.params.select.keys()}
+            kwargs={'fields': field_names}
         )
 
-        owner.merge(field_values)
+        if field_values:
+            owner.merge(field_values)
 
-        return field_values[field_name]
+        return field_values[resolver.field.name]
 
     def dump(self, dumper: 'Dumper', value):
         """
@@ -100,7 +100,7 @@ class FieldResolver(Resolver):
         """
         return value
 
-    def generate(self, owner: 'BizObject', query: 'ResolverQuery'):
+    def generate(self, owner: 'Resource', query: 'ResolverQuery'):
         if query.parent and query.parent.params.where:
             pass # TODO
         else:
@@ -111,6 +111,9 @@ class FieldResolverProperty(ResolverProperty):
 
     def __hash__(self):
         return super().__hash__()
+
+    def __repr__(self):
+        return f'{get_class_name(self.biz_class)}.{self.resolver.name}'
 
     def __eq__(self, other: Predicate) -> Predicate:
         return ConditionalPredicate(OP_CODE.EQ, self, other)
@@ -131,16 +134,26 @@ class FieldResolverProperty(ResolverProperty):
         return ConditionalPredicate(OP_CODE.GEQ, self, other)
 
     def including(self, *others) -> Predicate:
-        others = flatten_sequence(others)
-        others = {obj._id if is_biz_object(obj) else obj for obj in others}
-        return ConditionalPredicate(OP_CODE.INCLUDING, self, others)
+        if isinstance(others[0], ResolverAlias):
+            others = others[0]
+        else:
+            others = flatten_sequence(others)
+            others = {obj._id if is_resource(obj) else obj for obj in others}
+        return ConditionalPredicate(
+            OP_CODE.INCLUDING, self, others, is_scalar=False
+        )
 
     def excluding(self, *others) -> Predicate:
-        others = flatten_sequence(others)
-        others = {obj._id if is_biz_object(obj) else obj for obj in others}
-        return ConditionalPredicate(OP_CODE.EXCLUDING, self, others)
+        if isinstance(others[0], ResolverAlias):
+            others = others[0]
+        else:
+            others = flatten_sequence(others)
+            others = {obj._id if is_resource(obj) else obj for obj in others}
+        return ConditionalPredicate(
+            OP_CODE.EXCLUDING, self, others, is_scalar=False
+        )
 
-    def on_set(self, owner: 'BizObject', value):
+    def on_set(self, owner: 'Resource', value):
         if value is None and self.field.nullable:
             processed_value = None
         else:

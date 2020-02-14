@@ -48,5 +48,5 @@ class RelationshipArgumentError(PybizError):
     pass
 
 
-class BizObjectError(PybizError):
+class ResourceError(PybizError):
     pass

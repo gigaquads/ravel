@@ -12,7 +12,7 @@ from pybiz.util.misc_functions import (
 )
 
 from pybiz.biz.util import (
-    is_biz_object
+    is_resource
 )
 
 class ApplicationArgumentLoader(object):
@@ -20,14 +20,14 @@ class ApplicationArgumentLoader(object):
     A `ApplicationArgumentLoader` instance is used by each `Application` object. When enabled
     (which it is, by default), arguments passed into API endpoints (AKA Endpoint
     objects) are automatically loaded or converted to their corresponding
-    BizObjects, replacing the raw arguments, provided that the arguments are
-    declared using a BizObject as the type annotation.
+    Resources, replacing the raw arguments, provided that the arguments are
+    declared using a Resource as the type annotation.
 
     For example, if you have an API endpoint, like:
 
     ```python3
     @repl()
-    def get_projects(user: User) -> Project.BizList:
+    def get_projects(user: User) -> Project.Batch:
         return user.projects
     ```
 
@@ -40,10 +40,10 @@ class ApplicationArgumentLoader(object):
     get_projects({"id": "user-id-124", "name": "Musk"})
     ```
 
-    In the first case, a `User` BizObject is passed in. In the second, a User ID
+    In the first case, a `User` Resource is passed in. In the second, a User ID
     is passed in, and the argument loader performs `User.get(_id)`. Finally, in
     the third case, a raw dict is passed in with the format specified by the
-    `User` BizObject schema and is converted into the corresponding BizObject.
+    `User` Resource schema and is converted into the corresponding Resource.
     """
 
     class ArgumentSpec(object):
@@ -52,7 +52,7 @@ class ApplicationArgumentLoader(object):
             position: int,
             arg_name: Text,
             many: bool,
-            biz_class: Type['BizObject']
+            biz_class: Type['Resource']
         ):
             self.position = position
             self.arg_name = arg_name
@@ -86,7 +86,7 @@ class ApplicationArgumentLoader(object):
 
     def load(self, endpoint: 'Endpoint', args: Tuple, kwargs: Dict) -> Tuple:
         """
-        Replace args and kwargs with corresponding BizThing and return them
+        Replace args and kwargs with corresponding Entity and return them
         """
         loaded_args = list(args)
         loaded_kwargs = kwargs.copy()
@@ -106,38 +106,38 @@ class ApplicationArgumentLoader(object):
             # Note that "key" is either a position integer offset
             # of the name of a keyword argument.
 
-            loaded_biz_thing = self.load_param(
+            loaded_entity = self.load_param(
                 spec.many, spec.biz_class, raw_arg_value
             )
-            # store a reference to the raw argument value on the loaded BizThing
+            # store a reference to the raw argument value on the loaded Entity
             # so that it can still be accessed inside the app.
-            if loaded_biz_thing is not None:
-                loaded_biz_thing.internal.arg = raw_arg_value
+            if loaded_entity is not None:
+                loaded_entity.internal.arg = raw_arg_value
 
-            loaded_biz_thing = self._on_load(
-                spec, raw_arg_value, loaded_biz_thing
+            loaded_entity = self._on_load(
+                spec, raw_arg_value, loaded_entity
             )
 
             if is_positional:
-                loaded_args[key] = loaded_biz_thing
+                loaded_args[key] = loaded_entity
             else:
-                loaded_kwargs[key] = loaded_biz_thing
+                loaded_kwargs[key] = loaded_entity
         
         return (tuple(loaded_args), loaded_kwargs)
 
-    def load_param(self, many: bool, biz_class: Type['BizObject'], preloaded):
+    def load_param(self, many: bool, biz_class: Type['Resource'], preloaded):
         """
         Convert the given parameter "preloaded" into its corresponding
-        BizThing.
+        Entity.
 
         - If the preloaded value is an ID, fetch the object.
-        - If it is a list of IDs, return a BizList.
-        - If it is a dict, replace it with a corresponding BizObject instance.
+        - If it is a list of IDs, return a Batch.
+        - If it is a dict, replace it with a corresponding Resource instance.
         """
         if not (preloaded and biz_class):
             return preloaded
         elif not many:
-            if is_biz_object(preloaded):
+            if is_resource(preloaded):
                 return preloaded
             elif isinstance(preloaded, dict):
                 if 'id' in preloaded:
@@ -150,10 +150,10 @@ class ApplicationArgumentLoader(object):
         elif is_sequence(preloaded):
             if isinstance(preloaded, set):
                 preloaded = list(preloaded)
-            if is_biz_object(preloaded[0]):
-                return biz_class.BizList(preloaded)
+            if is_resource(preloaded[0]):
+                return biz_class.Batch(preloaded)
             elif isinstance(preloaded[0], dict):
-                return biz_class.BizList(
+                return biz_class.Batch(
                     biz_class(record).clean() if record.get('id') is not None
                     else biz_class(record)
                         for record in preloaded

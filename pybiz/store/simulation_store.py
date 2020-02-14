@@ -22,12 +22,12 @@ from pybiz.predicate import (
     OP_CODE,
 )
 
-from .base import Dao
+from .base import Store
 
 
-class SimulationDao(Dao):
+class SimulationStore(Store):
     """
-    An in-memory Dao that stores data in Python dicts with BTrees indexes.
+    An in-memory Store that stores data in Python dicts with BTrees indexes.
     """
 
     def __init__(self):
@@ -38,15 +38,15 @@ class SimulationDao(Dao):
     def on_bootstrap(cls):
         pass
 
-    def on_bind(self, biz_class: Type['BizObject'], **kwargs):
+    def on_bind(self, biz_class: Type['Resource'], **kwargs):
         """
         This lifecycle method executes when Pybiz instantiates a singleton
-        instance of this class and associates it with a specific BizObject
+        instance of this class and associates it with a specific Resource
         class.
         """
         self.reset()
         # because we do no currently index composite data strucures, like dicts
-        # and lists, we add the names of these fields on the bound BizObject
+        # and lists, we add the names of these fields on the bound Resource
         # class to the list of "ignored" indexes.
         for k, v in biz_class.Schema.fields.items():
             if isinstance(v, (fields.Dict, fields.Nested, Schema)):
@@ -249,7 +249,6 @@ class SimulationDao(Dao):
 
     def _update_indexes(self, _id, record):
         schema = self.biz_class.pybiz.schema
-        record, error = schema.process(record, strict=True)
         for k, v in record.items():
             if k not in self.ignored_indexes:
                 if v not in self.indexes[k]:
@@ -259,7 +258,6 @@ class SimulationDao(Dao):
     def _delete_from_indexes(self, _id, record, indexes_to_delete=None):
         schema = self.biz_class.pybiz.schema
         indexes_to_delete = indexes_to_delete or set(record.keys())
-        record, error = schema.process(record, strict=True)
         for k in indexes_to_delete:
             if k not in self.ignored_indexes:
                 v = record[k]
@@ -318,7 +316,7 @@ class SimulationDao(Dao):
                     offset = bisect.bisect(keys, v)
                     interval = slice(0, offset, 1)
                 else:
-                    # XXX: raise DaoError
+                    # XXX: raise StoreError
                     raise Exception('unrecognized op')
                 _ids = self._union([
                     index[k] for k in keys[interval]
@@ -337,7 +335,7 @@ class SimulationDao(Dao):
                 rhs_result = self._compute_queried_ids(rhs)
                 _ids = set.union(lhs_result, rhs_result)
             else:
-                # XXX: raise DaoError
+                # XXX: raise StoreError
                 raise Exception('unrecognized boolean predicate')
 
         return _ids

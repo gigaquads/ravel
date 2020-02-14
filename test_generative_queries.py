@@ -2,13 +2,13 @@ from pprint import pprint
 
 import pybiz
 
-from pybiz import BizObject, Relationship
+from pybiz import Resource, Relationship
 
 
 app = pybiz.Application()
 
 
-class User(BizObject):
+class User(Resource):
     email = pybiz.String()
     age = pybiz.Uint()
     password = pybiz.String()
@@ -16,7 +16,7 @@ class User(BizObject):
     account = Relationship(lambda: (User.account_id, Account._id))
 
 
-class Account(BizObject):
+class Account(Resource):
     name = pybiz.String()
     size = pybiz.Int()
     users = Relationship(lambda: (Account._id, User.account_id), many=True)

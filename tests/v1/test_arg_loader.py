@@ -32,7 +32,7 @@ class TestApplicationBasics(object):
         assert args[0]._id == captain_picard._id
 
     @mark.integration
-    def test_positional_arg_is_loaded_from_biz_obj(cls, startrek, captain_picard):
+    def test_positional_arg_is_loaded_from_resource(cls, startrek, captain_picard):
         captain_picard.create()
         args, kwargs = startrek.loader.load(
             endpoint=startrek.api.get_officer,
@@ -65,7 +65,7 @@ class TestApplicationBasics(object):
         assert kwargs['ship']._id == the_enterprise._id
 
     @mark.integration
-    def test_kw_arg_is_loaded_from_biz_obj(cls, startrek, the_enterprise):
+    def test_kw_arg_is_loaded_from_resource(cls, startrek, the_enterprise):
         the_enterprise.create()
         args, kwargs = startrek.loader.load(
             endpoint=startrek.api.get_ship,

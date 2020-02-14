@@ -122,7 +122,7 @@ def add_task(owner_id: str, project_id: str, task_data: dict):
           <ul>
             <li>It's tedious.</li>
             <li>It's unrelated to what the endpoint says it does.
-            <li>The referenced <code>BizObject</code> instances are not available in middleware.</li>
+            <li>The referenced <code>Resource</code> instances are not available in middleware.</li>
             <li>The call pattern is too rigid and low-level.</li>
           </ul>
 
@@ -130,7 +130,7 @@ def add_task(owner_id: str, project_id: str, task_data: dict):
           With these considerations, Pybiz implements a form of <a href="">argument
           polymorphism</a>, in which IDs or dicts are accepted as valid
           arguments but resolved and normalized to corresponding
-          <code>BizObject</code> objects, either by loading them through the
+          <code>Resource</code> objects, either by loading them through the
           <a href="">DAL</a> or creating new instances. We can now simplify the endpoint above, yielding:
           </p>
 
@@ -153,7 +153,7 @@ def add_task(owner: User, project: Project, task: Task) -> Task:
           <h3>Enabling Polymorphism</h3>
           <p>
           Polymorphism is enabled by default on any argument annotated
-          with <code>BizObject</code> or <code>List[BizObject]</code> (like <code>owner</code> and <code>project</code> above). The convenience of
+          with <code>Resource</code> or <code>List[Resource]</code> (like <code>owner</code> and <code>project</code> above). The convenience of
           this approach becomes apparent when you try to reuse endpoints
           in different contexts. In web apps, for instance, you might want to
           call an endpoint using IDs in the URL, but in a REPL, you might want
@@ -170,7 +170,7 @@ add_item_to_todo_list(owner_id, todo_list_id, item_data)
 add_item_to_todo_list({'_id': 'abc123'}, {'_id': 'xyz123'}, item_data)
           </pre>
 
-          <h4>Passing BizObjects as Arguments</h4>
+          <h4>Passing Resources as Arguments</h4>
           <pre class="prettyprint lang-python">
 add_item_to_todo_list(owner, todo_list, item)
           </pre>
@@ -236,8 +236,8 @@ class Exists(Guard):
         """
         Get the object from kwargs and ensure it exists in the DAL.
         """
-        biz_obj = kwargs.get(self.arg)
-        if not ((biz_obj is not None) and biz_obj.exists()):
+        resource = kwargs.get(self.arg)
+        if not ((resource is not None) and resource.exists()):
             raise self.fail(f'{self.arg} does not exist')
           </pre>
 
@@ -265,9 +265,9 @@ class Matches(Guard):
         Get the object from kwargs and ensure that its instance attributes
         match expected values.
         """
-        biz_object = kwargs.get(self.arg)
+        resource = kwargs.get(self.arg)
         for field_name, expected_value in self.expected.items():
-            actual_value = biz_object[field_name]
+            actual_value = resource[field_name]
             if actual_value != expected_value:
                 raise self.fail(
                     f'{self.arg}.{field_name} expected to have a '

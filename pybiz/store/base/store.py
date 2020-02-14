@@ -12,14 +12,14 @@ from pybiz.util.loggers import console
 from pybiz.exceptions import PybizError
 from pybiz.constants import ID_FIELD_NAME
 
-from .dao_history import DaoHistory, DaoEvent
+from .store_history import StoreHistory, StoreEvent
 
 
-class DaoError(PybizError):
+class StoreError(PybizError):
     pass
 
 
-class DaoMeta(ABCMeta):
+class StoreMeta(ABCMeta):
 
     _local = local()
     _local.is_bootstrapped = defaultdict(bool)
@@ -27,20 +27,20 @@ class DaoMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
-        def callback(scanner, name, dao_class):
-            scanner.dao_classes.setdefault(name, dao_class)
-            console.info(f'venusian scan found "{dao_class.__name__}" Dao')
+        def callback(scanner, name, store_class):
+            scanner.store_classes.setdefault(name, store_class)
+            console.info(f'venusian scan found "{store_class.__name__}" Store')
 
-        venusian.attach(cls, callback, category='dao')
+        venusian.attach(cls, callback, category='store')
 
 
-class Dao(object, metaclass=DaoMeta):
+class Store(object, metaclass=StoreMeta):
 
     env = Environment()
     _app = None
 
     def __init__(self, *args, **kwargs):
-        self._history = DaoHistory(dao=self)
+        self._history = StoreHistory(store=self)
         self._is_bound = False
         self._biz_class = None
 
@@ -60,11 +60,11 @@ class Dao(object, metaclass=DaoMeta):
         kwargs: Dict = None
     ):
         """
-        Delegate a Dao call to the named method, performing any side-effects,
-        like creating a DaoHistory event if need be. This is used internally
-        by BizObject to call into DAO methods.
+        Delegate a Store call to the named method, performing any side-effects,
+        like creating a StoreHistory event if need be. This is used internally
+        by Resource to call into DAO methods.
         """
-        # call the requested Dao method
+        # call the requested Store method
         func = getattr(self, method_name)
         exc = None
         try:
@@ -72,9 +72,9 @@ class Dao(object, metaclass=DaoMeta):
         except Exception as exc:
             raise exc
 
-        # create and store the Dao call in a history event
+        # create and store the Store call in a history event
         if self.history.is_recording_method(method_name):
-            event = DaoEvent(method_name, args, kwargs, result, exc)
+            event = StoreEvent(method_name, args, kwargs, result, exc)
             self._history.append(event)
 
         # finally faise the exception if one was generated
@@ -93,7 +93,7 @@ class Dao(object, metaclass=DaoMeta):
         return self._is_bound
 
     @property
-    def biz_class(self) -> Type['BizObject']:
+    def biz_class(self) -> Type['Resource']:
         return self._biz_class
 
     @property
@@ -101,10 +101,10 @@ class Dao(object, metaclass=DaoMeta):
         return self._app
 
     @property
-    def history(self) -> 'DaoHistory':
+    def history(self) -> 'StoreHistory':
         return self._history
 
-    def play(self, history: DaoHistory, reads=True, writes=True) -> List:
+    def play(self, history: StoreHistory, reads=True, writes=True) -> List:
         results = []
         for event in history:
             is_read = event.method in self.history.read_method_names
@@ -115,10 +115,10 @@ class Dao(object, metaclass=DaoMeta):
                 results.append(result)
         return results
 
-    def bind(self, biz_class: Type['BizObject'], **kwargs):
+    def bind(self, biz_class: Type['Resource'], **kwargs):
         self._biz_class = biz_class
-        self._is_bound = True
         self.on_bind(biz_class, **kwargs)
+        self._is_bound = True
 
     @classmethod
     def bootstrap(cls, app: 'Application' = None, **kwargs):
@@ -130,16 +130,16 @@ class Dao(object, metaclass=DaoMeta):
         cls.on_bootstrap(**kwargs)
 
         # TODO: put this into a method
-        if not hasattr(DaoMeta._local, 'is_bootstrapped'):
-            DaoMeta._local.is_bootstrapped = defaultdict(bool)
+        if not hasattr(StoreMeta._local, 'is_bootstrapped'):
+            StoreMeta._local.is_bootstrapped = defaultdict(bool)
 
-        DaoMeta._local.is_bootstrapped[cls.__name__] = True
+        StoreMeta._local.is_bootstrapped[cls.__name__] = True
 
     @classmethod
     def on_bootstrap(cls, **kwargs):
         pass
 
-    def on_bind(cls, biz_class: Type['BizObject'], **kwargs):
+    def on_bind(cls, biz_class: Type['Resource'], **kwargs):
         pass
 
     @classmethod
@@ -150,8 +150,14 @@ class Dao(object, metaclass=DaoMeta):
         """
         Generate and return a new ID for the given not-yet-created record.
         """
-        # TODO Make this use biz_class.pybiz.defaults['_id'] instead as default
-        return record.get(ID_FIELD_NAME) or UuidString.next_id()
+        new_id = record.get(ID_FIELD_NAME)
+        if new_id is None:
+            new_id = cls.biz_class.pybiz.defaults[ID_FIELD_NAME]()
+
+        # NOTE: if new_id is still None at this point, it's assumed that
+        # the persistence technology will generate and return it instead.
+
+        return new_id
 
     @abstractmethod
     def exists(self, _id) -> bool:
@@ -168,13 +174,10 @@ class Dao(object, metaclass=DaoMeta):
         self,
         predicate: 'Predicate',
         fields: Set[Text] = None,
-        limit: int = None,
-        offset: int = None,
-        order_by: Tuple = None,
         **kwargs
     ) -> List[Dict]:
-        TODO: rename to "select"
         """
+        TODO: rename to "select"
         Return all records whose fields match a logical predicate.
         """
 
@@ -195,7 +198,7 @@ class Dao(object, metaclass=DaoMeta):
     @abstractmethod
     def fetch_all(self, fields: Set[Text] = None) -> Dict:
         """
-        Return all records managed by this Dao.
+        Return all records managed by this Store.
         """
 
     @abstractmethod
@@ -203,13 +206,13 @@ class Dao(object, metaclass=DaoMeta):
         """
         Create a new record with the _id. If the _id is contained is not
         contained in the data dict nor provided as the _id argument, it is the
-        responsibility of the Dao class to generate the _id.
+        responsibility of the Store class to generate the _id.
         """
 
     @abstractmethod
     def create_many(self, records: List[Dict]) -> List[Dict]:
         """
-        Create a new record.  It is the responsibility of the Dao class to
+        Create a new record.  It is the responsibility of the Store class to
         generate the _id.
         """
 

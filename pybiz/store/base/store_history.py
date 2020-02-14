@@ -17,7 +17,7 @@ WRITE_METHODS = frozenset({
 })
 
 
-class DaoEvent(object):
+class StoreEvent(object):
     def __init__(
         self,
         method: Text,
@@ -38,7 +38,7 @@ class DaoEvent(object):
 
     def __repr__(self):
         return (
-            f'DaoEvent(method={self.method}, timestamp={self.timestamp})'
+            f'StoreEvent(method={self.method}, timestamp={self.timestamp})'
         )
 
     def _backfill_id_fields(self, result):
@@ -64,9 +64,9 @@ class DaoEvent(object):
         return data
 
 
-class DaoHistory(object):
-    def __init__(self, dao: 'Dao', reads=True, writes=True):
-        self._dao = dao
+class StoreHistory(object):
+    def __init__(self, store: 'Store', reads=True, writes=True):
+        self._store = store
         self._events = deque()
         self._is_recording = False
         self._is_recording_reads = reads

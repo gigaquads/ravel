@@ -23,7 +23,7 @@ from pybiz.predicate import (
 
 from ..resolver.resolver import Resolver, StoredQueryResolver
 from ..resolver.resolver_property import ResolverProperty
-from ..util import is_biz_object, is_biz_list
+from ..util import is_resource, is_batch
 from .request import QueryRequest, QueryResponse
 from .backfill import Backfill, QueryBackfiller
 from .printer import QueryPrinter
@@ -167,7 +167,7 @@ class Query(AbstractQuery):
 
     printer = QueryPrinter()
 
-    def __init__(self, biz_class: Type['BizObject'], *args, **kwargs):
+    def __init__(self, biz_class: Type['Resource'], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._biz_class = biz_class
         self._response = None
@@ -190,8 +190,8 @@ class Query(AbstractQuery):
         return self._response
 
     @property
-    def biz_list_class(self):
-        return self._biz_class.BizList if self._biz_class else None
+    def batch_class(self):
+        return self._biz_class.Batch if self._biz_class else None
 
     def clear(self, select=True, where=True):
         if select:
@@ -207,6 +207,15 @@ class Query(AbstractQuery):
 
     def fprintf(self):
         return self.printer.fprintf(self)
+
+    def bind(self, sources: Dict[Text, 'Entity'] = None, **more_sources):
+        sources = sources or {}
+        sources.update(more_sources)
+
+        if self.params.where:
+            self.params.where.bind(sources)
+
+        return self
 
     def where(self, *predicates, **equality_values):
         computed_predicate = Predicate.reduce_and(predicates)
@@ -243,7 +252,14 @@ class Query(AbstractQuery):
                 self.params.order_by.append(order_by_obj)
         return self
 
-    def execute(self, request=None, context=None, first=None, backfill: Backfill = None):
+    def execute(
+        self,
+        request: 'QueryRequest' = None,
+        context: Dict = None,
+        backfill: Backfill = None,
+        first: bool = None,
+        response: bool = False,
+    ):
         """
         Execute the Query. This is not a recursive procedure in and of itself.
         Any selected Resolver may or may not create and run its own Query within
@@ -259,7 +275,7 @@ class Query(AbstractQuery):
 
         self.log()
 
-        # fetch data from the DAL, create the BizObjects and execute their
+        # fetch data from the DAL, create the Resources and execute their
         # resolvers. call these objects the "targets" throughout the code.
         records = self._execute_dal_query(request)
         targets = self._instantiate_targets_and_resolve(records, request, first)
@@ -270,9 +286,15 @@ class Query(AbstractQuery):
 
         # transform the final return value, which may
         # be a single object or multiple.
-        retval = self._compute_exeecution_return_value(request, targets)
+        retval = self._compute_execution_return_value(request, targets)
 
         self._execute_subqueries(targets, request)
+
+        # If the `response` kwarg is set, return the response object
+        # rather than the data. On the response, you can still access
+        # the data via response.body.
+        if response:
+            return self.response
 
         return retval
 
@@ -290,6 +312,7 @@ class Query(AbstractQuery):
             backfiller=backfiller,
             context=context,
             parent=parent_request,
+            root=parent_request.root if parent_request else self
         )
 
     def _init_backfiller(self, backfill):
@@ -300,7 +323,7 @@ class Query(AbstractQuery):
             backfiller = QueryBackfiller()
         return backfiller
 
-    def _compute_exeecution_return_value(self, request, targets):
+    def _compute_execution_return_value(self, request, targets):
         """
         Compute final return value.
         """
@@ -308,20 +331,24 @@ class Query(AbstractQuery):
         if self._options.get('first', False):
             retval = targets[0] if targets else None
 
+        if request.root:
+            resp = request.root.response
+        else:
+            resp = request.response
+
         # if this query has an alias, store it in the root query
         # response's "aliased" dict.
         if self.params.alias:
-            if request.root:
-                resp = request.root.response
-                resp.aliased[self.params.alias] = retval
-            else:
-                resp = request.response
-                resp.aliased[self.params.alias] = retval
+            alias = self.params.alias
+        else:
+            alias = str(id(self))
+
+        resp.aliased[alias] = retval
 
         return retval
 
     def _instantiate_targets_and_resolve(self, target_records, request, first):
-        targets = self.biz_list_class(self._biz_class(x) for x in target_records)
+        targets = self.batch_class(self._biz_class(x) for x in target_records)
 
         if first:
             request.response = QueryResponse(
@@ -346,18 +373,22 @@ class Query(AbstractQuery):
 
     def _execute_target_resolver_queries(self, targets, parent_request):
         """
-        Call all ResolverQuery execute methods on all target BizObjects.
+        Call all ResolverQuery execute methods on all target Resources.
         """
-        for query in self.params.select.values():
+        for resolver_name, query in self.params.select.items():
+            if resolver_name in self._biz_class.pybiz.resolvers.fields:
+                # TODO: manually perform pre and post-execute
+                continue
+
             for target in targets:
                 # resolve and set the value to set in the
-                # target BizObject's state dict
+                # target Resource's state dict
                 resolver = query.resolver
                 request = self._build_request(
                     query, target, parent_request, resolver
                 )
                 # Note below that the resolver sets the resolved
-                # value on the calling BizObject via resolver.execute
+                # value on the calling Resource via resolver.execute
                 query.execute(request)
 
     def _execute_subqueries(self, targets, request):
@@ -371,32 +402,36 @@ class Query(AbstractQuery):
     def _execute_dal_query(self, request):
         fields = self._extract_selected_field_names()
         predicate = self._compute_where_predicate(request)
-        return self._biz_class.get_dao().query(
-            predicate=predicate,
-            fields=fields,
-            limit=self.params.get('limit'),
-            offset=self.params.get('offset'),
-            order_by=self.params.get('order_by'),
+        return self._biz_class.get_store().dispatch(
+            method_name='query',
+            args=(predicate, ),
+            kwargs=dict(
+                fields=fields,
+                limit=self.params.get('limit'),
+                offset=self.params.get('offset'),
+                order_by=self.params.get('order_by'),
+            )
         )
 
     def _extract_selected_field_names(self) -> Set[Text]:
         resolver_queries = self.params.get('select')
         if not resolver_queries:
-            dao_field_names = set(self._biz_class.pybiz.schema.fields.keys())
+            store_field_names = set(self._biz_class.pybiz.schema.fields.keys())
         else:
-            dao_field_names = {
+            store_field_names = {
                 k for k in resolver_queries if k in
                 self._biz_class.pybiz.resolvers.fields
             }
 
-        return dao_field_names
+        store_field_names.add(ID_FIELD_NAME)
+        return store_field_names
 
     def _compute_where_predicate(self, request):
         predicate = self.params.get('where')
 
         if not predicate:
             # ensure we at least have a default "select *" predicate
-            # to use when executing this Query in the Dao
+            # to use when executing this Query in the Store
             predicate = (self._biz_class._id != None)
         elif self.parent is not None and predicate.is_unbound:
             if request.root is None:
@@ -419,21 +454,18 @@ class Query(AbstractQuery):
 
             if isinstance(obj, Resolver):
                 resolver = obj
-                resolver_query = resolver.select()
-                resolver_query.configure(self.options)
+                resolver_query = resolver.select(parent_query=self)
             elif isinstance(obj, ResolverProperty):
                 resolver = obj.resolver
-                resolver_query = resolver.select()
-                resolver_query.configure(self.options)
+                resolver_query = resolver.select(parent_query=self)
             elif isinstance(obj, ResolverQuery):
                 resolver = obj.resolver
                 resolver_query = obj
-            elif is_biz_class(obj):
+            elif isinstance(obj, type) and is_resource(obj):
                 assert obj is self._biz_class
                 self.select(obj.pybiz.resolvers.values())
 
             if resolver and resolver_query:
-                resolver_query.parent = self
                 resolvers.append(resolver)
                 resolver_queries[resolver.name] = resolver_query
 
@@ -450,19 +482,19 @@ class Query(AbstractQuery):
     def generate(self, count=None):
         """
         This method is really just syntactic surgar for doing query.generate()
-        instead of BizObject.generate(query).
+        instead of Resource.generate(query).
         """
         # TODO: extend to support subqueries
         if count is None:
             count = self.params.get('limit', randint(1, 10))
 
-        biz_objects = self._biz_class.BizList(
+        resources = self._biz_class.Batch(
             self._biz_class.generate(query=self) for i in range(count)
         )
         if self._options.get('first', False):
-            return biz_objects[0]
+            return resources[0]
         else:
-            return biz_objects
+            return resources
 
 
 class ResolverQuery(Query):
@@ -494,7 +526,7 @@ class ResolverQuery(Query):
         """
         Execute Resolver.execute (and backfill its value if necessary).
         """
-        # resolve the value to set in source BizObject's state
+        # resolve the value to set in source Resource's state
         value = request.resolver.execute(request)
 
         # if null or insufficient number of data elements are returned

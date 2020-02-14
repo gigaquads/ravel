@@ -22,7 +22,7 @@ from pybiz.predicate import (
 from pybiz.schema import fields, Field
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.util.loggers import console
-from pybiz.dao.base import Dao
+from pybiz.store.base import Store
 from pybiz.constants import REV_FIELD_NAME, ID_FIELD_NAME
 
 from .dialect import Dialect
@@ -30,7 +30,7 @@ from .sqlalchemy_table_builder import SqlalchemyTableBuilder
 from ..types import ArrayOfEnum
 
 
-class SqlalchemyDao(Dao):
+class SqlalchemyStore(Store):
 
     local = threading.local()
     local.metadata = None
@@ -235,7 +235,7 @@ class SqlalchemyDao(Dao):
 
     def on_bind(
         self,
-        biz_class: Type['BizObject'],
+        biz_class: Type['Resource'],
         table: Text = None,
         schema: 'Schema' = None,
         **kwargs

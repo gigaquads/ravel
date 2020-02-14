@@ -4,7 +4,7 @@ import graphql.ast
 import graphql.parser
 
 from pybiz.util.loggers import console
-#from pybiz.biz import Query, BizObject, BizAttributeQuery, FieldPropertyQuery
+#from pybiz.biz import Query, Resource, BizAttributeQuery, FieldPropertyQuery
 
 from .graphql_arguments import GraphQLArguments
 
@@ -15,7 +15,7 @@ class GraphQLInterpreter(object):
     string and generate a corresponding pybiz Query object.
     """
 
-    def __init__(self, root_biz_class: Type['BizObject']):
+    def __init__(self, root_biz_class: Type['Resource']):
         self._root_biz_class = root_biz_class
         self._ast_parser = graphql.parser.GraphQLParser()
 
@@ -31,7 +31,7 @@ class GraphQLInterpreter(object):
 #
 #    def _build_subqueries(
 #        self,
-#        target_biz_class: Type[BizObject],
+#        target_biz_class: Type[Resource],
 #        ast_node,
 #        context: Dict,
 #    ) -> List:
@@ -73,7 +73,7 @@ class GraphQLInterpreter(object):
 #    def _build_query(
 #        self,
 #        ast_node: graphql.ast.Field,
-#        target_biz_class: BizObject,
+#        target_biz_class: Resource,
 #        context: Dict,
 #    ) -> Query:
 #        """
@@ -93,7 +93,7 @@ class GraphQLInterpreter(object):
 #    def _build_pybiz_biz_attr_query(
 #        self,
 #        ast_node: graphql.ast.Field,
-#        target_biz_class: BizObject,
+#        target_biz_class: Resource,
 #        context: Dict,
 #    ) -> BizAttributeQuery:
 #        """
@@ -108,7 +108,7 @@ class GraphQLInterpreter(object):
 #    def _build_pybiz_field_property_query(
 #        self,
 #        ast_node: graphql.ast.Field,
-#        target_biz_class: BizObject,
+#        target_biz_class: Resource,
 #        context: Dict,
 #    ) -> FieldPropertyQuery:
 #        alias = ast_node.name
