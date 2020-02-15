@@ -1,74 +1,65 @@
 import inspect
 import uuid
 
-from typing import Text, Tuple, List, Set, Dict, Type, Union
+from typing import Text, Tuple, List, Set, Dict, Type
+from pprint import pprint
 from collections import defaultdict
 from copy import deepcopy
 
-from appyratus.utils import DictObject
-
 import venusian
 
-from pybiz.exceptions import ValidationError
-from pybiz.store import Store, SimulationStore
-from pybiz.util.loggers import console
+from appyratus.utils import DictObject
+from appyratus.enum import EnumValueStr
+
 from pybiz.util.misc_functions import (
     is_sequence,
     get_class_name,
     repr_biz_id,
     flatten_sequence,
-    union,
 )
 from pybiz.schema import (
-    Field, Schema, String, Int, Id,
-    UuidString, Bool, Float
+    Field, Schema, fields, String, Int, Id, UuidString,
 )
+from pybiz.store import Store, SimulationStore
+from pybiz.util.loggers import console
+from pybiz.exceptions import ValidationError
 from pybiz.constants import (
-    IS_BIZ_OBJECT_ANNOTATION,
-    ABSTRACT_MAGIC_METHOD,
     ID_FIELD_NAME,
     REV_FIELD_NAME,
 )
 
-from .entity import Entity
-from .dirty import DirtyDict
-from .query import OrderBy
 from .util import is_batch, is_resource
-from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
+from .entity import Entity
 from .batch import Batch
-from .resolver import (
-    Resolver, ResolverDecorator, ResolverProperty,
-    ResolverManager, EagerStoreLoader, EagerStoreLoaderProperty,
-)
+from .dirty import DirtyDict
+from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
+from .query.query import Query
+from .query.request import QueryRequest
+from .field_resolver import FieldResolver, FieldResolverProperty
+from .resolver.resolver import Resolver
+from .resolver.resolver_property import ResolverProperty
+from .resolver.resolver_decorator import ResolverDecorator
+from .resolver.resolver_manager import ResolverManager
 
 
 class ResourceMeta(type):
-    def __init__(cls, name, bases, dct):
-        cls._initialize_class_state()
+    def __init__(biz_class, name, bases, attr_dict):
+        super().__init__(name, bases, attr_dict)
+        info = biz_class._analyze()
+        fields = info['fields']
+        resolvers = info['resolvers']
+        resolver_decorators = info['resolver_decorators']
 
-        fields = cls._process_fields()
+        biz_class._pybiz_is_resource = True
+        biz_class._init_pybiz_dict_object(info)
+        biz_class._compute_is_abstract()
+        biz_class._build_schema_class(fields, bases)
+        biz_class._build_field_resolvers(resolvers)
+        biz_class._build_resolvers(bases, resolvers, resolver_decorators)
+        biz_class._build_resolver_properties()
+        biz_class._build_batch()
+        biz_class._extract_field_defaults()
 
-        cls._build_schema_class(fields, bases)
-        cls.Batch = Batch.factory(cls)
-
-        if not cls.pybiz.is_abstract:
-            cls._register_venusian_callback()
-
-    def _initialize_class_state(biz_class):
-        setattr(biz_class, IS_BIZ_OBJECT_ANNOTATION, True)
-
-        biz_class.pybiz = DictObject()
-        biz_class.pybiz.app = None
-        biz_class.pybiz.store = None
-        biz_class.pybiz.resolvers = ResolverManager()
-        biz_class.pybiz.fk_id_fields = {}
-        biz_class.pybiz.is_abstract = biz_class._compute_is_abstract()
-        biz_class.pybiz.is_bootstrapped = False
-        biz_class.pybiz.is_bound = False
-        biz_class.pybiz.schema = None
-        biz_class.pybiz.defaults = {}
-
-    def _register_venusian_callback(biz_class):
         def callback(scanner, name, biz_class):
             """
             Callback used by Venusian for Resource class auto-discovery.
@@ -78,125 +69,223 @@ class ResourceMeta(type):
 
         venusian.attach(biz_class, callback, category='biz')
 
-    def _process_fields(cls):
-        fields = {}
-        for k, v in inspect.getmembers(cls):
-            if isinstance(v, ResolverDecorator):
-                resolver_property = v.build_resolver_property(owner=cls, name=k)
-                cls.pybiz.resolvers.register(resolver_property.resolver)
-                setattr(cls, k, resolver_property)
+    def _analyze(biz_class):
+        # TODO: structure this up
+        info = {
+            'fields': {},
+            'resolvers': {},
+            'resolver_decorators': {},
+        }
+        for k, v in inspect.getmembers(biz_class):
             if isinstance(v, Field):
-                field = v
-                field.name = k
-                fields[k] = field
-                resolver_property = EagerStoreLoader.build_property(
-                    owner=cls, field=field, name=k, target=cls,
-                )
-                cls.pybiz.resolvers.register(resolver_property.resolver)
-                setattr(cls, k, resolver_property)
-        return fields
+                info['fields'][k] = v
+                v.name = k
+            elif isinstance(v, Resolver):
+                info['resolvers'][k] = v
+                v.name = k
+            elif isinstance(v, ResolverDecorator):
+                info['resolver_decorators'][k] = v
+
+        return info
+
+    @staticmethod
+    def _is_biz_class(class_obj):
+        class_data = getattr(class_obj, 'pybiz', None)
+        return class_data and getattr(class_data, 'is_resource', False)
+
+    def _build_resolvers(
+        biz_class,
+        base_classes,
+        resolvers_dict,
+        resolver_decorators
+    ):
+        resolvers = biz_class.pybiz.resolvers
+
+        for resolver in resolvers_dict.values():
+            resolver.biz_class = biz_class
+            resolvers.register(resolver)
+
+        # inherit Resolvers
+        for base_class in base_classes:
+            if biz_class._is_biz_class(base_class):
+                for resolver in base_class.pybiz.resolvers.values():
+                    resolver_copy = resolver.copy()
+                    resolver_copy.biz_class = biz_class
+                    resolvers.register(resolver_copy)
+
+        # build Resolvers, assembled by ResolverDecorators
+        for name, dec in resolver_decorators.items():
+            resolver = dec.resolver_class(
+                biz_class=biz_class,
+                name=name,
+                on_execute=dec.on_execute_func,
+                on_get=dec.on_get_func,
+                on_set=dec.on_set_func,
+                on_del=dec.on_del_func,
+                **dec.kwargs,
+            )
+            resolvers.register(resolver)
+
+    def _init_pybiz_dict_object(biz_class, info):
+        biz_class.pybiz = DictObject()
+        biz_class.pybiz.app = None
+        biz_class.pybiz.store = None
+        biz_class.pybiz.resolvers = ResolverManager()
+        biz_class.pybiz.fk_id_fields = {}
+        biz_class.pybiz.is_resource = True
+        biz_class.pybiz.is_abstract = False
+        biz_class.pybiz.is_bootstrapped = False
+        biz_class.pybiz.is_bound = False
+        biz_class.pybiz.schema = None
+        biz_class.pybiz.defaults = {}
 
     def _compute_is_abstract(biz_class):
-        is_abstract = False
-        if hasattr(biz_class, ABSTRACT_MAGIC_METHOD):
-            is_abstract = bool(biz_class.__abstract__())
-            delattr(biz_class, ABSTRACT_MAGIC_METHOD)
-        return is_abstract
+        if hasattr(biz_class, '__abstract__'):
+            biz_class.pybiz.is_abstract = biz_class.__abstract__()
+            delattr(biz_class, '__abstract__')
+        else:
+            biz_class.pybiz.is_abstract = False
 
     def _build_schema_class(biz_class, fields, base_classes):
+        def extract_fields(class_obj):
+            fields = {}
+            is_field = lambda x: isinstance(x, Field)
+            for k, field in inspect.getmembers(class_obj, predicate=is_field):
+                if k.startswith('_pybiz'):
+                    continue
+                fields[k] = deepcopy(field)
+            return fields
+
         fields = fields.copy()
-        inherited_fields = {}
 
-        # inherit fields and defaults from base Resource classes
+        # inherit Fields from base Resource classes
         for base_class in base_classes:
-            if is_resource(base_class):
-                inherited_fields.update(base_class.Schema.fields)
+            if biz_class._is_biz_class(base_class):
+                fields.update(deepcopy(base_class.Schema.fields))
                 biz_class.pybiz.defaults.update(base_class.pybiz.defaults)
-            else:
-                base_fields = biz_class._copy_fields_from_mixin(base_class)
-                inherited_fields.update(base_fields)
 
-        fields.update(inherited_fields)
+        fields.update(extract_fields(biz_class))
 
-        # perform final processing now that we have all direct and
-        # inherited fields in one dict.
         for k, field in fields.items():
-            if k in inherited_fields:
-                resolver_property = EagerStoreLoader.build_property(
-                    owner=biz_class, field=field, name=k, target=biz_class,
-                )
-                biz_class.pybiz.resolvers.register(resolver_property.resolver)
-                setattr(biz_class, k, resolver_property)
             if field.source is None:
                 field.source = field.name
             if isinstance(field, Id) and field.name != ID_FIELD_NAME:
                     biz_class.pybiz.fk_id_fields[field.name] = field
 
-        # these are universally required
+        class_name = f'{biz_class.__name__}Schema'
+
         assert ID_FIELD_NAME in fields
         assert REV_FIELD_NAME in fields
 
-        # build new Schema subclass with aggregated fields
-        class_name = f'{biz_class.__name__}Schema'
+        id_field = fields[ID_FIELD_NAME]
+
+        if isinstance(id_field, Id):
+            replacement_id_field = biz_class.id_field_factory()
+            replacement_id_field.required = True
+            replacement_id_field.name = ID_FIELD_NAME
+            replacement_id_field.source = id_field.source or ID_FIELD_NAME
+            replacement_id_field.meta.update(id_field.meta)
+            fields[ID_FIELD_NAME] = replacement_id_field
+
         biz_class.Schema = type(class_name, (Schema, ), fields)
+        biz_class.pybiz.schema = biz_class.Schema()
 
-        biz_class.pybiz.schema = schema = biz_class.Schema()
-        biz_class.pybiz.defaults = biz_class._extract_field_defaults(schema)
+    def _build_field_resolvers(biz_class, resolvers: dict):
+        for k, field in biz_class.Schema.fields.items():
+            resolver = FieldResolver(field, name=k)
+            resolvers[k] = resolver
 
-    def _copy_fields_from_mixin(biz_class, class_obj):
-        fields = {}
-        is_field = lambda x: isinstance(x, Field)
-        for k, field in inspect.getmembers(class_obj, predicate=is_field):
-            if k == 'Schema':
-                continue
-            fields[k] = deepcopy(field)
-        return fields
+    def _build_resolver_properties(biz_class):
+        for resolver in biz_class.pybiz.resolvers.values():
+            if resolver.name in biz_class.pybiz.resolvers.fields:
+                resolver_prop = FieldResolverProperty(resolver)
+            else:
+                resolver_prop = ResolverProperty(resolver)
+            setattr(biz_class, resolver.name, resolver_prop)
 
-    def _extract_field_defaults(biz_class, schema):
+    def _build_batch(biz_class):
+        class CustomBatch(Batch):
+            pass
+
+        CustomBatch.pybiz.biz_class = biz_class
+        biz_class.Batch = CustomBatch
+
+    def _extract_field_defaults(biz_class):
+        def build_default_func(field):
+            if callable(field.default):
+                return field.default
+            else:
+                return lambda: deepcopy(field.default)
+
         defaults = biz_class.pybiz.defaults
-        for field in schema.fields.values():
+        for field in biz_class.Schema.fields.values():
             if field.default:
-                # move field default into "defaults" dict
-                if callable(field.default):
-                    defaults[field.name] = field.default
-                else:
-                    defaults[field.name] = lambda: deepcopy(field.default)
-                # clear it from the schema object once "defaults" dict
+                defaults[field.name] = build_default_func(field)
                 field.default = None
-        return defaults
 
 
 class Resource(Entity, metaclass=ResourceMeta):
 
-    _id = UuidString(default=lambda: uuid.uuid4().hex)
+    # internal pybiz class-level data goes in cls.pybiz and is built by the
+    # ResourceMeta metaclass.
+    pybiz = None
+
+    # these aliases are also build by the metaclass. Schema is the Schema
+    # containing all fields defined on this class as well as inherited. List is
+    # a Batch class dynamically build around this class.
+    Schema = None
+    Batch = None
+
+    # built-in fields
+    _id = Id()
     _rev = String()
 
-    def __init__(self, state=None, **more_state):
-        # initialize internal state data dict
+    def __init__(self, data: Dict = None, **more_data):
         self.internal = DictObject()
         self.internal.state = DirtyDict()
-        self.merge(state, **more_state)
+        self.internal.resolvers = ResolverManager()
 
-        # eagerly generate default ID if none provided
-        if ID_FIELD_NAME not in self.internal.state:
-            id_func = self.pybiz.defaults.get(ID_FIELD_NAME)
-            self.internal.state[ID_FIELD_NAME] = id_func() if id_func else None
+        # merge more_data into data
+        data = data or {}
+        if more_data:
+            data.update(more_data)
+
+        # unlike other fields, whose defaults are generated upon calling
+        # self.create or cls.create_many, the _id field default is generated up
+        # front so that, as much as possible, other Resources can access this
+        # object by _id when defining relationships and such.
+        if ID_FIELD_NAME not in data:
+            if ID_FIELD_NAME in self.pybiz.defaults:
+                # TODO: why doesnt this raise if _id not in defaults
+                data[ID_FIELD_NAME] = self.pybiz.defaults['_id']()
+
+        self.merge(data)
 
     def __getitem__(self, key):
-        if key in self.pybiz.resolvers:
+        if key in self.Schema.fields:
             return getattr(self, key)
         raise KeyError(key)
 
     def __setitem__(self, key, value):
-        if key in self.pybiz.resolvers:
+        if key in self.pybiz.all_selectors:
             return setattr(self, key, value)
         raise KeyError(key)
 
     def __delitem__(self, key):
-        if key in self.pybiz.resolvers:
+        if key in self.pybiz.all_selectors:
             delattr(self, key)
         else:
             raise KeyError(key)
+
+    def __getattribute__(self, key):
+        try:
+            return super().__getattribute__(key)
+        except AttributeError as exc:
+            # chance to handle the attribute differently
+            # if not, re-raise the exception
+            if key in self.internal.state:
+                return self.internal.state[key]
+            raise exc
 
     def __iter__(self):
         return iter(self.internal.state)
@@ -237,7 +326,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         # bootstrap all resolvers owned by this class
         for resolver in cls.pybiz.resolvers.values():
-            resolver.bootstrap(app)
+            resolver.bootstrap(cls)
 
         # lastly perform custom developer logic
         cls.on_bootstrap(app, *args, **kwargs)
@@ -245,11 +334,12 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     @classmethod
     def bind(cls, binder: 'ResourceBinder', **kwargs):
+        cls.binder = binder
         cls.pybiz.store = cls.pybiz.app.binder.get_binding(cls).store_instance
         for resolver in cls.pybiz.resolvers.values():
-            resolver.bind()
-        cls.on_bind()
+            resolver.bind(cls)
         cls.pybiz.is_bound = True
+        cls.on_bind()
 
     @classmethod
     def is_bootstrapped(cls) -> bool:
@@ -259,9 +349,29 @@ class Resource(Entity, metaclass=ResourceMeta):
     def is_bound(cls) -> bool:
         return cls.pybiz.is_bound
 
+    @classmethod
+    def id_field_factory(cls) -> 'Field':
+        return UuidString(default=lambda: uuid.uuid4().hex)
+
+    @classmethod
+    def get_store(cls, bind=True) -> 'Store':
+        """
+        Get the global Store reference associated with this class.
+        """
+        return cls.pybiz.store
+
+    @classmethod
+    def select(
+        cls,
+        *targets: Tuple['ResolverProperty'],
+        **subqueries: Dict[Text, 'Query']
+    ) -> 'Query':
+        flattened_targets = flatten_sequence(targets)
+        return Query(cls).select(flattened_targets, **subqueries)
+
     @property
     def store(self) -> 'Store':
-        return self.pybiz.store
+        return self.get_store()
 
     @property
     def dirty(self) -> Set[Text]:
@@ -271,21 +381,41 @@ class Resource(Entity, metaclass=ResourceMeta):
             if k in self.Schema.fields
         }
 
-    @classmethod
-    def generate(cls, query: 'Query' = None) -> 'Resource':
-        instance = cls()
-        query = query or cls.select(cls.pybiz.resolvers.fields.keys())
-        resolvers = Resolver.sort(
-            cls.pybiz.resolvers[k] for k in query.selected.fields
-        )
-        for resolver in resolvers:
-            if resolver.name == REV_FIELD_NAME:
-                setattr(instance, resolver.name, '0')
-            else:
-                request = query.parameters.selected.fields[resolver.name]
-                generated_value = resolver.generate(instance, request)
-                setattr(instance, resolver.name, generated_value)
-        return instance
+    def pprint(self):
+        pprint(self.internal.state)
+
+    def clean(self, fields=None) -> 'Resource':
+        if fields is not None:
+            if not fields:
+                return self
+            fields = fields if is_sequence(fields) else {fields}
+            keys = self._normalize_selectors(fields)
+        else:
+            keys = set(self.pybiz.resolvers.keys())
+
+        self.internal.state.clean(keys=keys)
+        return self
+
+    def mark(self, fields=None) -> 'Resource':
+        # TODO: rename to "touch"
+        if fields is not None:
+            if not fields:
+                return self
+            fields = fields if is_sequence(fields) else {fields}
+            keys = self._normalize_selectors(fields)
+        else:
+            keys = set(self.Schema.fields.keys())
+
+        self.internal.state.mark(keys)
+        return self
+
+    def copy(self) -> 'Resource':
+        """
+        Create a clone of this Resource
+        """
+        clone = type(self)(data=deepcopy(self.internal.state))
+        clone.internal.resolvers = self.internal.resolvers.copy()
+        return clone.clean()
 
     def merge(self, other=None, **values) -> 'Resource':
         if isinstance(other, dict):
@@ -300,29 +430,87 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         return self
 
-    def clean(self, fields=None) -> 'Resource':
-        if fields:
-            fields = fields if is_sequence(fields) else {fields}
-            keys = self._normalize_selectors(fields)
-        else:
-            keys = set(self.pybiz.resolvers.keys())
+    def load(self, selectors=None) -> 'Resource':
+        if self._id is None:
+            return self
 
-        if keys:
-            self.internal.state.clean(keys=keys)
+        if isinstance(selectors, str):
+            selectors = {selectors}
+
+        # TODO: fix up Query so that even if the fresh object does exist in the
+        # DAL, it will still try to execute the resolvers on the uncreated
+        # object.
+
+        # resolve a fresh copy throught the DAL and merge state
+        # into this Resource.
+        query = self.select(selectors).where(_id=self._id)
+        fresh = query.execute(first=True)
+        if fresh:
+            self.merge(fresh)
+            self.clean(fresh.internal.state.keys())
 
         return self
 
-    def mark(self, fields=None) -> 'Resource':
-        # TODO: rename "mark" method to "touch"
-        if fields is not None:
-            if not fields:
-                return self
-            fields = fields if is_sequence(fields) else {fields}
-            keys = self._normalize_selectors(fields)
-        else:
-            keys = set(self.Schema.fields.keys())
+    def reload(self, selectors=None) -> 'Resource':
+        if isinstance(keys, str):
+            keys = {keys}
+        keys = {k for k in keys if self.is_loaded(k)}
+        return self.load(keys)
 
-        self.internal.state.mark(keys)
+    def unload(self, selectors: Set) -> 'Resource':
+        """
+        Remove the given keys from field data and/or relationship data.
+        """
+        if selectors:
+            if isinstance(selectors, str):
+                selectors = {selectors}
+                keys = self._normalize_selectors(selectors)
+        else:
+            keys = set(
+                self.internal.state.keys() |
+                self.pybiz.resolvers.keys()
+            )
+        for k in keys:
+            if k in self.internal.state:
+                del self.internal.state[k]
+            elif k in self.pybiz.resolvers:
+                del self.pybiz.resolvers[k]
+
+    def is_loaded(self, selectors: Set) -> bool:
+        """
+        Are all given field and/or relationship values loaded?
+        """
+        if selectors:
+            if isinstance(selectors, str):
+                selectors = {selectors}
+                keys = self._normalize_selectors(selectors)
+        else:
+            keys = set(
+                self.internal.state.keys() |
+                self.pybiz.resolvers.keys()
+            )
+
+        for k in keys:
+            is_key_in_data = k in self.internal.state
+            is_key_in_resolvers = k in self.pybiz.resolvers
+            if not (is_key_in_data or is_key_in_resolvers):
+                return False
+
+        return True
+
+    def resolve(self, *selectors):
+        keys = self._normalize_selectors(selectors)
+        if not keys:
+            keys = self.pybiz.resolvers.keys()
+
+        data = {}
+        for key in keys:
+            resolver = self.pybiz.resolvers[key]
+            resolver_query = resolver.select()
+            request = QueryRequest(resolver_query, self, resolver=resolver)
+            data[key] = resolver_query.execute(request)
+
+        self.merge(data)
         return self
 
     def dump(self, resolvers: Set[Text] = None, style: DumpStyle = None) -> Dict:
@@ -343,135 +531,41 @@ class Resource(Entity, metaclass=ResourceMeta):
         dumped_instance_state = dumper.dump(self, keys=keys_to_dump)
         return dumped_instance_state
 
-    def copy(self) -> 'Resource':
-        """
-        Create a clone of this Resource
-        """
-        clone = type(self)(data=deepcopy(self.internal.state))
-        return clone.clean()
-
-    def load(self, resolvers: Set[Text] = None) -> 'Resource':
-        if self._id is None:
-            return self
-
-        if isinstance(resolvers, str):
-            resolvers = {resolvers}
-
-        # TODO: fix up Query so that even if the fresh object does exist in the
-        # DAL, it will still try to execute the resolvers on the uncreated
-        # object.
-
-        # resolve a fresh copy throught the DAL and merge state
-        # into this Resource.
-        query = self.select(resolvers).where(_id=self._id)
-        fresh = query.execute(first=True)
-        if fresh:
-            self.merge(fresh)
-            self.clean(fresh.internal.state.keys())
-
-        return self
-
-    def reload(self, resolvers: Set[Text] = None) -> 'Resource':
-        if isinstance(resolvers, str):
-            resolvers = {resolvers}
-        loading_resolvers = {k for k in resolvers if self.is_loaded(k)}
-        return self.load(loading_resolvers)
-
-    def unload(self, resolvers: Set[Text] = None) -> 'Resource':
-        """
-        Remove the given keys from field data and/or relationship data.
-        """
-        if resolvers:
-            if isinstance(resolvers, str):
-                resolvers = {resolvers}
-                keys = self._normalize_selectors(resolvers)
-        else:
-            keys = set(
-                self.internal.state.keys() |
-                self.pybiz.resolvers.keys()
-            )
-        for k in keys:
-            if k in self.internal.state:
-                del self.internal.state[k]
-            elif k in self.pybiz.resolvers:
-                del self.pybiz.resolvers[k]
-
-    def is_loaded(self, resolvers: Union[Text, Set[Text]]) -> bool:
-        """
-        Are all given field and/or relationship values loaded?
-        """
-        if resolvers:
-            if isinstance(resolvers, str):
-                resolvers = {resolvers}
-                keys = self._normalize_selectors(resolvers)
-        else:
-            keys = set(
-                self.internal.state.keys() |
-                self.pybiz.resolvers.keys()
-            )
-
-        for k in keys:
-            is_key_in_data = k in self.internal.state
-            is_key_in_resolvers = k in self.pybiz.resolvers
-            if not (is_key_in_data or is_key_in_resolvers):
-                return False
-
-        return True
-
-    def _prepare_record_for_create(self):
-        """
-        Prepares a a Resource state dict for insertion via DAL.
-        """
-        # extract only those elements of state data that correspond to
-        # Fields declared on this Resource class.
-        record = {
-            k: v for k, v in self.internal.state.items()
-            if k in self.pybiz.resolvers.fields
-        }
-        # when inserting or updating, we don't want to write the _rev value on
-        # accident. The DAL is solely responsible for modifying this value.
-        if REV_FIELD_NAME in record:
-            del record[REV_FIELD_NAME]
-
-        # generate default values for any missing fields
-        # that specifify a default
-        for k, default in self.pybiz.defaults.items():
-            if k not in record:
-                def_val = default()
-                record[k] = def_val
-
-        if record.get(ID_FIELD_NAME) is None:
-            record[ID_FIELD_NAME] = self.store.create_id(record)
-
-        return record
-
-    @staticmethod
-    def _normalize_selectors(selectors: Set):
-        keys = set()
-        for k in selectors:
-            if isinstance(k, str):
-                keys.add(k)
-            elif isinstance(k, ResolverProperty):
-                keys.add(k.name)
-        return keys
-
-    # CRUD Methods
-
     @classmethod
-    def select(cls, *resolvers: Tuple[Text], parent: 'Query' = None):
-        return Query(target=cls, parent=parent).select(resolvers)
+    def query(
+        cls,
+        select: Set[Text] = None,
+        where: 'Predicate' = None,
+        order_by: Tuple[Text] = None,
+        offset: int = None,
+        limit: int = None,
+        custom: Dict = None,
+        execute=True,
+        first=False,
+    ):
+        """
+        Alternate syntax for building Query objects manually.
+        """
+        # select all Resource fields by default
+        query = Query(cls)
 
-    def create(self, data: Dict = None) -> 'Resource':
-        if data:
-            self.merge(data)
+        if select:
+            query.select(select)
+        if where:
+            query.where(where)
+        if order_by:
+            query.order_by(order_by)
+        if limit is not None:
+            query.limit(limit)
+        if offset is not None:
+            query.offset(offset)
+        if custom:
+            query.params.custom = custom
 
-        prepared_record = self._prepare_record_for_create()
-        prepared_record.pop(REV_FIELD_NAME, None)
-
-        created_record = self.store.dispatch('create', (prepared_record, ))
-
-        self.internal.state.update(created_record)
-        return self.clean()
+        if not execute:
+            return query
+        else:
+            return query.execute(first=first)
 
     @classmethod
     def get(cls, _id, select=None) -> 'Resource':
@@ -756,12 +850,12 @@ class Resource(Entity, metaclass=ResourceMeta):
                     entity_to_save = resolver.on_save(resolver, resource, value)
                     if entity_to_save:
                         if is_resource(entity_to_save):
-                            class_2_objects[resolver.owner].add(
+                            class_2_objects[resolver.biz_class].add(
                                 entity_to_save
                             )
                         else:
                             assert is_sequence(entity_to_save)
-                            class_2_objects[resolver.owner].update(
+                            class_2_objects[resolver.biz_class].update(
                                 entity_to_save
                             )
 
@@ -770,3 +864,56 @@ class Resource(Entity, metaclass=ResourceMeta):
             biz_class.save_many(resources, depth=depth-1)
 
         return retval
+
+    @classmethod
+    def generate(cls, query: Query = None) -> 'Resource':
+        instance = cls()
+        query = query or cls.select(cls.pybiz.resolvers.fields)
+        resolvers = Resolver.sort(
+            cls.pybiz.resolvers[k] for k in query.params.select
+        )
+        for resolver in resolvers:
+            if resolver.name == REV_FIELD_NAME:
+                setattr(instance, resolver.name, '0')
+            else:
+                resolver_query = query.params.select[resolver.name]
+                generated_value = resolver.generate(instance, resolver_query)
+                setattr(instance, resolver.name, generated_value)
+        return instance
+
+    def _prepare_record_for_create(self):
+        """
+        Prepares a a Resource state dict for insertion via DAL.
+        """
+        # extract only those elements of state data that correspond to
+        # Fields declared on this Resource class.
+        record = {
+            k: v for k, v in self.internal.state.items()
+            if k in self.pybiz.resolvers.fields
+        }
+        # when inserting or updating, we don't want to write the _rev value on
+        # accident. The DAL is solely responsible for modifying this value.
+        if REV_FIELD_NAME in record:
+            del record[REV_FIELD_NAME]
+
+        # generate default values for any missing fields
+        # that specifify a default
+        for k, default in self.pybiz.defaults.items():
+            if k not in record:
+                def_val = default()
+                record[k] = def_val
+
+        if record.get(ID_FIELD_NAME) is None:
+            record[ID_FIELD_NAME] = self.store.create_id(record)
+
+        return record
+
+    @staticmethod
+    def _normalize_selectors(selectors: Set):
+        keys = set()
+        for k in selectors:
+            if isinstance(k, str):
+                keys.add(k)
+            elif isinstance(k, ResolverProperty):
+                keys.add(k.name)
+        return keys

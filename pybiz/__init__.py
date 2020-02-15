@@ -14,23 +14,13 @@ from .app import (
     CliApplication,
     Repl,
 )
-
-
+from .biz import resolver, relationship
 from .biz.resource import Resource
 from .biz.entity import Entity
 from .biz.batch import Batch
-from .biz.resolver.resolver import Resolver
-from .biz.resolver.resolver_property import ResolverProperty
-from .biz.resolver.resolver_decorator import ResolverDecorator
-from .biz.resolver.resolver_manager import ResolverManager
-from .biz.field_resolver import FieldResolver
-from .biz.relationship import Relationship
-from .biz.query.query import Query, ResolverQuery
-from .biz.query.request import QueryRequest
-
-
-field = FieldResolver.decorator()
-resolver = Resolver.decorator()
-relationship = Relationship.decorator()
-alias = AliasFactory()
-parent = Alias('$parent')
+from .biz.query import Query, Request, OrderBy
+from .biz.resolver import (
+    Resolver,
+    ResolverProperty,
+    ResolverDecorator,
+)

@@ -23,7 +23,6 @@ from pybiz.util.misc_functions import (
 )
 from pybiz.schema import Enum as EnumField
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
-from pybiz.biz.resolver.resolver_property import ResolverProperty
 
 from .biz.util import is_resource, is_batch
 
