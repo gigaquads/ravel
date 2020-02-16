@@ -3,7 +3,7 @@ import requests
 
 from collections import defaultdict
 
-from ..app import Application, Endpoint, EndpointDecorator
+from pybiz.app.base import Application, Endpoint, EndpointDecorator
 
 
 class AbstractHttpServer(Application):

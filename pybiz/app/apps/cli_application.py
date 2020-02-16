@@ -15,8 +15,7 @@ from appyratus.files import Yaml
 from appyratus.utils import StringUtils, SysUtils
 
 from pybiz.biz.util import is_batch, is_resource
-
-from .app import Application, EndpointDecorator, Endpoint
+from pybiz.app.base import Application, EndpointDecorator, Endpoint
 
 
 class CliApplication(Application):

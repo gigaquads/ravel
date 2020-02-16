@@ -12,8 +12,8 @@ from pybiz.util.loggers import console
 from pybiz.util.misc_functions import get_class_name, inject, is_sequence
 from pybiz.schema import Field, UuidString
 from pybiz.constants import ID_FIELD_NAME
+from pybiz.app.exceptions import ApplicationError
 
-from .exceptions import ApplicationError
 from .endpoint_decorator import EndpointDecorator
 from .endpoint import Endpoint
 from .argument_loader import ArgumentLoader

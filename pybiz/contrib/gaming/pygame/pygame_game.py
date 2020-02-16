@@ -10,7 +10,7 @@ import pygame as pg
 from pygame.time import Clock
 
 from pybiz.util.misc_functions import flatten_sequence
-from pybiz.app import Application, EndpointDecorator, Endpoint
+from pybiz.app.base import Application, EndpointDecorator, Endpoint
 
 # Generic game components
 # TODO: move to more generic location within ravel

@@ -15,7 +15,7 @@ from pybiz import (
     relationship,
 )
 from pybiz.constants import (
-    IS_BIZ_OBJECT_ANNOTATION,
+    IS_RESOURCE_ATTRIBUTE,
     ID_FIELD_NAME,
     REV_FIELD_NAME,
 )

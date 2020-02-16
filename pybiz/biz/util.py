@@ -3,8 +3,8 @@ from uuid import UUID
 
 from pybiz.biz.entity import Entity
 from pybiz.constants import (
-    IS_BIZ_OBJECT_ANNOTATION,
-    IS_BIZ_LIST_ANNOTATION,
+    IS_RESOURCE_ATTRIBUTE,
+    IS_BATCH_ATTRIBUTE,
     ID_FIELD_NAME,
 )
 
@@ -15,7 +15,7 @@ def is_resource(obj):
     """
     return (
         isinstance(obj, Entity)
-        and getattr(obj, IS_BIZ_OBJECT_ANNOTATION, False)
+        and getattr(obj, IS_RESOURCE_ATTRIBUTE, False)
     )
 
 
@@ -25,21 +25,21 @@ def is_batch(obj) -> bool:
     """
     return (
         isinstance(obj, Entity)
-        and getattr(obj, IS_BIZ_LIST_ANNOTATION, False)
+        and getattr(obj, IS_BATCH_ATTRIBUTE, False)
     )
 
 
 def is_resource_type(obj):
     return (
         isinstance(obj, type)
-        and getattr(obj, IS_BIZ_OBJECT_ANNOTATION, False)
+        and getattr(obj, IS_RESOURCE_ATTRIBUTE, False)
     )
 
 
 def is_batch_type(obj):
     return (
         isinstance(obj, type)
-        and getattr(obj, IS_BIZ_LIST_ANNOTATION, False)
+        and getattr(obj, IS_BATCH_ATTRIBUTE, False)
     )
 
 

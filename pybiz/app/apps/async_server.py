@@ -4,7 +4,7 @@ import uvloop
 
 from typing import Type, Coroutine
 
-from .app import Application, AsyncEndpoint
+from pybiz.app.base import Application, AsyncEndpoint
 
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())

@@ -25,7 +25,7 @@ from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 
 from pybiz.biz.util import is_resource, is_batch
 from pybiz.util.json_encoder import JsonEncoder
-from pybiz.app import Application
+from pybiz.app.base import Application
 
 from .grpc_function import GrpcFunction
 from .grpc_client import GrpcClient

@@ -23,7 +23,7 @@ from pybiz.schema import (
     UuidString, Bool, Float
 )
 from pybiz.constants import (
-    IS_BIZ_OBJECT_ANNOTATION,
+    IS_RESOURCE_ATTRIBUTE,
     ABSTRACT_MAGIC_METHOD,
     ID_FIELD_NAME,
     REV_FIELD_NAME,
@@ -39,7 +39,7 @@ from .resolver.resolvers.loader import Loader, LoaderProperty
 from .entity import Entity
 from .dirty import DirtyDict
 from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
-from .util import is_batch, is_resource, is_resource_type, repr_biz_id
+from .util import is_batch, is_resource, is_resource_type
 from .batch import Batch
 
 
@@ -56,7 +56,7 @@ class ResourceMeta(type):
             cls._register_venusian_callback()
 
     def _initialize_class_state(biz_class):
-        setattr(biz_class, IS_BIZ_OBJECT_ANNOTATION, True)
+        setattr(biz_class, IS_RESOURCE_ATTRIBUTE, True)
 
         biz_class.pybiz = DictObject()
         biz_class.pybiz.app = None
@@ -206,9 +206,18 @@ class Resource(Entity, metaclass=ResourceMeta):
         return key in self.internal.state
 
     def __repr__(self):
-        id_str = repr_biz_id(self)
         name = get_class_name(self)
         dirty = '*' if self.internal.state.dirty else ''
+        id_value = self.internal.state.get(ID_FIELD_NAME)
+        if id_value is None:
+            id_str = '?'
+        elif isinstance(id_value, str):
+            id_str = id_value
+        elif isinstance(id_value, UUID):
+            id_str = _id.hex
+        else:
+            id_str = repr(id_value)
+
         return f'<{name}({id_str}){dirty}>'
 
     @classmethod

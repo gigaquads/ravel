@@ -2,7 +2,7 @@ from typing import Dict, List, Text, Type
 
 from IPython.terminal.embed import InteractiveShellEmbed
 
-from .app import Application, EndpointDecorator, Endpoint
+from pybiz.app.base import Application, EndpointDecorator, Endpoint
 
 
 class Repl(Application):

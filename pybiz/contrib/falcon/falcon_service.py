@@ -9,7 +9,7 @@ from typing import Dict
 from appyratus.memoize import memoized_property
 from appyratus.env import Environment
 
-from pybiz.app.web import AbstractWsgiService
+from pybiz.app.apps.web import AbstractWsgiService
 from pybiz.util.json_encoder import JsonEncoder
 
 from .resource import ResourceManager

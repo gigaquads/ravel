@@ -11,7 +11,7 @@ from pybiz import (
     Relationship,
 )
 from pybiz.constants import (
-    IS_BIZ_OBJECT_ANNOTATION,
+    IS_RESOURCE_ATTRIBUTE,
     ID_FIELD_NAME,
     REV_FIELD_NAME,
 )
@@ -25,7 +25,7 @@ def test_basic_resource_builds(app, BasicResource):
     # check basic class attributes are as expected
     assert hasattr(BasicResource, 'pybiz')
     assert hasattr(BasicResource, 'Schema')
-    assert hasattr(BasicResource, IS_BIZ_OBJECT_ANNOTATION)
+    assert hasattr(BasicResource, IS_RESOURCE_ATTRIBUTE)
     assert isinstance(BasicResource.Schema, type)
     assert issubclass(BasicResource.Schema, pybiz.Schema)
     assert isinstance(BasicResource.Batch, type)
@@ -106,9 +106,21 @@ def test_update_with_data(basic_resource):
     old_value = basic_resource.required_str_field
     new_value = uuid.uuid4().hex
     basic_resource.update(required_str_field=new_value)
-
     assert basic_resource.required_str_field == new_value
     assert not basic_resource.dirty
+
+
+def test_create_many(BasicResource):
+    resources = [BasicResource.generate() for i in range(5)]
+    BasicResource.create_many(resources)
+    assert all((not r.dirty) for r in resources)
+
+
+def test_update_many(BasicResource):
+    resources = [BasicResource.generate().create() for i in range(5)]
+    BasicResource.update_many(resources, required_str_field='new_value')
+    assert all((not r.dirty) for r in resources)
+    assert all((r.required_str_field == 'new_value') for r in resources)
 
 
 def test_simulates_fields(BasicResource):
