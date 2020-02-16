@@ -2,6 +2,8 @@ from typing import Text, Dict
 
 from appyratus.utils import DictObject
 
+from pybiz.util.misc_functions import get_class_name
+
 from .parameters import ParameterAssignment
 from .mode import QueryMode
 
@@ -17,8 +19,9 @@ class Request(object):
     def __repr__(self):
         return (
             f'{get_class_name(self)}('
-            f'{get_class_name(self.resolver.owner)}.'
-            f'{self.resolver.name}'
+            f'target={get_class_name(self.resolver.owner)}.'
+            f'{self.resolver.name}, '
+            f'mode={self.mode}'
             f')'
         )
 
@@ -35,8 +38,8 @@ class Request(object):
 
     @property
     def is_simulated(self) -> bool:
-        return self.mode == QueryMode.simulated
+        return self.mode == QueryMode.simulation
 
     @property
     def is_backfilled(self) -> bool:
-        return self.mode == QueryMode.backfilled
+        return self.mode == QueryMode.backfill

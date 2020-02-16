@@ -16,7 +16,7 @@ from pybiz.constants import ID_FIELD_NAME
 from .exceptions import ApplicationError
 from .endpoint_decorator import EndpointDecorator
 from .endpoint import Endpoint
-from .application_argument_loader import ArgumentLoader
+from .argument_loader import ArgumentLoader
 from .resource_binder import ResourceBinder
 
 DEFAULT_ID_FIELD_CLASS = UuidString

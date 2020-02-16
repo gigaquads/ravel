@@ -12,6 +12,7 @@ from pybiz.util.misc_functions import (
 from pybiz.biz.util import is_resource, is_batch
 from pybiz.biz.query.order_by import OrderBy
 from pybiz.biz.query.request import Request
+from pybiz.biz.query.mode import QueryMode
 from pybiz.biz.query.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -36,6 +37,7 @@ class Resolver(object):
         private=False,
         nullable=True,
         required=False,
+        many=False,
     ):
         self.name = name
         self.on_resolve = on_resolve or self.on_resolve
@@ -45,7 +47,7 @@ class Resolver(object):
         self.required = required
         self.target_callback = None
         self.target = None
-        self.many = None
+        self.many = many
 
         if is_resource(target):
             assert isinstance(target, type)
@@ -140,12 +142,12 @@ class Resolver(object):
     def resolve(self, resource, request):
         self.pre_resolve(resource, request)
 
-        if request.mode == Query.Mode.normal:
+        if request.mode == QueryMode.normal:
             result = self.on_resolve(resource, request)
-        elif request.mode == Query.Mode.backfill:
+        elif request.mode == QueryMode.backfill:
             resolved_result = self.on_resolve(resource, request)
             result = self.on_backfill(resource, request, resolved_result)
-        elif request.mode == Query.Mode.simulation:
+        elif request.mode == QueryMode.simulation:
             result = self.on_simulate(resource, request)
 
         processed_result = self.post_resolve(resource, request, result)

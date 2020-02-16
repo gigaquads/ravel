@@ -41,6 +41,18 @@ class Batch(Entity):
     def __iter__(self):
         return iter(self.internal.resources)
 
+    def __getitem__(self, index):
+        return self.internal.resources[index]
+
+    def __setitem__(self, index, resource):
+        owner = self.pybiz.owner
+        if owner and not isinstance(resource, owner):
+            raise ValueError(
+                f'expected value with type '
+                f'{get_class_name(owner)}'
+            )
+        self.internal.resources[index] = value
+
     def __repr__(self):
         dirty_count = sum(
             1 for x in self if x and x.internal.state.dirty

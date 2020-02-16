@@ -1,5 +1,7 @@
 from typing import Text
 
+from pybiz.util.misc_functions import get_class_name
+
 
 class ParameterAssignment(object):
     """
@@ -26,6 +28,6 @@ class ParameterAssignment(object):
     def __repr__(self):
         return (
             f'{get_class_name(self)}('
-            f'parameter={self._name}'
+            f'parameter={self.name}'
             f')'
         )

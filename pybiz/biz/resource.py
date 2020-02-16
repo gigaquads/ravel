@@ -276,16 +276,17 @@ class Resource(Entity, metaclass=ResourceMeta):
     @classmethod
     def generate(cls, resolvers: Set[Text] = None) -> 'Resource':
         keys = resolvers or set(cls.pybiz.resolvers.fields.keys())
-        resolvers_objs = Resolver.sort(cls.pybiz.resolvers[k] for k in keys)
-        instance = cls()
+        resolver_objs = Resolver.sort(
+            cls.pybiz.resolvers[k] for k in keys
+            if k not in {REV_FIELD_NAME}
+        )
 
-        for resolver in resolvers_objs:
-            if resolver.name == REV_FIELD_NAME:
-                setattr(instance, resolver.name, '0')
-            else:
-                request = getattr(cls, resolver.name).select()
-                value = resolver.simulate(instance, request)
-                setattr(instance, resolver.name, value)
+        instance = cls(_rev='0')
+
+        for resolver in resolver_objs:
+            request = getattr(cls, resolver.name).select()
+            value = resolver.simulate(instance, request)
+            instance.internal.state[resolver.name] = value
 
         return instance
 

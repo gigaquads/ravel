@@ -1,6 +1,7 @@
 from typing import List
-from pybiz.util.loggers import console
 
+from pybiz.util.loggers import console
+from pybiz.biz.batch import Batch
 
 
 class Executor(object):
