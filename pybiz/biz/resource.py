@@ -481,7 +481,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         if _id is None:
             return None
         if not select:
-            data = cls.get_store().fetch(_id)
+            data = cls.pybiz.store.fetch(_id)
             return cls(data=data).clean() if data else None
         else:
             return cls.query(
@@ -505,7 +505,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         if not _ids:
             return cls.Batch()
         if not (select or offset or limit or order_by):
-            store = cls.get_store()
+            store = cls.pybiz.store
             id_2_data = store.dispatch('fetch_many', (_ids, ))
             return cls.Batch(cls(data=data) for data in id_2_data.values())
         else:
@@ -556,12 +556,12 @@ class Resource(Entity, metaclass=ResourceMeta):
             obj._id = None
 
         # delete the records in the DAL
-        store = cls.get_store()
+        store = cls.pybiz.store
         store.dispatch('delete_many', args=(resource_ids, ))
 
     @classmethod
     def delete_all(cls) -> None:
-        store = cls.get_store()
+        store = cls.pybiz.store
         store.dispatch('delete_all')
 
     def exists(self) -> bool:
@@ -638,7 +638,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             record = resource._prepare_record_for_create()
             records.append(record)
 
-        store = cls.get_store()
+        store = cls.pybiz.store
         created_records = store.dispatch('create_many', (records, ))
 
         for resource, record in zip(resources, created_records):
@@ -701,7 +701,7 @@ class Resource(Entity, metaclass=ResourceMeta):
                 records.append(record)
                 _ids.append(resource._id)
 
-            store = cls.get_store()
+            store = cls.pybiz.store
             updated_records = store.dispatch('update_many', (_ids, records))
 
             for resource, record in zip(resource_partition, updated_records):

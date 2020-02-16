@@ -152,7 +152,7 @@ class Store(object, metaclass=StoreMeta):
         """
         new_id = record.get(ID_FIELD_NAME)
         if new_id is None:
-            new_id = cls.biz_class.pybiz.defaults[ID_FIELD_NAME]()
+            new_id = self.biz_class.pybiz.defaults[ID_FIELD_NAME]()
 
         # NOTE: if new_id is still None at this point, it's assumed that
         # the persistence technology will generate and return it instead.
