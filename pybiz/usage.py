@@ -22,7 +22,7 @@ class ApplicationUsage(BaseUsage):
         entrypoint: Text = None,
         endpoint=None,
         fields=None,
-        data=None,
+        data: Dict = None,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -34,12 +34,15 @@ class ApplicationUsage(BaseUsage):
         self._renderer = None
 
     def render(self, context: Dict = None, **kwargs):
+        if not isinstance(self._endpoint, str):
+            pass
+            #self._app = self._endpoint.app
         base_context = {
-            'app': self._app,
+            'entrypoint': 'mrs-doc',    #self._entrypoint,
+            'app': 'cli',    #self._app,
+            'endpoint': self._endpoint.__name__,
             'fields': self._fields,
             'data': self._data,
-            'entrypoint': self._entrypoint,
-            'endpoint': self._endpoint,
         }
         context = self._merge_context(base_context, context)
         return super().render(context=context, **kwargs)
@@ -47,18 +50,35 @@ class ApplicationUsage(BaseUsage):
 
 class CliApplicationUsageRenderer(ApplicationUsageRenderer):
 
+    SPLIT = " \\\n"
+
     @classmethod
     def get_template(cls):
-        return "{entrypoint} {app} {endpoint} {args} {kwargs}"
+        #return "{entrypoint} {app} {endpoint} {args} {kwargs}"
+        return "{cli_display}"
 
     def perform(self, context: Dict = None, **kwargs):
         if context is None:
             context = {}
         ctx = self.get_context()
         ctx.update(context)
-        ctx['args'] = self.build_args(ctx['args'])
-        ctx['kwargs'] = self.build_kwargs(ctx['data'])
-        return super().perform(context=ctx, **kwargs)
+
+        # build a shell command
+        # the first item is the script
+        # the remaining items are arguments and kwarguments
+        command = [ctx['entrypoint'], ctx['app'], ctx['endpoint']]
+        args = self.build_args(ctx['args'])
+        kwargs = self.build_kwargs(ctx['kwargs'])
+        command.extend(kwargs)
+        # optionally indent every line but the first
+        indent_args = True
+        indent = '  '
+        if indent_args:
+            command[1:] = [f'{indent}{k}' for k in command[1:]]
+        ctx['cli_display'] = self.SPLIT.join(command)
+        return super().perform(context=ctx)
+
+        # format shell script
 
     @classmethod
     def get_context(cls):
@@ -70,17 +90,18 @@ class CliApplicationUsageRenderer(ApplicationUsageRenderer):
             'kwargs': {},
         }
 
-    def build_args(self, args):
+    def build_args(self, args=None):
         if not args:
-            return ''
-        return ' '.join(args)
+            return []
+        return args
 
-    def build_kwargs(self, kwargs):
+    def build_kwargs(self, kwargs=None, split_newline=True):
         if not kwargs:
-            return ''
+            return []
         flat_kwargs = DictUtils.flatten_keys(kwargs)
-        kwargs = ['--{} {}'.format(k, v) for k, v in flat_kwargs.items() if v is not None]
-        return ' '.join(kwargs)
+        kwargz = ['--{} {}'.format(k, v) for k, v in flat_kwargs.items() if v is not None]
+        return kwargz
+
 
 """
 
