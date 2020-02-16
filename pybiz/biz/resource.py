@@ -274,7 +274,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         }
 
     @classmethod
-    def simulate(cls, resolvers: Set[Text] = None) -> 'Resource':
+    def generate(cls, resolvers: Set[Text] = None) -> 'Resource':
         keys = resolvers or set(cls.pybiz.resolvers.fields.keys())
         resolvers_objs = Resolver.sort(cls.pybiz.resolvers[k] for k in keys)
         instance = cls()

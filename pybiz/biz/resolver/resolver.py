@@ -177,9 +177,9 @@ class Resolver(object):
         resolver = request.resolver
         if self.many:
             count = request.parameters.get('limit', randint(1, 10))
-            return self.target.Batch.simulate(count)
+            return self.target.Batch.generate(count)
         else:
-            return self.target.simulate()
+            return self.target.generate()
 
     def on_backfill(self, resource, request, result):
         raise NotImplementedError()
