@@ -1,3 +1,4 @@
+import uuid
 import pytest
 import pybiz
 
@@ -75,6 +76,7 @@ def test_custom_resolver(ResourceWithResolvers, BasicResource):
     assert isinstance(basic_res, BasicResource)
     assert basic_res.required_str_field == 'x'
 
+    import ipdb; ipdb.set_trace()
     assert res.myself is not None
     assert res._id == res._id
 
@@ -91,8 +93,27 @@ def test_create(BasicResource):
     assert not res.dirty
 
 
+def test_update(basic_resource):
+    old_value = basic_resource.required_str_field
+    new_value = uuid.uuid4().hex
+    basic_resource.required_str_field = new_value
+    basic_resource.update()
+
+    assert basic_resource.required_str_field == new_value
+    assert not basic_resource.dirty
+
+
+def test_update_with_data(basic_resource):
+    old_value = basic_resource.required_str_field
+    new_value = uuid.uuid4().hex
+    basic_resource.update(required_str_field=new_value)
+
+    assert basic_resource.required_str_field == new_value
+    assert not basic_resource.dirty
+
+
 def test_simulates_fields(BasicResource):
-    res = BasicResource.simulate()
+    res = BasicResource.generate()
     for k, resolver in BasicResource.pybiz.resolvers.fields.items():
         assert k in res.internal.state
         if not resolver.nullable:
@@ -100,7 +121,7 @@ def test_simulates_fields(BasicResource):
 
 
 def test_simulates_other_resolvers(BasicResource, ResourceWithResolvers):
-    res = ResourceWithResolvers.simulate({'myself', 'basic_friend'})
+    res = ResourceWithResolvers.generate({'myself', 'basic_friend'})
 
     myself = res.internal.state.get('myself')
     assert isinstance(myself, ResourceWithResolvers)

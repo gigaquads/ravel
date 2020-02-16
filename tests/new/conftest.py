@@ -49,7 +49,7 @@ def ResourceWithResolvers(app, BasicResource):
 
         @relationship(join=lambda: [
             (ResourceWithResolvers._id, ResourceWithResolvers._id)
-        ], nullable=False)
+        ], nullable=False, many=False)
         def myself(self, request):
             return request.result
 
