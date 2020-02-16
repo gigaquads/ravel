@@ -24,4 +24,4 @@ class Executor(object):
             resolver = request.resolver
             for resource in resources:
                 value = resolver.resolve(resource, request)
-                setattr(resource, resolver.name, value)
+                resource.internal.state[resolver.name] = value
