@@ -20,6 +20,8 @@ from pybiz.biz.entity import Entity
 
 class Batch(Entity):
 
+    pybiz = DictObject()
+
     def __init__(self, resources: List = None, indexed=True):
         self.internal = DictObject()
         self.internal.resources = deque(resources or [])
@@ -68,7 +70,9 @@ class Batch(Entity):
     def factory(cls, owner: Type['Resource'], type_name=None):
         type_name = type_name or 'Batch'
 
-        pybiz = DictObject()
+        # start with inherited pybiz object
+        pybiz = DictObject(cls.pybiz)
+
         pybiz.owner = owner
         pybiz.indexed_field_types = cls.get_indexed_field_types()
         pybiz.resolver_properties = {
@@ -84,6 +88,23 @@ class Batch(Entity):
     @classmethod
     def get_indexed_field_types(cls) -> Tuple['Field']:
         return (String, Bool, Int, Float)
+
+    @classmethod
+    def generate(cls, resolvers: Set[Text] = None, count=1):
+        count = max(1, count)
+        owner = cls.pybiz.owner
+
+        if owner is None:
+            # this batch isn't associated with any Resource type
+            # and therefore we don't know what to generate.
+            raise Exception('unbound Batch type')
+
+        if not resolvers:
+            resolvers = set(owner.resolvers.fields.keys())
+
+        return cls(
+            owner.generate(resolvers) for i in range(count)
+        )
 
     def insert(self, index, resource):
         self.internal.resources.insert(index, resource)
