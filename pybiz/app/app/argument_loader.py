@@ -15,9 +15,9 @@ from pybiz.biz.util import (
     is_resource
 )
 
-class ApplicationArgumentLoader(object):
+class ArgumentLoader(object):
     """
-    A `ApplicationArgumentLoader` instance is used by each `Application` object. When enabled
+    A `ArgumentLoader` instance is used by each `Application` object. When enabled
     (which it is, by default), arguments passed into API endpoints (AKA Endpoint
     objects) are automatically loaded or converted to their corresponding
     Resources, replacing the raw arguments, provided that the arguments are
@@ -31,7 +31,7 @@ class ApplicationArgumentLoader(object):
         return user.projects
     ```
 
-    Then the `ApplicationArgumentLoader` makes it possible to call this method in the
+    Then the `ArgumentLoader` makes it possible to call this method in the
     following ways:
 
     ```python3
@@ -78,7 +78,7 @@ class ApplicationArgumentLoader(object):
                     position = (
                         idx if param.default == Parameter.empty else None
                     )
-                    spec = ApplicationArgumentLoader.ArgumentSpec(
+                    spec = ArgumentLoader.ArgumentSpec(
                         idx, param.name, many, biz_class
                     )
                     self._endpoint_2_specs[endpoint].append(spec)
@@ -122,7 +122,7 @@ class ApplicationArgumentLoader(object):
                 loaded_args[key] = loaded_entity
             else:
                 loaded_kwargs[key] = loaded_entity
-        
+
         return (tuple(loaded_args), loaded_kwargs)
 
     def load_param(self, many: bool, biz_class: Type['Resource'], preloaded):

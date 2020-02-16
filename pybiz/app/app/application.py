@@ -16,7 +16,7 @@ from pybiz.constants import ID_FIELD_NAME
 from .exceptions import ApplicationError
 from .endpoint_decorator import EndpointDecorator
 from .endpoint import Endpoint
-from .application_argument_loader import ApplicationArgumentLoader
+from .application_argument_loader import ArgumentLoader
 from .resource_binder import ResourceBinder
 
 DEFAULT_ID_FIELD_CLASS = UuidString
@@ -108,7 +108,7 @@ class Application(object):
         return self._decorators
 
     @property
-    def loader(self) -> 'ApplicationArgumentLoader':
+    def loader(self) -> 'ArgumentLoader':
         return self._arg_loader
 
     @property
@@ -257,7 +257,7 @@ class Application(object):
 
         # init the arg loader, which is responsible for replacing arguments
         # passed in as ID's with their respective Resources
-        self._arg_loader = ApplicationArgumentLoader(self)
+        self._arg_loader = ArgumentLoader(self)
 
         console.debug(f'finished bootstrapping application')
 
