@@ -15,7 +15,6 @@ from pybiz import (
     relationship,
 )
 from pybiz.constants import (
-    IS_RESOURCE_ATTRIBUTE,
     ID_FIELD_NAME,
     REV_FIELD_NAME,
 )
@@ -47,9 +46,10 @@ def ResourceWithResolvers(app, BasicResource):
         def basic_friend(self, request):
             return BasicResource(required_str_field='x')
 
-        @relationship(join=lambda: [
-            (ResourceWithResolvers._id, ResourceWithResolvers._id)
-        ], nullable=False, many=False)
+        @relationship(
+            join=lambda: (ResourceWithResolvers._id, ResourceWithResolvers._id),
+            nullable=False,
+        )
         def myself(self, request):
             return request.result
 

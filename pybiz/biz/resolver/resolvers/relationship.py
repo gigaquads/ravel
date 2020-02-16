@@ -29,7 +29,12 @@ class Relationship(Resolver):
     def on_bind(self):
         if self.join_callback is not None:
             self.app.inject(self.join_callback)
-        self.joins = [Join(l, r) for l, r in self.join_callback()]
+
+        pairs = self.join_callback()
+        if not isinstance(pairs[0], (list, tuple)):
+            pairs = [pairs]
+
+        self.joins = [Join(l, r) for l, r in pairs]
         self.target = self.joins[-1].right.resolver.owner
 
     def pre_resolve(self, resource, request):
