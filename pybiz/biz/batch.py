@@ -9,7 +9,7 @@ from pybiz.util.misc_functions import (
     flatten_sequence,
     union,
 )
-from pybiz.predicate import Predicate
+from pybiz.biz.query.predicate import Predicate
 from pybiz.schema import (
     Field, String, Int, Bool, Float
 )

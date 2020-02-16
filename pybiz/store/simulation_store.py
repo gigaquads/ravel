@@ -15,7 +15,7 @@ from appyratus.utils import DictUtils
 
 from pybiz.schema import Schema, fields
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
-from pybiz.predicate import (
+from pybiz.biz.query.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,

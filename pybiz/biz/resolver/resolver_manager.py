@@ -1,10 +1,13 @@
-from typing import Text, Set, Dict, List, Callable, Type, Tuple
+from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
 from collections import defaultdict
 
-
+from pybiz.constants import ID_FIELD_NAME
 from pybiz.util.loggers import console
+from pybiz.util.misc_functions import get_class_name
+from pybiz.biz.util import is_resource, is_batch
+from pybiz.biz.query.order_by import OrderBy
+from pybiz.biz.query.request import Request
 
-from ..util import is_resource, is_batch
 from .resolver import Resolver
 
 
@@ -23,6 +26,18 @@ class ResolverManager(object):
         self._tag_2_resolvers = defaultdict(dict)
         self._required_resolvers = set()
         self._private_resolvers = set()
+
+    def __repr__(self):
+        id_resolver = self._resolvers.get(ID_FIELD_NAME)
+        owner_name = None
+        if id_resolver.is_bootstrapped:
+            owner_name = get_class_name(id_resolver.owner)
+        return (
+            f'{get_class_name(self)}('
+            f'count={len(self)}, '
+            f'owner={owner_name}'
+            f')'
+        )
 
     def __getattr__(self, tag):
         return self.by_tag(tag)
@@ -59,11 +74,11 @@ class ResolverManager(object):
         return list(self._resolvers.items())
 
     @property
-    def required_resolvers(self) -> Set[Resolver]:
+    def required_resolvers(self) -> Set['Resolver']:
         return self._required_resolvers
 
     @property
-    def private_resolvers(self) -> Set[Resolver]:
+    def private_resolvers(self) -> Set['Resolver']:
         return self._private_resolvers
 
     def register(self, resolver):

@@ -4,33 +4,38 @@ from copy import deepcopy
 from appyratus.utils import DictObject
 
 from pybiz.util.loggers import console
-from pybiz.predicate import Predicate
+from pybiz.biz.query.predicate import Predicate
 from pybiz.util.misc_functions import (
-    get_class_name,
     flatten_sequence,
+    get_class_name,
 )
 
-from .util import is_batch, is_resource
-from .dirty import DirtyDict
-from .entity import Entity
+from pybiz.biz.util import is_resource
+from pybiz.biz.resolver.resolver_property import ResolverProperty
+from pybiz.biz.resolver.resolvers.loader import LoaderProperty, Loader
+
+from .mode import QueryMode
 from .order_by import OrderBy
-from .resolver import (
-    ResolverProperty, EagerStoreLoaderProperty, EagerStoreLoader
-)
+from .request import Request
+from .parameters import ParameterAssignment
+from .executor import Executor
 
 
 class Query(object):
+
+    Mode = QueryMode
+
     def __init__(self, target=None, parent=None, parameters=None, options=None):
         self.target = target
         self.parent = parent
-        self.options = options or DictObject()
+        self.options = options or DictObject(mode=QueryMode.normal)
         self.parameters = parameters or DictObject()
         self.selected = DictObject()
         self.selected.fields = {}
         self.selected.requests = {}
 
     def __getattr__(self, parameter_name: str):
-        return ParameterAssignment(parameter_name, self)
+        return ParameterAssignment(self, parameter_name)
 
     def execute(self, first=None):
         if first is not None:
@@ -55,10 +60,17 @@ class Query(object):
             merged_query.merge(other, in_place=True)
             return merged_query
 
-    def select(self, *selectors):
-        selectors = flatten_sequence(selectors)
+    def select(self, *args):
+        args = flatten_sequence(args)
 
-        for obj in selectors:
+        for obj in args:
+            if is_resource(obj):
+                if isinstance(obj, type):
+                    self.select(obj.pybiz.resolvers.keys())
+                else:
+                    self.select(obj.internal.data.keys())
+                continue
+
             if isinstance(obj, str):
                 # if obj is str, replace it with the corresponding resolver
                 # property from the target Resource class.
@@ -67,18 +79,19 @@ class Query(object):
                     raise ValueError(f'unknown resolver: {obj}')
                 obj = _obj
 
-            # insert a Request object into self.selected
-            if isinstance(obj, EagerStoreLoaderProperty):
+            # build a resolver request
+            if isinstance(obj, LoaderProperty):
                 resolver_property = obj
-                request = Request(resolver_property.resolver)
+                request = Request(resolver_property.resolver, query=self)
                 self.selected.fields[request.resolver.name] = request
             elif isinstance(obj, ResolverProperty):
                 resolver_property = obj
-                request = Request(resolver_property.resolver)
+                request = Request(resolver_property.resolver, query=self)
                 self.selected.requests[request.resolver.name] = request
             elif isinstance(obj, Request):
                 request = obj
-                if isinstance(request.resolver, EagerStoreLoader):
+                request.query = self
+                if isinstance(request.resolver, Loader):
                     self.selected.fields[request.resolver.name] = request
                 else:
                     self.selected.requests[request.resolver.name] = request
@@ -133,80 +146,3 @@ class Query(object):
         else:
             self.parameters.limit = None
         return self
-
-
-class Executor(object):
-    def execute(self, query):
-        resources = self._fetch_resources(query)
-
-        self._execute_resolvers(query, resources)
-
-        retval = resources
-        if query.options.first:
-            retval = resources[0] if resources else None
-
-        return retval
-
-    def _fetch_resources(self, query):
-        store = query.target.pybiz.store
-        where_predicate = query.parameters.where
-        field_names = [req.resolver.field.name for req in query.selected.fields]
-        state = store.query(predicate=where_predicate, fields=field_names)
-        return [query.target(s).clean() for s in state]
-
-    def _execute_resolvers(self, query, resources):
-        for request in query.selected.requests:
-            resolver = request.resolver
-            for resource in resources:
-                value = resolver.resolve(resource, request)
-                setattr(resource, resolver.name, value)
-
-
-
-
-class Request(object):
-    def __init__(self, resolver):
-        self.resolver = resolver
-        self.parameters = DictObject()
-        self.result = None
-
-    def __repr__(self):
-        return (
-            f'{get_class_name(self)}('
-            f'{get_class_name(self.resolver.owner)}.'
-            f'{self.resolver.name}'
-            f')'
-        )
-
-    def __getattr__(self, name) -> 'ParameterAssignment':
-        return ParameterAssignment(name, self)
-
-
-class ParameterAssignment(object):
-    """
-    This is an internal data structure, used to facilitate the syntactic sugar
-    that allows you to write to query.params via funcion call notation, like
-    query.foo('bar') instead of query.params['foo'] = bar.
-
-    Instances of this class just store the query whose parameter we are going to
-    set and the name of the dict key or "param name". When called, it writes the
-    single argument supplied in the call to the params dict of the query.
-    """
-
-    def __init__(self, name, query=None, parameters=None):
-        self._parameters = parameters
-        self._name = name
-
-    def __call__(self, value):
-        """
-        Store the `param` value in the Query's parameters dict.
-        """
-        self._parameters[self._name] = value
-        return self._query
-
-    def __repr__(self):
-        return (
-            f'{get_class_name(self)}('
-            f'parameter={self._name}'
-            f')'
-        )

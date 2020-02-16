@@ -15,7 +15,7 @@ from appyratus.env import Environment
 from sqlalchemy.sql import bindparam
 from sqlalchemy.dialects.postgresql import ARRAY
 
-from pybiz.predicate import (
+from pybiz.biz.query.predicate import (
     Predicate, ConditionalPredicate, BooleanPredicate,
     OP_CODE,
 )

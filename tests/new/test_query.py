@@ -1,13 +1,12 @@
 import pytest
 import pybiz
 
+from pybiz import Resource, Query, Request, OrderBy
 from pybiz.constants import ID_FIELD_NAME
-from pybiz.biz.query.order_by import OrderBy
-from pybiz.predicate import (
+from pybiz.biz.query.predicate import (
     ConditionalPredicate, BooleanPredicate, Predicate,
     OP_CODE,
 )
-from pybiz.biz2 import Resource, Query, Request
 
 
 def test_query_initializes_correctly(BasicResource, basic_query):

@@ -23,8 +23,7 @@ from pybiz.util.misc_functions import (
 )
 from pybiz.schema import Enum as EnumField
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
-
-from .biz.util import is_resource, is_batch
+from pybiz.biz.util import is_resource, is_batch
 
 
 OP_CODE = Enum(
@@ -79,7 +78,6 @@ class Predicate(object):
         self.code = code
         self.fields = set()
         self.targets = set()
-        self.unbound_predicates = set()
 
     def serialize(self) -> Text:
         """
@@ -104,9 +102,6 @@ class Predicate(object):
             raise ValueError(str(obj))
 
     def dump(self):
-        raise NotImplementedError()
-
-    def bind(self, data: Dict[Text, 'Resource']) -> 'Predicate':
         raise NotImplementedError()
 
     @classmethod
@@ -135,10 +130,6 @@ class Predicate(object):
             return reduce(func, predicates)
 
     @property
-    def is_unbound(self):
-        return bool(self.unbound_predicates)
-
-    @property
     def is_conditional_predicate(self):
         return self.code == TYPE_CONDITIONAL
 
@@ -146,77 +137,6 @@ class Predicate(object):
     def is_boolean_predicate(self):
         return self.code == TYPE_BOOLEAN
 
-    # XXX: deprecated
-    """
-    def compute_constraints(self) -> 'Constraint':
-        constraints = defaultdict(dict)
-        self._compute_constraint(self, constraints)
-        return constraints
-
-    def _compute_constraint(self, predicate, constraints):
-        if predicate.code == TYPE_BOOLEAN:
-            self._compute_constraint(predicate.lhs, constraints)
-            self._compute_constraint(predicate.rhs, constraints)
-        elif predicate.code == TYPE_CONDITIONAL:
-            field = predicate.prop.field
-            if predicate.op == OP_CODE.EQ:
-                constraints[field.name] = ConstantValueConstraint(
-                    value=predicate.value,
-                    is_negative=False
-                )
-            elif predicate.op == OP_CODE.NEQ:
-                constraints[field.name] = ConstantValueConstraint(
-                    value=predicate.value,
-                    is_negative=True
-                )
-            elif predicate.op == OP_CODE.INCLUDING:
-                constraints[field.name] = ConstantValueConstraint(
-                    value=random.choice(list(predicate.value)),
-                    is_negative=False
-                )
-            elif predicate.op == OP_CODE.EXCLUDING:
-                disallowed_values = set(predicate.value)
-                if isinstance(field, EnumField):
-                    possible_values = set(field.values) - disallowed_values
-                    is_enum = True
-                else:
-                    possible_values = None
-                    is_enum = False
-                if not is_enum:
-                    while True:
-                        value = field.generate()
-                        if value not in disallowed_values:
-                            break
-                elif disallowed_values == possible_values:
-                    value = None
-                else:
-                    possible_values = list(possible_values)
-                    value = random.choice(possible_values)
-                constraints[field.name] = ConstantValueConstraint(
-                    value=value,
-                    is_negative=True
-                )
-
-            con = constraints.setdefault(field.name, RangeConstraint())
-            if not con.is_equality_constraint:
-                if predicate.op == OP_CODE.LEQ:
-                    con.upper_value = predicate.value
-                    con.is_upper_inclusive = True
-                elif predicate.op == OP_CODE.LT:
-                    con.upper_value = predicate.value
-                    con.is_upper_inclusive = False
-                elif predicate.op == OP_CODE.GEQ:
-                    con.lower_value = predicate.value
-                    con.is_lower_inclusive = True
-                elif predicate.op == OP_CODE.GT:
-                    con.lower_value = predicate.value
-                    con.is_lower_inclusive = False
-        else:
-            raise ValueError(
-                f'unrecogized predicate type: {predicate.code}'
-            )
-        return constraints
-    """
 
 class ConditionalPredicate(Predicate):
     """
@@ -233,13 +153,6 @@ class ConditionalPredicate(Predicate):
         self.targets.add(self.prop.resolver.owner)
         self.is_scalar = is_scalar
 
-        if is_sequence(value) or is_batch(value) and value:
-            is_bound = not isinstance(list(value)[0], ResolverAlias)
-        else:
-            is_bound = not isinstance(value, ResolverAlias)
-        if not is_bound:
-            self.unbound_predicates.add(self)
-
     def __repr__(self):
         return '<{}({})>'.format(
             get_class_name(self),
@@ -253,10 +166,7 @@ class ConditionalPredicate(Predicate):
         else:
             lhs = '[NULL]'
 
-        if isinstance(self.value, ResolverAlias):
-            val = f'{self.value.alias_name}.{self.value.resolver_name}'
-        else:
-            val = self.value
+        val = self.value
 
         return f'({lhs} {OP_CODE_2_DISPLAY_STRING[self.op]} {val})'
 
@@ -278,31 +188,6 @@ class ConditionalPredicate(Predicate):
             'code': self.code,
         }
 
-    def bind(self, data: Dict[Text, 'Resource']) -> 'Predicate':
-        resolver_alias = self.value
-
-        if resolver_alias.alias_name == '$parent':
-            data_key = resolver_alias.meta['query_id']
-        else:
-            data_key = resolver_alias.alias_name
-
-        source = data[data_key]
-
-        if self.is_scalar or is_batch(source):
-            self.value = getattr(source, resolver_alias.resolver_name)
-        elif is_resource(source):
-            self.value = [getattr(source, resolver_alias.resolver_name)]
-
-        self.unbound_predicates.remove(self)
-
-        return self
-
-        #resolver_alias = self.value
-        #source = data[resolver_alias.alias_name]
-        #self.value = getattr(source, resolver_alias.resolver_name)
-        #self.unbound_predicates.remove(self)
-        #return self
-
     @classmethod
     def load(cls, biz_class: Type['Resource'], data: Dict):
         field_prop = getattr(biz_class, data['field'])
@@ -320,9 +205,6 @@ class BooleanPredicate(Predicate):
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
-        self.unbound_predicates = (
-            lhs.unbound_predicates | rhs.unbound_predicates
-        )
         if lhs.code == TYPE_CONDITIONAL:
             self.fields.add(lhs.prop.resolver.field)
         if rhs.code == TYPE_CONDITIONAL:
@@ -366,11 +248,6 @@ class BooleanPredicate(Predicate):
             'rhs': self.rhs.dump(),
             'code': self.code,
         }
-
-    def bind(self, data: Dict[Text, 'Resource']) -> 'Predicate':
-        self.lhs.bind(data)
-        self.rhs.bind(data)
-        return self
 
     @classmethod
     def load(cls, biz_class: Type['Resource'], data: Dict):
@@ -487,43 +364,3 @@ class PredicateParser(object):
                         return prop.excluding(value_list)
                     else:
                         return prop.including(value_list)
-
-
-class AliasFactory(object):
-    def __getattr__(self, name):
-        return Alias(name)
-
-
-class Alias(object):
-    def __init__(self, name: Text, meta: Dict = None):
-        self._name = name
-        self._meta = meta or {}
-
-    def __getattr__(self, resolver_name):
-        return ResolverAlias(self._name, self._meta, resolver_name)
-
-    @classmethod
-    def from_query(cls, query: 'Query') -> 'Alias':
-        return cls(str(id(query)))
-
-
-class ResolverAlias(object):
-    def __init__(self, alias_name: Text, alias_meta: Dict, resolver_name: Text):
-        self._alias_name = alias_name
-        self._alias_meta = alias_meta
-        self._resolver_name = resolver_name
-
-    def __repr__(self):
-        return f'ResolverAlias(target={self._alias_name}.{self._resolver_name})'
-
-    @property
-    def meta(self):
-        return self._alias_meta
-
-    @property
-    def alias_name(self):
-        return self._alias_name
-
-    @property
-    def resolver_name(self):
-        return self._resolver_name

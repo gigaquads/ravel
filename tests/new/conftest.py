@@ -1,17 +1,18 @@
 import pytest
 import pybiz
 
-from pybiz.biz2 import (
+from pybiz import (
     Resource,
     Resolver,
     ResolverManager,
     ResolverProperty,
     ResolverDecorator,
     Relationship,
-    relationship,
     Query,
     Request,
     Batch,
+    resolver,
+    relationship,
 )
 from pybiz.constants import (
     IS_BIZ_OBJECT_ANNOTATION,
@@ -40,17 +41,15 @@ def BasicResource(app):
 
 @pytest.fixture(scope='function')
 def ResourceWithResolvers(app, BasicResource):
-    resolver = ResolverDecorator
-
     class ResourceWithResolvers(Resource):
 
-        @resolver(target=BasicResource)
-        def my_resolver(self, request):
+        @resolver(target=BasicResource, nullable=False)
+        def basic_friend(self, request):
             return BasicResource(required_str_field='x')
 
         @relationship(join=lambda: [
             (ResourceWithResolvers._id, ResourceWithResolvers._id)
-        ])
+        ], nullable=False)
         def myself(self, request):
             return request.result
 

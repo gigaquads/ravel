@@ -1,13 +1,13 @@
 import pytest
 import pybiz
 
-from pybiz.biz2 import (
+from pybiz import (
     Resource,
     Resolver,
-    ResolverManager,
     ResolverProperty,
-    Relationship,
     Batch,
+    ResolverManager,
+    Relationship,
 )
 from pybiz.constants import (
     IS_BIZ_OBJECT_ANNOTATION,
@@ -71,7 +71,7 @@ def test_basic_resource_builds(app, BasicResource):
 
 def test_custom_resolver(ResourceWithResolvers, BasicResource):
     res = ResourceWithResolvers().create()
-    basic_res = res.my_resolver
+    basic_res = res.basic_friend
     assert isinstance(basic_res, BasicResource)
     assert basic_res.required_str_field == 'x'
 
@@ -89,3 +89,22 @@ def test_create(BasicResource):
     assert res.required_str_field == 'x'
     assert res.int_field == 1
     assert not res.dirty
+
+
+def test_simulates_fields(BasicResource):
+    res = BasicResource.simulate()
+    for k, resolver in BasicResource.pybiz.resolvers.fields.items():
+        assert k in res.internal.state
+        if not resolver.nullable:
+            assert res.internal.state[k] is not None
+
+
+def test_simulates_other_resolvers(BasicResource, ResourceWithResolvers):
+    res = ResourceWithResolvers.simulate({'myself', 'basic_friend'})
+
+    myself = res.internal.state.get('myself')
+    assert isinstance(myself, ResourceWithResolvers)
+    assert myself._id != res._id
+
+    basic_friend = res.internal.state.get('basic_friend')
+    assert isinstance(basic_friend, BasicResource)

@@ -30,16 +30,18 @@ from pybiz.constants import (
     REV_FIELD_NAME,
 )
 
+from .query.query import Query
+from .query.order_by import OrderBy
+from .resolver.resolver import Resolver
+from .resolver.resolver_decorator import ResolverDecorator
+from .resolver.resolver_property import ResolverProperty
+from .resolver.resolver_manager import ResolverManager
+from .resolver.resolvers.loader import Loader, LoaderProperty
 from .entity import Entity
 from .dirty import DirtyDict
-from .query import OrderBy
-from .util import is_batch, is_resource
 from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
+from .util import is_batch, is_resource
 from .batch import Batch
-from .resolver import (
-    Resolver, ResolverDecorator, ResolverProperty,
-    ResolverManager, EagerStoreLoader, EagerStoreLoaderProperty,
-)
 
 
 class ResourceMeta(type):
@@ -89,7 +91,7 @@ class ResourceMeta(type):
                 field = v
                 field.name = k
                 fields[k] = field
-                resolver_property = EagerStoreLoader.build_property(
+                resolver_property = Loader.build_property(
                     owner=cls, field=field, name=k, target=cls,
                 )
                 cls.pybiz.resolvers.register(resolver_property.resolver)
@@ -122,7 +124,7 @@ class ResourceMeta(type):
         # inherited fields in one dict.
         for k, field in fields.items():
             if k in inherited_fields:
-                resolver_property = EagerStoreLoader.build_property(
+                resolver_property = Loader.build_property(
                     owner=biz_class, field=field, name=k, target=biz_class,
                 )
                 biz_class.pybiz.resolvers.register(resolver_property.resolver)
@@ -272,19 +274,19 @@ class Resource(Entity, metaclass=ResourceMeta):
         }
 
     @classmethod
-    def generate(cls, query: 'Query' = None) -> 'Resource':
+    def simulate(cls, resolvers: Set[Text] = None) -> 'Resource':
+        keys = resolvers or set(cls.pybiz.resolvers.fields.keys())
+        resolvers_objs = Resolver.sort(cls.pybiz.resolvers[k] for k in keys)
         instance = cls()
-        query = query or cls.select(cls.pybiz.resolvers.fields.keys())
-        resolvers = Resolver.sort(
-            cls.pybiz.resolvers[k] for k in query.selected.fields
-        )
-        for resolver in resolvers:
+
+        for resolver in resolvers_objs:
             if resolver.name == REV_FIELD_NAME:
                 setattr(instance, resolver.name, '0')
             else:
-                request = query.parameters.selected.fields[resolver.name]
-                generated_value = resolver.generate(instance, request)
-                setattr(instance, resolver.name, generated_value)
+                request = getattr(cls, resolver.name).select()
+                value = resolver.simulate(instance, request)
+                setattr(instance, resolver.name, value)
+
         return instance
 
     def merge(self, other=None, **values) -> 'Resource':
