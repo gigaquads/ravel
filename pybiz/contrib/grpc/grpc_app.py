@@ -23,7 +23,7 @@ from appyratus.schema import fields
 from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 
-from pybiz.util.misc_functions import is_resource, is_batch
+from pybiz.biz.util import is_resource, is_batch
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.app import Application
 

@@ -12,10 +12,9 @@ import venusian
 from pybiz.exceptions import ValidationError
 from pybiz.store import Store, SimulationStore
 from pybiz.util.loggers import console
-from pybiz.util.misc_functions import (
+from pybiz.util import (
     is_sequence,
     get_class_name,
-    repr_biz_id,
     flatten_sequence,
     union,
 )
@@ -40,7 +39,7 @@ from .resolver.resolvers.loader import Loader, LoaderProperty
 from .entity import Entity
 from .dirty import DirtyDict
 from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
-from .util import is_batch, is_resource
+from .util import is_batch, is_resource, is_resource_type, repr_biz_id
 from .batch import Batch
 
 
@@ -111,7 +110,7 @@ class ResourceMeta(type):
 
         # inherit fields and defaults from base Resource classes
         for base_class in base_classes:
-            if is_resource(base_class):
+            if is_resource_type(base_class):
                 inherited_fields.update(base_class.Schema.fields)
                 biz_class.pybiz.defaults.update(base_class.pybiz.defaults)
             else:

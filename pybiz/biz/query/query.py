@@ -10,7 +10,7 @@ from pybiz.util.misc_functions import (
     get_class_name,
 )
 
-from pybiz.biz.util import is_resource
+from pybiz.biz.util import is_resource, is_resource_type
 from pybiz.biz.resolver.resolver_property import ResolverProperty
 from pybiz.biz.resolver.resolvers.loader import LoaderProperty, Loader
 
@@ -64,13 +64,6 @@ class Query(object):
         args = flatten_sequence(args)
 
         for obj in args:
-            if is_resource(obj):
-                if isinstance(obj, type):
-                    self.select(obj.pybiz.resolvers.keys())
-                else:
-                    self.select(obj.internal.data.keys())
-                continue
-
             if isinstance(obj, str):
                 # if obj is str, replace it with the corresponding resolver
                 # property from the target Resource class.
@@ -78,6 +71,12 @@ class Query(object):
                 if _obj is None:
                     raise ValueError(f'unknown resolver: {obj}')
                 obj = _obj
+            elif is_resource(obj):
+                self.select(obj.internal.state.keys())
+                continue
+            elif is_resource_type(obj):
+                self.select(obj.pybiz.resolvers.keys())
+                continue
 
             # build a resolver request
             if isinstance(obj, LoaderProperty):

@@ -10,58 +10,16 @@ from typing import (
 
 from copy import deepcopy
 
-from pybiz.constants import (
-    IS_BIZ_OBJECT_ANNOTATION,
-    IS_BIZ_LIST_ANNOTATION,
-    ID_FIELD_NAME,
-)
 
-_dict_keys = {}.keys().__class__
-_dict_values = {}.values().__class__
-
-
-def is_resource(obj):
-    """
-    Return True if obj is an instance of Resource.
-    """
-    return (
-        getattr(obj, IS_BIZ_OBJECT_ANNOTATION, False)
-        if obj else False
-    )
-
-
-def is_batch(obj) -> bool:
-    """
-    Return True if obj is an instance of Resource.
-    """
-    return (
-        getattr(obj, IS_BIZ_LIST_ANNOTATION, False)
-        if obj is not None else False
-    )
+DictKeySet = type({}.keys())
+DictValueSet = type({}.values())
 
 
 def is_sequence(obj) -> bool:
     """
     Return True if obj is a generic sequence type, like a list or tuple.
     """
-    return isinstance(obj, (list, tuple, set, _dict_keys, _dict_values))
-
-
-def repr_biz_id(resource: 'Resource') -> Text:
-    """
-    Return a string version of a Resource ID.
-    """
-    if resource is None:
-        return 'None'
-    _id = resource.internal.state.get(ID_FIELD_NAME)
-    if _id is None:
-        return '?'
-    elif isinstance(_id, str):
-        return _id
-    elif isinstance(_id, UUID):
-        return _id.hex
-    else:
-        return repr(_id)
+    return isinstance(obj, (list, tuple, set, DictKeySet, DictValueSet))
 
 
 def import_object(dotted_path: Text) -> object:

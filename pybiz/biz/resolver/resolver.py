@@ -9,7 +9,7 @@ from pybiz.util.misc_functions import (
     get_class_name,
     flatten_sequence,
 )
-from pybiz.biz.util import is_resource, is_batch
+from pybiz.biz.util import is_resource, is_batch, is_resource_type
 from pybiz.biz.query.order_by import OrderBy
 from pybiz.biz.query.request import Request
 from pybiz.biz.query.mode import QueryMode
@@ -49,8 +49,7 @@ class Resolver(object):
         self.target = None
         self.many = many
 
-        if is_resource(target):
-            assert isinstance(target, type)
+        if is_resource_type(target):
             self.target = target
             self.many = False
         elif is_batch(target):
