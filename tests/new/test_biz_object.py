@@ -76,7 +76,6 @@ def test_custom_resolver(ResourceWithResolvers, BasicResource):
     assert isinstance(basic_res, BasicResource)
     assert basic_res.required_str_field == 'x'
 
-    import ipdb; ipdb.set_trace()
     assert res.myself is not None
     assert res._id == res._id
 
