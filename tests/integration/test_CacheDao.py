@@ -3,10 +3,10 @@ import pytest
 
 from appyratus.test import mark
 
-from pybiz.biz import Resource
-from pybiz.schema import fields
-from pybiz.store.simulation_store import SimulationStore
-from pybiz.store.cache_store import CacheStore
+from ravel.biz import Resource
+from ravel.schema import fields
+from ravel.store.simulation_store import SimulationStore
+from ravel.store.cache_store import CacheStore
 
 
 @pytest.fixture(scope='module')

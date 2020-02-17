@@ -4,17 +4,17 @@ import pytest
 
 from pprint import pprint
 
-from pybiz import Resource, fields
-from pybiz.store import SimulationStore, FilesystemStore
-from pybiz.schema import String
+from ravel import Resource, fields
+from ravel.store import SimulationStore, FilesystemStore
+from ravel.schema import String
 
 try:
-    from pybiz.contrib.sqlalchemy import SqlalchemyStore
+    from ravel.contrib.sqlalchemy import SqlalchemyStore
 except:
     SqlalchemyStore = None
 
 try:
-    from pybiz.contrib.redis import RedisStore
+    from ravel.contrib.redis import RedisStore
 except:
     RedisStore = None
 

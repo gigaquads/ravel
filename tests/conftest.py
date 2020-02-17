@@ -1,21 +1,21 @@
 import pytest
-import pybiz
+import ravel
 
-from pybiz import relationship
+from ravel import relationship
 
 """
 @pytest.fixture(scope='function')
 def app():
-    return pybiz.Application().bootstrap()
+    return ravel.Application().bootstrap()
 
 
 @pytest.fixture(scope='function')
 def Node(app):
 
-    class Node(pybiz.Resource):
-        name = pybiz.String(required=True)
-        parent_id = pybiz.Id(required=True)
-        tree_id = pybiz.Id(required=True)
+    class Node(ravel.Resource):
+        name = ravel.String(required=True)
+        parent_id = ravel.Id(required=True)
+        tree_id = ravel.Id(required=True)
 
         @relationship(join=lambda: (Node.parent_id, Node._id))
         def parent(self):
@@ -32,10 +32,10 @@ def Node(app):
 @pytest.fixture(scope='function')
 def Tree(app, Node):
 
-    class Tree(pybiz.Resource):
+    class Tree(ravel.Resource):
 
-        root_node_id = pybiz.Id(required=True)
-        name = pybiz.String(required=True)
+        root_node_id = ravel.Id(required=True)
+        name = ravel.String(required=True)
 
         @relationship(join=lambda: (Tree.root_node_id, Node._id))
         def root(self):

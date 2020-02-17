@@ -1,6 +1,6 @@
 import pytest
 
-from pybiz import alias
+from ravel import alias
 
 
 def test_query(Tree, Node, tree, parent, children):
@@ -29,23 +29,23 @@ from pprint import pprint as pp
 
 import pytest
 
-import pybiz
+import ravel
 
-from pybiz import Application
-from pybiz.constants import ID_FIELD_NAME
-from pybiz.biz import (
+from ravel import Application
+from ravel.constants import ID_FIELD_NAME
+from ravel.biz import (
     Resource,
     Resolver,
     ResolverProperty,
     resolver,
     fields
 )
-from pybiz.biz.relationship import (
+from ravel.biz.relationship import (
     Relationship,
     RelationshipBatch,
     relationship,
 )
-from pybiz.biz.query.query import (
+from ravel.biz.query.query import (
     Query,
     QueryParameterAssignment,
     QueryPrinter,
@@ -121,8 +121,8 @@ def test_query_generates_correct_store_call(Thing, thing_query):
 
 @mark.unit
 def test_relationship_autoconfigures_many(Thing):
-    assert Thing.pybiz.resolvers['friend'].many is False
-    assert Thing.pybiz.resolvers['owners'].many is True
+    assert Thing.ravel.resolvers['friend'].many is False
+    assert Thing.ravel.resolvers['owners'].many is True
 
 
 @mark.unit
@@ -155,11 +155,11 @@ def test_generate_recurses_with_query(Thing):
         Thing.friend,
     )
 
-    Thing.pybiz.resolvers['friend'].generate = generate_func = MagicMock()
+    Thing.ravel.resolvers['friend'].generate = generate_func = MagicMock()
 
     thing = Thing.generate(query=query)
 
-    Thing.pybiz.resolvers['friend'].generate.assert_called_once_with(
+    Thing.ravel.resolvers['friend'].generate.assert_called_once_with(
         thing, query=query.params['select']['friend']
     )
 
@@ -255,7 +255,7 @@ def test_save_recurses_on_resolvers(
     mock_resolver.biz_class = Thing
     mock_resolver.on_save.return_value = friend
 
-    thing.pybiz.resolvers['friend'] = mock_resolver
+    thing.ravel.resolvers['friend'] = mock_resolver
 
     retval = Thing.save_many(things, depth=1)
 

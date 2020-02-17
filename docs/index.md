@@ -12,8 +12,8 @@ Our example domain model consists of _users_ and _accounts_. Each account is _ow
 ```python
 # file: example.py
 
-from pybiz import Resource, Relationship
-from pybiz.schema import Field, Email, String
+from ravel import Resource, Relationship
+from ravel.schema import Field, Email, String
 
 
 class Account(Resource):
@@ -36,8 +36,8 @@ via decorator. See [Application Interface Layer](./interface-layer/index.md) for
 In our example, we will register the same two functions `signup` and `login` functions for use in both a JSON web server and interactive IPython shell, or REPL.
 
 ```python
-from pybiz.app.repl import ReplApplication
-from pybiz.app.web.http_server import HttpServerApplication
+from ravel.app.repl import ReplApplication
+from ravel.app.web.http_server import HttpServerApplication
 
 repl = ReplApplication()
 http = HttpServerApplication()

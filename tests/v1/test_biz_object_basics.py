@@ -1,9 +1,9 @@
 import pytest
-import pybiz
+import ravel
 
 from appyratus.test import mark
-from pybiz.biz.biz_attribute.relationship import RelationshipProperty
-from pybiz.biz.biz_attribute.view import ViewProperty
+from ravel.biz.biz_attribute.relationship import RelationshipProperty
+from ravel.biz.biz_attribute.view import ViewProperty
 
 
 class TestBizBasics(object):

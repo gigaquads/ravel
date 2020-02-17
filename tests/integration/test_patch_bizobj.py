@@ -2,9 +2,9 @@ import pytest
 
 from mock import MagicMock
 
-from pybiz.schema import Schema, Str, Int, List, Uuid, Dict
-from pybiz.biz import Resource, Relationship
-from pybiz.const import (
+from ravel.schema import Schema, Str, Int, List, Uuid, Dict
+from ravel.biz import Resource, Relationship
+from ravel.const import (
     OP_DELTA_REMOVE,
     OP_DELTA_ADD,
     OP_DELTA_REPLACE,

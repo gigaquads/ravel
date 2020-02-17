@@ -1,5 +1,5 @@
 from appyratus.test import mark
-from pybiz.util.dirty import DirtyDict
+from ravel.util.dirty import DirtyDict
 
 
 class TestDirtyDict(object):

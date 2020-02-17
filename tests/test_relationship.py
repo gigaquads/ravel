@@ -1,23 +1,23 @@
 import pytest
-import pybiz
+import ravel
 
 
 @pytest.fixture(scope='function')
 def app():
-    return pybiz.Application().bootstrap()
+    return ravel.Application().bootstrap()
 
 
 @pytest.fixture(scope='function')
 def Node(app):
-    class Node(pybiz.Resource):
-        name = pybiz.String(required=True)
-        parent_id = pybiz.Id(required=True)
+    class Node(ravel.Resource):
+        name = ravel.String(required=True)
+        parent_id = ravel.Id(required=True)
 
-        @pybiz.relationship(join=lambda: (Node.parent_id, Node._id))
+        @ravel.relationship(join=lambda: (Node.parent_id, Node._id))
         def parent(self):
             pass
 
-        @pybiz.relationship(join=lambda: (Node._id, Node.parent_id), many=True)
+        @ravel.relationship(join=lambda: (Node._id, Node.parent_id), many=True)
         def children(self):
             pass
 

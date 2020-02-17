@@ -1,27 +1,27 @@
-import pybiz
+import ravel
 import pytest
 
 from appyratus.utils import DictObject
 
-from pybiz import String, Int, Float, Bool
-from pybiz.batch import Batch, BatchResolverProperty
+from ravel import String, Int, Float, Bool
+from ravel.batch import Batch, BatchResolverProperty
 
 
 
 def test_factory_method(BasicResource, BasicBatch, basic_batch):
-    assert isinstance(getattr(BasicBatch, 'pybiz', None), DictObject)
-    assert BasicBatch.pybiz.owner is BasicResource
-    assert BasicBatch.pybiz.indexed_field_types \
+    assert isinstance(getattr(BasicBatch, 'ravel', None), DictObject)
+    assert BasicBatch.ravel.owner is BasicResource
+    assert BasicBatch.ravel.indexed_field_types \
             == BasicBatch.get_indexed_field_types()
-    assert BasicBatch.pybiz.resolver_properties
-    assert len(BasicBatch.pybiz.resolver_properties) == len({
-        resolver for resolver in BasicResource.pybiz.resolvers.fields.values()
+    assert BasicBatch.ravel.resolver_properties
+    assert len(BasicBatch.ravel.resolver_properties) == len({
+        resolver for resolver in BasicResource.ravel.resolvers.fields.values()
         if isinstance(resolver.field, BasicBatch.get_indexed_field_types())
     })
 
     # ensure that BatchResolverProperty are created for each indexable
     # field type on its associated Resource class.
-    for resolver in BasicResource.pybiz.resolvers.fields.values():
+    for resolver in BasicResource.ravel.resolvers.fields.values():
         if isinstance(resolver.field, Batch.get_indexed_field_types()):
             attr = getattr(BasicBatch, resolver.name, None)
             assert isinstance(attr, BatchResolverProperty)
@@ -31,7 +31,7 @@ def test_factory_method(BasicResource, BasicBatch, basic_batch):
 
     basic_batch = BasicBatch()
 
-    for resolver in BasicResource.pybiz.resolvers.fields.values():
+    for resolver in BasicResource.ravel.resolvers.fields.values():
         if isinstance(resolver.field, Batch.get_indexed_field_types()):
             assert resolver.name in basic_batch.internal.indexes
             print(f'Batch object has expected index: {resolver.name}')
@@ -46,7 +46,7 @@ def test_insert(basic_resource, basic_batch):
 
     assert len(basic_batch) == 1
     assert basic_batch.internal.resources[0] is basic_resource
-    for k in basic_batch.pybiz.resolver_properties:
+    for k in basic_batch.ravel.resolver_properties:
         v = basic_resource[k]
         assert basic_batch.internal.indexes[k][v] == {basic_resource}
 

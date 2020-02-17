@@ -1,14 +1,14 @@
 import pytest
-import pybiz
+import ravel
 
 from appyratus.schema.fields import Uuid
-from pybiz.test.domains.startrek import startrek as startrek_app
+from ravel.test.domains.startrek import startrek as startrek_app
 
 
 @pytest.fixture(scope='session')
 def startrek_manfiest():
     return {
-        'package': 'pybiz.test.domains.startrek',
+        'package': 'ravel.test.domains.startrek',
     }
 
 

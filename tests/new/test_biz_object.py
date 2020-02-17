@@ -1,8 +1,8 @@
 import uuid
 import pytest
-import pybiz
+import ravel
 
-from pybiz import (
+from ravel import (
     Resource,
     Resolver,
     ResolverProperty,
@@ -10,7 +10,7 @@ from pybiz import (
     ResolverManager,
     Relationship,
 )
-from pybiz.constants import (
+from ravel.constants import (
     IS_RESOURCE_ATTRIBUTE,
     ID_FIELD_NAME,
     REV_FIELD_NAME,
@@ -23,22 +23,22 @@ def test_basic_resource_builds(app, BasicResource):
     correctly, following app bootstrapping.
     """
     # check basic class attributes are as expected
-    assert hasattr(BasicResource, 'pybiz')
+    assert hasattr(BasicResource, 'ravel')
     assert hasattr(BasicResource, 'Schema')
     assert hasattr(BasicResource, IS_RESOURCE_ATTRIBUTE)
     assert isinstance(BasicResource.Schema, type)
-    assert issubclass(BasicResource.Schema, pybiz.Schema)
+    assert issubclass(BasicResource.Schema, ravel.Schema)
     assert isinstance(BasicResource.Batch, type)
     assert issubclass(BasicResource.Batch, Batch)
-    assert BasicResource.pybiz.app is app
-    assert BasicResource.pybiz.is_abstract is False
-    assert BasicResource.pybiz.is_bootstrapped is True
-    assert BasicResource.pybiz.is_bound is True
-    assert isinstance(BasicResource.pybiz.store, pybiz.Store)
-    assert isinstance(BasicResource.pybiz.schema, BasicResource.Schema)
-    assert isinstance(BasicResource.pybiz.resolvers, ResolverManager)
-    assert BasicResource.pybiz.defaults
-    assert ID_FIELD_NAME in BasicResource.pybiz.defaults
+    assert BasicResource.ravel.app is app
+    assert BasicResource.ravel.is_abstract is False
+    assert BasicResource.ravel.is_bootstrapped is True
+    assert BasicResource.ravel.is_bound is True
+    assert isinstance(BasicResource.ravel.store, ravel.Store)
+    assert isinstance(BasicResource.ravel.schema, BasicResource.Schema)
+    assert isinstance(BasicResource.ravel.resolvers, ResolverManager)
+    assert BasicResource.ravel.defaults
+    assert ID_FIELD_NAME in BasicResource.ravel.defaults
 
     # ensure the expected fields, resolvers, and resolver properties exist
     expected_field_names = {
@@ -53,7 +53,7 @@ def test_basic_resource_builds(app, BasicResource):
 
     for name in expected_field_names:
         assert name in BasicResource.Schema.fields
-        assert name in BasicResource.pybiz.resolvers
+        assert name in BasicResource.ravel.resolvers
 
         attr = getattr(BasicResource, name)
         assert isinstance(attr, ResolverProperty)
@@ -66,7 +66,7 @@ def test_basic_resource_builds(app, BasicResource):
     # field.
     id_field = BasicResource.Schema.fields[ID_FIELD_NAME]
     friend_id_field = BasicResource.Schema.fields['friend_id']
-    assert not isinstance(friend_id_field, pybiz.Id)
+    assert not isinstance(friend_id_field, ravel.Id)
     assert isinstance(friend_id_field, type(id_field))
 
 
@@ -125,7 +125,7 @@ def test_update_many(BasicResource):
 
 def test_simulates_fields(BasicResource):
     res = BasicResource.generate()
-    for k, resolver in BasicResource.pybiz.resolvers.fields.items():
+    for k, resolver in BasicResource.ravel.resolvers.fields.items():
         assert k in res.internal.state
         if not resolver.nullable:
             assert res.internal.state[k] is not None

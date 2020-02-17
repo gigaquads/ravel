@@ -5,9 +5,9 @@ import pytest
 
 from appyratus.test import mark
 
-from pybiz.biz import Resource
-from pybiz.schema import fields
-from pybiz.store.filesystem_store import FilesystemStore
+from ravel.biz import Resource
+from ravel.schema import fields
+from ravel.store.filesystem_store import FilesystemStore
 
 
 @pytest.fixture(scope='module')

@@ -1,9 +1,9 @@
 import pytest
-import pybiz
+import ravel
 
-from pybiz import Resource, Query, Request, OrderBy
-from pybiz.constants import ID_FIELD_NAME
-from pybiz.query.predicate import (
+from ravel import Resource, Query, Request, OrderBy
+from ravel.constants import ID_FIELD_NAME
+from ravel.query.predicate import (
     ConditionalPredicate, BooleanPredicate, Predicate,
     OP_CODE,
 )

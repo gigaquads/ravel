@@ -1,8 +1,8 @@
 import pytest
-import pybiz
+import ravel
 
 from appyratus.test import mark
-from pybiz.util.misc_functions import is_batch
+from ravel.util.misc_functions import is_batch
 
 
 class TestRelationshipBasics(object):

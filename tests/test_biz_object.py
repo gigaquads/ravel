@@ -6,17 +6,17 @@ from mock import MagicMock
 
 import pytest
 
-import pybiz
+import ravel
 
-from pybiz import Application
-from pybiz.constants import ID_FIELD_NAME
-from pybiz.biz.resource import Resource
-from pybiz.biz.query.query import Query
-from pybiz.biz.relationship import (
+from ravel import Application
+from ravel.constants import ID_FIELD_NAME
+from ravel.biz.resource import Resource
+from ravel.biz.query.query import Query
+from ravel.biz.relationship import (
     Relationship,
     RelationshipBatch,
 )
-from pybiz import (
+from ravel import (
     Resolver,
     ResolverProperty,
     resolver,
@@ -33,7 +33,7 @@ def app():
 @pytest.fixture(scope='function')
 def Person(app):
     class Person(Resource):
-        name = pybiz.String()
+        name = ravel.String()
 
     app.bind(Person)
     return Person
@@ -42,10 +42,10 @@ def Person(app):
 @pytest.fixture(scope='function')
 def Dog(app, Person):
     class Dog(Resource):
-        mother_id = pybiz.Id()
-        color = pybiz.String()
-        name = pybiz.String()
-        age = pybiz.Int()
+        mother_id = ravel.Id()
+        color = ravel.String()
+        name = ravel.String()
+        age = ravel.Int()
 
         @resolver
         def mother(self, resolver, request):
@@ -73,7 +73,7 @@ def Dog(app, Person):
 @pytest.fixture(scope='function')
 def DogMan(app, Dog):
     class DogMan(Dog):
-        name = pybiz.String()
+        name = ravel.String()
 
     DogMan.bootstrap(app)
     return DogMan
@@ -86,20 +86,20 @@ def lassie(Dog):
 
 def test_basic_schema_creation(Dog):
     assert Dog.Schema is not None
-    assert issubclass(Dog.Schema, pybiz.Schema)
-    assert isinstance(Dog.pybiz.schema, Dog.Schema)
+    assert issubclass(Dog.Schema, ravel.Schema)
+    assert isinstance(Dog.ravel.schema, Dog.Schema)
 
-    assert isinstance(Dog.Schema.fields['color'], pybiz.String)
-    assert isinstance(Dog.Schema.fields['age'], pybiz.Int)
+    assert isinstance(Dog.Schema.fields['color'], ravel.String)
+    assert isinstance(Dog.Schema.fields['age'], ravel.Int)
 
 
 def test_schema_creation_with_inheritance(Dog, DogMan):
     assert DogMan.Schema.fields['color'] is not Dog.Schema.fields['color']
     assert DogMan.Schema.fields['age'] is not Dog.Schema.fields['age']
 
-    assert isinstance(DogMan.Schema.fields['color'], pybiz.String)
-    assert isinstance(DogMan.Schema.fields['age'], pybiz.Int)
-    assert isinstance(DogMan.Schema.fields['name'], pybiz.String)
+    assert isinstance(DogMan.Schema.fields['color'], ravel.String)
+    assert isinstance(DogMan.Schema.fields['age'], ravel.Int)
+    assert isinstance(DogMan.Schema.fields['name'], ravel.String)
 
 
 def test_id_field_value_generated_in_ctor(Dog):
@@ -118,15 +118,15 @@ def test_id_field_value_generated_in_ctor(Dog):
     {'name', 'color'},
 ])
 def test_correct_fields_are_marked_dirty(Dog, dirty_field_names):
-    dog = Dog(Dog.pybiz.schema.generate()).clean()
+    dog = Dog(Dog.ravel.schema.generate()).clean()
     dog.clean()
     assert not dog.dirty
     dog.mark(dirty_field_names)
     assert set(dog.dirty.keys()) == dirty_field_names
 
 def test_id_fields_are_replaced(Dog):
-    replacement_field = Dog.replace_id_field(pybiz.Id())
-    assert not isinstance(Dog.Schema.fields[ID_FIELD_NAME], pybiz.Id)
+    replacement_field = Dog.replace_id_field(ravel.Id())
+    assert not isinstance(Dog.Schema.fields[ID_FIELD_NAME], ravel.Id)
     assert isinstance(Dog.Schema.fields[ID_FIELD_NAME], type(replacement_field))
 
 
@@ -160,7 +160,7 @@ def test_field_property_deletes_value(Dog):
 
 
 def test_resolver_is_registerd_via_decorator(Dog):
-    assert 'mother' in Dog.pybiz.resolvers
+    assert 'mother' in Dog.ravel.resolvers
 
 
 def test_resolver_decorator_is_replaced_with_property(Dog):
@@ -168,13 +168,13 @@ def test_resolver_decorator_is_replaced_with_property(Dog):
 
 
 def test_resolver_executes_correct_method(Dog):
-    mother = Dog.pybiz.resolvers['mother'].execute(MagicMock())
+    mother = Dog.ravel.resolvers['mother'].execute(MagicMock())
     assert mother.color == 'brown'
     assert mother.age == 12
 
 
 def test_resolver_executes_on_get_when_got(Dog):
-    Dog.pybiz.resolvers['mother'].on_get = on_get = MagicMock()
+    Dog.ravel.resolvers['mother'].on_get = on_get = MagicMock()
     dog = Dog()
     mother = dog.mother
     on_get.assert_called_once()
@@ -197,5 +197,5 @@ def test_update(Dog, lassie):
 
 
 def test_resolvers_correctly_assembled(Dog):
-    assert Dog.pybiz.resolvers['mother'] is Dog.mother.resolver
-    assert Dog.pybiz.resolvers.untagged['mother'] is Dog.mother.resolver
+    assert Dog.ravel.resolvers['mother'] is Dog.mother.resolver
+    assert Dog.ravel.resolvers.untagged['mother'] is Dog.mother.resolver

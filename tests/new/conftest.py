@@ -1,7 +1,7 @@
 import pytest
-import pybiz
+import ravel
 
-from pybiz import (
+from ravel import (
     Resource,
     Resolver,
     ResolverManager,
@@ -14,7 +14,7 @@ from pybiz import (
     resolver,
     relationship,
 )
-from pybiz.constants import (
+from ravel.constants import (
     ID_FIELD_NAME,
     REV_FIELD_NAME,
 )
@@ -22,17 +22,17 @@ from pybiz.constants import (
 
 @pytest.fixture(scope='function')
 def app():
-    return pybiz.Application().bootstrap()
+    return ravel.Application().bootstrap()
 
 
 @pytest.fixture(scope='function')
 def BasicResource(app):
     class BasicResource(Resource):
-        str_field = pybiz.String()
-        required_str_field = pybiz.String(required=True)
-        int_field = pybiz.Int()
-        nullable_int_field = pybiz.Int(nullable=True)
-        friend_id = pybiz.Id(lambda: BasicResource)
+        str_field = ravel.String()
+        required_str_field = ravel.String(required=True)
+        int_field = ravel.Int()
+        nullable_int_field = ravel.Int(nullable=True)
+        friend_id = ravel.Id(lambda: BasicResource)
 
     app.bind(BasicResource)
     return BasicResource

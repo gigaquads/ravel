@@ -1,5 +1,5 @@
-from pybiz import Application, Resource, String, Int, Id
-from pybiz.app.middleware import Guard, GuardMiddleware
+from ravel import Application, Resource, String, Int, Id
+from ravel.app.middleware import Guard, GuardMiddleware
 
 
 class Exists(Guard):
