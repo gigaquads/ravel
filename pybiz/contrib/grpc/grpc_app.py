@@ -79,6 +79,8 @@ class Grpc(Application):
         computed_options = DictUtils.merge(kwarg_options, manifest_options)
 
         grpc.options = DictObject(computed_options)
+        if grpc.options.data is None:
+            grpc.options.data = {}
         grpc.options.data.setdefault('client_host', DEFAULT_HOST)
         grpc.options.data.setdefault('server_host', DEFAULT_HOST)
         grpc.options.data.setdefault('secure_channel', DEFAULT_IS_SECURE)
