@@ -12,11 +12,11 @@ class AbstractHttpServer(Application):
         self.routes = defaultdict(dict)
 
     @property
-    def decorator_class(self):
+    def decorator_type(self):
         return HttpDecorator
 
     @property
-    def endpoint_class(self):
+    def endpoint_type(self):
         return HttpRoute
 
     def route(self, http_method, url_path, args=None, kwargs=None):

@@ -99,6 +99,7 @@ class Endpoint(object):
     BadRequest = BadRequest
 
     def __init__(self, func: Callable, decorator: 'EndpointDecorator'):
+        self._is_bootstrapped = False
         self._decorator = decorator
         self._target = func.target if isinstance(func, Endpoint) else func
         if inspect.ismethod(func):
@@ -162,6 +163,10 @@ class Endpoint(object):
         return self._decorator.app
 
     @property
+    def is_bootstrapped(self) -> bool:
+        return self._is_bootstrapped
+
+    @property
     def name(self) -> Text:
         return get_callable_name(self._target)
 
@@ -176,6 +181,13 @@ class Endpoint(object):
     @property
     def source(self) -> Text:
         return inspect.getsource(self.target)
+
+    def bootstrap(self):
+        self.on_bootstrap()
+        self._is_bootstrapped = True
+
+    def on_bootstrap(self):
+        pass
 
     def _apply_middleware_pre_request(self, state):
         error = None

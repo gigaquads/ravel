@@ -4,7 +4,7 @@ import graphql.ast
 import graphql.parser
 
 from pybiz.util.loggers import console
-#from pybiz.biz import Query, Resource, BizAttributeQuery, FieldPropertyQuery
+#from pybiz import Query, Resource, BizAttributeQuery, FieldPropertyQuery
 
 from .graphql_arguments import GraphQLArguments
 
@@ -59,7 +59,7 @@ class GraphQLInterpreter(object):
 #                )
 #                selectors.append(child_query)
 #            elif child_name in target_biz_class.pybiz.attributes:
-#                biz_attr_query = self._build_pybiz_biz_attr_query(
+#                biz_attr_query = self._build_pybiz_attr_query(
 #                    child_ast_node, target_biz_class, context
 #                )
 #                selectors.append(biz_attr_query)
@@ -90,7 +90,7 @@ class GraphQLInterpreter(object):
 #        query.params.custom = args.custom
 #        return query
 #
-#    def _build_pybiz_biz_attr_query(
+#    def _build_pybiz_attr_query(
 #        self,
 #        ast_node: graphql.ast.Field,
 #        target_biz_class: Resource,

@@ -6,7 +6,7 @@ from pybiz.constants import (
     ID_FIELD_NAME,
 )
 
-from .util import is_batch, is_resource
+from pybiz.util import is_batch, is_resource
 
 
 class DumpStyle(EnumValueStr):

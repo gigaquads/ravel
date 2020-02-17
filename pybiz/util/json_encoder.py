@@ -1,6 +1,6 @@
 from appyratus.json import JsonEncoder as BaseJsonEncoder
 
-from pybiz.biz.util import is_resource, is_batch
+from pybiz.util import is_resource, is_batch
 
 
 class JsonEncoder(BaseJsonEncoder):

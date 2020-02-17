@@ -2,9 +2,9 @@ from typing import Tuple, Text
 
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import get_class_name
-from pybiz.biz.util import is_resource, is_batch
-from pybiz.biz.query.order_by import OrderBy
-from pybiz.biz.query.request import Request
+from pybiz.util import is_resource, is_batch
+from pybiz.query.order_by import OrderBy
+from pybiz.query.request import Request
 
 
 class ResolverProperty(property):

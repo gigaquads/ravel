@@ -3,7 +3,7 @@ import pybiz
 
 from pybiz import Resource, Query, Request, OrderBy
 from pybiz.constants import ID_FIELD_NAME
-from pybiz.biz.query.predicate import (
+from pybiz.query.predicate import (
     ConditionalPredicate, BooleanPredicate, Predicate,
     OP_CODE,
 )

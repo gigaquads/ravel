@@ -1,7 +1,7 @@
 from typing import Text
 from uuid import UUID
 
-from pybiz.biz.entity import Entity
+from pybiz.entity import Entity
 from pybiz.constants import (
     IS_RESOURCE_ATTRIBUTE,
     IS_BATCH_ATTRIBUTE,

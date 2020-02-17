@@ -9,7 +9,7 @@ from pybiz.store import Store
 from pybiz.schema import fields
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from pybiz.util.json_encoder import JsonEncoder
-from pybiz.biz.query.predicate import (
+from pybiz.query.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,

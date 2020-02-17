@@ -2,8 +2,8 @@ from typing import Text, Set
 
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import get_class_name, flatten_sequence
-from pybiz.biz.util import is_resource, is_batch
-from pybiz.biz.resolver.resolver import Resolver
+from pybiz.util import is_resource, is_batch
+from pybiz.resolver.resolver import Resolver
 
 
 

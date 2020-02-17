@@ -23,7 +23,7 @@ from appyratus.schema import fields
 from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 
-from pybiz.biz.util import is_resource, is_batch
+from pybiz.util import is_resource, is_batch
 from pybiz.util.json_encoder import JsonEncoder
 from pybiz.app.base import Application
 
@@ -58,7 +58,7 @@ class Grpc(Application):
         return GrpcClient(self)
 
     @property
-    def endpoint_class(self):
+    def endpoint_type(self):
         return GrpcFunction
 
     def on_bootstrap(self, rebuild=False, options: Dict = None):
