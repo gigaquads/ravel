@@ -16,7 +16,7 @@ from ravel.query.predicate import (
     OP_CODE,
 )
 from ravel.schema import (
-    Field, String, Int, Bool, Float
+    Field, String, Int, Bool, Float, Id,
 )
 from ravel.util.loggers import console
 from ravel.util import is_batch, is_resource
@@ -26,6 +26,8 @@ from ravel.entity import Entity
 class Batch(Entity):
 
     ravel = DictObject()
+    ravel.resolver_properties = {}
+    ravel.owner = None
 
     def __init__(self, resources: List = None, indexed=True):
         self.internal = DictObject()
@@ -88,23 +90,25 @@ class Batch(Entity):
         type_name = type_name or 'Batch'
 
         # start with inherited ravel object
-        ravel = DictObject(cls.ravel)
+        ravel = DictObject()
 
         ravel.owner = owner
         ravel.indexed_field_types = cls.get_indexed_field_types()
-        ravel.resolver_properties = {
-            k: BatchResolverProperty(resolver)
-            for k, resolver in owner.ravel.resolvers.fields.items()
-            if isinstance(resolver.field, ravel.indexed_field_types)
-        }
+        ravel.resolver_properties = {}
 
-        return type(type_name, (cls, ), dict(
+        ravel.resolver_properties = {}
+        for k, resolver in owner.ravel.resolvers.fields.items():
+            if isinstance(resolver.field, ravel.indexed_field_types):
+                ravel.resolver_properties[k] = BatchResolverProperty(resolver)
+
+        derived_batch_type = type(type_name, (cls, ), dict(
             ravel=ravel, **ravel.resolver_properties
         ))
+        return derived_batch_type
 
     @classmethod
     def get_indexed_field_types(cls) -> Tuple['Field']:
-        return (String, Bool, Int, Float)
+        return (String, Bool, Int, Float, Id)
 
     @classmethod
     def generate(cls, resolvers: Set[Text] = None, count=1):
@@ -117,11 +121,17 @@ class Batch(Entity):
             raise Exception('unbound Batch type')
 
         if not resolvers:
-            resolvers = set(owner.resolvers.fields.keys())
+            resolvers = set(owner.ravel.resolvers.fields.keys())
 
         return cls(
             owner.generate(resolvers) for i in range(count)
         )
+
+    def merge(self, data=None, **more_data):
+        data = dict(data or {}, **more_data)
+        for resource in self.internal.resources:
+            resource.merge(data)
+        return self
 
     def insert(self, index, resource):
         self.internal.resources.insert(index, resource)
@@ -330,7 +340,7 @@ class BatchResolverProperty(property):
             fdel=self.fdel,
         )
 
-    def fget(self, batch: 'Batch', resolver: Text):
+    def fget(self, batch: 'Batch'):
         key = self.resolver.name
         return [
             getattr(resource, key, None)

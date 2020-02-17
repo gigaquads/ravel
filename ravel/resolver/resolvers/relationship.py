@@ -44,9 +44,8 @@ class Relationship(Resolver):
             return
 
         # TODO: build, execute query, set on request.result
-        rel = request.resolver
         source = resource
-        joins = rel.joins
+        joins = self.joins
         final_join = joins[-1]
 
         results = []
@@ -54,18 +53,18 @@ class Relationship(Resolver):
         if len(joins) == 1:
             query = final_join.build_query(source)
             query.select(final_join.right.resolver.owner.ravel.resolvers.fields)
-            result = query.execute(first=not rel.many)
+            result = query.execute(first=not self.many)
             results.append(result)
         else:
             for j1, j2 in zip(joins, join[1:]):
                 query = j1.build_query(source)
                 query.select(j2.left.resolver.field.name)
                 if j2 is final_join:
-                    results.append(query.execute(first=not rel.many))
+                    results.append(query.execute(first=not self.many))
                 else:
                     results.append(query.execute())
 
-        request.result = results[-1]
+        request.result = self.target.Batch(results[-1])
 
 
 class Join(object):

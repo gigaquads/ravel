@@ -56,9 +56,7 @@ class NestedDumper(Dumper):
         record = {}
         for k in keys_to_dump:
             v = parent_resource.internal.state.get(k)
-            resolver = parent_resource.internal.resolvers.get(k)
-            if resolver is None:
-                resolver = parent_resource.ravel.resolvers.get(k)
+            resolver = parent_resource.ravel.resolvers.get(k)
             assert resolver is not None
             if k in parent_resource.ravel.resolvers.relationships:
                 # handle the dumping of Relationships specially

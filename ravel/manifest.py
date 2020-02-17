@@ -278,7 +278,6 @@ class Manifest(object):
         """
         from ravel.store import Store
         from ravel import Resource
-        from ravel2 import Resource
 
         for k, v in (namespace or {}).items():
             if isinstance(v, type):

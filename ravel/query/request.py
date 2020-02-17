@@ -10,6 +10,8 @@ from .mode import QueryMode
 
 class Request(object):
 
+    # TODO: implement "where" method
+
     def __init__(self, resolver: 'Resolver', query: 'Query' = None):
         self.resolver = resolver
         self.parameters = DictObject()

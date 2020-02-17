@@ -16,12 +16,12 @@ class Executor(object):
     def _fetch_resources(self, query: 'Query') -> List['Resource']:
         store = query.target.ravel.store
         where_predicate = query.parameters.where
-        field_names = [req.resolver.field.name for req in query.selected.fields]
+        field_names = list(query.selected.fields)
         state_dicts = store.query(predicate=where_predicate, fields=field_names)
-        return Batch(query.target(s).clean() for s in state_dicts)
+        return Batch(query.target(state=s).clean() for s in state_dicts)
 
     def _execute_resolvers(self, query, resources):
-        for request in query.selected.requests:
+        for request in query.selected.requests.values():
             resolver = request.resolver
             for resource in resources:
                 value = resolver.resolve(resource, request)

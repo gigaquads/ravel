@@ -11,6 +11,7 @@ from ravel.query.predicate import (
 )
 
 
+from ravel.constants import ID_FIELD_NAME
 from ravel.util import is_resource, is_batch
 from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
@@ -54,7 +55,7 @@ class Loader(Resolver):
     def on_simulate(self, resource, request):
         value = None
 
-        if self.nullable:
+        if self.nullable and self.field.name != ID_FIELD_NAME:
             if randint(1, 10) > 1:
                 value = self.field.generate()
         else:

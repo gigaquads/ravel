@@ -57,38 +57,41 @@ class ResourceMeta(type):
         if not cls.ravel.is_abstract:
             cls._register_venusian_callback()
 
-    def _initialize_class_state(biz_class):
-        setattr(biz_class, IS_RESOURCE_ATTRIBUTE, True)
+    def _initialize_class_state(resource_type):
+        setattr(resource_type, IS_RESOURCE_ATTRIBUTE, True)
 
-        biz_class.ravel = DictObject()
-        biz_class.ravel.app = None
-        biz_class.ravel.store = None
-        biz_class.ravel.resolvers = ResolverManager()
-        biz_class.ravel.fk_id_fields = {}
-        biz_class.ravel.is_abstract = biz_class._compute_is_abstract()
-        biz_class.ravel.is_bootstrapped = False
-        biz_class.ravel.is_bound = False
-        biz_class.ravel.schema = None
-        biz_class.ravel.defaults = {}
+        resource_type.ravel = DictObject()
+        resource_type.ravel.app = None
+        resource_type.ravel.store = None
+        resource_type.ravel.resolvers = ResolverManager()
+        resource_type.ravel.fk_id_fields = {}
+        resource_type.ravel.is_abstract = resource_type._compute_is_abstract()
+        resource_type.ravel.is_bootstrapped = False
+        resource_type.ravel.is_bound = False
+        resource_type.ravel.schema = None
+        resource_type.ravel.defaults = {}
 
-    def _register_venusian_callback(biz_class):
-        def callback(scanner, name, biz_class):
+    def _register_venusian_callback(resource_type):
+        def callback(scanner, name, resource_type):
             """
             Callback used by Venusian for Resource class auto-discovery.
             """
-            console.info(f'venusian scan found "{biz_class.__name__}" Resource')
-            scanner.biz_classes.setdefault(name, biz_class)
+            console.info(f'venusian scan found "{resource_type.__name__}" Resource')
+            scanner.resource_typees.setdefault(name, resource_type)
 
-        venusian.attach(biz_class, callback, category='biz')
+        venusian.attach(resource_type, callback, category='biz')
 
     def _process_fields(cls):
         fields = {}
         for k, v in inspect.getmembers(cls):
             if isinstance(v, ResolverDecorator):
                 resolver_property = v.build_resolver_property(owner=cls, name=k)
+                resolver = resolver_property.resolver
                 cls.ravel.resolvers.register(resolver_property.resolver)
                 setattr(cls, k, resolver_property)
-            if isinstance(v, Field):
+                if isinstance(resolver, Loader):
+                    fields[k] = resolver.field
+            elif isinstance(v, Field):
                 field = v
                 field.name = k
                 fields[k] = field
@@ -99,14 +102,14 @@ class ResourceMeta(type):
                 setattr(cls, k, resolver_property)
         return fields
 
-    def _compute_is_abstract(biz_class):
+    def _compute_is_abstract(resource_type):
         is_abstract = False
-        if hasattr(biz_class, ABSTRACT_MAGIC_METHOD):
-            is_abstract = bool(biz_class.__abstract__())
-            delattr(biz_class, ABSTRACT_MAGIC_METHOD)
+        if hasattr(resource_type, ABSTRACT_MAGIC_METHOD):
+            is_abstract = bool(resource_type.__abstract__())
+            delattr(resource_type, ABSTRACT_MAGIC_METHOD)
         return is_abstract
 
-    def _build_schema_class(biz_class, fields, base_classes):
+    def _build_schema_class(resource_type, fields, base_classes):
         fields = fields.copy()
         inherited_fields = {}
 
@@ -114,9 +117,9 @@ class ResourceMeta(type):
         for base_class in base_classes:
             if is_resource_type(base_class):
                 inherited_fields.update(base_class.Schema.fields)
-                biz_class.ravel.defaults.update(base_class.ravel.defaults)
+                resource_type.ravel.defaults.update(base_class.ravel.defaults)
             else:
-                base_fields = biz_class._copy_fields_from_mixin(base_class)
+                base_fields = resource_type._copy_fields_from_mixin(base_class)
                 inherited_fields.update(base_fields)
 
         fields.update(inherited_fields)
@@ -126,27 +129,27 @@ class ResourceMeta(type):
         for k, field in fields.items():
             if k in inherited_fields:
                 resolver_property = Loader.build_property(
-                    owner=biz_class, field=field, name=k, target=biz_class,
+                    owner=resource_type, field=field, name=k, target=resource_type,
                 )
-                biz_class.ravel.resolvers.register(resolver_property.resolver)
-                setattr(biz_class, k, resolver_property)
+                resource_type.ravel.resolvers.register(resolver_property.resolver)
+                setattr(resource_type, k, resolver_property)
             if field.source is None:
                 field.source = field.name
             if isinstance(field, Id) and field.name != ID_FIELD_NAME:
-                    biz_class.ravel.fk_id_fields[field.name] = field
+                    resource_type.ravel.fk_id_fields[field.name] = field
 
         # these are universally required
         assert ID_FIELD_NAME in fields
         assert REV_FIELD_NAME in fields
 
         # build new Schema subclass with aggregated fields
-        class_name = f'{biz_class.__name__}Schema'
-        biz_class.Schema = type(class_name, (Schema, ), fields)
+        class_name = f'{resource_type.__name__}Schema'
+        resource_type.Schema = type(class_name, (Schema, ), fields)
 
-        biz_class.ravel.schema = schema = biz_class.Schema()
-        biz_class.ravel.defaults = biz_class._extract_field_defaults(schema)
+        resource_type.ravel.schema = schema = resource_type.Schema()
+        resource_type.ravel.defaults = resource_type._extract_field_defaults(schema)
 
-    def _copy_fields_from_mixin(biz_class, class_obj):
+    def _copy_fields_from_mixin(resource_type, class_obj):
         fields = {}
         is_field = lambda x: isinstance(x, Field)
         for k, field in inspect.getmembers(class_obj, predicate=is_field):
@@ -155,8 +158,8 @@ class ResourceMeta(type):
             fields[k] = deepcopy(field)
         return fields
 
-    def _extract_field_defaults(biz_class, schema):
-        defaults = biz_class.ravel.defaults
+    def _extract_field_defaults(resource_type, schema):
+        defaults = resource_type.ravel.defaults
         for field in schema.fields.values():
             if field.default:
                 # move field default into "defaults" dict
@@ -245,7 +248,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         # resolve the concrete Field class to use for each "foreign key"
         # ID field referenced by this class.
         for id_field in cls.ravel.fk_id_fields.values():
-            id_field.replace_self_in_biz_class(app, cls)
+            id_field.replace_self_in_resource_type(app, cls)
 
         # bootstrap all resolvers owned by this class
         for resolver in cls.ravel.resolvers.values():
@@ -284,7 +287,8 @@ class Resource(Entity, metaclass=ResourceMeta):
         }
 
     @classmethod
-    def generate(cls, resolvers: Set[Text] = None) -> 'Resource':
+    def generate(cls, resolvers: Set[Text] = None, values: Dict = None) -> 'Resource':
+        values = values or {}
         keys = resolvers or set(cls.ravel.resolvers.fields.keys())
         resolver_objs = Resolver.sort(
             cls.ravel.resolvers[k] for k in keys
@@ -294,8 +298,11 @@ class Resource(Entity, metaclass=ResourceMeta):
         instance = cls(_rev='0')
 
         for resolver in resolver_objs:
-            request = getattr(cls, resolver.name).select()
-            value = resolver.simulate(instance, request)
+            if resolver.name in values:
+                value = values[resolver.name]
+            else:
+                request = getattr(cls, resolver.name).select()
+                value = resolver.simulate(instance, request)
             instance.internal.state[resolver.name] = value
 
         return instance
@@ -780,7 +787,7 @@ class Resource(Entity, metaclass=ResourceMeta):
                             )
 
         # recursively call save_many for each type of Resource
-        for biz_class, resources in class_2_objects.items():
-            biz_class.save_many(resources, depth=depth-1)
+        for resource_type, resources in class_2_objects.items():
+            resource_type.save_many(resources, depth=depth-1)
 
         return retval

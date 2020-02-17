@@ -18,35 +18,35 @@ class Id(fields.Field):
     def __init__(self, target: Type['Resource'] = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.target_biz_class_name = None
-        self.target_biz_class_callback = None
-        self.target_biz_class = None
+        self.target_resource_type_name = None
+        self.target_resource_type_callback = None
+        self.target_resource_type = None
 
         if isinstance(target, type):
-            self.target_biz_class = target
+            self.target_resource_type = target
         elif isinstance(target, str):
-            self.target_biz_class_name = target
+            self.target_resource_type_name = target
         elif callable(target):
-            self.target_biz_class_callback = target
+            self.target_resource_type_callback = target
 
-    def resolve_target_biz_class(self, app: 'Application') -> Type['Resource']:
-        if self.target_biz_class is None:
-            if self.target_biz_class_callback is not None:
-                app.inject(self.target_biz_class_callback)
-                self.target_biz_class = self.target_biz_class_callback()
+    def resolve_target_resource_type(self, app: 'Application') -> Type['Resource']:
+        if self.target_resource_type is None:
+            if self.target_resource_type_callback is not None:
+                app.inject(self.target_resource_type_callback)
+                self.target_resource_type = self.target_resource_type_callback()
             else:
-                self.target_biz_class = app.biz[self.target_biz_class_name]
-        return self.target_biz_class
+                self.target_resource_type = app.biz[self.target_resource_type_name]
+        return self.target_resource_type
 
-    # TODO: rename replace_self_in_biz_class
-    def replace_self_in_biz_class(
+    # TODO: rename replace_self_in_resource_type
+    def replace_self_in_resource_type(
         self,
         app: 'Application',
-        source_biz_class: Type['Resource'],
+        source_resource_type: Type['Resource'],
     ):
         # compute the replacement field to use in place of Id
-        target_biz_class = self.resolve_target_biz_class(app)
-        target_id_field_type = type(target_biz_class._id.resolver.field)
+        target_resource_type = self.resolve_target_resource_type(app)
+        target_id_field_type = type(target_resource_type._id.resolver.field)
         replacement_field = target_id_field_type(
             name=self.name,
             source=self.source,
@@ -54,10 +54,10 @@ class Id(fields.Field):
             meta=self.meta,
         )
         # dynamically replace the existing field in Schema class
-        source_biz_class.Schema.replace_field(replacement_field)
+        source_resource_type.Schema.replace_field(replacement_field)
 
         # update existing FieldResolver to use the replacement field
-        field_resolver = source_biz_class.ravel.resolvers.fields[self.name]
+        field_resolver = source_resource_type.ravel.resolvers.fields[self.name]
         field_resolver.field = replacement_field
 
     def process(self, value):

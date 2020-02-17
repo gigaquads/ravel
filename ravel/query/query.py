@@ -97,15 +97,20 @@ class Query(object):
 
         return self
 
-    def where(self, *predicates, append=True):
+    def where(self, *predicates, **equality_checks):
         predicates = flatten_sequence(predicates)
+
+        for field_name, value in equality_checks.items():
+            resolver_prop = getattr(self.target, field_name)
+            pred = (resolver_prop == value)
+            predicates.append(pred)
+
         if predicates:
             if self.parameters.where:
                 self.parameters.where &= Predicate.reduce_and(predicates)
             else:
                 self.parameters.where = Predicate.reduce_and(predicates)
-        elif not append:
-            self.parameters.where = None
+
         return self
 
     def order_by(self, *order_by):
