@@ -11,7 +11,7 @@ from pybiz.util.misc_functions import (
     is_sequence,
 )
 
-from pybiz.biz.util import (
+from pybiz.util import (
     is_resource
 )
 

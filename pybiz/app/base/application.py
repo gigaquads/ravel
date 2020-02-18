@@ -75,16 +75,19 @@ class Application(object):
                 pass
         ```
         """
-        decorator = self.decorator_class(self, *args, **kwargs)
+        if self._is_bootstrapped:
+            return self.start(*args, **kwargs)
+
+        decorator = self.decorator_type(self, *args, **kwargs)
         self.decorators.append(decorator)
         return decorator
 
     @property
-    def decorator_class(self) -> Type[EndpointDecorator]:
+    def decorator_type(self) -> Type[EndpointDecorator]:
         return EndpointDecorator
 
     @property
-    def endpoint_class(self) -> Type[Endpoint]:
+    def endpoint_type(self) -> Type[Endpoint]:
         return Endpoint
 
     @property
@@ -249,6 +252,9 @@ class Application(object):
         # bootstrap the middlware
         for mware in self.middleware:
             mware.bootstrap(app=self)
+
+        for endpoint in self._endpoints.values():
+            endpoint.bootstrap()
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)

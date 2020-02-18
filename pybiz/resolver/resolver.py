@@ -9,11 +9,11 @@ from pybiz.util.misc_functions import (
     get_class_name,
     flatten_sequence,
 )
-from pybiz.biz.util import is_resource, is_batch, is_resource_type
-from pybiz.biz.query.order_by import OrderBy
-from pybiz.biz.query.request import Request
-from pybiz.biz.query.mode import QueryMode
-from pybiz.biz.query.predicate import (
+from pybiz.util import is_resource, is_batch, is_resource_type
+from pybiz.query.order_by import OrderBy
+from pybiz.query.request import Request
+from pybiz.query.mode import QueryMode
+from pybiz.query.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,

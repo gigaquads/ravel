@@ -23,7 +23,7 @@ class EndpointDecorator(object):
         return endpoints
 
     def setup_endpoint(self, func):
-        endpoint = self.app.endpoint_class(func, self)
+        endpoint = self.app.endpoint_type(func, self)
         self.app.register(endpoint)
         self.app.on_decorate(endpoint)
         return endpoint

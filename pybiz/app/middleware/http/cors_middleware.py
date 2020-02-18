@@ -2,7 +2,7 @@ import falcon
 
 from typing import Dict, Tuple, Type, Text
 from inspect import Parameter
-from pybiz.contrib.falcon.constants import HTTP_METHODS
+from pybiz.ext.falcon.constants import HTTP_METHODS
 
 from ..base import Middleware
 
@@ -32,7 +32,7 @@ class CorsMiddleware(Middleware):
 
     @property
     def app_types(self) -> Tuple[Type['Application']]:
-        from pybiz.contrib.falcon import FalconService
+        from pybiz.ext.falcon import FalconService
         return (FalconService, )
 
     def post_request(

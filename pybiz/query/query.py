@@ -4,15 +4,15 @@ from copy import deepcopy
 from appyratus.utils import DictObject
 
 from pybiz.util.loggers import console
-from pybiz.biz.query.predicate import Predicate
+from pybiz.query.predicate import Predicate
 from pybiz.util.misc_functions import (
     flatten_sequence,
     get_class_name,
 )
 
-from pybiz.biz.util import is_resource, is_resource_type
-from pybiz.biz.resolver.resolver_property import ResolverProperty
-from pybiz.biz.resolver.resolvers.loader import LoaderProperty, Loader
+from pybiz.util import is_resource, is_resource_type
+from pybiz.resolver.resolver_property import ResolverProperty
+from pybiz.resolver.resolvers.loader import LoaderProperty, Loader
 
 from .mode import QueryMode
 from .order_by import OrderBy

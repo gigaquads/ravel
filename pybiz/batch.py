@@ -9,7 +9,7 @@ from pybiz.util.misc_functions import (
     flatten_sequence,
     union,
 )
-from pybiz.biz.query.predicate import (
+from pybiz.query.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,
@@ -19,8 +19,8 @@ from pybiz.schema import (
     Field, String, Int, Bool, Float
 )
 from pybiz.util.loggers import console
-from pybiz.biz.util import is_batch, is_resource
-from pybiz.biz.entity import Entity
+from pybiz.util import is_batch, is_resource
+from pybiz.entity import Entity
 
 
 class Batch(Entity):

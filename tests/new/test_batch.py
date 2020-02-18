@@ -4,7 +4,7 @@ import pytest
 from appyratus.utils import DictObject
 
 from pybiz import String, Int, Float, Bool
-from pybiz.biz.batch import Batch, BatchResolverProperty
+from pybiz.batch import Batch, BatchResolverProperty
 
 
 

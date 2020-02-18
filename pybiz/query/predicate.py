@@ -23,7 +23,7 @@ from pybiz.util.misc_functions import (
 )
 from pybiz.schema import Enum as EnumField
 from pybiz.constants import ID_FIELD_NAME, REV_FIELD_NAME
-from pybiz.biz.util import is_resource, is_batch
+from pybiz.util import is_resource, is_batch
 
 
 OP_CODE = Enum(

@@ -3,7 +3,7 @@ from random import randint
 
 from pybiz.util.loggers import console
 from pybiz.util.misc_functions import get_class_name, flatten_sequence
-from pybiz.biz.query.predicate import (
+from pybiz.query.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,
@@ -11,11 +11,11 @@ from pybiz.biz.query.predicate import (
 )
 
 
-from pybiz.biz.util import is_resource, is_batch
-from pybiz.biz.query.order_by import OrderBy
-from pybiz.biz.query.request import Request
-from pybiz.biz.resolver.resolver import Resolver
-from pybiz.biz.resolver.resolver_property import ResolverProperty
+from pybiz.util import is_resource, is_batch
+from pybiz.query.order_by import OrderBy
+from pybiz.query.request import Request
+from pybiz.resolver.resolver import Resolver
+from pybiz.resolver.resolver_property import ResolverProperty
 
 
 class Loader(Resolver):

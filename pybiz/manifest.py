@@ -57,6 +57,15 @@ class Manifest(object):
             env=self.env,
         )
 
+    def __getitem__(self, key):
+        return self.data[key]
+
+    def __setitem__(self, key, value):
+        self.data[key] = value
+
+    def get(self, key, default=None):
+        return self.data.get(key, default)
+
     def load(self):
         """
         Load and merge manifest data from all supplied sources into a single
@@ -269,7 +278,7 @@ class Manifest(object):
         """
         from pybiz.store import Store
         from pybiz import Resource
-        from pybiz.biz2 import Resource
+        from pybiz2 import Resource
 
         for k, v in (namespace or {}).items():
             if isinstance(v, type):
@@ -293,7 +302,7 @@ class Manifest(object):
         endpoint callables to register themselves with the Application instance.
         """
         import pybiz.store
-        import pybiz.contrib
+        import pybiz.ext
 
         def on_error(name):
             from pybiz.util.loggers import console
@@ -307,7 +316,7 @@ class Manifest(object):
         console.debug('venusian scan for BizType and Store types initiated')
 
         self.scanner.scan(pybiz.store, onerror=on_error)
-        self.scanner.scan(pybiz.contrib, onerror=on_error)
+        self.scanner.scan(pybiz.ext, onerror=on_error)
 
         pkg_path = self.package
         if pkg_path:

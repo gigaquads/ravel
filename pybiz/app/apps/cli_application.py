@@ -14,7 +14,7 @@ from appyratus.cli import (
 from appyratus.files import Yaml
 from appyratus.utils import StringUtils, SysUtils
 
-from pybiz.biz.util import is_batch, is_resource
+from pybiz.util import is_batch, is_resource
 from pybiz.app.base import Application, EndpointDecorator, Endpoint
 
 
@@ -47,7 +47,7 @@ class CliApplication(Application):
         }
 
     @property
-    def endpoint_class(self):
+    def endpoint_type(self):
         return CliCommand
 
     def on_bootstrap(self, cli_args=None):

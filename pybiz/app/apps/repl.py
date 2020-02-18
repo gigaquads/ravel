@@ -2,7 +2,7 @@ from typing import Dict, List, Text, Type
 
 from IPython.terminal.embed import InteractiveShellEmbed
 
-from pybiz.app.base import Application, EndpointDecorator, Endpoint
+from pybiz.app.base import Application, Endpoint
 
 
 class Repl(Application):
@@ -18,7 +18,7 @@ class Repl(Application):
         self._namespace = {}
 
     @property
-    def endpoint_class(self) -> Type['ReplFunction']:
+    def endpoint_type(self) -> Type['ReplFunction']:
         return ReplFunction
 
     @property

@@ -11,8 +11,12 @@ import venusian
 
 from pybiz.exceptions import ValidationError
 from pybiz.store import Store, SimulationStore
+from pybiz.util.dirty import DirtyDict
 from pybiz.util.loggers import console
 from pybiz.util import (
+    is_batch,
+    is_resource,
+    is_resource_type,
     is_sequence,
     get_class_name,
     flatten_sequence,
@@ -22,6 +26,8 @@ from pybiz.schema import (
     Field, Schema, String, Int, Id,
     UuidString, Bool, Float
 )
+from pybiz.dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
+from pybiz.batch import Batch
 from pybiz.constants import (
     IS_RESOURCE_ATTRIBUTE,
     ABSTRACT_MAGIC_METHOD,
@@ -29,18 +35,14 @@ from pybiz.constants import (
     REV_FIELD_NAME,
 )
 
-from .query.query import Query
-from .query.order_by import OrderBy
-from .resolver.resolver import Resolver
-from .resolver.resolver_decorator import ResolverDecorator
-from .resolver.resolver_property import ResolverProperty
-from .resolver.resolver_manager import ResolverManager
-from .resolver.resolvers.loader import Loader, LoaderProperty
-from .entity import Entity
-from .dirty import DirtyDict
-from .dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
-from .util import is_batch, is_resource, is_resource_type
-from .batch import Batch
+from pybiz.query.query import Query
+from pybiz.query.order_by import OrderBy
+from pybiz.resolver.resolver import Resolver
+from pybiz.resolver.resolver_decorator import ResolverDecorator
+from pybiz.resolver.resolver_property import ResolverProperty
+from pybiz.resolver.resolver_manager import ResolverManager
+from pybiz.resolver.resolvers.loader import Loader, LoaderProperty
+from pybiz.entity import Entity
 
 
 class ResourceMeta(type):
@@ -472,7 +474,8 @@ class Resource(Entity, metaclass=ResourceMeta):
     def select(cls, *resolvers: Tuple[Text], parent: 'Query' = None):
         return Query(target=cls, parent=parent).select(resolvers)
 
-    def create(self, data: Dict = None) -> 'Resource':
+    def create(self, data: Dict = None, **more_data) -> 'Resource':
+        data = dict(data or {}, **more_data)
         if data:
             self.merge(data)
 
