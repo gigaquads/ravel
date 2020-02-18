@@ -1,9 +1,11 @@
+import typing
+
 from .schema import *
 
 from ravel.manifest import Manifest
 from ravel.logging import ConsoleLoggerInterface
 from ravel.store import Store
-
+from ravel.api import Api
 from ravel.app.base import (
     Application,
     EndpointDecorator,
@@ -37,13 +39,6 @@ from ravel.resolver.resolver_property import ResolverProperty
 from ravel.resolver.resolver_manager import ResolverManager
 from ravel.resolver.resolvers.loader import Loader, LoaderProperty
 from ravel.resolver.resolvers.relationship import Relationship
-
-
-resolver = Resolver.build_decorator()
-relationship = Relationship.build_decorator()
-field = Loader.build_decorator()
-
-
-class nested(field):
-    def __init__(self, fields: dict, *args, **kwargs):
-        super().__init__(Nested(fields), *args, **kwargs)
+from ravel.resolver.decorators import (
+    resolver, relationship, field, nested,
+)

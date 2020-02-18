@@ -23,6 +23,9 @@ class Loader(Resolver):
     def __init__(self, field, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.field = field
+        self.private = field.meta.get('private', False)
+        self.required = field.required
+        self.nullable = field.nullable
 
     @classmethod
     def property_type(cls):
@@ -108,12 +111,25 @@ class LoaderProperty(ResolverProperty):
 
     def fset(self, owner: 'Resource', value):
         field = self.resolver.field
-        if value is None and field.nullable:
-            processed_value = None
-        else:
-            processed_value, errors = field.process(value)
-            if errors:
-                raise Exception('ValidationError: ' + str(errors))
+        if value is None:
+            if field.nullable:
+                processed_value = None
+                return
+            else:
+                default_func = owner.ravel.defaults.get(field.name)
+                if default_func is not None:
+                    value = default_func()
+
+        processed_value, errors = field.process(value)
+        if errors:
+            console.error(
+                message=f'validation error while setting {self}',
+                data={
+                    'value': str(value)
+                }
+            )
+            raise Exception(str(errors))
+
         super().fset(owner, processed_value)
 
     @property

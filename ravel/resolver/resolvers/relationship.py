@@ -26,6 +26,9 @@ class Relationship(Resolver):
     def priority(cls) -> int:
         return 10
 
+    def dump(self, dumper: 'Dumper', value):
+        return dumper.dump(value)
+
     def on_bind(self):
         if self.join_callback is not None:
             self.app.inject(self.join_callback)

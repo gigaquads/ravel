@@ -1,6 +1,12 @@
+import os
+
+# hide pygame's stupid "welcome message"
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = 'hide'
+
 from functools import reduce
 from typing import List
 from collections import defaultdict
+from logging import getLogger
 
 from appyratus.utils import SysUtils
 from appyratus.enum import Enum
@@ -11,6 +17,8 @@ from pygame.time import Clock
 
 from ravel.util.misc_functions import flatten_sequence
 from ravel.app.base import Application, EndpointDecorator, Endpoint
+
+pygame_logger = getLogger('pygame')
 
 # Generic game components
 # TODO: move to more generic location within ravel

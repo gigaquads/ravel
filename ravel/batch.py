@@ -18,6 +18,7 @@ from ravel.query.predicate import (
 from ravel.schema import (
     Field, String, Int, Bool, Float, Id,
 )
+from ravel.constants import IS_BATCH_ATTRIBUTE
 from ravel.util.loggers import console
 from ravel.util import is_batch, is_resource
 from ravel.entity import Entity
@@ -104,6 +105,9 @@ class Batch(Entity):
         derived_batch_type = type(type_name, (cls, ), dict(
             ravel=ravel, **ravel.resolver_properties
         ))
+
+        setattr(derived_batch_type, IS_BATCH_ATTRIBUTE, True)
+
         return derived_batch_type
 
     @classmethod

@@ -4,6 +4,7 @@ from appyratus.enum import EnumValueStr
 
 from ravel.constants import (
     ID_FIELD_NAME,
+    REV_FIELD_NAME
 )
 
 from ravel.util import is_batch, is_resource
@@ -58,6 +59,10 @@ class NestedDumper(Dumper):
             v = parent_resource.internal.state.get(k)
             resolver = parent_resource.ravel.resolvers.get(k)
             assert resolver is not None
+
+            if resolver.private:
+                continue
+
             if k in parent_resource.ravel.resolvers.relationships:
                 # handle the dumping of Relationships specially
                 rel = resolver
@@ -75,8 +80,9 @@ class NestedDumper(Dumper):
                     record[k] = self.dump(child_resource)
             else:
                 # dump non-Relationship state
+                if k in {ID_FIELD_NAME, REV_FIELD_NAME}:
+                    k = k[1:]
                 record[k] = resolver.dump(self, v)
-
 
         return record
 
@@ -102,6 +108,9 @@ class SideLoadedDumper(Dumper):
 
         record = {}
         for k, v in parent_resource.internal.state.items():
+            if k in {ID_FIELD_NAME, REV_FIELD_NAME}:
+                k = k[1:]
+
             resolver = parent_resource.ravel.resolvers[k]
             if resolver.name in relationships:
                 relationship = resolver

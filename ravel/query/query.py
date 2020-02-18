@@ -79,7 +79,7 @@ class Query(object):
                 continue
 
             # build a resolver request
-            if isinstance(obj, LoaderProperty):
+            if isinstance(obj, LoaderProperty) and (obj.decorator is None):
                 resolver_property = obj
                 request = Request(resolver_property.resolver, query=self)
                 self.selected.fields[request.resolver.name] = request

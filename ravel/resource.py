@@ -96,7 +96,7 @@ class ResourceMeta(type):
                 field.name = k
                 fields[k] = field
                 resolver_property = Loader.build_property(
-                    owner=cls, field=field, name=k, target=cls,
+                    kwargs=dict(owner=cls, field=field, name=k, target=cls),
                 )
                 cls.ravel.resolvers.register(resolver_property.resolver)
                 setattr(cls, k, resolver_property)
@@ -128,9 +128,9 @@ class ResourceMeta(type):
         # inherited fields in one dict.
         for k, field in fields.items():
             if k in inherited_fields:
-                resolver_property = Loader.build_property(
+                resolver_property = Loader.build_property(kwargs=dict(
                     owner=resource_type, field=field, name=k, target=resource_type,
-                )
+                ))
                 resource_type.ravel.resolvers.register(resolver_property.resolver)
                 setattr(resource_type, k, resolver_property)
             if field.source is None:
@@ -456,9 +456,9 @@ class Resource(Entity, metaclass=ResourceMeta):
         # generate default values for any missing fields
         # that specifify a default
         for k, default in self.ravel.defaults.items():
-            if k not in record:
-                def_val = default()
-                record[k] = def_val
+            field = self.ravel.schema.fields[k]
+            if (k not in record) or (record[k] is None and not field.nullable):
+                record[k] = default()
 
         if record.get(ID_FIELD_NAME) is None:
             record[ID_FIELD_NAME] = self.store.create_id(record)

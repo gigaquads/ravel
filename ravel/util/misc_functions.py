@@ -53,7 +53,7 @@ def get_callable_name(obj):
     if inspect.isfunction(obj):
         return obj.__name__
     elif inspect.ismethod(obj):
-        obj.__func__.__name__
+        return obj.__func__.__name__
     else:
         raise ValueError(str(obj))
 

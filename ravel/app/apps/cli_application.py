@@ -123,17 +123,20 @@ class CliCommand(Endpoint):
 
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
-        self.program_name = decorator.kwargs.get('name', func.__name__)
-        self.subparser_kwargs = self._build_subparser_kwargs(func, decorator)
-        subparser_class = decorator.kwargs.get('subparser', Subparser)
+        self.program_name = None
+        self.subparser_kwargs = None
+        self.subparser_class = None
+        self.subparser = None
+
+    def on_bootstrap(self):
+        self.program_name = self.decorator.kwargs.get('name', self.name)
+        self.subparser_kwargs = self._build_subparser_kwargs(func)
+        self.subparser_class = self.decorator.kwargs.get('subparser', Subparser)
         self.subparser = subparser_class(**self.subparser_kwargs)
 
-    def __call__(self, *raw_args, **raw_kwargs):
-        super().__call__(*raw_args, **raw_kwargs)
-
-    def _build_subparser_kwargs(self, func, decorator):
-        parser_kwargs = decorator.kwargs.get('parser') or {}
-        custom_args = decorator.kwargs.get('args') or []
+    def _build_subparser_kwargs(self, func):
+        parser_kwargs = self.decorator.kwargs.get('parser') or {}
+        custom_args = self.decorator.kwargs.get('args') or []
         cli_args = self._build_cli_args(func, custom_args)
         name = StringUtils.dash(parser_kwargs.get('name') or self.program_name)
         return dict(parser_kwargs, **dict(

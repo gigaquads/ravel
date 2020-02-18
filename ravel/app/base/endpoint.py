@@ -102,15 +102,8 @@ class Endpoint(object):
         self._is_bootstrapped = False
         self._decorator = decorator
         self._target = func.target if isinstance(func, Endpoint) else func
-        if inspect.ismethod(func):
-            self._func = func
-            self._is_method = True
-            self._signature = inspect.signature(self.target.__func__)
-        else:
-            assert inspect.isfunction(func)
-            self._func = func
-            self._is_method = False
-            self._signature = inspect.signature(self.target)
+        self._signature = inspect.signature(self._target)
+        self._api_object = decorator.api_object
 
     def __repr__(self):
         return f'{get_class_name(self)}(name={self.name})'
@@ -161,6 +154,11 @@ class Endpoint(object):
     @property
     def app(self) -> 'Application':
         return self._decorator.app
+
+    @property
+    def api_object(self) -> 'Api':
+        # TODO: rename this thing
+        return self._api_object
 
     @property
     def is_bootstrapped(self) -> bool:
@@ -279,9 +277,14 @@ class Endpoint(object):
     def _apply_app_on_request(self, state):
         error = None
         try:
-            params = self.app.on_request(
-                self, *state.raw_args, **state.raw_kwargs
-            )
+            if self._api_object is not None:
+                params = self.app.on_request(
+                    self, self._api_object, *state.raw_args, **state.raw_kwargs
+                )
+            else:
+                params = self.app.on_request(
+                    self, *state.raw_args, **state.raw_kwargs
+                )
             args, kwargs = (
                 params if params
                 else (state.raw_args, state.raw_kwargs)

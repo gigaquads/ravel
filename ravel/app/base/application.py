@@ -1,7 +1,7 @@
 import inspect
 import logging
 
-from typing import List, Dict, Text, Tuple, Set, Type, Callable
+from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
 from collections import deque, OrderedDict, namedtuple
 
 from appyratus.utils import DictObject, DictUtils
@@ -29,7 +29,6 @@ class Application(object):
         middleware: List['Middleware'] = None,
     ):
         self._state = DictObject()
-        self._decorators = []
         self._endpoints = {}
         self._biz = DictObject()
         self._dal = DictObject()
@@ -58,7 +57,13 @@ class Application(object):
             f')'
         )
 
-    def __call__(self, *args, **kwargs) -> EndpointDecorator:
+    def __call__(
+        self, *args, **kwargs
+    ) -> Union[
+            EndpointDecorator,
+            List[EndpointDecorator],
+            'Application'
+        ]:
         """
         Use this to decorate functions, adding them to this Application.
         Each time a function is decorated, it arives at the "on_decorate"
@@ -75,12 +80,16 @@ class Application(object):
                 pass
         ```
         """
-        if self._is_bootstrapped:
+        if not self._is_bootstrapped:
+        # this results in a function, method or other callable being registered
+        # with the app as an endpoint.
+            decorator = self.decorator_type(self, *args, **kwargs)
+            return decorator
+        else:
+        # if bootstrapped, we make __call__ equalivalent to calling app.start so
+        # that the app instance itself can be used as a "main" entrypoint object
+        # for things like WSGI servers.
             return self.start(*args, **kwargs)
-
-        decorator = self.decorator_type(self, *args, **kwargs)
-        self.decorators.append(decorator)
-        return decorator
 
     @property
     def decorator_type(self) -> Type[EndpointDecorator]:
@@ -105,10 +114,6 @@ class Application(object):
     @property
     def endpoints(self) -> Dict[Text, Endpoint]:
         return self._endpoints
-
-    @property
-    def decorators(self) -> List[EndpointDecorator]:
-        return self._decorators
 
     @property
     def loader(self) -> 'ArgumentLoader':
@@ -138,11 +143,11 @@ class Application(object):
     def is_bootstrapped(self) -> bool:
         return self._is_bootstrapped
 
-    def register(self, endpoint: 'Endpoint') -> 'Application':
+    def register(self, endpoint: 'Endpoint', overwrite=False) -> 'Application':
         """
         Add a Endpoint to this app.
         """
-        if endpoint.name not in self._endpoints:
+        if endpoint.name not in self._endpoints or overwrite:
             console.debug(
                 f'registering endpoint "{endpoint.name}" with '
                 f'{get_class_name(self)}...'
@@ -300,6 +305,7 @@ class Application(object):
         """
         if index is not None:
             return raw_args[index]
+
         else:
             return raw_kwargs.get(parameter.name)
 

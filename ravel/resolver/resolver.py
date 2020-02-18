@@ -33,6 +33,7 @@ class Resolver(object):
         name=None,
         owner=None,
         target=None,
+        decorator=None,
         on_resolve=None,
         private=False,
         nullable=True,
@@ -44,6 +45,7 @@ class Resolver(object):
         self.owner = owner
         self.private = private
         self.nullable = nullable
+        self.decorator = decorator
         self.required = required
         self.target_callback = None
         self.target = None
@@ -70,10 +72,12 @@ class Resolver(object):
         return ResolverProperty
 
     @classmethod
-    def build_property(cls, *args, **kwargs):
+    def build_property(cls, decorator=None, args=None, kwargs=None):
+        args = args or tuple()
+        kwargs = kwargs or {}
         resolver = cls(*args, **kwargs)
         property_type = cls.property_type()
-        return property_type(resolver)
+        return property_type(resolver, decorator=decorator)
 
     @classmethod
     def build_decorator(cls, *args, **kwargs):
@@ -158,6 +162,9 @@ class Resolver(object):
         processed_result = self.post_resolve(instance, request, result)
         return processed_result
 
+    def dump(self, dumper: 'Dumper', value):
+        return value
+
     @classmethod
     def on_bootstrap(cls):
         pass
@@ -184,3 +191,4 @@ class Resolver(object):
 
     def on_backfill(self, resource, request, result):
         raise NotImplementedError()
+

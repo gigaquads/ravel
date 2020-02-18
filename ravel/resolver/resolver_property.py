@@ -8,8 +8,11 @@ from ravel.query.request import Request
 
 
 class ResolverProperty(property):
-    def __init__(self, resolver: 'Resolver'):
+    def __init__(
+        self, resolver: 'Resolver', decorator: 'ResolverDecorator' = None
+    ):
         self.resolver = resolver
+        self.decorator = decorator
         super().__init__(
             fget=self.fget,
             fset=self.fset,
