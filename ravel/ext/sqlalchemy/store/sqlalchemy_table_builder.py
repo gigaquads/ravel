@@ -11,7 +11,7 @@ from ravel.util.loggers import console
 class SqlalchemyTableBuilder(object):
     def __init__(self, store: 'SqlalchemyStore'):
         self._dialect = store.dialect
-        self._biz_class = store.biz_class
+        self._resource_type = store.resource_type
         self._adapters = store.adapters
         self._metadata = store.get_metadata()
 
@@ -26,17 +26,17 @@ class SqlalchemyTableBuilder(object):
     def build_table(self, name=None, schema=None) -> sa.Table:
         columns = [
             self.build_column(field)
-            for field in self._biz_class.Schema.fields.values()
+            for field in self._resource_type.Schema.fields.values()
         ]
         if name is not None:
             table_name = name
         else:
-            table_name = StringUtils.snake(self._biz_class.__name__)
+            table_name = StringUtils.snake(self._resource_type.__name__)
 
         console.debug(
             message=(
                 f'building Sqlalchemy Table "{table_name}" '
-                f'from "{self._biz_class.Schema.__name__}" schema'
+                f'from "{self._resource_type.Schema.__name__}" schema'
             )
         )
         if schema is not None:

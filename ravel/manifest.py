@@ -42,18 +42,18 @@ class Manifest(object):
         self.app = None
         self.package = None
         self.bindings = []
-        self._biz_2_store_name = {}
+        self._res_2_store_name = {}
         self.bootstraps = {}
         self.env = env or Environment()
         self.types = DictObject({
             'dal': {
                 'SimulationStore': SimulationStore
             },
-            'biz': {},
+            'res': {},
         })
         self.scanner = Scanner(
-            biz_classes=self.types.biz,
-            store_classes=self.types.dal,
+            resource_types=self.types.res,
+            store_types=self.types.dal,
             env=self.env,
         )
 
@@ -113,12 +113,12 @@ class Manifest(object):
             console.warning(f'no "bindings" section detected in manifest!')
 
         for binding_data in (self.data.get('bindings') or []):
-            biz = binding_data['biz']
+            res = binding_data['resource']
             store = binding_data.get('store', 'SimulationStore')
             params = binding_data.get('params', {})
-            binding = ManifestBinding(biz=biz, store=store, params=params)
+            binding = ManifestBinding(res=res, store=store, params=params)
             self.bindings.append(binding)
-            self._biz_2_store_name[biz] = store
+            self._res_2_store_name[res] = store
 
         # create self.bootstraps
         self.bootstraps = {}
@@ -142,62 +142,62 @@ class Manifest(object):
         types.
         """
         self.app = app
-        self._discover_ravel_classes(namespace)
-        self._register_store_classes()
+        self._discover_ravel_types(namespace)
+        self._register_store_types()
         return self
 
     def bootstrap(self):
-        # visited_store_classes is used to keep track of which DAO classes we've
+        # visited_store_types is used to keep track of which DAO classes we've
         # already bootstrapped in the process of bootstrapping the DAO classes
         # bound to Resource classes.
-        visited_store_classes = set()
+        visited_store_types = set()
 
-        for biz_class in self.types.biz.values():
-            if not (biz_class.ravel.is_abstract
-                    or biz_class.ravel.is_bootstrapped):
+        for resource_type in self.types.res.values():
+            if not (resource_type.ravel.is_abstract
+                    or resource_type.ravel.is_bootstrapped):
                 console.debug(
-                    f'bootstrapping "{biz_class.__name__}" Resource...'
+                    f'bootstrapping "{resource_type.__name__}" Resource...'
                 )
-                biz_class_name = get_class_name(biz_class)
-                store_class_name = self._biz_2_store_name.get(biz_class_name)
+                resource_class_name = get_class_name(resource_type)
+                store_class_name = self._res_2_store_name.get(resource_class_name)
                 if store_class_name is None:
-                    store_class = biz_class.__store__()
-                    store_class_name = get_class_name(store_class)
+                    store_type = resource_type.__store__()
+                    store_class_name = get_class_name(store_type)
                 else:
                     assert store_class_name in self.types.dal
-                    store_class = self.types.dal[store_class_name]
+                    store_type = self.types.dal[store_class_name]
 
-                biz_class.bootstrap(app=self.app)
+                resource_type.bootstrap(app=self.app)
 
                 if store_class_name not in self.types.dal:
-                    self.types.dal[store_class_name] = store_class
+                    self.types.dal[store_class_name] = store_type
 
-                if biz_class_name not in self._biz_2_store_name:
-                    self._biz_2_store_name[biz_class_name] = store_class_name
+                if resource_class_name not in self._res_2_store_name:
+                    self._res_2_store_name[resource_class_name] = store_class_name
                     self.bindings.append(
-                        ManifestBinding(biz=biz_class_name, store=store_class_name)
+                        ManifestBinding(res=resource_class_name, store=store_class_name)
                     )
                     self.app.binder.register(
-                        biz_class=biz_class, store_class=store_class
+                        resource_type=resource_type, store_type=store_type
                     )
 
                 # don't bootstrap the store class if we've done so already
-                if store_class in visited_store_classes:
+                if store_type in visited_store_types:
                     continue
                 else:
-                    visited_store_classes.add(store_class)
+                    visited_store_types.add(store_type)
 
                 console.debug(f'bootstrapping "{store_class_name}" Store...')
                 bootstrap_object = self.bootstraps.get(store_class_name)
                 bootstrap_kwargs = bootstrap_object.params if bootstrap_object else {}
-                store_class.bootstrap(app=self.app, **bootstrap_kwargs)
+                store_type.bootstrap(app=self.app, **bootstrap_kwargs)
 
         console.debug(f'finished bootstrapped Store and Resource classes')
 
         # inject the following into each endpoint target's lexical scope:
         # all other endpoints, all Resource and Store classes.
         for endpoint in self.app.endpoints.values():
-            endpoint.target.__globals__.update(self.types.biz)
+            endpoint.target.__globals__.update(self.types.res)
             endpoint.target.__globals__.update(self.types.dal)
             endpoint.target.__globals__.update(
                 {p.name: p.target
@@ -207,7 +207,7 @@ class Manifest(object):
     def bind(self, rebind=False):
         self.app.binder.bind(rebind=rebind)
 
-    def _discover_ravel_classes(self, namespace: Dict):
+    def _discover_ravel_types(self, namespace: Dict):
         # package name for venusian scan
         self._scan_venusian()
 
@@ -219,56 +219,56 @@ class Manifest(object):
         self._scan_dotted_paths()
 
         # remove base Resource class from types dict
-        self.types.biz.pop('Resource', None)
+        self.types.res.pop('Resource', None)
         self.types.dal.pop('Store', None)
 
-    def _register_store_classes(self):
+    def _register_store_types(self):
         """
         Associate each Resource class with a corresponding Store class.
         """
         # register each binding declared in the manifest with the ResourceBinder
         for info in self.bindings:
-            biz_class = self.types.biz.get(info.biz)
-            if biz_class is None:
+            resource_type = self.types.res.get(info.res)
+            if resource_type is None:
                 raise ManifestError(
-                    f'cannot register {info.biz} with ResourceBinder because '
+                    f'cannot register {info.res} with ResourceBinder because '
                     f'the class was not found while processing the manifest'
                 )
-            store_class = self.types.dal[info.store]
-            if not self.app.binder.is_registered(biz_class):
+            store_type = self.types.dal[info.store]
+            if not self.app.binder.is_registered(resource_type):
                 binding = self.app.binder.register(
-                    biz_class=biz_class,
-                    store_class=store_class,
+                    resource_type=resource_type,
+                    store_type=store_type,
                     store_bind_kwargs=info.params,
                 )
-                self.types.dal[info.store] = binding.store_class
+                self.types.dal[info.store] = binding.store_type
 
         # register all store types *not* currently declared in a binding
         # with the ResourceBinder.
-        for type_name, store_class in self.types.dal.items():
-            if not self.app.binder.get_store_class(type_name):
-                self.app.binder.register(None, store_class)
-                registered_store_class = self.app.binder.get_store_class(type_name)
-                self.types.dal[type_name] = registered_store_class
+        for type_name, store_type in self.types.dal.items():
+            if not self.app.binder.get_store_type(type_name):
+                self.app.binder.register(None, store_type)
+                registered_store_type = self.app.binder.get_store_type(type_name)
+                self.types.dal[type_name] = registered_store_type
 
     def _scan_dotted_paths(self):
         # gather Store and Resource types in "bindings" section
-        # into self.types.dal and self.types.biz
+        # into self.types.dal and self.types.res
         for binding in self.bindings:
-            if binding.biz_module and binding.biz not in self.types.biz:
-                biz_class = import_object(f'{binding.biz_module}.{binding.biz}')
-                self.types.biz[binding.biz] = biz_class
+            if binding.res_module and binding.res not in self.types.res:
+                resourceresource_type = import_object(f'{binding.res_module}.{binding.res}')
+                self.types.res[binding.res] = resource_type
             if binding.store_module and binding.store not in self.types.dal:
-                store_class = import_object(f'{binding.store_module}.{binding.store}')
-                self.types.dal[binding.store] = store_class
+                store_type = import_object(f'{binding.store_module}.{binding.store}')
+                self.types.dal[binding.store] = store_type
 
         # gather Store types in "bootstraps" section into self.types.dal
         for store_class_name, bootstrap in self.bootstraps.items():
             if '.' in bootstrap.store:
                 store_class_path = bootstrap.store
                 if store_class_name not in self.types.dal:
-                    store_class = import_object(store_class_path)
-                    self.types.dal[store_class_name] = store_class
+                    store_type = import_object(store_class_path)
+                    self.types.dal[store_class_name] = store_type
             elif bootstrap.store not in self.types.dal:
                 raise ManifestError(f'{bootstrap.store} not found')
 
@@ -283,7 +283,7 @@ class Manifest(object):
             if isinstance(v, type):
                 if issubclass(v, (Resource, Resource)) and v is not Resource:
                     if not v.ravel.is_abstract:
-                        self.types.biz[k] = v
+                        self.types.res[k] = v
                         console.debug(
                             f'detected Resource class in '
                             f'namespace dict: {v.__name__}'
@@ -359,18 +359,18 @@ class Manifest(object):
 class ManifestBinding(object):
     def __init__(
         self,
-        biz: Text,
+        res: Text,
         store: Text,
         params: Dict = None,
     ):
         self.store = store
         self.params = params
 
-        if '.' in biz:
-            self.biz_module, self.biz = os.path.splitext(biz)
-            self.biz = self.biz[1:]
+        if '.' in res:
+            self.res_module, self.res = os.path.splitext(res)
+            self.res = self.res[1:]
         else:
-            self.biz_module, self.biz = None, biz
+            self.res_module, self.res = None, res
 
         if '.' in store:
             self.store_module, self.store = os.path.splitext(store)
@@ -379,7 +379,7 @@ class ManifestBinding(object):
             self.store_module, self.store = None, store
 
     def __repr__(self):
-        return f'<ManifestBinding({self.biz}, {self.store})>'
+        return f'<ManifestBinding({self.res}, {self.store})>'
 
 
 class ManifestBootstrap(object):

@@ -13,7 +13,7 @@ class Session(Resource):
     logged_out_at = fields.DateTime(nullable=True)
     owner_id = fields.Field(required=True, nullable=True, private=True)
     owner = Relationship(
-        join=lambda self: (Session.owner_id, self.get_user_class()._id)
+        join=lambda self: (Session.owner_id, self.get_user_type()._id)
     )
 
     @classmethod
@@ -21,11 +21,11 @@ class Session(Resource):
         return True
 
     @classmethod
-    def get_user_class(cls) -> Type[User]:
-        user_class = cls.app.biz.get('User')
-        if user_class is None:
+    def get_user_type(cls) -> Type[User]:
+        user_type = cls.app.res.get('User')
+        if user_type is None:
             raise NotImplementedError('return a User subclass')
-        return user_class
+        return user_type
 
     def logout(self):
         if self.is_active:

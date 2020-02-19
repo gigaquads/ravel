@@ -7,7 +7,7 @@ from typing import (
 
 from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from ravel.util.misc_functions import (
-    extract_biz_info_from_annotation,
+    extract_res_info_from_annotation,
     is_sequence,
 )
 
@@ -52,12 +52,12 @@ class ArgumentLoader(object):
             position: int,
             arg_name: Text,
             many: bool,
-            biz_class: Type['Resource']
+            resource_type: Type['Resource']
         ):
             self.position = position
             self.arg_name = arg_name
             self.many = many
-            self.biz_class = biz_class
+            self.resource_type = resource_type
 
     def __init__(self, app: 'Application', on_load: Callable = None):
         self._app = app
@@ -72,14 +72,14 @@ class ArgumentLoader(object):
         for endpoint in self._app.endpoints.values():
             for idx, param in enumerate(endpoint.signature.parameters.values()):
                 ann = param.annotation
-                many, biz_class_name = extract_biz_info_from_annotation(ann)
-                biz_class = self._app.biz.get(biz_class_name)
-                if biz_class is not None:
+                many, res_class_name = extract_res_info_from_annotation(ann)
+                resource_type = self._app.res.get(res_class_name)
+                if resource_type is not None:
                     position = (
                         idx if param.default == Parameter.empty else None
                     )
                     spec = ArgumentLoader.ArgumentSpec(
-                        idx, param.name, many, biz_class
+                        idx, param.name, many, resource_type
                     )
                     self._endpoint_2_specs[endpoint].append(spec)
 
@@ -107,7 +107,7 @@ class ArgumentLoader(object):
             # of the name of a keyword argument.
 
             loaded_entity = self.load_param(
-                spec.many, spec.biz_class, raw_arg_value
+                spec.many, spec.resource_type, raw_arg_value
             )
             # store a reference to the raw argument value on the loaded Entity
             # so that it can still be accessed inside the app.
@@ -125,7 +125,7 @@ class ArgumentLoader(object):
 
         return (tuple(loaded_args), loaded_kwargs)
 
-    def load_param(self, many: bool, biz_class: Type['Resource'], preloaded):
+    def load_param(self, many: bool, resource_type: Type['Resource'], preloaded):
         """
         Convert the given parameter "preloaded" into its corresponding
         Entity.
@@ -134,7 +134,7 @@ class ArgumentLoader(object):
         - If it is a list of IDs, return a Batch.
         - If it is a dict, replace it with a corresponding Resource instance.
         """
-        if not (preloaded and biz_class):
+        if not (preloaded and resource_type):
             return preloaded
         elif not many:
             if is_resource(preloaded):
@@ -144,19 +144,19 @@ class ArgumentLoader(object):
                     preloaded[ID_FIELD_NAME] = preloaded.pop('id')
                 if 'rev' in preloaded:
                     preloaded[REV_FIELD_NAME] = preloaded.pop('rev')
-                return biz_class(preloaded)
+                return resource_type(preloaded)
             else:
-                return biz_class.get(_id=preloaded)
+                return resource_type.get(_id=preloaded)
         elif is_sequence(preloaded):
             if isinstance(preloaded, set):
                 preloaded = list(preloaded)
             if is_resource(preloaded[0]):
-                return biz_class.Batch(preloaded)
+                return resource_type.Batch(preloaded)
             elif isinstance(preloaded[0], dict):
-                return biz_class.Batch(
-                    biz_class(record).clean() if record.get('id') is not None
-                    else biz_class(record)
+                return resource_type.Batch(
+                    resource_type(record).clean() if record.get('id') is not None
+                    else resource_type(record)
                         for record in preloaded
                 )
             else:
-                return biz_class.get_many(_ids=preloaded)
+                return resource_type.get_many(_ids=preloaded)

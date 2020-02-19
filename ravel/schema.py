@@ -10,7 +10,7 @@ from ravel.util.misc_functions import get_class_name
 
 class Id(fields.Field):
     """
-    This is a special Field recognized internally by Pybiz. When an Application
+    This is a special Field recognized internally by Ravel. When an Application
     bootstraps, all Id fields declared on Resource classes are replaced with a
     concrete Field class.
     """
@@ -35,7 +35,7 @@ class Id(fields.Field):
                 app.inject(self.target_resource_type_callback)
                 self.target_resource_type = self.target_resource_type_callback()
             else:
-                self.target_resource_type = app.biz[self.target_resource_type_name]
+                self.target_resource_type = app.res[self.target_resource_type_name]
         return self.target_resource_type
 
     # TODO: rename replace_self_in_resource_type

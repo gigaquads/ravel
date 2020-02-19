@@ -6,27 +6,27 @@ from ravel.util.loggers import console
 # XXX: This stuff needs some refactoring. Too hacky.
 
 class BizBinding(object):
-    def __init__(self, binder, biz_class, store_instance, store_bind_kwargs=None):
+    def __init__(self, binder, resource_type, store_instance, store_bind_kwargs=None):
         self.binder = binder
-        self.biz_class = biz_class
+        self.resource_type = resource_type
         self.store_instance = store_instance
         self.store_bind_kwargs = store_bind_kwargs or {}
         self._is_bound = False
 
     def __repr__(self):
         return (
-            f'BizBinding({self.biz_class_name}, {self.store_class_name}, '
+            f'BizBinding({self.resource_type_name}, {self.store_class_name}, '
             f'bound={self.is_bound})'
         )
 
     def bind(self, binder=None):
         binder = binder or self.binder
 
-        # associate a singleton Store instance with the biz class.
-        self.store_instance.bind(self.biz_class, **self.store_bind_kwargs)
+        # associate a singleton Store instance with the res class.
+        self.store_instance.bind(self.resource_type, **self.store_bind_kwargs)
 
         # first call bind on the Resource class itself
-        self.biz_class.bind(binder)
+        self.resource_type.bind(binder)
 
         self._is_bound = True
 
@@ -35,7 +35,7 @@ class BizBinding(object):
         return self._is_bound
 
     @property
-    def store_class(self):
+    def store_type(self):
         return self.store_instance.__class__
 
     @property
@@ -43,8 +43,8 @@ class BizBinding(object):
         return get_class_name(self)
 
     @property
-    def biz_class_name(self):
-        return get_class_name(self.biz_class)
+    def resource_type_name(self):
+        return get_class_name(self.resource_type)
 
 
 class ResourceBinder(object):
@@ -55,8 +55,8 @@ class ResourceBinder(object):
 
     def __init__(self):
         self._bindings = {}
-        self._named_store_classes = {}
-        self._named_biz_classes = {}
+        self._named_store_types = {}
+        self._named_resource_typees = {}
 
     def __repr__(self):
         return f'{get_class_name(self)}()'
@@ -66,29 +66,29 @@ class ResourceBinder(object):
         return list(self._bindings.values())
 
     @property
-    def biz_classes(self) -> Dict[Text, 'Resource']:
-        return self._named_biz_classes
+    def resource_typees(self) -> Dict[Text, 'Resource']:
+        return self._named_resource_typees
 
     @property
-    def store_classes(self) -> Dict[Text, 'Store']:
-        return self._named_store_classes
+    def store_types(self) -> Dict[Text, 'Store']:
+        return self._named_store_types
 
-    def get_binding(self, biz_class):
-        if isinstance(biz_class, type):
-            biz_class = get_class_name(biz_class)
-        return self._bindings.get(biz_class)
+    def get_binding(self, resource_type):
+        if isinstance(resource_type, type):
+            resource_type = get_class_name(resource_type)
+        return self._bindings.get(resource_type)
 
     def register(
         self,
-        biz_class: Type['Resource'],
-        store_class: Type['Store'],
+        resource_type: Type['Resource'],
+        store_type: Type['Store'],
         store_instance: 'Store' = None,
         store_bind_kwargs: Dict = None,
     ):
-        store_class_name = get_class_name(store_class)
-        if store_class_name not in self._named_store_classes:
-            store_class = type(store_class_name, (store_class, ), {})
-            self._named_store_classes[store_class_name] = store_class
+        store_class_name = get_class_name(store_type)
+        if store_class_name not in self._named_store_types:
+            store_type = type(store_class_name, (store_type, ), {})
+            self._named_store_types[store_class_name] = store_type
 
             console.debug(
                 f'registered Store "{store_class_name}" '
@@ -96,82 +96,82 @@ class ResourceBinder(object):
             )
 
         if store_instance is not None:
-            assert isinstance(store_instance, store_class)
+            assert isinstance(store_instance, store_type)
         else:
-            store_instance = store_class()
+            store_instance = store_type()
 
-        if biz_class is not None:
-            biz_class_name = get_class_name(biz_class)
-            biz_class.binder = self
+        if resource_type is not None:
+            resource_type_name = get_class_name(resource_type)
+            resource_type.binder = self
 
-            self._named_biz_classes[biz_class_name] = biz_class
-            self._bindings[biz_class_name] = binding = BizBinding(
+            self._named_resource_typees[resource_type_name] = resource_type
+            self._bindings[resource_type_name] = binding = BizBinding(
                 self,
-                biz_class=biz_class,
+                resource_type=resource_type,
                 store_instance=store_instance,
                 store_bind_kwargs=store_bind_kwargs,
             )
 
             console.debug(
-                f'registered Resource "{biz_class_name}" '
+                f'registered Resource "{resource_type_name}" '
                 f'with {get_class_name(self)}'
             )
             return binding
 
         return None
 
-    def bind(self, biz_classes: Set[Type['Resource']] = None, rebind=False):
-        if not biz_classes:
-            biz_classes = [v.biz_class for v in self._bindings.values()]
-        elif not is_sequence(biz_classes):
-            biz_classes = [biz_classes]
-        for biz_class in biz_classes:
-            if not biz_class.ravel.is_abstract:
-                biz_class.binder = self
-                self.get_store_instance(biz_class, rebind=rebind)
+    def bind(self, resource_typees: Set[Type['Resource']] = None, rebind=False):
+        if not resource_typees:
+            resource_typees = [v.resource_type for v in self._bindings.values()]
+        elif not is_sequence(resource_typees):
+            resource_typees = [resource_typees]
+        for resource_type in resource_typees:
+            if not resource_type.ravel.is_abstract:
+                resource_type.binder = self
+                self.get_store_instance(resource_type, rebind=rebind)
 
     def get_store_instance(
         self,
-        biz_class: Type['Resource'],
+        resource_type: Type['Resource'],
         bind=True,
         rebind=False,
     ) -> 'Store':
-        if isinstance(biz_class, str):
-            binding = self._bindings.get(biz_class)
+        if isinstance(resource_type, str):
+            binding = self._bindings.get(resource_type)
         else:
-            binding = self._bindings.get(get_class_name(biz_class))
+            binding = self._bindings.get(get_class_name(resource_type))
 
         if binding is None:
             # lazily register a new binding
-            base_store_class = biz_class.__store__()
+            base_store_type = resource_type.__store__()
             console.debug(
-                f'calling {get_class_name(biz_class)}.__store__()'
+                f'calling {get_class_name(resource_type)}.__store__()'
             )
-            binding = self.register(biz_class, base_store_class)
+            binding = self.register(resource_type, base_store_type)
 
         # call bind only if it already hasn't been called
         if rebind or ((not binding.is_bound) and bind):
             console.debug(
                 message=(
                     f'binding "{get_class_name(binding.store_instance)}" '
-                    f'with "{get_class_name(binding.biz_class)}"'
+                    f'with "{get_class_name(binding.resource_type)}"'
                 )
             )
             binding.bind(binder=self)
 
         return binding.store_instance
 
-    def get_store_class(self, store_class_name: Text) -> Type['Store']:
-        return self._named_store_classes.get(store_class_name)
+    def get_store_type(self, store_class_name: Text) -> Type['Store']:
+        return self._named_store_types.get(store_class_name)
 
-    def is_registered(self, biz_class: Type['Resource']) -> bool:
-        if isinstance(biz_class, str):
-            return biz_class in self._bindings
+    def is_registered(self, resource_type: Type['Resource']) -> bool:
+        if isinstance(resource_type, str):
+            return resource_type in self._bindings
         else:
-            return get_class_name(biz_class) in self._bindings
+            return get_class_name(resource_type) in self._bindings
 
-    def is_bound(self, biz_class: Type['Resource']) -> bool:
-        if isinstance(biz_class, str):
-            return self._bindings[biz_class].is_bound
+    def is_bound(self, resource_type: Type['Resource']) -> bool:
+        if isinstance(resource_type, str):
+            return self._bindings[resource_type].is_bound
         else:
-            return self._bindings[get_class_name(biz_class)].is_bound
+            return self._bindings[get_class_name(resource_type)].is_bound

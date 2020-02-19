@@ -105,11 +105,11 @@ class Predicate(object):
         raise NotImplementedError()
 
     @classmethod
-    def load(cls, biz_class: Type['Resource'], data: Dict):
+    def load(cls, resource_type: Type['Resource'], data: Dict):
         if data['code'] == TYPE_CONDITIONAL:
-            return ConditionalPredicate.load(biz_class, data)
+            return ConditionalPredicate.load(resource_type, data)
         elif data['code'] == TYPE_BOOLEAN:
-            return BooleanPredicate.load(biz_class, data)
+            return BooleanPredicate.load(resource_type, data)
 
     @classmethod
     def reduce_and(cls, *predicates) -> 'Predicate':
@@ -161,8 +161,8 @@ class ConditionalPredicate(Predicate):
 
     def __str__(self):
         if self.prop:
-            biz_class_name = get_class_name(self.prop.resolver.owner)
-            lhs = f'{biz_class_name}.{self.prop.resolver.field.name}'
+            res_class_name = get_class_name(self.prop.resolver.owner)
+            lhs = f'{res_class_name}.{self.prop.resolver.field.name}'
         else:
             lhs = '[NULL]'
 
@@ -189,8 +189,8 @@ class ConditionalPredicate(Predicate):
         }
 
     @classmethod
-    def load(cls, biz_class: Type['Resource'], data: Dict):
-        field_prop = getattr(biz_class, data['field'])
+    def load(cls, resource_type: Type['Resource'], data: Dict):
+        field_prop = getattr(resource_type, data['field'])
         return cls(data['op'], field_prop, data['value'])
 
 
@@ -250,11 +250,11 @@ class BooleanPredicate(Predicate):
         }
 
     @classmethod
-    def load(cls, biz_class: Type['Resource'], data: Dict):
+    def load(cls, resource_type: Type['Resource'], data: Dict):
         return cls(
             data['op'],
-            Predicate.load(biz_class, data['lhs']),
-            Predicate.load(biz_class, data['rhs']),
+            Predicate.load(resource_type, data['lhs']),
+            Predicate.load(resource_type, data['rhs']),
         )
 
 
@@ -270,8 +270,8 @@ class PredicateParser(object):
             self.op_code = op_code
             self.arity = arity
 
-    def __init__(self, biz_class):
-        self._biz_class = biz_class
+    def __init__(self, resource_type):
+        self._resource_type = resource_type
 
     def parse(self, source: Text):
         source = f'({source})'
@@ -318,7 +318,7 @@ class PredicateParser(object):
 
         target = target.strip("'")
         ident = self.ravel_field_name_transform_inversions.get(ident, ident)
-        prop = getattr(self._biz_class, ident)
+        prop = getattr(self._resource_type, ident)
 
         op_code = None
         for token in comp:
@@ -355,7 +355,7 @@ class PredicateParser(object):
                     ident = self.ravel_field_name_transform_inversions.get(
                         ident, ident
                     )
-                    prop = getattr(self._biz_class, ident)
+                    prop = getattr(self._resource_type, ident)
                     value_list = [
                         prop.resolver.field.process(x.strip("'").strip())[0]
                         for x in token.value[1:-1].split(',')

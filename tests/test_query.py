@@ -252,7 +252,7 @@ def test_save_recurses_on_resolvers(
     mock_resolver = MagicMock()
     mock_resolver.name = 'friend'
     mock_resolver.tags = lambda: ['relationships']
-    mock_resolver.biz_class = Thing
+    mock_resolver.resource_type = Thing
     mock_resolver.on_save.return_value = friend
 
     thing.ravel.resolvers['friend'] = mock_resolver

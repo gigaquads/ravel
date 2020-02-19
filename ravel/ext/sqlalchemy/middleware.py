@@ -16,9 +16,7 @@ class SqlalchemyMiddleware(Middleware):
     def __init__(self, store_class_name: Text = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.env = Environment()
-        self.store_class_name = store_class_name or self.env.get(
-            'PYBIZ_SQLALCHEMY_DAO_CLASS', 'SqlalchemyStore'
-        )
+        self.store_class_name = store_class_name or 'SqlalchemyStore'
 
     def on_bootstrap(self):
         self.SqlalchemyStore = self.app.dal.get(self.store_class_name)

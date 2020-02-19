@@ -16,13 +16,10 @@ class ResolverDecorator(object):
         self.kwargs['on_resolve'] = func
         return self
 
-    def build_resolver_property(self,
-        owner: Type['Resource'], name: Text
+    def build_property(
+        self, owner: Type['Resource'], name: Text
     ) -> 'ResolverProperty':
-        self.kwargs.update({
-            'owner': owner,
-            'name': name
-        })
+        self.kwargs.update({'owner': owner, 'name': name})
         return self.resolver_type.build_property(
             decorator=self, args=self.args, kwargs=self.kwargs
         )

@@ -63,7 +63,7 @@ class Middleware(object):
         """
         In `pre_request`, `raw_args` and `raw_kwargs` contain the raw args and
         kwargs made available to us by the host Application. For example, in a a
-        Pybiz application backed by a web framework, the contents of `raw_args`
+        Ravel application backed by a web framework, the contents of `raw_args`
         could be the request and response objects.
         """
 

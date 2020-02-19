@@ -38,9 +38,9 @@ class SimulationStore(Store):
     def on_bootstrap(cls):
         pass
 
-    def on_bind(self, biz_class: Type['Resource'], **kwargs):
+    def on_bind(self, resource_type: Type['Resource'], **kwargs):
         """
-        This lifecycle method executes when Pybiz instantiates a singleton
+        This lifecycle method executes when Ravel instantiates a singleton
         instance of this class and associates it with a specific Resource
         class.
         """
@@ -48,7 +48,7 @@ class SimulationStore(Store):
         # because we do no currently index composite data strucures, like dicts
         # and lists, we add the names of these fields on the bound Resource
         # class to the list of "ignored" indexes.
-        for k, v in biz_class.Schema.fields.items():
+        for k, v in resource_type.Schema.fields.items():
             if isinstance(v, (fields.Dict, fields.Nested, Schema)):
                 self.ignored_indexes.add(k)
 
@@ -115,7 +115,7 @@ class SimulationStore(Store):
         """
         Insert one record into the store, indexing its indexable fields.
         """
-        schema = self.biz_class.ravel.schema
+        schema = self.resource_type.ravel.schema
 
         with self.lock:
             record[ID_FIELD_NAME] = _id = self.create_id(record)
@@ -248,7 +248,7 @@ class SimulationStore(Store):
         return records
 
     def _update_indexes(self, _id, record):
-        schema = self.biz_class.ravel.schema
+        schema = self.resource_type.ravel.schema
         for k, v in record.items():
             if k not in self.ignored_indexes:
                 if v not in self.indexes[k]:
@@ -256,7 +256,7 @@ class SimulationStore(Store):
                 self.indexes[k][v].add(_id)
 
     def _delete_from_indexes(self, _id, record, indexes_to_delete=None):
-        schema = self.biz_class.ravel.schema
+        schema = self.resource_type.ravel.schema
         indexes_to_delete = indexes_to_delete or set(record.keys())
         for k in indexes_to_delete:
             if k not in self.ignored_indexes:

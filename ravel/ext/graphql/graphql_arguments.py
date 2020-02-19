@@ -23,10 +23,10 @@ class GraphQLArguments(object):
         }
 
     @classmethod
-    def parse(cls, biz_class, ast_node) -> 'GraphQLArguments':
+    def parse(cls, resource_type, ast_node) -> 'GraphQLArguments':
         args = cls.extract_arguments_dict(ast_node)
         return cls(
-            where=cls._parse_where(biz_class, args.pop('where', None)),
+            where=cls._parse_where(resource_type, args.pop('where', None)),
             order_by=cls._parse_order_by(args.pop('order_by', None)),
             offset=cls._parse_offset(args.pop('offset', None)),
             limit=cls._parse_limit(args.pop('limit', None)),
@@ -65,13 +65,13 @@ class GraphQLArguments(object):
     @classmethod
     def _parse_where(
         cls,
-        biz_class: Type['Resource'],
+        resource_type: Type['Resource'],
         predicate_strings: List[Text],
     ) -> List['Predicate']:
         if isinstance(predicate_strings, str):
             predicate_strings = [predicate_strings]
         return Predicate.reduce_and(*[
-            biz_class.ravel.predicate_parser.parse(pred_str)
+            resource_type.ravel.predicate_parser.parse(pred_str)
             for pred_str in (predicate_strings or [])
         ])
 

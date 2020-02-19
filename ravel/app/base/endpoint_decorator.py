@@ -25,7 +25,11 @@ class EndpointDecorator(object):
             for k, v in getmembers(self.api_object, predicate=predicate):
                 if isinstance(v, Endpoint):
                     # customize existing endpoint
-                    existing_endpoint = self.app.endpoints[v.name]
+                    existing_endpoint = self.app.endpoints.get(v.name)
+                    if not existing_endpoint:
+                        # it's an endpoint but for a different Application
+                        # i.e. existing_endpoint.app is not self.app
+                        continue
 
                     kwargs = self.kwargs.copy()
                     kwargs.update(existing_endpoint.decorator.kwargs)

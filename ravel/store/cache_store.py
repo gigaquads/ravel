@@ -33,7 +33,7 @@ class CacheStoreExecutor(ThreadPoolExecutor):
 
     def initializer(self):
         self.store.be.bootstrap(self.store.be.app)
-        self.store.be.bind(self.store.be.biz_class)
+        self.store.be.bind(self.store.be.resource_type)
 
     def enqueue(self, method: Text, args=None, kwargs=None):
 
@@ -69,7 +69,7 @@ class CacheStore(Store):
 
     def on_bind(
         self,
-        biz_class: Type['Resource'],
+        resource_type: Type['Resource'],
         prefetch=False,
         mode: CacheMode = None,
         front: Dict = None,
@@ -83,12 +83,12 @@ class CacheStore(Store):
         back = back or self.be_params
 
         self.fe = self._setup_inner_store(
-            biz_class,
+            resource_type,
             front['store'],
             front.get('params', {}),
         )
         self.be = self._setup_inner_store(
-            biz_class,
+            resource_type,
             back['store'],
             back.get('params', {}),
         )
@@ -104,17 +104,17 @@ class CacheStore(Store):
         return self.app.binder if self.app is not None else None
 
     def _setup_inner_store(
-        self, biz_class: Type['BizType'], store_class_name: Text, bind_params: Dict = None
+        self, resource_type: Type['BizType'], store_class_name: Text, bind_params: Dict = None
     ):
         # fetch the store type from the ResourceBinder
-        store_class = self.binder.get_store_class(store_class_name.split('.')[-1])
-        if store_class is None:
-            raise Exception(f'{store_class} not registered')
+        store_type = self.binder.get_store_type(store_class_name.split('.')[-1])
+        if store_type is None:
+            raise Exception(f'{store_type} not registered')
 
         # create an instance of this store and bind it
-        store = store_class()
+        store = store_type()
         if not store.is_bound:
-            store.bind(biz_class, **(bind_params or {}))
+            store.bind(resource_type, **(bind_params or {}))
 
         return store
 
@@ -182,7 +182,7 @@ class CacheStore(Store):
         if be_records:
             # TODO: prune the be_records to fields
             if fields:
-                all_fields = set(self.biz_class.Schema.fields.keys())
+                all_fields = set(self.resource_type.Schema.fields.keys())
                 fields_to_remove = all_fields - fields
                 for be_rec in remove_keys(
                     be_records.values(), fields_to_remove, in_place=True
@@ -201,7 +201,7 @@ class CacheStore(Store):
         ids_fe = {rec[ID_FIELD_NAME] for rec in fe_records}
 
         # TODO: update predicate to fetch records with stale revs too
-        predicate = self.biz_class._id.excluding(ids_fe) & predicate
+        predicate = self.resource_type._id.excluding(ids_fe) & predicate
         be_records = self.be.query(predicate=predicate, **kwargs)
 
         # do batch FE operations

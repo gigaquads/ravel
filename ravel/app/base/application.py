@@ -5,6 +5,7 @@ from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
 from collections import deque, OrderedDict, namedtuple
 
 from appyratus.utils import DictObject, DictUtils
+from appyratus.enum import EnumValueStr
 
 from ravel.manifest import Manifest
 from ravel.util.json_encoder import JsonEncoder
@@ -19,8 +20,6 @@ from .endpoint import Endpoint
 from .argument_loader import ArgumentLoader
 from .resource_binder import ResourceBinder
 
-DEFAULT_ID_FIELD_CLASS = UuidString
-
 
 class Application(object):
 
@@ -30,11 +29,11 @@ class Application(object):
     ):
         self._state = DictObject()
         self._endpoints = {}
-        self._biz = DictObject()
+        self._res = DictObject()
         self._dal = DictObject()
         self._api = DictObject()
-        self._manifest = None  # set in bootstrap
-        self._arg_loader = None  # set in bootstrap
+        self._manifest = None
+        self._arg_loader = None
         self._is_bootstrapped = False
         self._is_started = False
         self._namespace = {}
@@ -80,16 +79,7 @@ class Application(object):
                 pass
         ```
         """
-        if not self._is_bootstrapped:
-        # this results in a function, method or other callable being registered
-        # with the app as an endpoint.
-            decorator = self.decorator_type(self, *args, **kwargs)
-            return decorator
-        else:
-        # if bootstrapped, we make __call__ equalivalent to calling app.start so
-        # that the app instance itself can be used as a "main" entrypoint object
-        # for things like WSGI servers.
-            return self.start(*args, **kwargs)
+        return self.decorator_type(self, *args, **kwargs)
 
     @property
     def decorator_type(self) -> Type[EndpointDecorator]:
@@ -124,12 +114,8 @@ class Application(object):
         return self._binder
 
     @property
-    def types(self) -> DictObject:
-        return self._manifest.types
-
-    @property
-    def biz(self) -> DictObject:
-        return self._biz
+    def res(self) -> DictObject:
+        return self._res
 
     @property
     def api(self) -> DictObject:
@@ -162,47 +148,47 @@ class Application(object):
 
     def bind(
         self,
-        biz_classes: List[Type['Resource']],
-        store_class: Type['Store'] = None
+        resource_types: List[Type['Resource']],
+        store_type: Type['Store'] = None
     ) -> 'Application':
         """
         Dynamically register one or more Resource classes with this
-        bootstrapped Application. If a store_class is specified, it will be used
-        for all classes in biz_classes. Otherwise, the Store class will come from
+        bootstrapped Application. If a store_type is specified, it will be used
+        for all classes in resource_types. Otherwise, the Store class will come from
         calling the __store__ method on each BizClass.
         """
         assert self.is_bootstrapped
 
-        def bind_one(biz_class, store_class):
+        def bind_one(resource_type, store_type):
             store_instance = None
-            if store_class is None:
-                store_obj = biz_class.__store__()
+            if store_type is None:
+                store_obj = resource_type.__store__()
                 if not isinstance(store_obj, type):
-                    store_class = type(store_obj)
+                    store_type = type(store_obj)
                     store_instance = store_obj
                 else:
-                    store_class = store_obj
+                    store_type = store_obj
 
-            self._dal[get_class_name(store_class)] = store_class
-            self._biz[get_class_name(biz_class)] = biz_class
+            self._dal[get_class_name(store_type)] = store_type
+            self._res[get_class_name(resource_type)] = resource_type
 
-            if not biz_class.is_bootstrapped():
-                biz_class.bootstrap(self)
-            if not store_class.is_bootstrapped():
-                store_class.bootstrap(self)
+            if not resource_type.is_bootstrapped():
+                resource_type.bootstrap(self)
+            if not store_type.is_bootstrapped():
+                store_type.bootstrap(self)
 
             binding = self.binder.register(
-                biz_class=biz_class,
-                store_class=store_class,
+                resource_type=resource_type,
+                store_type=store_type,
                 store_instance=store_instance,
             )
             binding.bind(self.binder)
 
-        if not is_sequence(biz_classes):
-            biz_classes = [biz_classes]
+        if not is_sequence(resource_types):
+            resource_types = [resource_types]
 
-        for biz_class in biz_classes:
-            bind_one(biz_class, store_class)
+        for resource_type in resource_types:
+            bind_one(resource_type, store_type)
 
         self._arg_loader.bind()
 
@@ -233,7 +219,7 @@ class Application(object):
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
         # create, load, and process the manifest
-        # bootstrap the biz and data access layers, and
+        # bootstrap the res and data access layers, and
         # bind each Resource class with its Store object.
         if manifest is None:
             self._manifest = Manifest()
@@ -247,7 +233,7 @@ class Application(object):
         self._manifest.load()
         self._manifest.process(app=self, namespace=self._namespace)
 
-        self._biz.update(self._manifest.types.biz)
+        self._res.update(self._manifest.types.res)
         self._dal.update(self._manifest.types.dal)
         self._api.update(self._endpoints)
 
@@ -283,13 +269,13 @@ class Application(object):
         self._is_started = True
         return self.on_start()
 
-    def inject(self, func: Callable, biz=True, dal=True, api=True) -> Callable:
+    def inject(self, func: Callable, res=True, dal=True, api=True) -> Callable:
         """
         Inject Resource, Store, and/or Endpoint classes into the lexical scope of
         the given function.
         """
-        if biz:
-            inject(func, self.biz)
+        if res:
+            inject(func, self.res)
         if dal:
             inject(func, self.dal)
         if api:

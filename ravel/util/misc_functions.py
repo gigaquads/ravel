@@ -86,7 +86,7 @@ def normalize_to_tuple(obj):
     return tuple()
 
 
-def extract_biz_info_from_annotation(annotation) -> Tuple[bool, Text]:
+def extract_res_info_from_annotation(annotation) -> Tuple[bool, Text]:
     """
     Return a tuple of metadata pertaining to `obj`, which is some object
     used in a type annotation, passed in by the caller.
@@ -106,7 +106,7 @@ def extract_biz_info_from_annotation(annotation) -> Tuple[bool, Text]:
     ):
         if annotation.__args__:
             arg = annotation.__args__[0]
-            key = extract_biz_info_from_annotation(arg)[1]
+            key = extract_res_info_from_annotation(arg)[1]
             many = True
 
     return (many, key)

@@ -16,13 +16,13 @@ from appyratus.utils import (
 
 from ravel.util.misc_functions import import_object
 from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
-from ravel.exceptions import PybizError
+from ravel.exceptions import RavelError
 
 from .base import Store
 from .simulation_store import SimulationStore
 
 
-class StoreError(PybizError):
+class StoreError(RavelError):
     pass
 
 
@@ -81,7 +81,7 @@ class FilesystemStore(Store):
         if not cls.root:
             raise MissingBootstrapParameterError(data={'id': 'root'})
 
-    def on_bind(self, biz_class, root: Text = None, ftype: BaseFile = None):
+    def on_bind(self, resource_type, root: Text = None, ftype: BaseFile = None):
         """
         Ensure the data dir exists for this Resource type.
         """
@@ -90,12 +90,12 @@ class FilesystemStore(Store):
 
         self.paths.root = root or self.root
         self.paths.records = os.path.join(
-            self.paths.root, StringUtils.snake(biz_class.__name__)
+            self.paths.root, StringUtils.snake(resource_type.__name__)
         )
         os.makedirs(self.paths.records, exist_ok=True)
 
-        self._cache_store.bootstrap(biz_class.app)
-        self._cache_store.bind(biz_class)
+        self._cache_store.bootstrap(resource_type.ravel.app)
+        self._cache_store.bind(resource_type)
         self._cache_store.create_many(self.fetch_all(ignore_cache=True).values())
 
     def create_id(self, record):
@@ -116,6 +116,7 @@ class FilesystemStore(Store):
         for record in records:
             created_records.append(self.create(record))
         self._cache_store.create_many(created_records)
+        return created_records
 
     def count(self) -> int:
         fnames = glob.glob(f'{self.paths.records}/*.{self.extension}')
@@ -123,38 +124,44 @@ class FilesystemStore(Store):
 
     def fetch(self, _id, fields=None) -> Dict:
         records = self.fetch_many([_id], fields=fields)
-        return records.get(_id) if records else {}
+        record = records.get(_id) if records else {}
+        return record
 
     def fetch_many(self, _ids: List, fields: List = None, ignore_cache=False) -> Dict:
         if not _ids:
             _ids = self._fetch_all_ids()
 
+        _ids = set(_ids)
+
         if not ignore_cache:
-            cached_records = self._cache_store.fetch_many(_ids)
+            cached_records = self._cache_store.fetch_many(_ids, fields=fields)
             if cached_records:
-                _ids -= cached_records.keys()
+                _ids -= {
+                    k for k, v in cached_records.items()
+                    if v is not None
+                }
         else:
             cached_records = {}
 
         fields = fields if isinstance(fields, set) else set(fields or [])
         if not fields:
-            fields = set(self.biz_class.Schema.fields.keys())
+            fields = set(self.resource_type.Schema.fields.keys())
         fields |= {ID_FIELD_NAME, REV_FIELD_NAME}
 
         records = {}
-
         for _id in _ids:
             fpath = self.mkpath(_id)
             record = self.ftype.read(fpath)
+            record, errors = self.resource_type.ravel.schema.process(record)
             if record:
                 record.setdefault(ID_FIELD_NAME, _id)
-                record[REV_FIELD_NAME] = record.setdefault(REV_FIELD_NAME, 0)
+                record[REV_FIELD_NAME] = record.setdefault(REV_FIELD_NAME, '0')
                 records[_id] = {k: record.get(k) for k in fields}
             else:
                 records[ID_FIELD_NAME] = None
 
         self._cache_store.create_many(records.values())
-        records.update(cached_records)
+        cached_records.update(records)
         return records
 
     def fetch_all(self, fields: Set[Text] = None, ignore_cache=False) -> Dict:
@@ -163,6 +170,7 @@ class FilesystemStore(Store):
     def update(self, _id, data: Dict) -> Dict:
         fpath = self.mkpath(_id)
         base_record = self.ftype.read(fpath)
+        base_record, errors = self.resource_type.ravel.schema.process(base_record)
         if base_record:
             # this is an upsert
             record = DictUtils.merge(base_record, data)
@@ -173,9 +181,9 @@ class FilesystemStore(Store):
             record[ID_FIELD_NAME] = _id
 
         if REV_FIELD_NAME not in record:
-            record[REV_FIELD_NAME] = 0
+            record[REV_FIELD_NAME] = '0'
         else:
-            record[REV_FIELD_NAME] += 1
+            pass # TODO: implement a rev system
 
         self._cache_store.update(_id, record)
         self.ftype.write(path=fpath, data=record)
@@ -184,7 +192,7 @@ class FilesystemStore(Store):
     def update_many(self, _ids: List, updates: List = None) -> Dict:
         return {
             _id: self.update(_id, data)
-            for _id, data in zip(_ids, update)
+            for _id, data in zip(_ids, updates)
         }
 
     def delete(self, _id) -> None:

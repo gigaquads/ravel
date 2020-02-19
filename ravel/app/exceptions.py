@@ -1,5 +1,5 @@
-from ravel.exceptions import PybizError
+from ravel.exceptions import RavelError
 
 
-class ApplicationError(PybizError):
+class ApplicationError(RavelError):
     pass

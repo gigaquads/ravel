@@ -70,15 +70,15 @@ class SqlalchemyStore(Store):
             ),
         ]
         adapters.extend(
-            field_class.adapt(on_adapt=lambda field: sa.Text)
-            for field_class in {
+            field_type.adapt(on_adapt=lambda field: sa.Text)
+            for field_type in {
                 fields.String, fields.FormatString,
                 fields.UuidString, fields.DateTimeString
             }
         )
         adapters.extend(
-            field_class.adapt(on_adapt=lambda field: sa.BigInteger)
-            for field_class in {
+            field_type.adapt(on_adapt=lambda field: sa.BigInteger)
+            for field_type in {
                 fields.Int, fields.Uint32, fields.Uint64,
                 fields.Sint32, fields.Sint64
             }
@@ -147,12 +147,12 @@ class SqlalchemyStore(Store):
     @classmethod
     def get_sqlite_default_adapters(cls) -> List[Field.Adapter]:
         adapters = [
-            field_class.adapt(
+            field_type.adapt(
                 on_adapt=lambda field: sa.Text,
                 on_encode=lambda x: cls.json_encoder.encode(x),
                 on_decode=lambda x: cls.json_encoder.decode(x),
             )
-            for field_class in {
+            for field_type in {
                 fields.Dict, fields.List, fields.Nested
             }
         ]
@@ -179,7 +179,7 @@ class SqlalchemyStore(Store):
 
     @property
     def id_column_name(self):
-        return self.biz_class.Schema.fields[ID_FIELD_NAME].source
+        return self.resource_type.Schema.fields[ID_FIELD_NAME].source
 
     def adapt_record(self, record: Dict, serialize=True) -> Dict:
         cb_name = 'on_encode' if serialize else 'on_decode'
@@ -235,18 +235,18 @@ class SqlalchemyStore(Store):
 
     def on_bind(
         self,
-        biz_class: Type['Resource'],
+        resource_type: Type['Resource'],
         table: Text = None,
         schema: 'Schema' = None,
         **kwargs
     ):
         field_class_2_adapter = {
-            adapter.field_class: adapter for adapter in
+            adapter.field_type: adapter for adapter in
             self.get_default_adapters(self.dialect) + self._custom_adapters
         }
         self._adapters = {
             field_name: field_class_2_adapter[type(field)]
-            for field_name, field in self.biz_class.Schema.fields.items()
+            for field_name, field in self.resource_type.Schema.fields.items()
             if type(field) in field_class_2_adapter
         }
         self._builder = SqlalchemyTableBuilder(self)
@@ -264,10 +264,10 @@ class SqlalchemyStore(Store):
         order_by: Tuple = None,
         **kwargs,
     ):
-        fields = fields or {k: None for k in self.biz_class.Schema.fields}
+        fields = fields or {k: None for k in self.resource_type.Schema.fields}
         fields.update({
             self.id_column_name: None,
-            self.biz_class.Schema.fields[REV_FIELD_NAME].source: None,
+            self.resource_type.Schema.fields[REV_FIELD_NAME].source: None,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]
@@ -370,11 +370,11 @@ class SqlalchemyStore(Store):
                 fields = set(fields)
         else:
             fields = {
-                f.source for f in self.biz_class.Schema.fields.values()
+                f.source for f in self.resource_type.Schema.fields.values()
             }
         fields.update({
             self.id_column_name,
-            self.biz_class.Schema.fields[REV_FIELD_NAME].source,
+            self.resource_type.Schema.fields[REV_FIELD_NAME].source,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]

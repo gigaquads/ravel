@@ -5,7 +5,7 @@ import ujson
 from falcon import HTTPError, status_codes
 
 
-class PybizFalconError(HTTPError):
+class RavelFalconError(HTTPError):
 
     http_status = status_codes.HTTP_400
     api_status = 'bad-request'
@@ -31,7 +31,7 @@ class PybizFalconError(HTTPError):
         return ujson.dumps(self.to_dict())
 
 
-class NotFound(PybizFalconError):
+class NotFound(RavelFalconError):
 
     http_status = status_codes.HTTP_404
     api_status = 'not-found'
@@ -44,7 +44,7 @@ class NotFound(PybizFalconError):
             )
 
 
-class NotAuthenticated(PybizFalconError):
+class NotAuthenticated(RavelFalconError):
 
     http_status = status_codes.HTTP_401
     api_status = 'not-authenticated'

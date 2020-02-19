@@ -49,8 +49,8 @@ class RecursiveList(Resource):
     previous = Relationship(
         join=lambda cls: cls,
         where=lambda sources: (
-            (sources.biz_class.parent_id == sources[0].parent_id) &
-            (sources.biz_class.position == sources[0].position - 1)
+            (sources.resource_type.parent_id == sources[0].parent_id) &
+            (sources.resource_type.position == sources[0].position - 1)
         ),
         readonly=True,
     )
@@ -58,8 +58,8 @@ class RecursiveList(Resource):
     following = Relationship(
         join=lambda cls: cls,
         where=lambda sources: (
-            (sources.biz_class.parent_id == sources[0].parent_id) &
-            (sources.biz_class.position == sources[0].position + 1)
+            (sources.resource_type.parent_id == sources[0].parent_id) &
+            (sources.resource_type.position == sources[0].position + 1)
         ),
         readonly=True,
     )

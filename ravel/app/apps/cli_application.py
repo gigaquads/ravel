@@ -125,14 +125,14 @@ class CliCommand(Endpoint):
         super().__init__(func, decorator)
         self.program_name = None
         self.subparser_kwargs = None
-        self.subparser_class = None
+        self.subparser_type = None
         self.subparser = None
 
     def on_bootstrap(self):
         self.program_name = self.decorator.kwargs.get('name', self.name)
         self.subparser_kwargs = self._build_subparser_kwargs(func)
-        self.subparser_class = self.decorator.kwargs.get('subparser', Subparser)
-        self.subparser = subparser_class(**self.subparser_kwargs)
+        self.subparser_type = self.decorator.kwargs.get('subparser', Subparser)
+        self.subparser = subparser_type(**self.subparser_kwargs)
 
     def _build_subparser_kwargs(self, func):
         parser_kwargs = self.decorator.kwargs.get('parser') or {}
@@ -161,7 +161,7 @@ class CliCommand(Endpoint):
                 continue
 
             arg = None
-            arg_class = None
+            arg_type = None
             if param.annotation is inspect._empty:
                 dtype = None
             else:
@@ -173,19 +173,19 @@ class CliCommand(Endpoint):
 
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
-                    arg_class = PositionalArg
+                    arg_type = PositionalArg
                 else:
-                    arg_class = OptionalArg
+                    arg_type = OptionalArg
             elif param.kind == inspect.Parameter.POSITIONAL_ONLY:
-                arg_class = PositionalArg
+                arg_type = PositionalArg
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
-                arg_class = OptionalArg
+                arg_type = OptionalArg
             if 'List' in str(dtype):
-                arg_class = ListArg
+                arg_type = ListArg
             elif 'bool' in str(dtype):
-                arg_class = FlagArg
-            if arg_class:
-                arg = arg_class(**arg_params)
+                arg_type = FlagArg
+            if arg_type:
+                arg = arg_type(**arg_params)
             if arg is not None:
                 args.append(arg)
 

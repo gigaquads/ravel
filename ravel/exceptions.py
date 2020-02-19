@@ -1,7 +1,7 @@
 import traceback
 
 
-class PybizError(Exception):
+class RavelError(Exception):
     def __init__(
         self,
         message: str,
@@ -24,29 +24,29 @@ class PybizError(Exception):
         }
 
 
-class RelationshipError(PybizError):
+class RelationshipError(RavelError):
     pass
 
 
-class NotFound(PybizError):
+class NotFound(RavelError):
     pass
 
 
-class NotAuthorized(PybizError):
+class NotAuthorized(RavelError):
     pass
 
 
-class ManifestError(PybizError):
+class ManifestError(RavelError):
     pass
 
 
-class ValidationError(PybizError):
+class ValidationError(RavelError):
     pass
 
 
-class RelationshipArgumentError(PybizError):
+class RelationshipArgumentError(RavelError):
     pass
 
 
-class ResourceError(PybizError):
+class ResourceError(RavelError):
     pass

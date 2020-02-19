@@ -43,7 +43,7 @@ def is_batch_type(obj):
     )
 
 
-def repr_biz_id(resource: 'Resource') -> Text:
+def repr_res_id(resource: 'Resource') -> Text:
     """
     Return a string version of a Resource ID.
     """

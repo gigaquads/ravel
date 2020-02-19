@@ -62,7 +62,7 @@ class Repl(Application):
 
         local_ns.update(self._namespace)
         local_ns.update(self.api)
-        local_ns.update(self.biz)
+        local_ns.update(self.res)
         local_ns.update(self.dal)
 
         # enter an ipython shell

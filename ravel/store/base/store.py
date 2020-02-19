@@ -9,13 +9,13 @@ from appyratus.env import Environment
 from appyratus.schema.fields import UuidString
 
 from ravel.util.loggers import console
-from ravel.exceptions import PybizError
+from ravel.exceptions import RavelError
 from ravel.constants import ID_FIELD_NAME
 
 from .store_history import StoreHistory, StoreEvent
 
 
-class StoreError(PybizError):
+class StoreError(RavelError):
     pass
 
 
@@ -27,9 +27,9 @@ class StoreMeta(ABCMeta):
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
 
-        def callback(scanner, name, store_class):
-            scanner.store_classes.setdefault(name, store_class)
-            console.info(f'venusian scan found "{store_class.__name__}" Store')
+        def callback(scanner, name, store_type):
+            scanner.store_types.setdefault(name, store_type)
+            console.info(f'venusian scan found "{store_type.__name__}" Store')
 
         venusian.attach(cls, callback, category='store')
 
@@ -42,13 +42,13 @@ class Store(object, metaclass=StoreMeta):
     def __init__(self, *args, **kwargs):
         self._history = StoreHistory(store=self)
         self._is_bound = False
-        self._biz_class = None
+        self._resource_type = None
 
     def __repr__(self):
         if self.is_bound:
             return (
                 f'<{self.__class__.__name__}'
-                f'(biz_class={self.biz_class.__name__})>'
+                f'(resource_type={self.resource_type.__name__})>'
             )
         else:
             return (f'<{self.__class__.__name__}>')
@@ -80,8 +80,8 @@ class Store(object, metaclass=StoreMeta):
         # finally faise the exception if one was generated
         if exc is not None:
             data = {'method': method_name, 'args': args, 'kwargs': kwargs}
-            if not isinstance(exc, PybizError):
-                raise PybizError(data=data, wrapped_exception=exc)
+            if not isinstance(exc, RavelError):
+                raise RavelError(data=data, wrapped_exception=exc)
             else:
                 exc.data.update(data)
                 raise exc
@@ -93,8 +93,8 @@ class Store(object, metaclass=StoreMeta):
         return self._is_bound
 
     @property
-    def biz_class(self) -> Type['Resource']:
-        return self._biz_class
+    def resource_type(self) -> Type['Resource']:
+        return self._resource_type
 
     @property
     def app(self) -> 'Application':
@@ -115,9 +115,9 @@ class Store(object, metaclass=StoreMeta):
                 results.append(result)
         return results
 
-    def bind(self, biz_class: Type['Resource'], **kwargs):
-        self._biz_class = biz_class
-        self.on_bind(biz_class, **kwargs)
+    def bind(self, resource_type: Type['Resource'], **kwargs):
+        self._resource_type = resource_type
+        self.on_bind(resource_type, **kwargs)
         self._is_bound = True
 
     @classmethod
@@ -139,7 +139,7 @@ class Store(object, metaclass=StoreMeta):
     def on_bootstrap(cls, **kwargs):
         pass
 
-    def on_bind(cls, biz_class: Type['Resource'], **kwargs):
+    def on_bind(cls, resource_type: Type['Resource'], **kwargs):
         pass
 
     @classmethod
@@ -152,7 +152,7 @@ class Store(object, metaclass=StoreMeta):
         """
         new_id = record.get(ID_FIELD_NAME)
         if new_id is None:
-            new_id = self.biz_class.ravel.defaults[ID_FIELD_NAME]()
+            new_id = self.resource_type.ravel.defaults[ID_FIELD_NAME]()
 
         # NOTE: if new_id is still None at this point, it's assumed that
         # the persistence technology will generate and return it instead.

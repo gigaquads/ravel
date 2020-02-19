@@ -116,7 +116,7 @@ class Grpc(Application):
         self.grpc.pb2_grpc = import_module(pb2_grpc_mod_path, pkg_path)
 
         # build a lookup table of protobuf response Message types
-        self.grpc.response_classes = {
+        self.grpc.response_types = {
             endpoint: getattr(
                 self.grpc.pb2, f'{StringUtils.camel(endpoint.name)}Response'
             )
@@ -150,8 +150,8 @@ class Grpc(Application):
         Map the return dict from the endpoint to the expected outgoing protobuf
         response Message object.
         """
-        response_class = self.grpc.response_classes[endpoint]
-        response = response_class()
+        response_type = self.grpc.response_types[endpoint]
+        response = response_type()
 
         if result:
             schema = endpoint.response_schema
@@ -213,19 +213,19 @@ class Grpc(Application):
         objects as its interface implementation.
         """
         servicer_type_name = 'GrpcApplicationServicer'
-        abstract_class = None
+        abstract_type = None
 
         # get a reference to the grpc abstract base Servicer  class
         for k, v in inspect.getmembers(self.grpc.pb2_grpc):
             if k == servicer_type_name:
-                abstract_class = v
+                abstract_type = v
                 break
-        if abstract_class is None:
+        if abstract_type is None:
             raise Exception('could not find grpc Servicer class')
 
         # create dynamic Servicer subclass
         servicer = type(
-            servicer_type_name, (abstract_class, ), self.endpoints.copy()
+            servicer_type_name, (abstract_type, ), self.endpoints.copy()
         )()
 
         # register the Servicer with the server

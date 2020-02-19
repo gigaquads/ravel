@@ -51,7 +51,7 @@ class ResourceMeta(type):
 
         fields = cls._process_fields()
 
-        cls._build_schema_class(fields, bases)
+        cls._build_schema_type(fields, bases)
         cls.Batch = Batch.factory(cls)
 
         if not cls.ravel.is_abstract:
@@ -79,13 +79,13 @@ class ResourceMeta(type):
             console.info(f'venusian scan found "{resource_type.__name__}" Resource')
             scanner.resource_typees.setdefault(name, resource_type)
 
-        venusian.attach(resource_type, callback, category='biz')
+        venusian.attach(resource_type, callback, category='res')
 
     def _process_fields(cls):
         fields = {}
         for k, v in inspect.getmembers(cls):
             if isinstance(v, ResolverDecorator):
-                resolver_property = v.build_resolver_property(owner=cls, name=k)
+                resolver_property = v.build_property(owner=cls, name=k)
                 resolver = resolver_property.resolver
                 cls.ravel.resolvers.register(resolver_property.resolver)
                 setattr(cls, k, resolver_property)
@@ -109,17 +109,17 @@ class ResourceMeta(type):
             delattr(resource_type, ABSTRACT_MAGIC_METHOD)
         return is_abstract
 
-    def _build_schema_class(resource_type, fields, base_classes):
+    def _build_schema_type(resource_type, fields, base_types):
         fields = fields.copy()
         inherited_fields = {}
 
         # inherit fields and defaults from base Resource classes
-        for base_class in base_classes:
-            if is_resource_type(base_class):
-                inherited_fields.update(base_class.Schema.fields)
-                resource_type.ravel.defaults.update(base_class.ravel.defaults)
+        for base_type in base_types:
+            if is_resource_type(base_type):
+                inherited_fields.update(base_type.Schema.fields)
+                resource_type.ravel.defaults.update(base_type.ravel.defaults)
             else:
-                base_fields = resource_type._copy_fields_from_mixin(base_class)
+                base_fields = resource_type._copy_fields_from_mixin(base_type)
                 inherited_fields.update(base_fields)
 
         fields.update(inherited_fields)
@@ -502,11 +502,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             data = cls.ravel.store.fetch(_id)
             return cls(data=data).clean() if data else None
         else:
-            return cls.query(
-                select=select,
-                where=(cls._id == _id),
-                first=True
-            )
+            return cls.select(select).where(_id=_id).execute(first=True)
 
     @classmethod
     def get_many(
@@ -527,13 +523,17 @@ class Resource(Entity, metaclass=ResourceMeta):
             id_2_data = store.dispatch('fetch_many', (_ids, ))
             return cls.Batch(cls(data=data) for data in id_2_data.values())
         else:
-            return cls.query(
-                select=select,
-                where=cls._id.including(_ids),
-                order_by=order_by,
-                offset=offset,
-                limit=limit,
-            )
+            return cls.select(
+                select
+            ).where(
+                cls._id.including(_ids)
+            ).order_by(
+                order_by
+            ).offset(
+                offset
+            ).limit(
+                limit
+            ).execute()
 
     @classmethod
     def get_all(
@@ -722,9 +722,11 @@ class Resource(Entity, metaclass=ResourceMeta):
             store = cls.ravel.store
             updated_records = store.dispatch('update_many', (_ids, records))
 
-            for resource, record in zip(resource_partition, updated_records):
-                resource.internal.state.update(record)
-                resource.clean()
+            for resource in resource_partition:
+                record = updated_records.get(resource._id)
+                if record:
+                    resource.internal.state.update(record)
+                    resource.clean()
 
         return cls.Batch(resources)
 

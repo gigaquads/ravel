@@ -56,11 +56,11 @@ class FalconService(AbstractWsgiService):
         return []
 
     @property
-    def request_class(self):
+    def request_type(self):
         return self.Request
 
     @property
-    def response_class(self):
+    def response_type(self):
         return self.Response
 
     @staticmethod
@@ -81,8 +81,8 @@ class FalconService(AbstractWsgiService):
 
         falcon_app = falcon.API(
             middleware=middleware,
-            request_type=self.request_class,
-            response_type=self.response_class,
+            request_type=self.request_type,
+            response_type=self.response_type,
         )
         falcon_app.req_options = self.Request.Options()
         falcon_app.resp_options = self.Response.Options()

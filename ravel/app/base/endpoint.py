@@ -10,10 +10,10 @@ from appyratus.utils import TimeUtils
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name, get_callable_name
 
-from ravel.exceptions import PybizError
+from ravel.exceptions import RavelError
 
 
-class EndpointError(PybizError):
+class EndpointError(RavelError):
     """
     An `Error` simply keeps a record of an Exception that occurs and the
     middleware object which raised it, provided there was one. This is used
@@ -25,7 +25,7 @@ class EndpointError(PybizError):
         self.middleware = middleware
         self.timestamp = TimeUtils.utc_now()
         self.exc = exc
-        if isinstance(exc, PybizError) and exc.wrapped_traceback:
+        if isinstance(exc, RavelError) and exc.wrapped_traceback:
             self.trace = self.exc.wrapped_traceback.strip().split('\n')[1:]
             self.exc_message = self.trace.pop().split(': ', 1)[1]
         else:
@@ -39,7 +39,7 @@ class EndpointError(PybizError):
             'traceback': self.trace,
         }
 
-        if isinstance(self.exc, PybizError):
+        if isinstance(self.exc, RavelError):
             if not self.exc.wrapped_exception:
                 data['exception'] = get_class_name(self.exc)
             else:
@@ -52,13 +52,13 @@ class EndpointError(PybizError):
         if self.middleware is not None:
             data['middleware'] = get_class_name(self.middleware)
 
-        if isinstance(self.exc, PybizError):
+        if isinstance(self.exc, RavelError):
             data.update(self.exc.data)
 
         return data
 
 
-class BadRequest(PybizError):
+class BadRequest(RavelError):
     """
     If any exceptions are raised during the execution of Middleware or an
     endpoint callable itself, we raise BadRequest.
@@ -187,6 +187,9 @@ class Endpoint(object):
     def on_bootstrap(self):
         pass
 
+    def on_call(self, args, kwargs):
+        return self._target(*args, **kwargs)
+
     def _apply_middleware_pre_request(self, state):
         error = None
         for mware in self.app.middleware:
@@ -247,8 +250,9 @@ class Endpoint(object):
     def _apply_target_callable(self, state):
         try:
             error = None
-            state.raw_result = self._target(
-                *state.processed_args, **state.processed_kwargs
+            state.raw_result = self.on_call(
+                state.processed_args,
+                state.processed_kwargs
             )
         except Exception as exc:
             error = Endpoint.Error(exc)

@@ -3,14 +3,14 @@ from typing import Dict, Text, Callable
 from appyratus.enum import Enum
 
 from ravel.util.misc_functions import get_class_name
-from ravel.exceptions import PybizError
+from ravel.exceptions import RavelError
 
 from .argument_specification import ArgumentSpecification
 
 OP_CODE = Enum(AND='AND', OR='OR', NOT='NOT')
 
 
-class GuardFailure(PybizError):
+class GuardFailure(RavelError):
     def __init__(self, guard, message=None, *args, **kwargs):
         super().__init__(message or 'guard failed', *args, **kwargs)
         self.guard = guard
