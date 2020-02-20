@@ -1,4 +1,7 @@
+import time
+
 import venusian
+import base36
 
 from threading import local
 from collections import defaultdict
@@ -97,6 +100,12 @@ class Store(object, metaclass=StoreMeta):
         return self._resource_type
 
     @property
+    def schema(self) -> 'Schema':
+        if self._resource_type is not None:
+            return self._resource_type.ravel.schema
+        return None
+
+    @property
     def app(self) -> 'Application':
         return self._app
 
@@ -180,6 +189,17 @@ class Store(object, metaclass=StoreMeta):
         # the persistence technology will generate and return it instead.
 
         return new_id
+
+    def increment_rev(self, rev: Text = None) -> Text:
+        time_ms = int(1000000 * time.time())
+
+        if rev:
+            rev_no = int(rev.split('-')[1]) + 1
+        else:
+            rev_no = 1
+
+        return f'{base36.dumps(time_ms)}-{base36.dumps(rev_no)}'
+
 
     @abstractmethod
     def exists(self, _id) -> bool:

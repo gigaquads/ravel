@@ -1,4 +1,4 @@
-import os
+import shutil
 
 from ravel.test.crud import *
 from ravel.store import SimulationStore, FilesystemStore
@@ -17,7 +17,7 @@ class TestResourceCrudWithFilesystemStore(ResourceCrudTestSuite):
         root_dir = '/tmp/ravel-filesystem-store-crud-tests'
 
         try:
-            os.removedirs(root_dir)
+            shutil.rmtree(root_dir, ignore_errors=True)
         except FileNotFoundError:
             pass
         except OSError as err:

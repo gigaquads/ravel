@@ -94,9 +94,13 @@ class FilesystemStore(Store):
         )
         os.makedirs(self.paths.records, exist_ok=True)
 
+        # bootstrap, bind, and backfill the in-memory cache
         self._cache_store.bootstrap(resource_type.ravel.app)
         self._cache_store.bind(resource_type)
-        self._cache_store.create_many(self.fetch_all(ignore_cache=True).values())
+        self._cache_store.create_many(
+            record for record in self.fetch_all(ignore_cache=True).values()
+            if record
+        )
 
     def create_id(self, record):
         return record.get(ID_FIELD_NAME, UuidString.next_id())
@@ -130,42 +134,77 @@ class FilesystemStore(Store):
         record = records.get(_id) if records else {}
         return record
 
-    def fetch_many(self, _ids: List, fields: List = None, ignore_cache=False) -> Dict:
+    def fetch_many(
+        self,
+        _ids: List = None,
+        fields: Set[Text] = None,
+        ignore_cache=False
+    ) -> Dict:
+        """
+        """
         if not _ids:
-            _ids = self._fetch_all_ids()
+            return {}
 
-        _ids = set(_ids)
+        # reduce _ids to its unique members by making it a set
+        if not isinstance(_ids, set):
+            all_ids = set(_ids)
+        else:
+            all_ids = _ids
 
+        ids_to_fetch_from_fs = set()
+
+        # if we're using the cache, read from it here
         if not ignore_cache:
-            cached_records = self._cache_store.fetch_many(_ids, fields=fields)
-            if cached_records:
-                _ids -= {
-                    k for k, v in cached_records.items()
-                    if v is not None
-                }
+            cached_records = self._cache_store.fetch_many(
+                all_ids, fields=fields
+            )
+            for record_id, record in cached_records.items():
+                if record is None:
+                    ids_to_fetch_from_fs.add(record_id)
         else:
             cached_records = {}
 
-        fields = fields if isinstance(fields, set) else set(fields or [])
-        if not fields:
-            fields = set(self.resource_type.Schema.fields.keys())
-        fields |= {ID_FIELD_NAME, REV_FIELD_NAME}
+        # if there are any remaining ID's not returned from cache,
+        # fetch them from file system
+        if ids_to_fetch_from_fs:
 
-        records = {}
-        for _id in _ids:
-            fpath = self.mkpath(_id)
-            record = self.ftype.read(fpath)
-            record, errors = self.resource_type.ravel.schema.process(record)
-            if record:
-                record.setdefault(ID_FIELD_NAME, _id)
-                record[REV_FIELD_NAME] = record.setdefault(REV_FIELD_NAME, '0')
-                records[_id] = {k: record.get(k) for k in fields}
-            else:
-                records[ID_FIELD_NAME] = None
+            # prepare the set of field names to fetch
+            fields = fields if isinstance(fields, set) else set(fields or [])
+            if not fields:
+                fields = set(self.resource_type.Schema.fields.keys())
+            fields |= {ID_FIELD_NAME, REV_FIELD_NAME}
 
-        self._cache_store.create_many(records.values())
-        cached_records.update(records)
-        return records
+            records = {}
+            non_null_records = []
+
+            for _id in ids_to_fetch_from_fs:
+                fpath = self.mkpath(_id)
+                record = self.ftype.read(fpath)
+
+                if record:
+                    record, errors = self.schema.process(record)
+                    if errors:
+                        raise Exception(
+                            f'validation error while loading '
+                            f'{_id}.{self.extension}'
+                        )
+                    record.setdefault(ID_FIELD_NAME, _id)
+                    records[_id] = {k: record.get(k) for k in fields}
+
+                    non_null_records.append(record)
+
+                    # if for some reason a file was created manually
+                    # with a _rev, we create one here and save it
+                    if REV_FIELD_NAME not in record:
+                        record[REV_FIELD_NAME] = self.increment_rev()
+                        self.update(_id, record)
+                else:
+                    records[ID_FIELD_NAME] = None
+
+            self._cache_store.create_many(non_null_records)
+            cached_records.update(records)
+
+        return cached_records
 
     def fetch_all(self, fields: Set[Text] = None, ignore_cache=False) -> Dict:
         return self.fetch_many(None, fields=fields, ignore_cache=ignore_cache)
@@ -183,10 +222,7 @@ class FilesystemStore(Store):
         if ID_FIELD_NAME not in record:
             record[ID_FIELD_NAME] = _id
 
-        if REV_FIELD_NAME not in record:
-            record[REV_FIELD_NAME] = '0'
-        else:
-            pass # TODO: implement a rev system
+        record[REV_FIELD_NAME] = self.increment_rev(record.get(REV_FIELD_NAME))
 
         self._cache_store.update(_id, record)
         self.ftype.write(path=fpath, data=record)
@@ -201,7 +237,7 @@ class FilesystemStore(Store):
     def delete(self, _id) -> None:
         self._cache_store.delete(_id)
         fpath = self.mkpath(_id)
-        os.unlink(fpath)
+        os.remove(fpath)
 
     def delete_many(self, _ids: List) -> None:
         for _id in _ids:

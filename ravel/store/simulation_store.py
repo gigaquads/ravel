@@ -1,7 +1,6 @@
 import bisect
 import time
 
-import base36
 import numpy as np
 import BTrees.OOBTree
 
@@ -41,16 +40,6 @@ class SimulationStore(Store):
         for k, field in resource_type.ravel.schema.fields.items():
             if field.scalar and (type(field) is not Field):
                 self.indexes[k] = BTree()
-
-    def increment_rev(self, rev: Text = None) -> Text:
-        time_ms = int(1000000 * time.time())
-
-        if rev:
-            rev_no = int(rev.split('-')[1]) + 1
-        else:
-            rev_no = 1
-
-        return f'{base36.dumps(time_ms)}-{base36.dumps(rev_no)}'
 
     def reset(self):
         """

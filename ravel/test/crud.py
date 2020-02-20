@@ -56,9 +56,9 @@ class ResourceCrudTestSuite:
 
     @classmethod
     def bind(cls, resource_type: Type[Resource]):
-        store = cls.build_store(resource_type.ravel.app)
-        cls.bind_store(resource_type, store)
-        resource_type.ravel.store = store
+        cls.store = cls.build_store(resource_type.ravel.app)
+        cls.bind_store(resource_type, cls.store)
+        resource_type.ravel.store = cls.store
 
     def test_create(self, Thing, random_things):
         self.bind(Thing)
