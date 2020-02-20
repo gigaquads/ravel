@@ -13,8 +13,8 @@ def test_factory_method(BasicResource, BasicBatch, basic_batch):
     assert BasicBatch.ravel.owner is BasicResource
     assert BasicBatch.ravel.indexed_field_types \
             == BasicBatch.get_indexed_field_types()
-    assert BasicBatch.ravel.resolver_properties
-    assert len(BasicBatch.ravel.resolver_properties) == len({
+    assert BasicBatch.ravel.properties
+    assert len(BasicBatch.ravel.properties) == len({
         resolver for resolver in BasicResource.ravel.resolvers.fields.values()
         if isinstance(resolver.field, BasicBatch.get_indexed_field_types())
     })
@@ -46,7 +46,7 @@ def test_insert(basic_resource, basic_batch):
 
     assert len(basic_batch) == 1
     assert basic_batch.internal.resources[0] is basic_resource
-    for k in basic_batch.ravel.resolver_properties:
+    for k in basic_batch.ravel.properties:
         v = basic_resource[k]
         assert basic_batch.internal.indexes[k][v] == {basic_resource}
 

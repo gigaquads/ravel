@@ -27,12 +27,14 @@ class StoreEvent(object):
         exc: Exception = None,
     ):
         self.method = method
-        self.args = args or tuple()
+        self.args = list(args) if args else []
         self.kwargs = kwargs or {}
         self.result = result
         self.timestamp = TimeUtils.utc_now()
         self.exc = exc
 
+        # fix up create and create_many args and kwargs.
+        # see the doc string for _backfill_id_fields.
         if (exc is None) and (method in {'create', 'create_many'}):
             self._backfill_id_fields(result)
 
@@ -42,6 +44,12 @@ class StoreEvent(object):
         )
 
     def _backfill_id_fields(self, result):
+        """
+        If we ever replay this history, we don't want to inadvertantly trigger
+        the generation of new resource ID's in the store we're replaying it in.
+        To prevent this, we inject the generated ID's from the return values of
+        these methods into the args and kwargs that were originally passed in.
+        """
         if self.method == 'create':
             self.args[0][ID_FIELD_NAME] = result.get(ID_FIELD_NAME)
         elif self.method == 'create_many':

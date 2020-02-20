@@ -4,7 +4,8 @@ from .schema import *
 
 from ravel.manifest import Manifest
 from ravel.logging import ConsoleLoggerInterface
-from ravel.store import Store
+from ravel.store.base.store import Store
+from ravel.store.base.store_history import StoreEvent, StoreHistory
 from ravel.api import Api
 from ravel.app.base import (
     Application,

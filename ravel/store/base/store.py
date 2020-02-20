@@ -104,15 +104,36 @@ class Store(object, metaclass=StoreMeta):
     def history(self) -> 'StoreHistory':
         return self._history
 
-    def play(self, history: StoreHistory, reads=True, writes=True) -> List:
-        results = []
+    def replay(
+        self,
+        history: StoreHistory = None,
+        reads=True,
+        writes=True
+    ) -> Dict[StoreEvent, object]:
+        """
+        Replay events (interface calls) from this or another store's history,
+        returning an ordered mapping from the event object to the return value
+        of the corresponding store method.
+
+        Args:
+        - `history`: the history to replay in this store.
+        - `reads`: replay "read" events, like query, get, get_many.
+        - `writes`: replay "write" events, like create, update, etc.
+        """
+        results = OrderedDict()
+
+        # use this store's own history if none specified
+        if history is None:
+            history = self.history
+
         for event in history:
             is_read = event.method in self.history.read_method_names
             is_write = event.method in self.history.write_method_names
             if (is_read and reads) or (is_write and writes):
                 func = getattr(self, event.method)
                 result = func(*event.args, **event.kwargs)
-                results.append(result)
+                results[event] = result
+
         return results
 
     def bind(self, resource_type: Type['Resource'], **kwargs):
@@ -134,6 +155,7 @@ class Store(object, metaclass=StoreMeta):
             StoreMeta._local.is_bootstrapped = defaultdict(bool)
 
         StoreMeta._local.is_bootstrapped[cls.__name__] = True
+        return cls
 
     @classmethod
     def on_bootstrap(cls, **kwargs):

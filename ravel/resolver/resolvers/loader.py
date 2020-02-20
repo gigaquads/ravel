@@ -112,20 +112,16 @@ class LoaderProperty(ResolverProperty):
     def fset(self, owner: 'Resource', value):
         field = self.resolver.field
         if value is None:
-            if field.nullable:
-                processed_value = None
-                return
-            else:
-                default_func = owner.ravel.defaults.get(field.name)
-                if default_func is not None:
-                    value = default_func()
+            super().fset(owner, None)
+            return
 
         processed_value, errors = field.process(value)
         if errors:
             console.error(
-                message=f'validation error while setting {self}',
+                message=f'cannot set {self}',
                 data={
-                    'value': str(value)
+                    'value': str(value),
+                    'errors': errors,
                 }
             )
             raise Exception(str(errors))

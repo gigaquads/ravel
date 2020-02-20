@@ -1,11 +1,40 @@
+from appyratus.utils import TimeUtils
+
 import ravel
 
-from appyratus.utils import TimeUtils
-from appyratus.schema import fields
+from ravel import (
+    Application, Resource, String, Int, Email, Id,
+    relationship
+)
 
-startrek = ravel.Application()
+
+facebook = ravel.Application()
 
 
+class User(Resource):
+    email = Email(required=True)
+    created_at = DateTime(required=True, default=True)
+
+    @relationship(
+        join=lambda: [
+            (User._id, UserFriend.owner_user_id),
+            (UserFriend.befriended_user_id, User._id)
+        ],
+        many=True
+    )
+    def friends(self, request):
+        return request.result
+
+
+class UserFriend(Resource):
+    owner_user_id = Id(lambda: User, required=True)
+    befriended_user_id = Id(lambda: User, required=True)
+
+
+
+
+
+'''
 class Officer(ravel.Resource):
     first_name = ravel.String()
     rank = ravel.String(default='recruit')
@@ -75,3 +104,4 @@ def get_officer(officer: Officer) -> Officer:
 @startrek()
 def get_ship(ship: Ship = None) -> Ship:
     return ship
+'''

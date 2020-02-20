@@ -1,5 +1,6 @@
 from typing import Text, Tuple, List, Set, Dict, Type, Union
 from collections import defaultdict, deque
+from itertools import islice
 
 from appyratus.utils import DictObject
 from BTrees.OOBTree import BTree
@@ -27,7 +28,7 @@ from ravel.entity import Entity
 class Batch(Entity):
 
     ravel = DictObject()
-    ravel.resolver_properties = {}
+    ravel.properties = {}
     ravel.owner = None
 
     def __init__(self, resources: List = None, indexed=True):
@@ -37,7 +38,7 @@ class Batch(Entity):
         self.internal.indexes = defaultdict(BTree)
         if indexed:
             self.internal.indexes.update({
-                k: BTree() for k in self.ravel.resolver_properties
+                k: BTree() for k in self.ravel.properties
             })
 
     def __len__(self):
@@ -50,7 +51,16 @@ class Batch(Entity):
         return iter(self.internal.resources)
 
     def __getitem__(self, index):
-        return self.internal.resources[index]
+        if isinstance(index, slice):
+            return type(self)(
+                islice(
+                    self.internal.resources,
+                    index.start, index.stop, index.step
+                )
+            )
+        else:
+            assert isinstance(index, int)
+            return self.internal.resources[index]
 
     def __setitem__(self, index, resource):
         owner = self.ravel.owner
@@ -95,15 +105,15 @@ class Batch(Entity):
 
         ravel.owner = owner
         ravel.indexed_field_types = cls.get_indexed_field_types()
-        ravel.resolver_properties = {}
+        ravel.properties = {}
 
-        ravel.resolver_properties = {}
+        ravel.properties = {}
         for k, resolver in owner.ravel.resolvers.fields.items():
             if isinstance(resolver.field, ravel.indexed_field_types):
-                ravel.resolver_properties[k] = BatchResolverProperty(resolver)
+                ravel.properties[k] = BatchResolverProperty(resolver)
 
         derived_batch_type = type(type_name, (cls, ), dict(
-            ravel=ravel, **ravel.resolver_properties
+            ravel=ravel, **ravel.properties
         ))
 
         setattr(derived_batch_type, IS_BATCH_ATTRIBUTE, True)

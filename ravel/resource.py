@@ -142,6 +142,8 @@ class ResourceMeta(type):
         assert ID_FIELD_NAME in fields
         assert REV_FIELD_NAME in fields
 
+        fields[ID_FIELD_NAME].nullable = False
+
         # build new Schema subclass with aggregated fields
         class_name = f'{resource_type.__name__}Schema'
         resource_type.Schema = type(class_name, (Schema, ), fields)
@@ -174,7 +176,7 @@ class ResourceMeta(type):
 
 class Resource(Entity, metaclass=ResourceMeta):
 
-    _id = UuidString(default=lambda: uuid.uuid4().hex)
+    _id = UuidString(default=lambda: uuid.uuid4().hex, nullable=False)
     _rev = String()
 
     def __init__(self, state=None, **more_state):
@@ -295,7 +297,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             if k not in {REV_FIELD_NAME}
         )
 
-        instance = cls(_rev='0')
+        instance = cls()
 
         for resolver in resolver_objs:
             if resolver.name in values:
@@ -367,7 +369,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         """
         Create a clone of this Resource
         """
-        clone = type(self)(data=deepcopy(self.internal.state))
+        clone = type(self)(state=deepcopy(self.internal.state))
         return clone.clean()
 
     def load(self, resolvers: Set[Text] = None) -> 'Resource':
@@ -495,14 +497,22 @@ class Resource(Entity, metaclass=ResourceMeta):
         return self.clean()
 
     @classmethod
-    def get(cls, _id, select=None) -> 'Resource':
+    def get(cls, _id, select=None) -> Union['Resource', 'Batch']:
         if _id is None:
             return None
+
+        if is_sequence(_id):
+            return self.get_many(_ids=_id, select=select)
+
         if not select:
-            data = cls.ravel.store.fetch(_id)
-            return cls(data=data).clean() if data else None
-        else:
-            return cls.select(select).where(_id=_id).execute(first=True)
+            select = set(cls.ravel.schema.fields.keys())
+        elif not isinstance(select, set):
+            select = set(select)
+
+        select |= {ID_FIELD_NAME, REV_FIELD_NAME}
+
+        state = cls.ravel.store.fetch(_id, fields=select)
+        return cls(state=state).clean() if state else None
 
     @classmethod
     def get_many(
@@ -518,22 +528,27 @@ class Resource(Entity, metaclass=ResourceMeta):
         """
         if not _ids:
             return cls.Batch()
-        if not (select or offset or limit or order_by):
+
+        if not select:
+            select = set(cls.ravel.schema.fields)
+        elif isinstance(select, set):
+            select = set(select)
+
+        select |= {ID_FIELD_NAME, REV_FIELD_NAME}
+
+        if not (offset or limit or order_by):
             store = cls.ravel.store
-            id_2_data = store.dispatch('fetch_many', (_ids, ))
-            return cls.Batch(cls(data=data) for data in id_2_data.values())
+            args = (_ids, )
+            kwargs = {'fields': select}
+            states = store.dispatch('fetch_many', args, kwargs).values()
+            return cls.Batch(
+                cls(state=state).clean() for state in states
+                if state is not None
+            )
         else:
-            return cls.select(
-                select
-            ).where(
-                cls._id.including(_ids)
-            ).order_by(
-                order_by
-            ).offset(
-                offset
-            ).limit(
-                limit
-            ).execute()
+            query = cls.select(select).where(cls._id.including(_ids))
+            query = query.order_by(order_by).offset(offset).limit(limit)
+            return query.execute()
 
     @classmethod
     def get_all(
@@ -561,17 +576,19 @@ class Resource(Entity, metaclass=ResourceMeta):
         self.store.dispatch('delete', (self._id, ))
         self.mark(self.internal.state.keys())
         self._id = None
+        self._rev = None
         return self
 
     @classmethod
-    def delete_many(cls, resources) -> None:
+    def delete_many(cls, resources: List['Resource']) -> None:
         # extract ID's of all objects to delete and clear
         # them from the instance objects' state dicts
         resource_ids = []
-        for obj in resources:
-            obj.mark(obj.internal.state.keys())
-            resource_ids.append(obj._id)
-            obj._id = None
+        for resource in resources:
+            resource.mark()
+            resource_ids.append(resource._id)
+            resource._id = None
+            resource._rev = None
 
         # delete the records in the DAL
         store = cls.ravel.store
@@ -582,13 +599,49 @@ class Resource(Entity, metaclass=ResourceMeta):
         store = cls.ravel.store
         store.dispatch('delete_all')
 
-    def exists(self) -> bool:
+    @classmethod
+    def exists(cls, entity: 'Entity') -> bool:
         """
         Does a simple check if a Resource exists by id.
         """
-        if self._id is not None:
-            return self.store.dispatch('exists', args=(self._id, ))
-        return False
+        store = cls.ravel.store
+
+        if not entity:
+            return False
+
+        if is_resource(entity):
+            args = (entity._id, )
+        else:
+            id_value, errors = cls._id.resolver.field.process(entity)
+            args = (id_value, )
+            if errors:
+                raise ValueError(str(errors))
+
+        return store.dispatch('exists', args=args)
+
+
+    @classmethod
+    def exists_many(cls, entity: 'Entity') -> bool:
+        """
+        Does a simple check if a Resource exists by id.
+        """
+        store = cls.ravel.store
+
+        if not entity:
+            return False
+
+        if is_batch(entity):
+            args = (entity._id, )
+        else:
+            assert is_sequence(entity)
+            id_list = entity
+            args = (id_list, )
+            for id_value in id_list:
+                value, errors = cls._id.resolver.field.process(id_value)
+                if errors:
+                    raise ValueError(str(errors))
+
+        return store.dispatch('exists_many', args=args)
 
     def save(self, depth=0):
         return self.save_many([self], depth=depth)[0]
@@ -651,7 +704,8 @@ class Resource(Entity, metaclass=ResourceMeta):
             if resource is None:
                 continue
             if isinstance(resource, dict):
-                resource = cls(data=resource)
+                state_dict = resource
+                resource = cls(state=state_dict)
 
             record = resource._prepare_record_for_create()
             records.append(record)
@@ -707,7 +761,9 @@ class Resource(Entity, metaclass=ResourceMeta):
                 continue
             if common_values:
                 resource.merge(common_values)
-            partitions[tuple(resource.dirty)].append(resource)
+
+            partition_key = tuple(resource.dirty.keys())
+            partitions[partition_key].append(resource)
 
         for resource_partition in partitions.values():
             records, _ids = [], []

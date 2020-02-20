@@ -80,49 +80,6 @@ def test_custom_resolver(ResourceWithResolvers, BasicResource):
     assert res._id == res._id
 
 
-def test_create(BasicResource):
-    res = BasicResource(required_str_field='x', int_field=1).create()
-    assert isinstance(res._id, str)
-    assert 'required_str_field' in res.internal.state
-    assert 'int_field' in res.internal.state
-    assert ID_FIELD_NAME in res.internal.state
-    assert REV_FIELD_NAME in res.internal.state
-    assert res.required_str_field == 'x'
-    assert res.int_field == 1
-    assert not res.dirty
-
-
-def test_update(basic_resource):
-    old_value = basic_resource.required_str_field
-    new_value = uuid.uuid4().hex
-    basic_resource.required_str_field = new_value
-    basic_resource.update()
-
-    assert basic_resource.required_str_field == new_value
-    assert not basic_resource.dirty
-
-
-def test_update_with_data(basic_resource):
-    old_value = basic_resource.required_str_field
-    new_value = uuid.uuid4().hex
-    basic_resource.update(required_str_field=new_value)
-    assert basic_resource.required_str_field == new_value
-    assert not basic_resource.dirty
-
-
-def test_create_many(BasicResource):
-    resources = [BasicResource.generate() for i in range(5)]
-    BasicResource.create_many(resources)
-    assert all((not r.dirty) for r in resources)
-
-
-def test_update_many(BasicResource):
-    resources = [BasicResource.generate().create() for i in range(5)]
-    BasicResource.update_many(resources, required_str_field='new_value')
-    assert all((not r.dirty) for r in resources)
-    assert all((r.required_str_field == 'new_value') for r in resources)
-
-
 def test_simulates_fields(BasicResource):
     res = BasicResource.generate()
     for k, resolver in BasicResource.ravel.resolvers.fields.items():

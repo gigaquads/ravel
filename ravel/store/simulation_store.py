@@ -1,5 +1,7 @@
 import bisect
+import time
 
+import base36
 import numpy as np
 import BTrees.OOBTree
 
@@ -15,6 +17,7 @@ from appyratus.utils import DictUtils
 
 from ravel.schema import Schema, fields
 from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from ravel.util import union
 from ravel.query.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -34,34 +37,28 @@ class SimulationStore(Store):
         super().__init__()
         self.reset()
 
-    @classmethod
-    def on_bootstrap(cls):
-        pass
-
     def on_bind(self, resource_type: Type['Resource'], **kwargs):
-        """
-        This lifecycle method executes when Ravel instantiates a singleton
-        instance of this class and associates it with a specific Resource
-        class.
-        """
-        self.reset()
-        # because we do no currently index composite data strucures, like dicts
-        # and lists, we add the names of these fields on the bound Resource
-        # class to the list of "ignored" indexes.
-        for k, v in resource_type.Schema.fields.items():
-            if isinstance(v, (fields.Dict, fields.Nested, Schema)):
-                self.ignored_indexes.add(k)
+        for k, field in resource_type.ravel.schema.fields.items():
+            if field.scalar:
+                self.indexes[k] = BTree()
+
+    def increment_rev(self, rev: Text = None) -> Text:
+        time_ms = int(1000000 * time.time())
+
+        if rev:
+            rev_no = int(rev.split('-')[1]) + 1
+        else:
+            rev_no = 1
+
+        return f'{base36.dumps(time_ms)}-{base36.dumps(rev_no)}'
 
     def reset(self):
         """
         Reset all internal data structures.
         """
         self.lock = RLock()
-        self.indexes = defaultdict(BTree)
-        self.id_counter = 1
-        self.rev_counter = Counter()
+        self.indexes = {}
         self.records = {}
-        self.ignored_indexes = set()
 
     def exists(self, _id) -> bool:
         """
@@ -70,6 +67,13 @@ class SimulationStore(Store):
         with self.lock:
             return _id in self.records
 
+    def exists_many(self, _ids: List) -> Dict[object, bool]:
+        with self.lock:
+            return {
+                _id: (_id in self.records)
+                for _id in _ids
+            }
+
     def count(self) -> int:
         """
         Return the total number of objects in the store.
@@ -77,30 +81,34 @@ class SimulationStore(Store):
         with self.lock:
             return len(self.records)
 
-    def fetch(self, _id, fields=None) -> Dict:
+    def fetch(self, _id, fields: Set[Text] = None) -> Dict:
         """
         Return a single record.
         """
-        return self.fetch_many([_id], fields=fields)[_id]
+        return self.fetch_many([_id], fields=fields).get(_id)
 
     def fetch_many(self, _ids: List, fields=None) -> Dict:
         """
         Return multiple records in a _id-keyed dict.
         """
+        if not fields:
+            fields = set(self.resource_type.ravel.schema.fields)
+        elif not isinstance(fields, set):
+            fields = set(fields)
+
         with self.lock:
             records = {}
-            fields = set(fields or [])
 
             for _id in _ids:
-                # return a *copy* so as not to mutate the object in the store
+                # return a *copy* so as not to mutate dict in store
                 record = deepcopy(self.records.get(_id))
                 records[_id] = record
 
-                # remove and key not specified in "fields" arg
-                if record is not None and fields:
-                    record_keys = set(record.keys())
-                    for k in record_keys - fields:
-                        del record[k]
+                # remove keys not specified in "fields" argument
+                if fields and (record is not None):
+                        record_keys = set(record.keys())
+                        for k in record_keys - fields:
+                            del record[k]
 
             return records
 
@@ -118,18 +126,20 @@ class SimulationStore(Store):
         schema = self.resource_type.ravel.schema
 
         with self.lock:
-            record[ID_FIELD_NAME] = _id = self.create_id(record)
-            record[REV_FIELD_NAME] = self.rev_counter[_id]
 
-            # ensure that missing nullable fields are written to the store with
-            # a value of None.
+            record[ID_FIELD_NAME] = self.create_id(record)
+            record[REV_FIELD_NAME] = self.increment_rev()
+
+            # ensure missing nullable fields are written to store with
+            # a value of None for the sake of normalizing the data structure.
             for k in (schema.nullable_fields.keys() - record.keys()):
                 record[k] = None
 
-            self.rev_counter[_id] += 1
-            self.records[_id] = record
+            _id = record[ID_FIELD_NAME]
 
-            self._update_indexes(_id, record)
+            # insert the record and update indexes for its fields
+            self.records[_id] = record
+            self._index_upsert(_id, record)
 
         return deepcopy(record)
 
@@ -152,64 +162,62 @@ class SimulationStore(Store):
         """
         with self.lock:
             old_record = self.records.get(_id, {})
-            old_rev = self.rev_counter.get(_id, 0)
+            old_rev = old_record.get(REV_FIELD_NAME)
 
-            # remove the old copy of the object from the store,
-            # and then replace it.
+            # remove the old copy of the object from the store, and then replace
+            # it. we use `internal` in the call to delete to indicate that we
+            # are only deleting for the purpose of re-inserting during this
+            # update. this prevents the _rev index from being cleared.
             if old_record:
                 self.delete(
                     old_record[ID_FIELD_NAME],
-                    clear_rev=False,
-                    indexes_to_delete=set(data.keys()),
+                    index_names=set(data.keys()),
+                    internal=True,
                 )
 
             merged_record = DictUtils.merge(old_record, data)
-            merged_record[REV_FIELD_NAME] = old_rev + 1
+            merged_record[REV_FIELD_NAME] = self.increment_rev(old_rev)
 
             # "re-insert" the new copy of the record
             record = self.create(merged_record)
             return record
 
-    def update_many(self, _ids, data: Dict = None) -> Dict:
+    def update_many(self, _ids: Set, data: Dict = None) -> Dict:
         """
         Submit changes to multiple objects in the store.
         """
         with self.lock:
-            return [
-                self.update(_id=_id, data=values)
-                for _id, values in zip(_ids, data)
-            ]
+            return {
+                _id: self.update(_id=_id, data=x)
+                for _id, x in zip(_ids, data)
+            }
 
-    def delete(self, _id, clear_rev=True, indexes_to_delete=None) -> Dict:
+    def delete(self, _id, index_names: Set[Text] = None, internal=False):
         """
         Delete one record along with its field indexes.
         """
         with self.lock:
             record = self.records.get(_id)
-            self.records.pop(_id, None)
-            if clear_rev:
-                self.rev_counter.pop(_id, None)
             if record:
-                self._delete_from_indexes(_id, record, indexes_to_delete)
+                index_names = set(index_names or record.keys())
+                if internal:
+                    index_names.discard(REV_FIELD_NAME)
+                self._index_remove(_id, record, index_names)
+                del self.records[_id]
 
-            return record
-
-    def delete_many(self, _ids: List, clear_rev=True) -> List:
+    def delete_many(self, _ids: List, internal=False):
         """
         Delete multiple records along with their field indexes.
         """
-        _ids = list(_ids) if not isinstance(_ids, (list, tuple, set)) else _ids
         with self.lock:
-            return {
-                _id: self.delete(_id, clear_rev=clear_rev)
-                for _id in _ids
-            }
+            for _id in _ids:
+                self.delete(_id, internal=internal)
 
     def delete_all(self):
         """
         Delete all records along with their field indexes.
         """
-        return self.delete_many(self.records.keys())
+        self.delete_many(self.records.keys())
 
     def query(
         self,
@@ -222,13 +230,13 @@ class SimulationStore(Store):
     ) -> List:
         """
         """
-        records = []
-
         with self.lock:
-            _ids = self._compute_queried_ids(predicate)
-            records = list(self.fetch_many(_ids, fields=fields).values())
+            # compute set of ID's of records whose fields satisfy
+            # the given "where" predicate of the query
+            computed_ids = self._eval_predicate(predicate)
+            records = list(self.fetch_many(computed_ids, fields).values())
 
-            # post processing, like ordering and pagination
+            # order the records
             if order_by:
                 for order_by_spec in order_by:
                     records = sorted(
@@ -236,7 +244,7 @@ class SimulationStore(Store):
                         key=lambda x: x[order_by_spec.key],
                         reverse=order_by_spec.desc
                     )
-
+            # paginate after ordering
             if offset is not None:
                 if limit is not None:
                     records = records[offset:offset+limit]
@@ -245,40 +253,32 @@ class SimulationStore(Store):
             elif limit is not None:
                 records = records[:limit]
 
-        return records
+            return records
 
-    def _update_indexes(self, _id, record):
-        schema = self.resource_type.ravel.schema
+    def _index_upsert(self, _id, record):
         for k, v in record.items():
-            if k not in self.ignored_indexes:
-                if v not in self.indexes[k]:
-                    self.indexes[k][v] = set()
-                self.indexes[k][v].add(_id)
+            index = self.indexes.get(k)
+            if index is not None:
+                if v not in index:
+                    index[v] = set()
+                index[v].add(_id)
 
-    def _delete_from_indexes(self, _id, record, indexes_to_delete=None):
-        schema = self.resource_type.ravel.schema
-        indexes_to_delete = indexes_to_delete or set(record.keys())
-        for k in indexes_to_delete:
-            if k not in self.ignored_indexes:
+    def _index_remove(self, _id, record, index_names=None):
+        index_names = set(index_names or record.keys())
+        for k in index_names:
+            index = self.indexes.get(k)
+            if index is not None:
                 v = record[k]
-                self.indexes[k][v].remove(_id)
+                if v in index:
+                    index[v].remove(_id)
 
-    def _union(self, sequences):
-        if sequences:
-            if len(sequences) == 1:
-                return sequences[0]
-            else:
-                return set.union(*sequences)
-        else:
-            return set()
-
-    def _compute_queried_ids(self, predicate):
+    def _eval_predicate(self, predicate):
         if predicate is None:
             return self.records.keys()
 
         op = predicate.op
         empty = set()
-        _ids = set()
+        computed_ids = set()
 
         if isinstance(predicate, ConditionalPredicate):
             k = predicate.field.source
@@ -286,56 +286,73 @@ class SimulationStore(Store):
             index = self.indexes[k]
 
             if op == OP_CODE.EQ:
-                _ids = self.indexes[k].get(v, empty)
+                computed_ids = index.get(v, empty)
             elif op == OP_CODE.NEQ:
-                _ids = self._union([
-                    _id_set for v_idx, _id_set in index.items()
+                computed_ids = union([
+                    id_set for v_idx, id_set in index.items()
                     if v_idx != v
                 ])
             elif op == OP_CODE.INCLUDING:
+                # containment - we compute the union of all sets of ids whose
+                # corresponding records have the given values in the index
                 v = v if isinstance(v, set) else set(v)
-                _ids = self._union([index.get(k_idx, empty) for k_idx in v])
+                computed_ids = union([index.get(k_idx, empty) for k_idx in v])
+
             elif op == OP_CODE.EXCLUDING:
+                # the inverse of containment...
                 v = v if isinstance(v, set) else set(v)
-                _ids = self._union([
-                    _id_set for v_idx, _id_set in index.items()
+                computed_ids = union([
+                    id_set for v_idx, id_set in index.items()
                     if v_idx not in v
                 ])
             else:
+                # handle inequalities, computing limit and offset to form an
+                # interval with which we index the actual BTree
+
                 keys = np.array(index.keys(), dtype=object)
+
                 if op == OP_CODE.GEQ:
                     offset = bisect.bisect_left(keys, v)
                     interval = slice(offset, None, 1)
+
                 elif op == OP_CODE.GT:
                     offset = bisect.bisect(keys, v)
                     interval = slice(offset, None, 1)
+
                 elif op == OP_CODE.LT:
                     offset = bisect.bisect_left(keys, v)
                     interval = slice(0, offset, 1)
+
                 elif op == OP_CODE.LEQ:
                     offset = bisect.bisect(keys, v)
                     interval = slice(0, offset, 1)
                 else:
                     # XXX: raise StoreError
                     raise Exception('unrecognized op')
-                _ids = self._union([
-                    index[k] for k in keys[interval]
-                    if k is not None
+
+                computed_ids = union([
+                    index[k] for k in keys[interval] if k is not None
                 ])
+
         elif isinstance(predicate, BooleanPredicate):
+        # recursively compute and union child predicates,
+        # left-hand side (lhs) and right-hand side (rhs)
             lhs = predicate.lhs
             rhs = predicate.rhs
+
             if op == OP_CODE.AND:
-                lhs_result = self._compute_queried_ids(lhs)
+                lhs_result = self._eval_predicate(lhs)
                 if lhs_result:
-                    rhs_result = self._compute_queried_ids(rhs)
-                    _ids = set.intersection(lhs_result, rhs_result)
+                    rhs_result = self._eval_predicate(rhs)
+                    computed_ids = set.intersection(lhs_result, rhs_result)
+
             elif op == OP_CODE.OR:
-                lhs_result = self._compute_queried_ids(lhs)
-                rhs_result = self._compute_queried_ids(rhs)
-                _ids = set.union(lhs_result, rhs_result)
+                lhs_result = self._eval_predicate(lhs)
+                rhs_result = self._eval_predicate(rhs)
+                computed_ids = set.union(lhs_result, rhs_result)
+
             else:
                 # XXX: raise StoreError
-                raise Exception('unrecognized boolean predicate')
+                raise Exception(f'unrecognized predicate operator: {op}')
 
-        return _ids
+        return computed_ids
