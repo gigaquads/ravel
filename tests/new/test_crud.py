@@ -8,7 +8,3 @@ class TestResourceCrudForSimulationStore(ResourceCrudTestSuite):
     def build_store(cls, app):
         SimulationStore.bootstrap(app)
         return SimulationStore()
-
-    @classmethod
-    def bind_store(cls, resource_type, store):
-        store.bind(resource_type)

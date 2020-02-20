@@ -450,20 +450,28 @@ class Resource(Entity, metaclass=ResourceMeta):
             k: v for k, v in self.internal.state.items()
             if k in self.ravel.resolvers.fields
         }
+
+        record = {}
+
+        if ID_FIELD_NAME not in self.internal.state:
+            record[ID_FIELD_NAME] = self.store.create_id(record)
+
+        for k, v in self.internal.state.items():
+            resolver = self.ravel.resolvers.fields.get(k)
+            if resolver is not None:
+                if v is None and (not resolver.nullable):
+                    gen_default_value = self.ravel.defaults.get(k)
+                    if gen_default_value is not None:
+                        record[k] = gen_default_value()
+                    else:
+                        raise ValidationError(f'{resolver} is not nullable')
+                else:
+                    record[k] = v
+
         # when inserting or updating, we don't want to write the _rev value on
         # accident. The DAL is solely responsible for modifying this value.
         if REV_FIELD_NAME in record:
             del record[REV_FIELD_NAME]
-
-        # generate default values for any missing fields
-        # that specifify a default
-        for k, default in self.ravel.defaults.items():
-            field = self.ravel.schema.fields[k]
-            if (k not in record) or (record[k] is None and not field.nullable):
-                record[k] = default()
-
-        if record.get(ID_FIELD_NAME) is None:
-            record[ID_FIELD_NAME] = self.store.create_id(record)
 
         return record
 

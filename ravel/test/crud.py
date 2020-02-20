@@ -50,9 +50,9 @@ class ResourceCrudTestSuite:
     @classmethod
     def bind_store(cls, resource_type, store) -> Store:
         """
-        Return a bootstrapped Store object.
+        Bind the Store with the Resource
         """
-        raise NotImplementedError('override in subclass')
+        store.bind(resource_type)
 
     @classmethod
     def bind(cls, resource_type: Type[Resource]):
@@ -97,6 +97,15 @@ class ResourceCrudTestSuite:
             assert thing._id is None
             thing.create()
             assert thing._id is not None
+
+    def test_create_with_null_not_nullable_fields(self, Thing, random_things):
+        Thing.anything.resolver.nullable = False
+        Thing.anything.resolver.field.nullable = False
+
+        random_things.anything = None
+        for thing in random_things:
+            with pytest.raises(Exception):
+                thing.create()
 
     def test_update(self, Thing, random_things):
         self.bind(Thing)
