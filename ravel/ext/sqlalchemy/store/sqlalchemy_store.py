@@ -353,6 +353,18 @@ class SqlalchemyStore(Store):
         result = self.conn.execute(query)
         return bool(result.scalar())
 
+    def exists_many(self, _ids: Set) -> Dict[object, bool]:
+        columns = [self._id_column, sa.func.count(self._id_column)]
+        query = (
+            sa.select(columns)
+                .where(self._id_column.in_(
+                    [self.adapt_id(_id) for _id in _ids]
+                ))
+        )
+        return {
+            row[0]: row[1] for row in self.conn.execute(query)
+        }
+
     def count(self) -> int:
         query = sa.select([sa.func.count(self._id_column)])
         result = self.conn.execute(query)

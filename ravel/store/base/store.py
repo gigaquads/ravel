@@ -186,6 +186,14 @@ class Store(object, metaclass=StoreMeta):
         """
         Return True if the record with the given _id exists.
         """
+
+    @abstractmethod
+    def exists_many(self, _ids: Set) -> Dict[object, bool]:
+        """
+        Return a mapping from _id to a boolean, indicating if the specified
+        resource exists.
+        """
+
     @abstractmethod
     def count(self) -> int:
         """

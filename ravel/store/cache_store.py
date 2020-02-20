@@ -216,6 +216,9 @@ class CacheStore(Store):
         """
         return self.be.exists(_id)
 
+    def exists_many(self, _ids: Set) -> Dict[object, bool]:
+        return self.be.exists_many(_ids)
+
     def create(self, data: Dict) -> Dict:
         """
         Create a new record with the _id. If the _id is contained is not

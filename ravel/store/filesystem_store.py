@@ -101,8 +101,11 @@ class FilesystemStore(Store):
     def create_id(self, record):
         return record.get(ID_FIELD_NAME, UuidString.next_id())
 
-    def exists(self, fname: Text) -> bool:
-        return BaseFile.exists(self.mkpath(fname))
+    def exists(self, _id: Text) -> bool:
+        return BaseFile.exists(self.mkpath(_id))
+
+    def exists_many(self, _ids: Set) -> Dict[object, bool]:
+        return {_id: self.exists(_id) for _id in _ids}
 
     def create(self, record: Dict) -> Dict:
         _id = self.create_id(record)

@@ -65,6 +65,12 @@ class RedisStore(Store):
     def exists(self, _id) -> bool:
         return (_id in self.records)
 
+    def exists_many(self, _ids: Set) -> Dict[object, bool]:
+        return {
+            _id: (_id in self.records)
+            for _id in _ids
+        }
+
     def count(self) -> int:
         return len(self.records)
 
