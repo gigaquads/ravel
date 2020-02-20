@@ -35,7 +35,7 @@ def Thing(app):
 
 @pytest.fixture(scope='function')
 def random_things(Thing):
-    return Thing.Batch.generate(count=64)
+    return Thing.Batch.generate(count=64).merge(anything=1)
 
 
 class ResourceCrudTestSuite:
@@ -99,10 +99,10 @@ class ResourceCrudTestSuite:
             assert thing._id is not None
 
     def test_create_with_null_not_nullable_fields(self, Thing, random_things):
-        Thing.anything.resolver.nullable = False
-        Thing.anything.resolver.field.nullable = False
+        Thing.name.resolver.nullable = False
+        Thing.name.resolver.field.nullable = False
 
-        random_things.anything = None
+        random_things.name = None
         for thing in random_things:
             with pytest.raises(Exception):
                 thing.create()
@@ -283,7 +283,7 @@ class ResourceCrudTestSuite:
 
         # make each thing dirty
         for thing in random_things:
-            thing.merge(Thing.generate())
+            thing.merge(Thing.generate(), anything=1)
 
         # call func under test, fetch updated resources
         Thing.update_many(random_things)
@@ -304,7 +304,7 @@ class ResourceCrudTestSuite:
                 thing.save()
             else:
                 thing.create()
-                thing.merge(Thing.generate()).save()
+                thing.merge(Thing.generate(), anything=1).save()
 
             assert not thing.dirty
             assert thing._id is not None

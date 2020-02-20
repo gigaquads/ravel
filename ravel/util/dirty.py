@@ -38,7 +38,7 @@ class DirtyDict(DirtyObject, dict):
 
     def __delitem__(self, key):
         super().__delitem__(key)
-        self.dirty.remove(key)
+        self.dirty.discard(key)
 
     def mark(self, keys=None):
         if not is_sequence(keys):

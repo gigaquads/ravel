@@ -107,10 +107,8 @@ class Batch(Entity):
         ravel.indexed_field_types = cls.get_indexed_field_types()
         ravel.properties = {}
 
-        ravel.properties = {}
         for k, resolver in owner.ravel.resolvers.fields.items():
-            if isinstance(resolver.field, ravel.indexed_field_types):
-                ravel.properties[k] = BatchResolverProperty(resolver)
+            ravel.properties[k] = BatchResolverProperty(resolver)
 
         derived_batch_type = type(type_name, (cls, ), dict(
             ravel=ravel, **ravel.properties
@@ -363,10 +361,10 @@ class BatchResolverProperty(property):
 
     def fset(self, batch: 'Batch', value):
         key = self.resolver.name
-        for resource in self.internal.resources:
+        for resource in batch.internal.resources:
             setattr(resource, key, value)
 
     def fdel(self, batch: 'Batch'):
         key = self.resolver.name
-        for resource in self.internal.resources:
+        for resource in batch.internal.resources:
             delattr(resource, key)

@@ -446,16 +446,15 @@ class Resource(Entity, metaclass=ResourceMeta):
         """
         # extract only those elements of state data that correspond to
         # Fields declared on this Resource class.
-        record = {
-            k: v for k, v in self.internal.state.items()
-            if k in self.ravel.resolvers.fields
-        }
+        if ID_FIELD_NAME not in self.internal.state:
+            self._id = self.store.create_id(record)
+
+        # when inserting or updating, we don't want to write the _rev value on
+        # accident. The DAL is solely responsible for modifying this value.
+        if REV_FIELD_NAME in self.internal.state:
+            del self.internal.state[REV_FIELD_NAME]
 
         record = {}
-
-        if ID_FIELD_NAME not in self.internal.state:
-            record[ID_FIELD_NAME] = self.store.create_id(record)
-
         for k, v in self.internal.state.items():
             resolver = self.ravel.resolvers.fields.get(k)
             if resolver is not None:
@@ -464,14 +463,11 @@ class Resource(Entity, metaclass=ResourceMeta):
                     if gen_default_value is not None:
                         record[k] = gen_default_value()
                     else:
-                        raise ValidationError(f'{resolver} is not nullable')
+                        raise ValidationError(
+                            f'{resolver.name} is not nullable'
+                        )
                 else:
                     record[k] = v
-
-        # when inserting or updating, we don't want to write the _rev value on
-        # accident. The DAL is solely responsible for modifying this value.
-        if REV_FIELD_NAME in record:
-            del record[REV_FIELD_NAME]
 
         return record
 

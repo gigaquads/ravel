@@ -15,7 +15,7 @@ from BTrees.OOBTree import BTree
 
 from appyratus.utils import DictUtils
 
-from ravel.schema import Schema, fields
+from ravel.schema import Schema, Field, fields
 from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
 from ravel.util import union
 from ravel.query.predicate import (
@@ -39,7 +39,7 @@ class SimulationStore(Store):
 
     def on_bind(self, resource_type: Type['Resource'], **kwargs):
         for k, field in resource_type.ravel.schema.fields.items():
-            if field.scalar:
+            if field.scalar and (type(field) is not Field):
                 self.indexes[k] = BTree()
 
     def increment_rev(self, rev: Text = None) -> Text:

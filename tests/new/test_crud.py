@@ -1,10 +1,40 @@
+import os
+
 from ravel.test.crud import *
-from ravel.store import SimulationStore
+from ravel.store import SimulationStore, FilesystemStore
 
 
-class TestResourceCrudForSimulationStore(ResourceCrudTestSuite):
-
+class TestResourceCrudWithSimulationStore(ResourceCrudTestSuite):
     @classmethod
     def build_store(cls, app):
         SimulationStore.bootstrap(app)
         return SimulationStore()
+
+
+class TestResourceCrudWithFilesystemStore(ResourceCrudTestSuite):
+    @classmethod
+    def build_store(cls, app):
+        root_dir = '/tmp/ravel-filesystem-store-crud-tests'
+
+        try:
+            os.removedirs(root_dir)
+        except FileNotFoundError:
+            pass
+        except OSError as err:
+            if err.errno != 66:  # directory not empty
+                raise
+
+        FilesystemStore.bootstrap(app, root=root_dir)
+        return FilesystemStore()
+
+
+#class TestResourceCrudWithCacheStore(ResourceCrudTestSuite):
+#    pass
+#
+#
+#class TestResourceCrudWithRedisStore(ResourceCrudTestSuite):
+#    pass
+#
+#
+#class TestResourceCrudWithSqlalchemyStore(ResourceCrudTestSuite):
+#    pass

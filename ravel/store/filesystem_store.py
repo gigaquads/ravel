@@ -79,7 +79,7 @@ class FilesystemStore(Store):
         cls.ftype = import_object(ftype) if ftype else Yaml
         cls.root = root or cls.root
         if not cls.root:
-            raise MissingBootstrapParameterError(data={'id': 'root'})
+            raise MissingBootstrapParameterError(data={'parameter': 'root'})
 
     def on_bind(self, resource_type, root: Text = None, ftype: BaseFile = None):
         """
