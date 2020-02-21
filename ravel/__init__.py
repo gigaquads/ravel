@@ -41,5 +41,5 @@ from ravel.resolver.resolver_manager import ResolverManager
 from ravel.resolver.resolvers.loader import Loader, LoaderProperty
 from ravel.resolver.resolvers.relationship import Relationship
 from ravel.resolver.decorators import (
-    resolver, relationship, field, nested,
+    resolver, relationship, view, nested,
 )

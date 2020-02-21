@@ -79,6 +79,20 @@ class Loader(Resolver):
         return self.on_simulate(resource, request)
 
 
+class View(Loader):
+
+    @classmethod
+    def tags(cls) -> Set[Text]:
+        return {'view'}
+
+    @classmethod
+    def priority(cls) -> int:
+        return 20
+
+    def on_resolve(self, resource, request):
+        raise NotImplementedError()
+
+
 class LoaderProperty(ResolverProperty):
     def __hash__(self):
         return super().__hash__()
