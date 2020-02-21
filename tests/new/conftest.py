@@ -15,8 +15,8 @@ from ravel import (
     relationship,
 )
 from ravel.constants import (
-    ID_FIELD_NAME,
-    REV_FIELD_NAME,
+    ID,
+    REV,
 )
 
 
@@ -48,7 +48,6 @@ def ResourceWithResolvers(app, BasicResource):
 
         @relationship(
             join=lambda: (ResourceWithResolvers._id, ResourceWithResolvers._id),
-            nullable=False,
         )
         def myself(self, request):
             return request.result
@@ -61,6 +60,7 @@ def ResourceWithResolvers(app, BasicResource):
 def basic_query(BasicResource):
     return Query(target=BasicResource)
 
+
 @pytest.fixture(scope='function')
 def basic_resource(BasicResource):
     return BasicResource(
@@ -68,7 +68,6 @@ def basic_resource(BasicResource):
         required_str_field='y',
         int_field=1,
         nullable_int_field=None,
-        friend_id=None
     ).create()
 
 

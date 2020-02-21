@@ -4,7 +4,7 @@ import sqlalchemy as sa
 
 from appyratus.utils import StringUtils
 
-from ravel.constants import REV_FIELD_NAME
+from ravel.constants import REV
 from ravel.util.loggers import console
 
 
@@ -57,7 +57,7 @@ class SqlalchemyTableBuilder(object):
         meta = field.meta.get('sa', {})
         unique = meta.get('unique', False)
 
-        if field.source == REV_FIELD_NAME:
+        if field.source == REV:
             indexed = True
             server_default = '0'
         else:

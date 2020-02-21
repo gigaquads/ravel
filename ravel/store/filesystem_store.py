@@ -15,7 +15,7 @@ from appyratus.utils import (
 )
 
 from ravel.util.misc_functions import import_object
-from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from ravel.constants import ID, REV
 from ravel.exceptions import RavelError
 
 from .base import Store
@@ -103,7 +103,7 @@ class FilesystemStore(Store):
         )
 
     def create_id(self, record):
-        return record.get(ID_FIELD_NAME, UuidString.next_id())
+        return record.get(ID, UuidString.next_id())
 
     def exists(self, _id: Text) -> bool:
         return BaseFile.exists(self.mkpath(_id))
@@ -114,7 +114,7 @@ class FilesystemStore(Store):
     def create(self, record: Dict) -> Dict:
         _id = self.create_id(record)
         record = self.update(_id, record)
-        record[ID_FIELD_NAME] = _id
+        record[ID] = _id
         self._cache_store.create(record)
         return record
 
@@ -172,7 +172,7 @@ class FilesystemStore(Store):
             fields = fields if isinstance(fields, set) else set(fields or [])
             if not fields:
                 fields = set(self.resource_type.Schema.fields.keys())
-            fields |= {ID_FIELD_NAME, REV_FIELD_NAME}
+            fields |= {ID, REV}
 
             records = {}
             non_null_records = []
@@ -188,18 +188,18 @@ class FilesystemStore(Store):
                             f'validation error while loading '
                             f'{_id}.{self.extension}'
                         )
-                    record.setdefault(ID_FIELD_NAME, _id)
+                    record.setdefault(ID, _id)
                     records[_id] = {k: record.get(k) for k in fields}
 
                     non_null_records.append(record)
 
                     # if for some reason a file was created manually
                     # with a _rev, we create one here and save it
-                    if REV_FIELD_NAME not in record:
-                        record[REV_FIELD_NAME] = self.increment_rev()
+                    if REV not in record:
+                        record[REV] = self.increment_rev()
                         self.update(_id, record)
                 else:
-                    records[ID_FIELD_NAME] = None
+                    records[ID] = None
 
             self._cache_store.create_many(non_null_records)
             cached_records.update(records)
@@ -219,10 +219,10 @@ class FilesystemStore(Store):
         else:
             record = data
 
-        if ID_FIELD_NAME not in record:
-            record[ID_FIELD_NAME] = _id
+        if ID not in record:
+            record[ID] = _id
 
-        record[REV_FIELD_NAME] = self.increment_rev(record.get(REV_FIELD_NAME))
+        record[REV] = self.increment_rev(record.get(REV))
 
         self._cache_store.update(_id, record)
         self.ftype.write(path=fpath, data=record)

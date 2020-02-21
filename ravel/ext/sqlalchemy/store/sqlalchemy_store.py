@@ -23,7 +23,7 @@ from ravel.schema import fields, Field
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
 from ravel.store.base import Store
-from ravel.constants import REV_FIELD_NAME, ID_FIELD_NAME
+from ravel.constants import REV, ID
 
 from .dialect import Dialect
 from .sqlalchemy_table_builder import SqlalchemyTableBuilder
@@ -179,13 +179,13 @@ class SqlalchemyStore(Store):
 
     @property
     def id_column_name(self):
-        return self.resource_type.Schema.fields[ID_FIELD_NAME].source
+        return self.resource_type.Schema.fields[ID].source
 
     def adapt_record(self, record: Dict, serialize=True) -> Dict:
         cb_name = 'on_encode' if serialize else 'on_decode'
         prepared_record = {}
         for k, v in record.items():
-            if k in (REV_FIELD_NAME):
+            if k in (REV):
                 prepared_record[k] = v
             adapter = self._adapters.get(k)
             if adapter:
@@ -267,7 +267,7 @@ class SqlalchemyStore(Store):
         fields = fields or {k: None for k in self.resource_type.Schema.fields}
         fields.update({
             self.id_column_name: None,
-            self.resource_type.Schema.fields[REV_FIELD_NAME].source: None,
+            self.resource_type.Schema.fields[REV].source: None,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]
@@ -386,7 +386,7 @@ class SqlalchemyStore(Store):
             }
         fields.update({
             self.id_column_name,
-            self.resource_type.Schema.fields[REV_FIELD_NAME].source,
+            self.resource_type.Schema.fields[REV].source,
         })
 
         columns = [getattr(self.table.c, k) for k in fields]

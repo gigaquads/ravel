@@ -19,7 +19,7 @@ from ravel.query.predicate import (
 from ravel.schema import (
     Field, String, Int, Bool, Float, Id,
 )
-from ravel.constants import IS_BATCH_ATTRIBUTE
+from ravel.constants import IS_BATCH
 from ravel.util.loggers import console
 from ravel.util import is_batch, is_resource
 from ravel.entity import Entity
@@ -114,7 +114,7 @@ class Batch(Entity):
             ravel=ravel, **ravel.properties
         ))
 
-        setattr(derived_batch_type, IS_BATCH_ATTRIBUTE, True)
+        setattr(derived_batch_type, IS_BATCH, True)
 
         return derived_batch_type
 
@@ -123,7 +123,12 @@ class Batch(Entity):
         return (String, Bool, Int, Float, Id)
 
     @classmethod
-    def generate(cls, resolvers: Set[Text] = None, count=1):
+    def generate(
+        cls,
+        resolvers: Set[Text] = None,
+        values: Dict = None,
+        count: int = 1
+    ):
         count = max(1, count)
         owner = cls.ravel.owner
 
@@ -136,7 +141,8 @@ class Batch(Entity):
             resolvers = set(owner.ravel.resolvers.fields.keys())
 
         return cls(
-            owner.generate(resolvers) for i in range(count)
+            owner.generate(resolvers=resolvers, values=values)
+            for i in range(count)
         )
 
     def merge(self, data=None, **more_data):
@@ -254,8 +260,8 @@ class Batch(Entity):
     def unload(self, resolvers: Set[Text] = None) -> 'Batch':
         if not resolvers:
             resolvers = set(self.owner.Schema.fields.keys())
-        resolvers.discard(ID_FIELD_NAME)
-        resolvers.discard(REV_FIELD_NAME)
+        resolvers.discard(ID)
+        resolvers.discard(REV)
         for resource in self.internal.resources:
             resource.unload(resolvers)
         return self

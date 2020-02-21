@@ -22,7 +22,7 @@ from ravel.util.misc_functions import (
     flatten_sequence, is_sequence, get_class_name
 )
 from ravel.schema import Enum as EnumField
-from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from ravel.constants import ID, REV
 from ravel.util import is_resource, is_batch
 
 
@@ -261,8 +261,8 @@ class BooleanPredicate(Predicate):
 class PredicateParser(object):
 
     ravel_field_name_transform_inversions = {
-        'id': ID_FIELD_NAME,
-        'rev': REV_FIELD_NAME,
+        'id': ID,
+        'rev': REV,
     }
 
     class Operand(object):

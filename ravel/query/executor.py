@@ -2,7 +2,7 @@ from typing import List
 
 from ravel.util.loggers import console
 from ravel.batch import Batch
-from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from ravel.constants import ID, REV
 
 
 class Executor(object):
@@ -18,7 +18,7 @@ class Executor(object):
         store = query.target.ravel.store
         where_predicate = query.parameters.where
         field_names = list(
-            query.selected.fields.keys() | {ID_FIELD_NAME, REV_FIELD_NAME}
+            query.selected.fields.keys() | {ID, REV}
         )
 
         kwargs = query.parameters.to_dict()

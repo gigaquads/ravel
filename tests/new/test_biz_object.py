@@ -11,9 +11,9 @@ from ravel import (
     Relationship,
 )
 from ravel.constants import (
-    IS_RESOURCE_ATTRIBUTE,
-    ID_FIELD_NAME,
-    REV_FIELD_NAME,
+    IS_RESOURCE,
+    ID,
+    REV,
 )
 
 
@@ -25,7 +25,7 @@ def test_basic_resource_builds(app, BasicResource):
     # check basic class attributes are as expected
     assert hasattr(BasicResource, 'ravel')
     assert hasattr(BasicResource, 'Schema')
-    assert hasattr(BasicResource, IS_RESOURCE_ATTRIBUTE)
+    assert hasattr(BasicResource, IS_RESOURCE)
     assert isinstance(BasicResource.Schema, type)
     assert issubclass(BasicResource.Schema, ravel.Schema)
     assert isinstance(BasicResource.Batch, type)
@@ -38,12 +38,12 @@ def test_basic_resource_builds(app, BasicResource):
     assert isinstance(BasicResource.ravel.schema, BasicResource.Schema)
     assert isinstance(BasicResource.ravel.resolvers, ResolverManager)
     assert BasicResource.ravel.defaults
-    assert ID_FIELD_NAME in BasicResource.ravel.defaults
+    assert ID in BasicResource.ravel.defaults
 
     # ensure the expected fields, resolvers, and resolver properties exist
     expected_field_names = {
-        REV_FIELD_NAME,
-        ID_FIELD_NAME,
+        REV,
+        ID,
         'str_field',
         'int_field',
         'required_str_field',
@@ -64,7 +64,7 @@ def test_basic_resource_builds(app, BasicResource):
     # make sure id field replacement works, replacing `Id` fields in the Schema
     # with a new Field with the same type as the referenced resource class's ID
     # field.
-    id_field = BasicResource.Schema.fields[ID_FIELD_NAME]
+    id_field = BasicResource.Schema.fields[ID]
     friend_id_field = BasicResource.Schema.fields['friend_id']
     assert not isinstance(friend_id_field, ravel.Id)
     assert isinstance(friend_id_field, type(id_field))

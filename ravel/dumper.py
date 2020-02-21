@@ -3,8 +3,8 @@ from typing import Text, Set, Dict
 from appyratus.enum import EnumValueStr
 
 from ravel.constants import (
-    ID_FIELD_NAME,
-    REV_FIELD_NAME
+    ID,
+    REV
 )
 
 from ravel.util import is_batch, is_resource
@@ -80,7 +80,7 @@ class NestedDumper(Dumper):
                     record[k] = self.dump(child_resource)
             else:
                 # dump non-Relationship state
-                if k in {ID_FIELD_NAME, REV_FIELD_NAME}:
+                if k in {ID, REV}:
                     k = k[1:]
                 record[k] = resolver.dump(self, v)
 
@@ -108,19 +108,19 @@ class SideLoadedDumper(Dumper):
 
         record = {}
         for k, v in parent_resource.internal.state.items():
-            if k in {ID_FIELD_NAME, REV_FIELD_NAME}:
+            if k in {ID, REV}:
                 k = k[1:]
 
             resolver = parent_resource.ravel.resolvers[k]
             if resolver.name in relationships:
                 relationship = resolver
-                record[k] = getattr(v, ID_FIELD_NAME)
+                record[k] = getattr(v, ID)
                 if k in parent_resource.internal.state:
                     self._recurse_on_entity(v, links)
             else:
                 record[k] = resolver.dump(self, v)
 
-        parent_id = getattr(parent_resource, ID_FIELD_NAME)
+        parent_id = getattr(parent_resource, ID)
 
         if parent_id not in links:
             links[parent_id] = record

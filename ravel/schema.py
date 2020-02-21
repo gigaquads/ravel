@@ -51,6 +51,7 @@ class Id(fields.Field):
             name=self.name,
             source=self.source,
             required=self.required,
+            nullable=self.nullable,
             meta=self.meta,
         )
         # dynamically replace the existing field in Schema class

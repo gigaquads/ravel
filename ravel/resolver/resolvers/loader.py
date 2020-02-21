@@ -11,7 +11,7 @@ from ravel.query.predicate import (
 )
 
 
-from ravel.constants import ID_FIELD_NAME
+from ravel.constants import ID
 from ravel.util import is_resource, is_batch
 from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
@@ -23,9 +23,6 @@ class Loader(Resolver):
     def __init__(self, field, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.field = field
-        self.private = field.meta.get('private', False)
-        self.required = field.required
-        self.nullable = field.nullable
 
     @classmethod
     def property_type(cls):
@@ -38,6 +35,17 @@ class Loader(Resolver):
     @classmethod
     def priority(cls) -> int:
         return 1
+
+    @property
+    def field(self) -> 'Field':
+        return self._field
+
+    @field.setter
+    def field(self, field: 'Field'):
+        self._field = field
+        self.nullable = field.nullable
+        self.required = field.required
+        self.private = field.meta.get('private', False)
 
     def on_resolve(self, resource, request):
         exists_resource = resource._id is not None
@@ -58,11 +66,11 @@ class Loader(Resolver):
     def on_simulate(self, resource, request):
         value = None
 
-        if self.nullable and self.field.name != ID_FIELD_NAME:
+        if self.nullable and self._field.name != ID:
             if randint(1, 10) > 1:
-                value = self.field.generate()
+                value = self._field.generate()
         else:
-            value = self.field.generate()
+            value = self._field.generate()
 
         return value
 

@@ -5,7 +5,7 @@ from typing import (
     _GenericAlias as GenericAlias
 )
 
-from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from ravel.constants import ID, REV
 from ravel.util.misc_functions import (
     extract_res_info_from_annotation,
     is_sequence,
@@ -141,9 +141,9 @@ class ArgumentLoader(object):
                 return preloaded
             elif isinstance(preloaded, dict):
                 if 'id' in preloaded:
-                    preloaded[ID_FIELD_NAME] = preloaded.pop('id')
+                    preloaded[ID] = preloaded.pop('id')
                 if 'rev' in preloaded:
-                    preloaded[REV_FIELD_NAME] = preloaded.pop('rev')
+                    preloaded[REV] = preloaded.pop('rev')
                 return resource_type(preloaded)
             else:
                 return resource_type.get(_id=preloaded)

@@ -1,7 +1,7 @@
 from typing import Dict, List, Text, Set
 
 from ravel import Resource, Relationship, fields
-from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from ravel.constants import ID, REV
 
 # TODO: implement updates to depth in insert and unlink
 
@@ -95,7 +95,7 @@ class RecursiveList(Resource):
         # copy all non-internal fields by default
         fields = (
             set(fields or self.schema.fields.keys())
-                - {ID_FIELD_NAME, REV_FIELD_NAME}
+                - {ID, REV}
         )
 
         # copy this instance & conditionally children, recursively

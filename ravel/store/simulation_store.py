@@ -15,7 +15,7 @@ from BTrees.OOBTree import BTree
 from appyratus.utils import DictUtils
 
 from ravel.schema import Schema, Field, fields
-from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from ravel.constants import ID, REV
 from ravel.util import union
 from ravel.query.predicate import (
     Predicate,
@@ -116,15 +116,15 @@ class SimulationStore(Store):
 
         with self.lock:
 
-            record[ID_FIELD_NAME] = self.create_id(record)
-            record[REV_FIELD_NAME] = self.increment_rev()
+            record[ID] = self.create_id(record)
+            record[REV] = self.increment_rev()
 
             # ensure missing nullable fields are written to store with
             # a value of None for the sake of normalizing the data structure.
             for k in (schema.nullable_fields.keys() - record.keys()):
                 record[k] = None
 
-            _id = record[ID_FIELD_NAME]
+            _id = record[ID]
 
             # insert the record and update indexes for its fields
             self.records[_id] = record
@@ -140,7 +140,7 @@ class SimulationStore(Store):
         results = []
         with self.lock:
             for record in records:
-                record[ID_FIELD_NAME] = self.create_id(record)
+                record[ID] = self.create_id(record)
                 result = self.create(record)
                 results.append(result)
         return results
@@ -151,7 +151,7 @@ class SimulationStore(Store):
         """
         with self.lock:
             old_record = self.records.get(_id, {})
-            old_rev = old_record.get(REV_FIELD_NAME)
+            old_rev = old_record.get(REV)
 
             # remove the old copy of the object from the store, and then replace
             # it. we use `internal` in the call to delete to indicate that we
@@ -159,13 +159,13 @@ class SimulationStore(Store):
             # update. this prevents the _rev index from being cleared.
             if old_record:
                 self.delete(
-                    old_record[ID_FIELD_NAME],
+                    old_record[ID],
                     index_names=set(data.keys()),
                     internal=True,
                 )
 
             merged_record = DictUtils.merge(old_record, data)
-            merged_record[REV_FIELD_NAME] = self.increment_rev(old_rev)
+            merged_record[REV] = self.increment_rev(old_rev)
 
             # "re-insert" the new copy of the record
             record = self.create(merged_record)
@@ -190,7 +190,7 @@ class SimulationStore(Store):
             if record:
                 index_names = set(index_names or record.keys())
                 if internal:
-                    index_names.discard(REV_FIELD_NAME)
+                    index_names.discard(REV)
                 self._index_remove(_id, record, index_names)
                 del self.records[_id]
 

@@ -1,13 +1,17 @@
-import os
+from appyratus.env import Environment
 
 
-ID_FIELD_NAME = '_id'
-REV_FIELD_NAME = '_rev'
+ENV = Environment()
 
-ABSTRACT_MAGIC_METHOD = '__abstract__'
-IS_RESOURCE_ATTRIBUTE = 'ravel_is_resource'
-IS_BATCH_ATTRIBUTE = 'ravel_is_batch'
-CONSOLE_LOG_LEVEL = os.environ.get('RAVEL_CONSOLE_LOG_LEVEL', 'DEBUG')
+# logging:
+CONSOLE_LOG_LEVEL = ENV.get('RAVEL_CONSOLE_LOG_LEVEL', 'DEBUG')
 
-def EMPTY_FUNCTION():
-    pass
+
+# field name constants:
+ID = '_id'
+REV = '_rev'
+
+
+# entity class annotations used for type checking:
+IS_RESOURCE = '_ravel_is_resource'
+IS_BATCH = '_ravel_is_batch'

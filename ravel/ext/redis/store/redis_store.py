@@ -7,7 +7,7 @@ from appyratus.utils import StringUtils
 
 from ravel.store import Store
 from ravel.schema import fields
-from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from ravel.constants import ID, REV
 from ravel.util.json_encoder import JsonEncoder
 from ravel.query.predicate import (
     Predicate,
@@ -88,7 +88,7 @@ class RedisStore(Store):
             return None
 
         full_record = JsonEncoder.decode(record_json)
-        full_record[REV_FIELD_NAME] = int(rev_str) - 1
+        full_record[REV] = int(rev_str) - 1
 
         if fields:
             return {k: full_record.get(k) for k in fields}
@@ -110,13 +110,13 @@ class RedisStore(Store):
             for record_json, _rev in zip(json_records, rev_strs):
                 record = JsonEncoder.decode(record_json)
                 record = {k: record.get(k) for k in fields}
-                record[REV_FIELD_NAME] = int(_rev) - 1
-                records[record[ID_FIELD_NAME]] = record
+                record[REV] = int(_rev) - 1
+                records[record[ID]] = record
         else:
             for record_json, _rev in zip(json_records, rev_strs):
                 record = JsonEncoder.decode(record_json)
-                record[REV_FIELD_NAME] = int(_rev) - 1
-                records[record[ID_FIELD_NAME]] = record
+                record[REV] = int(_rev) - 1
+                records[record[ID]] = record
 
         return records
 
@@ -124,12 +124,12 @@ class RedisStore(Store):
         return self.fetch_many(list(self.records.keys()), fields=fields)
 
     def upsert(self, record: Dict, pipe=None) -> Dict:
-        is_creating = record.get(ID_FIELD_NAME) is None
+        is_creating = record.get(ID) is None
         _id = self.create_id(record)
 
         # prepare the record for upsert
         upserted_record = record.copy()
-        upserted_record[ID_FIELD_NAME] = _id
+        upserted_record[ID] = _id
 
         # json encode and store record JSON
         self.records[_id] = self.encoder.encode(upserted_record)
@@ -140,9 +140,9 @@ class RedisStore(Store):
 
         # add rev to record AFTER insert to avoid storing _rev in records hset
         if is_creating:
-            upserted_record[REV_FIELD_NAME] = 0
+            upserted_record[REV] = 0
         else:
-            upserted_record[REV_FIELD_NAME] = self.revs.increment(_id)
+            upserted_record[REV] = self.revs.increment(_id)
 
         return upserted_record
 
@@ -198,12 +198,12 @@ class RedisStore(Store):
         records = []
 
         if _ids:
-            _id_field = self.resource_type.Schema.fields[ID_FIELD_NAME]
+            _id_field = self.resource_type.Schema.fields[ID]
             json_records = self.records.get_many(_ids)
             rev_strs = self.revs.get_many(_ids)
             for json_record, rev_str in zip(json_records, rev_strs):
                 record = JsonEncoder.decode(json_record)
-                record[REV_FIELD_NAME] = int(rev_str.decode())
+                record[REV] = int(rev_str.decode())
                 records.append(record)
 
         return records

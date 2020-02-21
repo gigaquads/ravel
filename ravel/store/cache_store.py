@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from appyratus.enum import EnumValueStr
 
 from ravel.util.misc_functions import remove_keys, import_object
-from ravel.constants import ID_FIELD_NAME, REV_FIELD_NAME
+from ravel.constants import ID, REV
 
 from .base import Store, StoreEvent
 
@@ -129,15 +129,15 @@ class CacheStore(Store):
 
     def fetch_all(self, fields: Set[Text] = None) -> Dict:
         be_ids = {
-            rec[ID_FIELD_NAME]
-            for rec in self.be.fetch_all(fields={ID_FIELD_NAME}).values()
+            rec[ID]
+            for rec in self.be.fetch_all(fields={ID}).values()
             if rec is not None
         }
         return self.fetch_many(be_ids, fields=fields)
 
     def fetch_many(self, _ids, fields: Dict = None) -> Dict:
         fe_records = self.fe.fetch_many(_ids, fields=fields)
-        be_revs = self.be.fetch_many(fe_records.keys(), fields={REV_FIELD_NAME})
+        be_revs = self.be.fetch_many(fe_records.keys(), fields={REV})
 
         ids = set(_ids) if not isinstance(_ids, set) else _ids
         ids_fe = set(fe_records.keys())    # ids in FE
@@ -148,7 +148,7 @@ class CacheStore(Store):
         for _id, fe_rec in fe_records.items():
             if fe_rec is None:
                 ids_missing.add(_id)
-            elif be_revs.get(_id, {}).get(REV_FIELD_NAME, 0) > fe_rec.get(REV_FIELD_NAME, 0):
+            elif be_revs.get(_id, {}).get(REV, 0) > fe_rec.get(REV, 0):
                 ids_to_update.add(_id)
 
         # records in BE ONLY
@@ -175,7 +175,7 @@ class CacheStore(Store):
             self.fe.create_many(records_to_create)
         if records_to_update:
             self.fe.update_many(
-                (rec[ID_FIELD_NAME] for rec in records_to_update), records_to_update
+                (rec[ID] for rec in records_to_update), records_to_update
             )
 
         # merge fresh BE records to return into FE records
@@ -188,7 +188,7 @@ class CacheStore(Store):
                     be_records.values(), fields_to_remove, in_place=True
                 ):
                     if be_rec:
-                        fe_records[be_rec[ID_FIELD_NAME]] = be_rec
+                        fe_records[be_rec[ID]] = be_rec
             else:
                 fe_records.update(be_records)
 
@@ -198,7 +198,7 @@ class CacheStore(Store):
         """
         """
         fe_records = self.fe.query(predicate=predicate, **kwargs)
-        ids_fe = {rec[ID_FIELD_NAME] for rec in fe_records}
+        ids_fe = {rec[ID] for rec in fe_records}
 
         # TODO: update predicate to fetch records with stale revs too
         predicate = self.resource_type._id.excluding(ids_fe) & predicate
@@ -230,7 +230,7 @@ class CacheStore(Store):
         # remove _rev from a copy of fe_record so that the BE store doesn't
         # increment it from what was set by the FE store.
         fe_record_no_rev = fe_record.copy()
-        del fe_record_no_rev[REV_FIELD_NAME]
+        del fe_record_no_rev[REV]
 
         if self.mode == CacheMode.writethru:
             self.be.create(fe_record_no_rev)
@@ -249,7 +249,7 @@ class CacheStore(Store):
         fe_records_no_rev = []
         for rec in fe_records.values():
             rec = rec.copy()
-            del rec[REV_FIELD_NAME]
+            del rec[REV]
             fe_records_no_rev.append(rec)
 
         if self.mode == CaheMode.writethru:
@@ -264,14 +264,14 @@ class CacheStore(Store):
         Update a record with the data passed in.
         record = self.persistence.update(_id, data)
         """
-        record.setdefault(ID_FIELD_NAME, _id)
+        record.setdefault(ID, _id)
 
         if not self.fe.exists(_id):
             return self.create(record)
 
         fe_record = self.fe.update(_id, record)
         fe_record_no_rev = fe_record.copy()
-        del fe_record_no_rev[REV_FIELD_NAME]
+        del fe_record_no_rev[REV]
 
         if self.mode == CacheMode.writethru:
             self.be.update(_id, fe_record_no_rev)

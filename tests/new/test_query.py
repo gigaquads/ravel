@@ -1,12 +1,85 @@
 import pytest
 import ravel
 
-from ravel import Resource, Query, Request, OrderBy
-from ravel.constants import ID_FIELD_NAME
+from pytest import fixture
+
+from ravel import Resource, Query, Request, OrderBy, resolver
+from ravel.constants import ID
 from ravel.query.predicate import (
     ConditionalPredicate, BooleanPredicate, Predicate,
     OP_CODE,
 )
+
+
+
+@fixture(scope='function')
+def Node(app):
+    class Node(Resource):
+        name = ravel.String()
+        parent_id = ravel.Id(lambda: Node, nullable=True, default=lambda: None)
+
+        @resolver(target=lambda: Node.Batch)
+        def children(self, request):
+            query = Query(request=request).where(parent_id=self._id)
+            query.select(Node.children)
+            return query.execute()
+
+        @resolver(target=lambda: Node)
+        def parent(self, request):
+            query = Query(request=request).where(_id=self.parent_id)
+            return query.execute(first=True)
+
+        @classmethod
+        def generate_binary_tree(cls, depth=0) -> 'Node':
+            def generate_children(parent, depth):
+                if depth > 0:
+                    children = cls.Batch.generate(
+                        values={'parent_id': parent._id},
+                        count=2,
+                    ).save()
+                    for node in children:
+                        generate_children(node, depth - 1)
+
+            depth = max(0, depth)
+            root = cls(name='root', parent_id=None).save()
+            generate_children(root, depth)
+            return root
+
+    app.bind(Node)
+    return Node
+
+
+class TestQueryExecution:
+    def test_recursive_execution(self, Node):
+        depth = 10
+        root = Node.generate_binary_tree(depth=depth)
+
+        query = Node.select(Node.name).where(_id=root._id)
+
+        target = query
+        for _ in range(depth - 1):
+            request = Node.children.select(Node.name)
+            target.select(request)
+            target = request
+
+        count = {'value': 0}
+        def assert_has_children(parent, depth, count):
+            if depth > 0:
+                count['value'] += 1
+                print(count['value'], depth, parent)
+                assert 'children' in parent.internal.state
+                assert len(parent.internal.state['children']) == 2
+                for child in parent.children:
+                    assert_has_children(child, depth - 1, count)
+
+        queried_root = query.execute(first=True)
+        assert_has_children(queried_root, depth, count)
+
+
+
+
+
+
 
 
 def test_query_initializes_correctly(BasicResource, basic_query):
@@ -21,18 +94,18 @@ def test_query_initializes_correctly(BasicResource, basic_query):
 
 
 def test_select_with_str(basic_query):
-    basic_query.select(ID_FIELD_NAME)
-    assert ID_FIELD_NAME in basic_query.selected.fields
+    basic_query.select(ID)
+    assert ID in basic_query.selected.fields
 
-    req = basic_query.selected.fields[ID_FIELD_NAME]
+    req = basic_query.selected.fields[ID]
     assert isinstance(req, Request)
 
 
 def test_select_with_resolver_property(BasicResource, basic_query):
     basic_query.select(BasicResource._id)
-    assert ID_FIELD_NAME in basic_query.selected.fields
+    assert ID in basic_query.selected.fields
 
-    req = basic_query.selected.fields[ID_FIELD_NAME]
+    req = basic_query.selected.fields[ID]
     assert isinstance(req, Request)
 
 
@@ -40,9 +113,9 @@ def test_select_with_request(BasicResource, basic_query):
     req_in = Request(BasicResource._id.resolver)
 
     basic_query.select(req_in)
-    assert ID_FIELD_NAME in basic_query.selected.fields
+    assert ID in basic_query.selected.fields
 
-    req_out = basic_query.selected.fields[ID_FIELD_NAME]
+    req_out = basic_query.selected.fields[ID]
     assert isinstance(req_out, Request)
     assert req_out == req_in
 
@@ -55,7 +128,7 @@ def test_where_predicate_builds(BasicResource, basic_query):
 
     assert isinstance(basic_query.parameters.where, ConditionalPredicate)
 
-    basic_query.where(pred_2, append=True)
+    basic_query.where(pred_2)
 
     assert isinstance(basic_query.parameters.where, BooleanPredicate)
     assert basic_query.parameters.where.op == OP_CODE.AND

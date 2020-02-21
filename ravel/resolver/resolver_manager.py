@@ -1,7 +1,7 @@
 from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
 from collections import defaultdict
 
-from ravel.constants import ID_FIELD_NAME
+from ravel.constants import ID
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name
 from ravel.util import is_resource, is_batch
@@ -28,7 +28,7 @@ class ResolverManager(object):
         self._private_resolvers = set()
 
     def __repr__(self):
-        id_resolver = self._resolvers.get(ID_FIELD_NAME)
+        id_resolver = self._resolvers.get(ID)
         owner_name = None
         if id_resolver.is_bootstrapped:
             owner_name = get_class_name(id_resolver.owner)

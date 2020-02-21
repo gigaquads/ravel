@@ -13,7 +13,7 @@ from appyratus.schema.fields import UuidString
 
 from ravel.util.loggers import console
 from ravel.exceptions import RavelError
-from ravel.constants import ID_FIELD_NAME
+from ravel.constants import ID
 
 from .store_history import StoreHistory, StoreEvent
 
@@ -181,9 +181,9 @@ class Store(object, metaclass=StoreMeta):
         """
         Generate and return a new ID for the given not-yet-created record.
         """
-        new_id = record.get(ID_FIELD_NAME)
+        new_id = record.get(ID)
         if new_id is None:
-            new_id = self.resource_type.ravel.defaults[ID_FIELD_NAME]()
+            new_id = self.resource_type.ravel.defaults[ID]()
 
         # NOTE: if new_id is still None at this point, it's assumed that
         # the persistence technology will generate and return it instead.

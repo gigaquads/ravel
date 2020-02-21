@@ -5,7 +5,7 @@ from collections import deque
 
 from appyratus.utils import TimeUtils
 
-from ravel.constants import ID_FIELD_NAME
+from ravel.constants import ID
 
 READ_METHODS = frozenset({
     'fetch', 'fetch_all', 'fetch_many', 'count', 'exists', 'query'
@@ -51,13 +51,13 @@ class StoreEvent(object):
         these methods into the args and kwargs that were originally passed in.
         """
         if self.method == 'create':
-            self.args[0][ID_FIELD_NAME] = result.get(ID_FIELD_NAME)
+            self.args[0][ID] = result.get(ID)
         elif self.method == 'create_many':
             uncreated_records = args[0]
             created_records = result
             for uncreated, created in zip(uncreated_records, created_records):
-                created_id = created_record.get(ID_FIELD_NAME)
-                uncreated_record[ID_FIELD_NAME] = created_id
+                created_id = created_record.get(ID)
+                uncreated_record[ID] = created_id
 
     def dump(self, with_result=False) -> Dict:
         data = {

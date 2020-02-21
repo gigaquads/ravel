@@ -1,4 +1,4 @@
-from typing import Text, Tuple, List, Set, Dict, Type, Union
+from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
 from copy import deepcopy
 
 from appyratus.utils import DictObject
@@ -25,14 +25,37 @@ class Query(object):
 
     Mode = QueryMode
 
-    def __init__(self, target=None, parent=None, parameters=None, options=None):
+    def __init__(
+        self,
+        target: Union[Type['Resource'], Callable] = None,
+        parent: 'Query' = None,
+        request: 'Reqeust' = None
+    ):
         self.target = target
         self.parent = parent
-        self.options = options or DictObject(mode=QueryMode.normal)
-        self.parameters = parameters or DictObject()
+        self.options = DictObject(mode=QueryMode.normal)
         self.selected = DictObject()
         self.selected.fields = {}
         self.selected.requests = {}
+        self.parameters = DictObject()
+
+        if request:
+            if request.resolver and request.resolver.target:
+                self.target = request.resolver.target
+            if request.parameters:
+                params = request.parameters
+                if 'where' in params:
+                    self.where(params.where)
+                if 'order_by' in params:
+                    self.order_by(params.order_by)
+                if 'limit' in params:
+                    self.limit(params.limit)
+                if 'offset' in params:
+                    self.offset(params.offset)
+
+        if self.target is not None:
+            self.select(self.target.ravel.schema.required_fields.keys())
+            self.select(self.target.ravel.foreign_id_fields.keys())
 
     def __getattr__(self, parameter_name: str):
         return ParameterAssignment(self, parameter_name)

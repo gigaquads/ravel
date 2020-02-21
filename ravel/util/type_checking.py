@@ -3,9 +3,9 @@ from uuid import UUID
 
 from ravel.entity import Entity
 from ravel.constants import (
-    IS_RESOURCE_ATTRIBUTE,
-    IS_BATCH_ATTRIBUTE,
-    ID_FIELD_NAME,
+    IS_RESOURCE,
+    IS_BATCH,
+    ID,
 )
 
 
@@ -15,7 +15,7 @@ def is_resource(obj):
     """
     return (
         isinstance(obj, Entity)
-        and getattr(obj, IS_RESOURCE_ATTRIBUTE, False)
+        and getattr(obj, IS_RESOURCE, False)
     )
 
 
@@ -25,21 +25,21 @@ def is_batch(obj) -> bool:
     """
     return (
         isinstance(obj, Entity)
-        and getattr(obj, IS_BATCH_ATTRIBUTE, False)
+        and getattr(obj, IS_BATCH, False)
     )
 
 
 def is_resource_type(obj):
     return (
         isinstance(obj, type)
-        and getattr(obj, IS_RESOURCE_ATTRIBUTE, False)
+        and getattr(obj, IS_RESOURCE, False)
     )
 
 
 def is_batch_type(obj):
     return (
         isinstance(obj, type)
-        and getattr(obj, IS_BATCH_ATTRIBUTE, False)
+        and getattr(obj, IS_BATCH, False)
     )
 
 
@@ -51,7 +51,7 @@ def repr_res_id(resource: 'Resource') -> Text:
     if resource is None:
         return 'None'
 
-    _id = resource[ID_FIELD_NAME]
+    _id = resource[ID]
 
     if _id is None:
         return '?'

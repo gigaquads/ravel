@@ -9,7 +9,7 @@ import pytest
 import ravel
 
 from ravel import Application
-from ravel.constants import ID_FIELD_NAME
+from ravel.constants import ID
 from ravel.biz.resource import Resource
 from ravel.biz.query.query import Query
 from ravel.biz.relationship import (
@@ -126,8 +126,8 @@ def test_correct_fields_are_marked_dirty(Dog, dirty_field_names):
 
 def test_id_fields_are_replaced(Dog):
     replacement_field = Dog.replace_id_field(ravel.Id())
-    assert not isinstance(Dog.Schema.fields[ID_FIELD_NAME], ravel.Id)
-    assert isinstance(Dog.Schema.fields[ID_FIELD_NAME], type(replacement_field))
+    assert not isinstance(Dog.Schema.fields[ID], ravel.Id)
+    assert isinstance(Dog.Schema.fields[ID], type(replacement_field))
 
 
 def test_field_property_gets_value(Dog):

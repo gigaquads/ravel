@@ -32,7 +32,7 @@ import pytest
 import ravel
 
 from ravel import Application
-from ravel.constants import ID_FIELD_NAME
+from ravel.constants import ID
 from ravel.biz import (
     Resource,
     Resolver,

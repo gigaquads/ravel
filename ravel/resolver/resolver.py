@@ -9,7 +9,9 @@ from ravel.util.misc_functions import (
     get_class_name,
     flatten_sequence,
 )
-from ravel.util import is_resource, is_batch, is_resource_type
+from ravel.util import (
+    is_resource, is_batch, is_resource_type, is_batch_type,
+)
 from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
 from ravel.query.mode import QueryMode
@@ -131,13 +133,14 @@ class Resolver(object):
         if self.target_callback:
             self.app.inject(self.target_callback)
             target = self.target_callback()
-            if is_resource(target):
-                assert isinstance(target, type)
+            if is_resource_type(target):
                 self.target = target
                 self.many = False
-            elif is_batch(target):
-                self.target = target.owner
+            elif is_batch_type(target):
+                self.target = target.ravel.owner
                 self.many = True
+            else:
+                raise Exception('unrecognized target type')
 
         self.on_bind()
         self._is_bound = True

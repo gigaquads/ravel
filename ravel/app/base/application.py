@@ -12,7 +12,7 @@ from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name, inject, is_sequence
 from ravel.schema import Field, UuidString
-from ravel.constants import ID_FIELD_NAME
+from ravel.constants import ID
 from ravel.app.exceptions import ApplicationError
 
 from .endpoint_decorator import EndpointDecorator

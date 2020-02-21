@@ -29,10 +29,9 @@ from ravel.schema import (
 from ravel.dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
 from ravel.batch import Batch
 from ravel.constants import (
-    IS_RESOURCE_ATTRIBUTE,
-    ABSTRACT_MAGIC_METHOD,
-    ID_FIELD_NAME,
-    REV_FIELD_NAME,
+    IS_RESOURCE,
+    ID,
+    REV,
 )
 
 from ravel.query.query import Query
@@ -58,13 +57,13 @@ class ResourceMeta(type):
             cls._register_venusian_callback()
 
     def _initialize_class_state(resource_type):
-        setattr(resource_type, IS_RESOURCE_ATTRIBUTE, True)
+        setattr(resource_type, IS_RESOURCE, True)
 
         resource_type.ravel = DictObject()
         resource_type.ravel.app = None
         resource_type.ravel.store = None
         resource_type.ravel.resolvers = ResolverManager()
-        resource_type.ravel.fk_id_fields = {}
+        resource_type.ravel.foreign_id_fields = {}
         resource_type.ravel.is_abstract = resource_type._compute_is_abstract()
         resource_type.ravel.is_bootstrapped = False
         resource_type.ravel.is_bound = False
@@ -104,9 +103,9 @@ class ResourceMeta(type):
 
     def _compute_is_abstract(resource_type):
         is_abstract = False
-        if hasattr(resource_type, ABSTRACT_MAGIC_METHOD):
+        if hasattr(resource_type, '__abstract__'):
             is_abstract = bool(resource_type.__abstract__())
-            delattr(resource_type, ABSTRACT_MAGIC_METHOD)
+            delattr(resource_type, '__abstract__')
         return is_abstract
 
     def _build_schema_type(resource_type, fields, base_types):
@@ -135,14 +134,14 @@ class ResourceMeta(type):
                 setattr(resource_type, k, resolver_property)
             if field.source is None:
                 field.source = field.name
-            if isinstance(field, Id) and field.name != ID_FIELD_NAME:
-                    resource_type.ravel.fk_id_fields[field.name] = field
+            if isinstance(field, Id) and field.name != ID:
+                    resource_type.ravel.foreign_id_fields[field.name] = field
 
         # these are universally required
-        assert ID_FIELD_NAME in fields
-        assert REV_FIELD_NAME in fields
+        assert ID in fields
+        assert REV in fields
 
-        fields[ID_FIELD_NAME].nullable = False
+        fields[ID].nullable = False
 
         # build new Schema subclass with aggregated fields
         class_name = f'{resource_type.__name__}Schema'
@@ -186,9 +185,9 @@ class Resource(Entity, metaclass=ResourceMeta):
         self.merge(state, **more_state)
 
         # eagerly generate default ID if none provided
-        if ID_FIELD_NAME not in self.internal.state:
-            id_func = self.ravel.defaults.get(ID_FIELD_NAME)
-            self.internal.state[ID_FIELD_NAME] = id_func() if id_func else None
+        if ID not in self.internal.state:
+            id_func = self.ravel.defaults.get(ID)
+            self.internal.state[ID] = id_func() if id_func else None
 
     def __getitem__(self, key):
         if key in self.ravel.resolvers:
@@ -214,18 +213,18 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     def __repr__(self):
         name = get_class_name(self)
-        dirty = '*' if self.internal.state.dirty else ''
-        id_value = self.internal.state.get(ID_FIELD_NAME)
+        dirty = '*' if self.is_dirty else ''
+        id_value = self.internal.state.get(ID)
         if id_value is None:
             id_str = '?'
         elif isinstance(id_value, str):
-            id_str = id_value
+            id_str = id_value[:7]
         elif isinstance(id_value, UUID):
-            id_str = _id.hex
+            id_str = id_value.hex[:7]
         else:
             id_str = repr(id_value)
 
-        return f'<{name}({id_str}){dirty}>'
+        return f'{name}({id_str}){dirty}'
 
     @classmethod
     def __abstract__(cls) -> bool:
@@ -249,7 +248,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         # resolve the concrete Field class to use for each "foreign key"
         # ID field referenced by this class.
-        for id_field in cls.ravel.fk_id_fields.values():
+        for id_field in cls.ravel.foreign_id_fields.values():
             id_field.replace_self_in_resource_type(app, cls)
 
         # bootstrap all resolvers owned by this class
@@ -281,6 +280,13 @@ class Resource(Entity, metaclass=ResourceMeta):
         return self.ravel.store
 
     @property
+    def is_dirty(self) -> bool:
+        return bool(
+            self.internal.state.dirty &
+            self.ravel.schema.fields.keys()
+        )
+
+    @property
     def dirty(self) -> Set[Text]:
         return {
             k: self.internal.state[k]
@@ -294,7 +300,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         keys = resolvers or set(cls.ravel.resolvers.fields.keys())
         resolver_objs = Resolver.sort(
             cls.ravel.resolvers[k] for k in keys
-            if k not in {REV_FIELD_NAME}
+            if k not in {REV}
         )
 
         instance = cls()
@@ -446,13 +452,13 @@ class Resource(Entity, metaclass=ResourceMeta):
         """
         # extract only those elements of state data that correspond to
         # Fields declared on this Resource class.
-        if ID_FIELD_NAME not in self.internal.state:
+        if ID not in self.internal.state:
             self._id = self.store.create_id(record)
 
         # when inserting or updating, we don't want to write the _rev value on
         # accident. The DAL is solely responsible for modifying this value.
-        if REV_FIELD_NAME in self.internal.state:
-            del self.internal.state[REV_FIELD_NAME]
+        if REV in self.internal.state:
+            del self.internal.state[REV]
 
         record = {}
         for k, v in self.internal.state.items():
@@ -493,7 +499,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             self.merge(data)
 
         prepared_record = self._prepare_record_for_create()
-        prepared_record.pop(REV_FIELD_NAME, None)
+        prepared_record.pop(REV, None)
 
         created_record = self.store.dispatch('create', (prepared_record, ))
 
@@ -513,7 +519,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         elif not isinstance(select, set):
             select = set(select)
 
-        select |= {ID_FIELD_NAME, REV_FIELD_NAME}
+        select |= {ID, REV}
 
         state = cls.ravel.store.fetch(_id, fields=select)
         return cls(state=state).clean() if state else None
@@ -538,7 +544,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         elif isinstance(select, set):
             select = set(select)
 
-        select |= {ID_FIELD_NAME, REV_FIELD_NAME}
+        select |= {ID, REV}
 
         if not (offset or limit or order_by):
             store = cls.ravel.store
@@ -655,7 +661,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             self.merge(data)
 
         prepared_record = self._prepare_record_for_create()
-        prepared_record.pop(REV_FIELD_NAME, None)
+        prepared_record.pop(REV, None)
 
         created_record = self.store.dispatch('create', (prepared_record, ))
 
@@ -668,8 +674,8 @@ class Resource(Entity, metaclass=ResourceMeta):
             self.merge(data)
 
         raw_record = self.dirty.copy()
-        raw_record.pop(REV_FIELD_NAME, None)
-        raw_record.pop(ID_FIELD_NAME, None)
+        raw_record.pop(REV, None)
+        raw_record.pop(ID, None)
 
         errors = {}
         prepared_record = {}
@@ -684,7 +690,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             raise ValidationError(
                 message=f'could not update {get_class_name(self)} object',
                 data={
-                    ID_FIELD_NAME: self._id,
+                    ID: self._id,
                     'errors': errors,
                 }
             )
@@ -774,8 +780,8 @@ class Resource(Entity, metaclass=ResourceMeta):
 
             for resource in resource_partition:
                 record = resource.dirty.copy()
-                record.pop(REV_FIELD_NAME, None)
-                record.pop(ID_FIELD_NAME, None)
+                record.pop(REV, None)
+                record.pop(ID, None)
                 records.append(record)
                 _ids.append(resource._id)
 
@@ -801,8 +807,8 @@ class Resource(Entity, metaclass=ResourceMeta):
         """
         def seems_created(resource):
             return (
-                (ID_FIELD_NAME in resource.internal.state) and
-                (ID_FIELD_NAME not in resource.internal.state.dirty)
+                (ID in resource.internal.state) and
+                (ID not in resource.internal.state.dirty)
             )
 
         # partition resources into those that are "uncreated" and those which
