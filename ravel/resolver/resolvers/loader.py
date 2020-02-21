@@ -55,13 +55,14 @@ class Loader(Resolver):
         unloaded_field_names = list(
             resource.Schema.fields.keys() - resource.internal.state.keys()
         )
-        state = resource.store.dispatch('fetch', kwargs={
-            'fields': unloaded_field_names
-        })
+        state = resource.store.dispatch('fetch',
+            args=(resource._id, ),
+            kwargs={'fields': unloaded_field_names}
+        )
         if state is not None:
             resource.merge(state)
 
-        return state[request.resolver.field.name]
+        return state.get(request.resolver.field.name)
 
     def on_simulate(self, resource, request):
         value = None

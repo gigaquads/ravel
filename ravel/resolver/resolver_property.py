@@ -27,11 +27,12 @@ class ResolverProperty(property):
     def fget(self, resource: 'Resource'):
         resolver = self.resolver
 
-        # execute the resolver lazily
+        # if value not loaded, lazily resolve it
         if resolver.name not in resource.internal.state:
             request = Request(resolver)
             value = resolver.resolve(resource, request)
-            resource.internal.state[resolver.name] = value
+            if (value is not None) or resolver.nullable:
+                resource.internal.state[resolver.name] = value
 
         return resource.internal.state.get(resolver.name)
 

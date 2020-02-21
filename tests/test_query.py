@@ -1,311 +1,145 @@
 import pytest
-
-from ravel import alias
-
-
-def test_query(Tree, Node, tree, parent, children):
-    query = Tree.select(
-        Tree.name,
-        children=Node.select(
-            Node.name,
-        ).where(
-            Node.tree_id == alias.tree._id
-        )
-    ).alias('tree')
-
-    query.printf()
-    import ipdb; ipdb.set_trace()
-    tree = query.execute(first=True)
-
-
-
-
-'''
-import os
-
-from mock import MagicMock
-from appyratus.test import mark
-from pprint import pprint as pp
-
-import pytest
-
 import ravel
 
-from ravel import Application
+from pytest import fixture
+
+from ravel import Resource, Query, Request, OrderBy, resolver
 from ravel.constants import ID
-from ravel.biz import (
-    Resource,
-    Resolver,
-    ResolverProperty,
-    resolver,
-    fields
-)
-from ravel.biz.relationship import (
-    Relationship,
-    RelationshipBatch,
-    relationship,
-)
-from ravel.biz.query.query import (
-    Query,
-    QueryParameterAssignment,
-    QueryPrinter,
-    ResolverQuery,
+from ravel.query.predicate import (
+    ConditionalPredicate, BooleanPredicate, Predicate,
+    OP_CODE,
 )
 
 
 
-@pytest.fixture(scope='function')
-def app():
-    return Application().bootstrap()
-
-
-@pytest.fixture(scope='function')
-def Thing(app):
-    class Thing(Resource):
-        label = fields.String()
-        size = fields.Int()
-
-        @relationship(target=lambda: Thing)
-        def friend(self, query=None, *args, **kwargs):
-            return Thing(label='friend', size=1)
-
-        @relationship(target=lambda: Thing.Batch)
-        def owners(self, query=None, *args, **kwargs):
-            return [Thing(label='owner', size=2)]
-
-
-    app.bind(Thing)
-    return Thing
-
-
-@pytest.fixture(scope='function')
-def thing_query(Thing):
-    return Query(Thing)
-
-
-@mark.unit
-def test_entry_is_made_in_query_params(thing_query):
-    assert isinstance(thing_query.foo, QueryParameterAssignment)
-
-    thing_query.where(1)
-    thing_query.order_by('label')
-
-    assert 'where' in thing_query.params
-    assert thing_query.params['where'] == 1
-
-    assert 'order_by' in thing_query.params
-    assert thing_query.params['order_by'] == 'label'
-
-
-@mark.unit
-def test_resolvers_are_selected(Thing, thing_query):
-    query = thing_query.select(Thing._id, Thing.label)
-    assert {'_id', 'label'} == set(thing_query.params['select'].keys())
-    for k, v in thing_query.params['select'].items():
-        assert isinstance(v, ResolverQuery)
-        assert v.resolver.name == k
-
-
-@mark.unit
-def test_query_generates_correct_store_call(Thing, thing_query):
-    Thing.get_store = MagicMock()
-    thing_query.select(Thing._id, Thing.label)
-    thing_query.where(Thing._id != None)
-    thing_query.execute()
-
-    assert Thing.get_store.query.called_once_with(
-        predicate=thing_query.params['where'],
-        fields={Thing._id, Thing.label}
-    )
-
-
-@mark.unit
-def test_relationship_autoconfigures_many(Thing):
-    assert Thing.ravel.resolvers['friend'].many is False
-    assert Thing.ravel.resolvers['owners'].many is True
-
-
-@mark.unit
-def test_generate_recurses_correctly(Thing):
-    query = Thing.select(
-        Thing.label,
-        Thing.size,
-        Thing.friend,
-    )
-    thing = Thing.generate(query)
-
-    print(thing.internal.state)
-    print('-'*100)
-    print(thing.friend.internal.state)
-
-    assert isinstance(thing._id, str)
-    assert isinstance(thing.label, str)
-    assert isinstance(thing.size, int)
-    assert isinstance(thing.friend, Thing)
-    assert isinstance(thing.friend.label, str)
-    assert isinstance(thing.friend.size, int)
-    assert isinstance(thing.friend._id, str)
-
-
-@mark.unit
-def test_generate_recurses_with_query(Thing):
-    query = Thing.select(
-        Thing.label,
-        Thing.size,
-        Thing.friend,
-    )
-
-    Thing.ravel.resolvers['friend'].generate = generate_func = MagicMock()
-
-    thing = Thing.generate(query=query)
-
-    Thing.ravel.resolvers['friend'].generate.assert_called_once_with(
-        thing, query=query.params['select']['friend']
-    )
-
-
-@mark.unit
-@pytest.mark.parametrize('selectors', [
-    tuple(),
-    ('_id',),
-    ('_id', 'label',),
-    ('label',),
-    ('size',),
-    ('label', 'size', 'friend',),
-])
-def test_dump_outputs_expected_items(Thing, selectors):
-    query = Thing.select(Thing.label, Thing.size, Thing.friend)
-    thing = Thing.generate(query)
-    data = thing.dump()
-
-    assert data is not None
-    assert data.get('_id') == thing._id
-
-    for k in selectors:
-        assert k in data
-
-    query.printf()
-
-def test_dump_side_loaded_works_with_defaults(Thing):
-    query = Thing.select(Thing.label, Thing.friend)
-    thing = Thing.generate(query)
-
-    result = thing.dump(style='side_loaded')
-
-    assert result.keys() == {'target', 'links'}
-    assert result['target']['_id'] not in result['links']
-    assert len(result['links']) == 1
-
-    pp(result)
-
-
-@mark.unit
-@pytest.mark.parametrize('num_to_create, num_to_update', [
-    [2, 0],
-    [1, 1],
-    [0, 2],
-    [0, 0],
-])
-def test_save_many_correctly_partitions_objects(
-    Thing, num_to_create, num_to_update
-):
-    """
-    Make sure that the "save" method sends the correct biz objects to create or
-    update internally.
-    """
-    query = Thing.select(Thing.label, Thing.friend)
-
-    # to_create and to_update are Batchs
-    to_create = query.limit(num_to_create).generate()
-    to_update = query.limit(num_to_update).generate().clean()
-
-    Thing.create_many = MagicMock()
-    Thing.update_many = MagicMock()
-
-    things = to_create + to_update
-    retval = Thing.save_many(things, depth=0)
-
-    if num_to_create:
-        Thing.create_many.assert_called_once_with(to_create.internal.data)
-    else:
-        assert not Thing.create_many.called
-
-    if num_to_update:
-        Thing.update_many.assert_called_once_with(to_update.internal.data)
-    else:
-        assert not Thing.update_many.called
-
-
-def test_save_recurses_on_resolvers(
-    Thing,
-):
-    query = Thing.select(Thing.label, Thing.friend)
-    query.limit(1)
-    things = query.generate()
-    thing = things[0]
-
-    Thing.create_many = MagicMock()
-    Thing.update_many = MagicMock()
-
-    friend = thing.friend  # cause state to be written lazily
-
-    mock_resolver = MagicMock()
-    mock_resolver.name = 'friend'
-    mock_resolver.tags = lambda: ['relationships']
-    mock_resolver.resource_type = Thing
-    mock_resolver.on_save.return_value = friend
-
-    thing.ravel.resolvers['friend'] = mock_resolver
-
-    retval = Thing.save_many(things, depth=1)
-
-    assert Thing.create_many.call_count == 2
-    assert not Thing.update_many.call_count
-
-
-@pytest.mark.parametrize('created_thing_count, total', [
-    (0, 5),
-    (1, 5),
-    (5, 5),
-    (6, 5),
-])
-def test_backfill_generates_correct_number(Thing, created_thing_count, total):
-    query = Thing.select(Thing.label, Thing.friend)
-    existing_things = query.generate(count=created_thing_count).create()
-    all_things = query.limit(total).execute(backfill=True)
-
-    pp(all_things.dump())
-
-    assert len(all_things) == total
-
-    for idx, thing in enumerate(all_things):
-        if idx < created_thing_count:
-            assert thing.is_created
-        else:
-            assert not thing.is_created
-
-
-def test_backfill_persistent_mode_works(Thing):
-    query = Thing.select(Thing.label, Thing.friend)
-    backfilled_thing = query.limit(1).execute(
-        backfill='persistent',
-        first=True
-    )
-    assert backfilled_thing.is_created
-
-    thing = query.execute(first=True)
-    assert thing._id == backfilled_thing._id
-
-
-def test_backfill_ephemeral_mode_works(Thing):
-    query = Thing.select(Thing.label, Thing.friend)
-    backfilled_thing = query.limit(1).execute(
-        backfill='ephemeral',
-        first=True
-    )
-    assert not backfilled_thing.is_created
-
-    thing = query.execute(first=True)
-    assert thing is None
-
-'''
+@fixture(scope='function')
+def Node(app):
+    class Node(Resource):
+        name = ravel.String()
+        parent_id = ravel.Id(lambda: Node, nullable=True, default=lambda: None)
+
+        @resolver(target=lambda: Node.Batch)
+        def children(self, request):
+            query = Query(request=request).where(parent_id=self._id)
+            query.select(Node.children)
+            return query.execute()
+
+        @resolver(target=lambda: Node)
+        def parent(self, request):
+            query = Query(request=request).where(_id=self.parent_id)
+            return query.execute(first=True)
+
+        @classmethod
+        def generate_binary_tree(cls, depth=0) -> 'Node':
+            def generate_children(parent, depth):
+                if depth > 0:
+                    children = cls.Batch.generate(
+                        values={'parent_id': parent._id},
+                        count=2,
+                    ).save()
+                    for node in children:
+                        generate_children(node, depth - 1)
+
+            depth = max(0, depth)
+            root = cls(name='root', parent_id=None).save()
+            generate_children(root, depth)
+            return root
+
+    app.bind(Node)
+    return Node
+
+
+class TestQueryExecution:
+    def test_recursive_execution(self, Node):
+        depth = 10
+        root = Node.generate_binary_tree(depth=depth)
+
+        query = Node.select(Node.name).where(_id=root._id)
+
+        target = query
+        for _ in range(depth - 1):
+            request = Node.children.select(Node.name)
+            target.select(request)
+            target = request
+
+        count = {'value': 0}
+        def assert_has_children(parent, depth, count):
+            if depth > 0:
+                count['value'] += 1
+                print(count['value'], depth, parent)
+                assert 'children' in parent.internal.state
+                assert len(parent.internal.state['children']) == 2
+                for child in parent.children:
+                    assert_has_children(child, depth - 1, count)
+
+        queried_root = query.execute(first=True)
+        assert_has_children(queried_root, depth, count)
+
+
+class TestQueryDataStructures:
+    def test_query_initializes_correctly(self, BasicResource, basic_query):
+        assert basic_query.target is BasicResource
+        assert basic_query.selected is not None
+        assert basic_query.parameters is not None
+        assert basic_query.options is not None
+        assert isinstance(basic_query.selected, dict)
+
+    def test_select_with_str(self, basic_query):
+        basic_query.select(ID)
+        assert ID in basic_query.selected
+
+        req = basic_query.selected[ID]
+        assert isinstance(req, Request)
+
+    def test_select_with_resolver_property(self, BasicResource, basic_query):
+        basic_query.select(BasicResource._id)
+        assert ID in basic_query.selected
+
+        req = basic_query.selected[ID]
+        assert isinstance(req, Request)
+
+    def test_select_with_request(self, BasicResource, basic_query):
+        req_in = Request(BasicResource._id.resolver)
+
+        basic_query.select(req_in)
+        assert ID in basic_query.selected
+
+        req_out = basic_query.selected[ID]
+        assert isinstance(req_out, Request)
+        assert req_out == req_in
+
+    def test_where_predicate_builds(self, BasicResource, basic_query):
+        pred_1 = BasicResource._id == 1
+        pred_2 = BasicResource.str_field == 'florp'
+
+        basic_query.where(pred_1)
+
+        assert isinstance(basic_query.parameters.where, ConditionalPredicate)
+
+        basic_query.where(pred_2)
+
+        assert isinstance(basic_query.parameters.where, BooleanPredicate)
+        assert basic_query.parameters.where.op == OP_CODE.AND
+        assert basic_query.parameters.where.lhs is pred_1
+        assert basic_query.parameters.where.rhs is pred_2
+
+    @pytest.mark.parametrize('argument, expected', [
+        ('_id', OrderBy('_id', desc=False)),
+        ('_id asc', OrderBy('_id', desc=False)),
+        ('_id desc', OrderBy('_id', desc=True)),
+        (OrderBy('_id', desc=True), OrderBy('_id', desc=True)),
+        (OrderBy('_id', desc=False), OrderBy('_id', desc=False)),
+    ])
+    def test_order_by(self, BasicResource, basic_query, argument, expected):
+        basic_query.order_by(argument)
+        assert len(basic_query.parameters.order_by) == 1
+        assert basic_query.parameters.order_by[0].key == expected.key
+        assert basic_query.parameters.order_by[0].desc is expected.desc
+
+    def test_returns_basic_result(self, BasicResource, basic_resource, basic_query):
+        query = basic_query.where(BasicResource._id == basic_resource._id)
+        result = query.execute(first=True)
+        assert result is not None
+        assert isinstance(result, BasicResource)
+        assert result._id == basic_resource._id
+        assert not result.dirty

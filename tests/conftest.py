@@ -1,67 +1,81 @@
 import pytest
 import ravel
 
-from ravel import relationship
+from ravel import (
+    Resource,
+    Resolver,
+    ResolverManager,
+    ResolverProperty,
+    ResolverDecorator,
+    Relationship,
+    Query,
+    Request,
+    Batch,
+    resolver,
+    relationship,
+)
+from ravel.constants import (
+    ID,
+    REV,
+)
 
-"""
+
 @pytest.fixture(scope='function')
 def app():
     return ravel.Application().bootstrap()
 
 
 @pytest.fixture(scope='function')
-def Node(app):
+def BasicResource(app):
+    class BasicResource(Resource):
+        str_field = ravel.String()
+        required_str_field = ravel.String(required=True)
+        int_field = ravel.Int()
+        nullable_int_field = ravel.Int(nullable=True)
+        friend_id = ravel.Id(lambda: BasicResource)
 
-    class Node(ravel.Resource):
-        name = ravel.String(required=True)
-        parent_id = ravel.Id(required=True)
-        tree_id = ravel.Id(required=True)
-
-        @relationship(join=lambda: (Node.parent_id, Node._id))
-        def parent(self):
-            pass
-
-        @relationship(join=lambda: (Node._id, Node.parent_id), many=True)
-        def children(self):
-            pass
-
-    app.bind(Node)
-    return Node
+    app.bind(BasicResource)
+    return BasicResource
 
 
 @pytest.fixture(scope='function')
-def Tree(app, Node):
+def ResourceWithResolvers(app, BasicResource):
+    class ResourceWithResolvers(Resource):
 
-    class Tree(ravel.Resource):
+        @resolver(target=BasicResource, nullable=False)
+        def basic_friend(self, request):
+            return BasicResource(required_str_field='x')
 
-        root_node_id = ravel.Id(required=True)
-        name = ravel.String(required=True)
+        @relationship(
+            join=lambda: (ResourceWithResolvers._id, ResourceWithResolvers._id),
+        )
+        def myself(self, request):
+            return request.result
 
-        @relationship(join=lambda: (Tree.root_node_id, Node._id))
-        def root(self):
-            pass
-
-    app.bind(Tree)
-    return Tree
-
-
-@pytest.fixture(scope='function')
-def tree(Tree):
-    return Tree(name='Test Tree').save()
+    app.bind(ResourceWithResolvers)
+    return ResourceWithResolvers
 
 
 @pytest.fixture(scope='function')
-def parent(Node, tree):
-    root = Node(name='parent', tree_id=tree._id).save()
-    tree.merge(root_node_id=root._id).save()
-    return root
+def basic_query(BasicResource):
+    return Query(target=BasicResource)
 
 
 @pytest.fixture(scope='function')
-def children(Node, tree, parent):
-    return Node.Batch(
-        Node(name=f'child {c}', parent_id=parent._id, tree_id=tree._id)
-        for c in 'ABC'
-    ).save()
+def basic_resource(BasicResource):
+    return BasicResource(
+        str_field='x',
+        required_str_field='y',
+        int_field=1,
+        nullable_int_field=None,
+    ).create()
 
-"""
+
+@pytest.fixture(scope='function')
+def BasicBatch(BasicResource):
+    return Batch.factory(BasicResource)
+
+
+@pytest.fixture(scope='function')
+def basic_batch(BasicBatch):
+    return BasicBatch(indexed=True)
