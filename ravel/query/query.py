@@ -1,4 +1,5 @@
 from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
+from collections import defaultdict
 from copy import deepcopy
 
 from appyratus.utils import DictObject
@@ -34,10 +35,8 @@ class Query(object):
         self.target = target
         self.parent = parent
         self.options = DictObject(mode=QueryMode.normal)
-        self.selected = DictObject()
-        self.selected.fields = {}
-        self.selected.requests = {}
-        self.parameters = DictObject()
+        self.parameters = DictObject(default=None)
+        self.selected = {}
 
         if request:
             if request.resolver and request.resolver.target:
@@ -71,8 +70,8 @@ class Query(object):
         if in_place:
             self.parameters.update(deepcopy(other.parameters))
             self.options.update(deepcopy(other.options))
-            self.selected.fields.update(deepcopy(other.selected.fields))
-            self.selected.requests.update(deepcopy(other.selected.requests))
+            for k, v in other.selected.items():
+                self.selected[k].update(v)
             return self
         else:
             merged_query = type(self)(
@@ -102,21 +101,19 @@ class Query(object):
                 continue
 
             # build a resolver request
+            request = None
             if isinstance(obj, LoaderProperty) and (obj.decorator is None):
                 resolver_property = obj
                 request = Request(resolver_property.resolver, query=self)
-                self.selected.fields[request.resolver.name] = request
             elif isinstance(obj, ResolverProperty):
                 resolver_property = obj
                 request = Request(resolver_property.resolver, query=self)
-                self.selected.requests[request.resolver.name] = request
             elif isinstance(obj, Request):
                 request = obj
                 request.query = self
-                if isinstance(request.resolver, Loader):
-                    self.selected.fields[request.resolver.name] = request
-                else:
-                    self.selected.requests[request.resolver.name] = request
+
+            if request:
+                self.selected[request.resolver.name] = request
 
         return self
 
