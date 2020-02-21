@@ -35,14 +35,24 @@ class Query(object):
         self.target = target
         self.parent = parent
         self.options = DictObject(mode=QueryMode.normal)
-        self.parameters = DictObject(default=None)
-        self.selected = {}
+        self.requests = {}
+        self.parameters = DictObject(
+            data={
+                'where': None,
+                'order_by': None,
+                'offset': None,
+                'limit': None,
+            },
+            default=None
+        )
 
         if request:
             if request.resolver and request.resolver.target:
                 self.target = request.resolver.target
             if request.parameters:
                 params = request.parameters
+                if 'select' in params:
+                    self.select(params.select)
                 if 'where' in params:
                     self.where(params.where)
                 if 'order_by' in params:
@@ -59,19 +69,24 @@ class Query(object):
     def __getattr__(self, parameter_name: str):
         return ParameterAssignment(self, parameter_name)
 
-    def execute(self, first=None):
-        if first is not None:
-            self.options.first = first
+    def __getitem__(self, resolver: Text):
+        return self.requests.get(resolver)
 
-        executor = Executor()
-        return executor.execute(self)
+    def __len__(self) -> int:
+        return len(self.requests)
+
+    def __contains__(self, resolver: Text) -> bool:
+        return resolver in self.requests
+
+    def __iter__(self):
+        return iter(self.requests)
 
     def merge(self, other: 'Query', in_place=False) -> 'Query':
         if in_place:
             self.parameters.update(deepcopy(other.parameters))
             self.options.update(deepcopy(other.options))
-            for k, v in other.selected.items():
-                self.selected[k].update(v)
+            for k, v in other.requests.items():
+                self.requests[k].update(v)
             return self
         else:
             merged_query = type(self)(
@@ -81,6 +96,13 @@ class Query(object):
             merged_query.merge(self, in_place=True)
             merged_query.merge(other, in_place=True)
             return merged_query
+
+    def execute(self, first=None):
+        if first is not None:
+            self.options.first = first
+
+        executor = Executor()
+        return executor.execute(self)
 
     def select(self, *args):
         args = flatten_sequence(args)
@@ -113,7 +135,7 @@ class Query(object):
                 request.query = self
 
             if request:
-                self.selected[request.resolver.name] = request
+                self.requests[request.resolver.name] = request
 
         return self
 

@@ -26,7 +26,7 @@ class Executor(object):
         fields_to_fetch = {ID, REV}
         requests_to_execute = set()
         schema = query.target.ravel.schema
-        for request in query.selected.values():
+        for request in query.requests.values():
             if request.resolver.name in schema.fields:
                 fields_to_fetch.add(request.resolver.name)
             else:

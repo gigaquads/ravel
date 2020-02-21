@@ -21,7 +21,7 @@ class ResolverProperty(property):
 
     def select(self, *items: Tuple[Text]):
         request = Request(self.resolver)
-        request.select(items)
+        request.select(*items)
         return request
 
     def fget(self, resource: 'Resource'):
