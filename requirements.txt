@@ -19,3 +19,4 @@ redis
 sqlparse
 pytest
 mock
+base36

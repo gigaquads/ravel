@@ -1,67 +1,76 @@
 import pytest
-import pybiz
+import ravel
 
-from pybiz import relationship
+from pytest import fixture
 
-"""
+from ravel.constants import ID, REV
+from ravel import (
+    Resource,
+    Resolver,
+    ResolverManager,
+    ResolverProperty,
+    ResolverDecorator,
+    Relationship,
+    Query,
+    Request,
+    Batch,
+    resolver,
+    relationship,
+)
+
+
 @pytest.fixture(scope='function')
 def app():
-    return pybiz.Application().bootstrap()
+    return ravel.Application().bootstrap()
 
 
-@pytest.fixture(scope='function')
-def Node(app):
+@fixture(scope='function')
+def Tree(app):
+    class Tree(Resource):
+        parent_id = ravel.Id(lambda: Tree, nullable=True, default=lambda: None)
+        root_id = ravel.Id(lambda: Tree, nullable=True, default=lambda: None)
+        name = ravel.String(nullable=False, required=True)
 
-    class Node(pybiz.Resource):
-        name = pybiz.String(required=True)
-        parent_id = pybiz.Id(required=True)
-        tree_id = pybiz.Id(required=True)
+        @resolver(target=lambda: Tree.Batch)
+        def children(self, request) -> 'Tree.Batch':
+            return Query(request=request).where(
+                Tree.parent_id == self._id
+            ).execute()
 
-        @relationship(join=lambda: (Node.parent_id, Node._id))
-        def parent(self):
-            pass
+        @resolver(target=lambda: Tree)
+        def parent(self, request) -> 'Tree':
+            return Query(request=request).where(
+                Tree._id == self.parent_id
+            ).execute(first=True)
 
-        @relationship(join=lambda: (Node._id, Node.parent_id), many=True)
-        def children(self):
-            pass
+        @resolver(target=lambda: Tree)
+        def root(self, request) -> 'Tree':
+            return Query(request=request).where(
+                Tree._id == self.root_id
+            ).execute(first=True)
 
-    app.bind(Node)
-    return Node
+        @classmethod
+        def binary_tree_factory(cls, depth=0) -> 'Tree':
+            def create_children(parent, depth):
+                if depth > 0:
+                    children = cls.Batch.generate(
+                        values={
+                            'parent_id': parent._id,
+                            'root_id': parent.root_id or parent._id,
+                        },
+                        count=2,
+                    ).save()
+                    for tree in children:
+                        create_children(tree, depth - 1)
 
+            root = cls(name='root', parent_id=None)
+            root.root_id = root._id
+            root.save()
 
-@pytest.fixture(scope='function')
-def Tree(app, Node):
+            create_children(root, max(0, depth))
 
-    class Tree(pybiz.Resource):
+            return root
 
-        root_node_id = pybiz.Id(required=True)
-        name = pybiz.String(required=True)
-
-        @relationship(join=lambda: (Tree.root_node_id, Node._id))
-        def root(self):
-            pass
 
     app.bind(Tree)
     return Tree
-
-
-@pytest.fixture(scope='function')
-def tree(Tree):
-    return Tree(name='Test Tree').save()
-
-
-@pytest.fixture(scope='function')
-def parent(Node, tree):
-    root = Node(name='parent', tree_id=tree._id).save()
-    tree.merge(root_node_id=root._id).save()
-    return root
-
-
-@pytest.fixture(scope='function')
-def children(Node, tree, parent):
-    return Node.Batch(
-        Node(name=f'child {c}', parent_id=parent._id, tree_id=tree._id)
-        for c in 'ABC'
-    ).save()
-
-"""
