@@ -124,16 +124,12 @@ class LoaderProperty(ResolverProperty):
     def including(self, *others) -> Predicate:
         others = flatten_sequence(others)
         others = {obj._id if is_resource(obj) else obj for obj in others}
-        return ConditionalPredicate(
-            OP_CODE.INCLUDING, self, others, is_scalar=False
-        )
+        return ConditionalPredicate(OP_CODE.INCLUDING, self, others)
 
     def excluding(self, *others) -> Predicate:
         others = flatten_sequence(others)
         others = {obj._id if is_resource(obj) else obj for obj in others}
-        return ConditionalPredicate(
-            OP_CODE.EXCLUDING, self, others, is_scalar=False
-        )
+        return ConditionalPredicate(OP_CODE.EXCLUDING, self, others)
 
     def fset(self, owner: 'Resource', value):
         field = self.resolver.field

@@ -22,21 +22,13 @@ from ravel.util.misc_functions import (
     flatten_sequence, is_sequence, get_class_name
 )
 from ravel.schema import Enum as EnumField
-from ravel.constants import ID, REV
+from ravel.constants import ID, REV, OP_CODE
 from ravel.util import is_resource, is_batch
 
 
-OP_CODE = Enum(
-    EQ='eq',
-    NEQ='neq',
-    GT='gt',
-    LT='lt',
-    GEQ='geq',
-    LEQ='leq',
-    INCLUDING='in',
-    EXCLUDING='ex',
-    AND='and',
-    OR='or',
+PREDICATE_TYPE = Enum(
+    BOOLEAN=1,
+    CONDITIONAL=2,
 )
 
 OP_CODE_2_DISPLAY_STRING = {
@@ -56,21 +48,19 @@ DISPLAY_STRING_2_OP_CODE = {
     v: k for k, v in OP_CODE_2_DISPLAY_STRING.items()
 }
 
-TYPE_BOOLEAN = 1
-TYPE_CONDITIONAL = 2
+NON_SCALAR_OP_CODES = {
+    OP_CODE.INCLUDING,
+    OP_CODE.EXCLUDING,
+}
 
-# globals used by PredicateParser:
-CONDITIONAL_OPERATORS = frozenset({'==', '!=', '>', '>=', '<', '<='})
-BOOLEAN_OPERATORS = frozenset({'&&', '||'})
-
+# regular expressions
 RE_INT = re.compile(r'\d+')
 RE_FLOAT = re.compile(r'\d*(\.\d+)')
 RE_STRING = re.compile(r'\'.+\'')
 
 
 class Predicate(object):
-    TYPE_BOOLEAN = TYPE_BOOLEAN
-    TYPE_CONDITIONAL = TYPE_CONDITIONAL
+    TYPE = PREDICATE_TYPE
     AND_FUNC = lambda x, y: x & y
     OR_FUNC = lambda x, y: x | y
 
@@ -106,9 +96,9 @@ class Predicate(object):
 
     @classmethod
     def load(cls, resource_type: Type['Resource'], data: Dict):
-        if data['code'] == TYPE_CONDITIONAL:
+        if data['code'] == PREDICATE_TYPE.CONDITIONAL:
             return ConditionalPredicate.load(resource_type, data)
-        elif data['code'] == TYPE_BOOLEAN:
+        elif data['code'] == PREDICATE_TYPE.BOOLEAN:
             return BooleanPredicate.load(resource_type, data)
 
     @classmethod
@@ -131,11 +121,11 @@ class Predicate(object):
 
     @property
     def is_conditional_predicate(self):
-        return self.code == TYPE_CONDITIONAL
+        return self.code == PREDICATE_TYPE.CONDITIONAL
 
     @property
     def is_boolean_predicate(self):
-        return self.code == TYPE_BOOLEAN
+        return self.code == PREDICATE_TYPE.BOOLEAN
 
 
 class ConditionalPredicate(Predicate):
@@ -144,20 +134,17 @@ class ConditionalPredicate(Predicate):
     and a value. The field name is made available through the FieldProperty
     objects that instantiated the predicate.
     """
-    def __init__(self, op: Text, prop: 'FieldProperty', value, is_scalar=True):
-        super().__init__(code=TYPE_CONDITIONAL)
+    def __init__(self, op: Text, prop: 'FieldProperty', value):
+        super().__init__(code=PREDICATE_TYPE.CONDITIONAL)
         self.op = op
         self.prop = prop
         self.value = value
         self.fields.add(self.prop.resolver.field)
         self.targets.add(self.prop.resolver.owner)
-        self.is_scalar = is_scalar
+        self.is_scalar = op not in NON_SCALAR_OP_CODES
 
     def __repr__(self):
-        return '<{}({})>'.format(
-            get_class_name(self),
-            str(self)[1:-1],
-        )
+        return f'{get_class_name(self)}({str(self)[1:-1]})'
 
     def __str__(self):
         if self.prop:
@@ -201,13 +188,13 @@ class BooleanPredicate(Predicate):
     LSH, and LHS stand for "left-hand side" and "right-hand side", respectively.
     """
     def __init__(self, op, lhs: 'Predicate', rhs: 'Predicate' = None):
-        super().__init__(code=TYPE_BOOLEAN)
+        super().__init__(code=PREDICATE_TYPE.BOOLEAN)
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
-        if lhs.code == TYPE_CONDITIONAL:
+        if lhs.code == PREDICATE_TYPE.CONDITIONAL:
             self.fields.add(lhs.prop.resolver.field)
-        if rhs.code == TYPE_CONDITIONAL:
+        if rhs.code == PREDICATE_TYPE.CONDITIONAL:
             self.fields.add(rhs.prop.resolver.field)
 
     def __or__(self, other):
@@ -220,9 +207,7 @@ class BooleanPredicate(Predicate):
         return self._build_string(self)
 
     def __repr__(self):
-        return '<{}({} {} {})>'.format(
-            self.__class__.__name__, self.lhs, self.op, self.rhs,
-        )
+        return f'{get_class_name(self)}({self.lhs} {self.op} {self.rhs})'
 
     def _build_string(self, p, depth=0):
         substr = ''
