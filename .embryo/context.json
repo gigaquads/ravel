@@ -1,0 +1,15 @@
+{
+  "project/base": [
+    {
+      "embryo": {
+        "action": "hatch",
+        "destination": "/home/jeff/src/ravel",
+        "name": "project/base",
+        "timestamp": 1582392343
+      },
+      "project": {
+        "name": "ravel"
+      }
+    }
+  ]
+}
