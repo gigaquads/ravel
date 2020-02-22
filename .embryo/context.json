@@ -3,13 +3,22 @@
     {
       "embryo": {
         "action": "hatch",
-        "destination": "/home/jeff/src/ravel",
         "name": "project/base",
         "timestamp": 1582392343
       },
       "project": {
         "name": "ravel"
       }
+    }
+  ],
+  "python_project/base": [
+    {
+      "embryo": {
+        "action": "hatch",
+        "name": "python_project/base",
+        "timestamp": 1582395804
+      },
+      "project": {}
     }
   ]
 }

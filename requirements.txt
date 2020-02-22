@@ -20,3 +20,4 @@ sqlparse
 pytest
 mock
 base36
+pygame
