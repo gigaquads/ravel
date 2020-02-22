@@ -3,6 +3,7 @@ import ravel
 
 from pytest import fixture
 
+from ravel.constants import ID, REV
 from ravel import (
     Resource,
     Resolver,
@@ -15,10 +16,6 @@ from ravel import (
     Batch,
     resolver,
     relationship,
-)
-from ravel.constants import (
-    ID,
-    REV,
 )
 
 
@@ -36,10 +33,9 @@ def Tree(app):
 
         @resolver(target=lambda: Tree.Batch)
         def children(self, request) -> 'Tree.Batch':
-            query = Query(request=request).where(
+            return Query(request=request).where(
                 Tree.parent_id == self._id
-            )
-            return query.execute()
+            ).execute()
 
         @resolver(target=lambda: Tree)
         def parent(self, request) -> 'Tree':
