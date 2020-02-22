@@ -20,5 +20,18 @@
       },
       "project": {}
     }
+  ],
+  "python_project/setup": [
+    {
+      "config": {},
+      "embryo": {
+        "action": "hatch",
+        "name": "python_project/setup",
+        "timestamp": 1582397716
+      },
+      "metadata": {},
+      "options": {},
+      "project": null
+    }
   ]
 }
