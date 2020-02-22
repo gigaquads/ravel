@@ -76,7 +76,7 @@ class ResourceMeta(type):
             Callback used by Venusian for Resource class auto-discovery.
             """
             console.info(f'venusian scan found "{resource_type.__name__}" Resource')
-            scanner.resource_typees.setdefault(name, resource_type)
+            scanner.resource_types.setdefault(name, resource_type)
 
         venusian.attach(resource_type, callback, category='res')
 

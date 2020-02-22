@@ -5,7 +5,9 @@ from ravel.util.loggers import console
 
 # XXX: This stuff needs some refactoring. Too hacky.
 
+
 class BizBinding(object):
+
     def __init__(self, binder, resource_type, store_instance, store_bind_kwargs=None):
         self.binder = binder
         self.resource_type = resource_type
@@ -56,7 +58,7 @@ class ResourceBinder(object):
     def __init__(self):
         self._bindings = {}
         self._named_store_types = {}
-        self._named_resource_typees = {}
+        self._named_resource_types = {}
 
     def __repr__(self):
         return f'{get_class_name(self)}()'
@@ -66,8 +68,8 @@ class ResourceBinder(object):
         return list(self._bindings.values())
 
     @property
-    def resource_typees(self) -> Dict[Text, 'Resource']:
-        return self._named_resource_typees
+    def resource_types(self) -> Dict[Text, 'Resource']:
+        return self._named_resource_types
 
     @property
     def store_types(self) -> Dict[Text, 'Store']:
@@ -104,7 +106,7 @@ class ResourceBinder(object):
             resource_type_name = get_class_name(resource_type)
             resource_type.binder = self
 
-            self._named_resource_typees[resource_type_name] = resource_type
+            self._named_resource_types[resource_type_name] = resource_type
             self._bindings[resource_type_name] = binding = BizBinding(
                 self,
                 resource_type=resource_type,
@@ -120,12 +122,12 @@ class ResourceBinder(object):
 
         return None
 
-    def bind(self, resource_typees: Set[Type['Resource']] = None, rebind=False):
-        if not resource_typees:
-            resource_typees = [v.resource_type for v in self._bindings.values()]
-        elif not is_sequence(resource_typees):
-            resource_typees = [resource_typees]
-        for resource_type in resource_typees:
+    def bind(self, resource_types: Set[Type['Resource']] = None, rebind=False):
+        if not resource_types:
+            resource_types = [v.resource_type for v in self._bindings.values()]
+        elif not is_sequence(resource_types):
+            resource_types = [resource_types]
+        for resource_type in resource_types:
             if not resource_type.ravel.is_abstract:
                 resource_type.binder = self
                 self.get_store_instance(resource_type, rebind=rebind)

@@ -312,7 +312,7 @@ class Manifest(object):
                 data={'trace': exc_str.split('\n')}
             )
 
-        console.debug('venusian scan for BizType and Store types initiated')
+        console.debug('venusian scan for Resource and Store types initiated')
 
         self.scanner.scan(ravel.store, onerror=on_error)
         self.scanner.scan(ravel.ext, onerror=on_error)
