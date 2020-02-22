@@ -61,6 +61,9 @@ class Loader(Resolver):
         )
         if state is not None:
             resource.merge(state)
+        else:
+            import ipdb; ipdb.set_trace()
+            state = {}
 
         return state.get(request.resolver.field.name)
 

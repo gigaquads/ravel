@@ -64,7 +64,7 @@ class Query(object):
 
         if self.target is not None:
             self.select(self.target.ravel.schema.required_fields.keys())
-            self.select(self.target.ravel.foreign_id_fields.keys())
+            self.select(self.target.ravel.foreign_keys.keys())
 
     def __getattr__(self, parameter_name: str):
         return ParameterAssignment(self, parameter_name)

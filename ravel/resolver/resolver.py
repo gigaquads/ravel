@@ -185,12 +185,17 @@ class Resolver(object):
         return result
 
     def on_simulate(self, resource, request):
+        from ravel.query.query import Query
+
         resolver = request.resolver
+        query = Query(request=request)
+        select = set(query.requests.keys())
+
         if self.many:
             count = request.parameters.get('limit', randint(1, 10))
-            return self.target.Batch.generate(count)
+            return self.target.Batch.generate(resolvers=select, count=count)
         else:
-            return self.target.generate()
+            return self.target.generate(resolvers=select)
 
     def on_backfill(self, resource, request, result):
         raise NotImplementedError()

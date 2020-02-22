@@ -63,7 +63,7 @@ class ResourceMeta(type):
         resource_type.ravel.app = None
         resource_type.ravel.store = None
         resource_type.ravel.resolvers = ResolverManager()
-        resource_type.ravel.foreign_id_fields = {}
+        resource_type.ravel.foreign_keys = {}
         resource_type.ravel.is_abstract = resource_type._compute_is_abstract()
         resource_type.ravel.is_bootstrapped = False
         resource_type.ravel.is_bound = False
@@ -135,7 +135,7 @@ class ResourceMeta(type):
             if field.source is None:
                 field.source = field.name
             if isinstance(field, Id) and field.name != ID:
-                    resource_type.ravel.foreign_id_fields[field.name] = field
+                    resource_type.ravel.foreign_keys[field.name] = field
 
         # these are universally required
         assert ID in fields
@@ -248,7 +248,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         # resolve the concrete Field class to use for each "foreign key"
         # ID field referenced by this class.
-        for id_field in cls.ravel.foreign_id_fields.values():
+        for id_field in cls.ravel.foreign_keys.values():
             id_field.replace_self_in_resource_type(app, cls)
 
         # bootstrap all resolvers owned by this class

@@ -17,83 +17,73 @@ from ravel.constants import (
 )
 
 
-def test_basic_resource_builds(app, BasicResource):
-    """
-    Ensure that a basic Resource class is initialized by its metaclass
-    correctly, following app bootstrapping.
-    """
-    # check basic class attributes are as expected
-    assert hasattr(BasicResource, 'ravel')
-    assert hasattr(BasicResource, 'Schema')
-    assert hasattr(BasicResource, IS_RESOURCE)
-    assert isinstance(BasicResource.Schema, type)
-    assert issubclass(BasicResource.Schema, ravel.Schema)
-    assert isinstance(BasicResource.Batch, type)
-    assert issubclass(BasicResource.Batch, Batch)
-    assert BasicResource.ravel.app is app
-    assert BasicResource.ravel.is_abstract is False
-    assert BasicResource.ravel.is_bootstrapped is True
-    assert BasicResource.ravel.is_bound is True
-    assert isinstance(BasicResource.ravel.store, ravel.Store)
-    assert isinstance(BasicResource.ravel.schema, BasicResource.Schema)
-    assert isinstance(BasicResource.ravel.resolvers, ResolverManager)
-    assert BasicResource.ravel.defaults
-    assert ID in BasicResource.ravel.defaults
 
-    # ensure the expected fields, resolvers, and resolver properties exist
-    expected_field_names = {
-        REV,
-        ID,
-        'str_field',
-        'int_field',
-        'required_str_field',
-        'nullable_int_field',
-        'friend_id',
-    }
+class TestResourceDataStructures:
+    def test_resource_builds(self, app, Tree):
+        """
+        Ensure that a basic Resource class is initialized by its metaclass
+        correctly, following app bootstrapping.
+        """
+        # check basic class attributes are as expected
+        assert hasattr(Tree, 'ravel')
+        assert hasattr(Tree, 'Schema')
+        assert hasattr(Tree, IS_RESOURCE)
+        assert isinstance(Tree.Schema, type)
+        assert issubclass(Tree.Schema, ravel.Schema)
+        assert isinstance(Tree.Batch, type)
+        assert issubclass(Tree.Batch, Batch)
+        assert Tree.ravel.app is app
+        assert Tree.ravel.is_abstract is False
+        assert Tree.ravel.is_bootstrapped is True
+        assert Tree.ravel.is_bound is True
+        assert isinstance(Tree.ravel.store, ravel.Store)
+        assert isinstance(Tree.ravel.schema, Tree.Schema)
+        assert isinstance(Tree.ravel.resolvers, ResolverManager)
+        assert Tree.ravel.defaults
+        assert ID in Tree.ravel.defaults
 
-    for name in expected_field_names:
-        assert name in BasicResource.Schema.fields
-        assert name in BasicResource.ravel.resolvers
+        # ensure the expected fields, resolvers, and resolver properties exist
+        expected_field_names = {REV, ID, 'name'}
 
-        attr = getattr(BasicResource, name)
-        assert isinstance(attr, ResolverProperty)
-        assert isinstance(attr.resolver, Resolver)
-        assert attr.resolver.name == name
-        assert attr.resolver.field.name == name
+        for name in expected_field_names:
+            assert name in Tree.Schema.fields
+            assert name in Tree.ravel.resolvers
 
-    # make sure id field replacement works, replacing `Id` fields in the Schema
-    # with a new Field with the same type as the referenced resource class's ID
-    # field.
-    id_field = BasicResource.Schema.fields[ID]
-    friend_id_field = BasicResource.Schema.fields['friend_id']
-    assert not isinstance(friend_id_field, ravel.Id)
-    assert isinstance(friend_id_field, type(id_field))
+            attr = getattr(Tree, name)
+            assert isinstance(attr, ResolverProperty)
+            assert isinstance(attr.resolver, Resolver)
+            assert attr.resolver.name == name
+            assert attr.resolver.field.name == name
 
+        # make sure id field replacement works, replacing `Id` fields in the Schema
+        # with a new Field with the same type as the referenced resource class's ID
+        # field.
+        tree_id_field = Tree.Schema.fields[ID]
+        for k in Tree.ravel.foreign_keys:
+            fk_field = Tree.Schema.fields[k]
+            assert not isinstance(fk_field, ravel.Id)
+            assert isinstance(fk_field, type(tree_id_field))
 
-def test_custom_resolver(ResourceWithResolvers, BasicResource):
-    res = ResourceWithResolvers().create()
-    basic_res = res.basic_friend
-    assert isinstance(basic_res, BasicResource)
-    assert basic_res.required_str_field == 'x'
+    def test_custom_resolver(self, Tree):
+        parent = Tree(name='parent').create()
+        child = Tree(name='child', parent_id=parent._id).create()
+        assert child.parent
+        assert child.parent._id == parent._id
 
-    assert res.myself is not None
-    assert res._id == res._id
+    def test_generate(self, Tree):
+        tree = Tree.generate()
+        for k, resolver in Tree.ravel.resolvers.fields.items():
+            if k == REV:
+                assert k not in tree.internal.state
+            else:
+                assert k in tree.internal.state
+                if not resolver.nullable:
+                    assert tree.internal.state[k] is not None
 
-
-def test_simulates_fields(BasicResource):
-    res = BasicResource.generate()
-    for k, resolver in BasicResource.ravel.resolvers.fields.items():
-        assert k in res.internal.state
-        if not resolver.nullable:
-            assert res.internal.state[k] is not None
-
-
-def test_simulates_other_resolvers(BasicResource, ResourceWithResolvers):
-    res = ResourceWithResolvers.generate({'myself', 'basic_friend'})
-
-    myself = res.internal.state.get('myself')
-    assert isinstance(myself, ResourceWithResolvers)
-    assert myself._id != res._id
-
-    basic_friend = res.internal.state.get('basic_friend')
-    assert isinstance(basic_friend, BasicResource)
+    def test_generate_resolvers(self, Tree):
+        tree = Tree.generate({'parent', 'children'})
+        parent = tree.internal.state.get('parent')
+        children = tree.internal.state.get('children')
+        assert isinstance(parent, Tree)
+        assert isinstance(children, Tree.Batch)
+        assert children
