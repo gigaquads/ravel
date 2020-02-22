@@ -37,13 +37,20 @@ class Resolver(object):
         target=None,
         decorator=None,
         on_resolve=None,
+        pre_resolve=None,
+        post_resolve=None,
+        on_select=None,
+        on_save=None,
+        on_set=None,
+        on_get=None,
+        on_delete=None,
+        on_dump=None,
         private=False,
         nullable=True,
         required=False,
         many=False,
     ):
         self.name = name
-        self.on_resolve = on_resolve or self.on_resolve
         self.owner = owner
         self.private = private
         self.nullable = nullable
@@ -52,6 +59,16 @@ class Resolver(object):
         self.target_callback = None
         self.target = None
         self.many = many
+
+        self.on_resolve = on_resolve or self.on_resolve
+        self.pre_resolve = pre_resolve or self.pre_resolve
+        self.post_resolve = post_resolve or self.post_resolve
+        self.on_select = on_select or self.on_select
+        self.on_save = on_save or self.on_save
+        self.on_dump = on_dump or self.on_dump
+        self.on_get = on_get or self.on_get
+        self.on_set = on_set or self.on_set
+        self.on_delete = on_delete or self.on_delete
 
         if is_resource_type(target):
             self.target = target
@@ -183,6 +200,24 @@ class Resolver(object):
 
     def post_resolve(self, resource, request, result):
         return result
+
+    def on_select(self, request):
+        return
+
+    def on_get(self, resource, value):
+        return
+
+    def on_set(self, resource, old_value, new_value):
+        return
+
+    def on_delete(self, resource, value):
+        return
+
+    def on_dump(self, request, value):
+        pass
+
+    def on_save(self, resource, value):
+        pass
 
     def on_simulate(self, resource, request):
         from ravel.query.query import Query

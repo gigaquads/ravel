@@ -22,6 +22,7 @@ class ResolverProperty(property):
     def select(self, *items: Tuple[Text]):
         request = Request(self.resolver)
         request.select(*items)
+        self.resolver.on_select(request)
         return request
 
     def fget(self, resource: 'Resource'):
@@ -34,12 +35,17 @@ class ResolverProperty(property):
             if (value is not None) or resolver.nullable:
                 resource.internal.state[resolver.name] = value
 
-        return resource.internal.state.get(resolver.name)
+        value = resource.internal.state.get(resolver.name)
+        resolver.on_get(resource, value)
+        return value
 
-    def fset(self, resource: 'Resource', value):
+    def fset(self, resource: 'Resource', new_value):
         resolver = self.resolver
-        resource.internal.state[resolver.name] = value
+        old_value = resource.internal.state.get(resolver.name)
+        resource.internal.state[resolver.name] = new_value
+        resolver.on_set(resource, old_value, new_value)
 
     def fdel(self, resource: 'Resource'):
         resolver = self.resolver
-        resource.internal.state.pop(resolver.name)
+        old_value = resource.internal.state.pop(resolver.name)
+        resolver.on_delete(resource, value)
