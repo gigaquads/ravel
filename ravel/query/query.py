@@ -35,6 +35,7 @@ class Query(object):
         self.target = target
         self.parent = parent
         self.options = DictObject(mode=QueryMode.normal)
+        self.from_request = request
         self.requests = {}
         self.parameters = DictObject(
             data={
@@ -135,6 +136,8 @@ class Query(object):
                 request.query = self
 
             if request:
+                if self.from_request is not None:
+                    request.parent = self.from_request
                 self.requests[request.resolver.name] = request
 
         return self

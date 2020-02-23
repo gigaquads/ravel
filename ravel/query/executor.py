@@ -54,6 +54,20 @@ class Executor(object):
     def _execute_requests(self, query, resources, requests):
         for request in requests:
             resolver = request.resolver
+            # first try resolving in batch
+            if len(resources) > 1:
+                results = resolver.resolve_batch(resources, request)
+                if results:
+                    for resource in resources:
+                        value = results.get(resource)
+                        if self.many and value is None:
+                            value = self.target.Batch()
+                        elif (not self.many) and is_batch(value):
+                            value = None
+                        resource.internal.state[resolver.name] = value
+                    return
+
+            # default on resolving for each resource separatesly
             for resource in resources:
                 value = resolver.resolve(resource, request)
                 resource.internal.state[resolver.name] = value

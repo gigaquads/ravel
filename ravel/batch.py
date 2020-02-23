@@ -14,12 +14,9 @@ from ravel.query.predicate import (
     Predicate,
     ConditionalPredicate,
     BooleanPredicate,
-    OP_CODE,
 )
-from ravel.schema import (
-    Field, String, Int, Bool, Float, Id,
-)
-from ravel.constants import IS_BATCH
+from ravel.constants import IS_BATCH, OP_CODE
+from ravel.schema import Field, String, Int, Bool, Float, Id
 from ravel.util.loggers import console
 from ravel.util import is_batch, is_resource
 from ravel.entity import Entity

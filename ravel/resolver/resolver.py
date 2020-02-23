@@ -176,6 +176,20 @@ class Resolver(object):
         processed_result = self.post_resolve(resource, request, result)
         return processed_result
 
+    def resolve_batch(self, batch, request):
+        self.pre_resolve_batch(batch, request)
+
+        if request.mode == QueryMode.normal:
+            result = self.on_resolve_batch(batch, request)
+        elif request.mode == QueryMode.backfill:
+            resolved_result = self.on_resolve_batch(batch, request)
+            result = self.on_backfill_batch(batch, request, resolved_result)
+        elif request.mode == QueryMode.simulation:
+            result = self.on_simulate_batch(batch, request)
+
+        processed_result = self.post_resolve_batch(batch, request, result)
+        return processed_result
+
     def simulate(self, instance, request):
         self.pre_resolve(instance, request)
         result = self.on_simulate(instance, request)
@@ -233,5 +247,20 @@ class Resolver(object):
             return self.target.generate(resolvers=select)
 
     def on_backfill(self, resource, request, result):
+        raise NotImplementedError()
+
+    def pre_resolve_batch(self, batch, request):
+        return
+
+    def on_resolve_batch(self, batch, request):
+        return None
+
+    def post_resolve_batch(self, batch, request, result):
+        return result
+
+    def on_simulate_batch(self, batch, request):
+        raise NotImplementedError()
+
+    def on_backfill_batch(self, batch, request, result):
         raise NotImplementedError()
 

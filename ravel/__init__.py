@@ -11,7 +11,7 @@ from ravel.app.apps import CliApplication, HttpServer, WebsocketServer, AsyncSer
 from ravel.resource import Resource
 from ravel.entity import Entity
 from ravel.batch import Batch
-from ravel.util import is_resource, is_batch
+from ravel.util import is_resource, is_batch, is_resource_type, is_batch_type
 from ravel.batch import Batch
 from ravel.query.query import Query
 from ravel.query.mode import QueryMode

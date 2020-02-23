@@ -12,11 +12,17 @@ class Request(object):
 
     # TODO: implement "where" method
 
-    def __init__(self, resolver: 'Resolver', query: 'Query' = None):
+    def __init__(
+        self,
+        resolver: 'Resolver',
+        query: 'Query' = None,
+        parent: 'Request' = None,
+    ):
         self.resolver = resolver
         self.parameters = DictObject({'select': []})
         self.query = query
         self.result = None
+        self.parent = parent
 
     def __repr__(self):
         return (
