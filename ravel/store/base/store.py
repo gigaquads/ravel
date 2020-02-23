@@ -1,6 +1,5 @@
 import time
 
-import venusian
 import base36
 
 from threading import local
@@ -23,18 +22,11 @@ class StoreError(RavelError):
 
 
 class StoreMeta(ABCMeta):
-
     _local = local()
     _local.is_bootstrapped = defaultdict(bool)
 
     def __init__(cls, name, bases, dict_):
         ABCMeta.__init__(cls, name, bases, dict_)
-
-        def callback(scanner, name, store_type):
-            scanner.store_types.setdefault(name, store_type)
-            console.info(f'venusian scan found "{store_type.__name__}" Store')
-
-        venusian.attach(cls, callback, category='store')
 
 
 class Store(object, metaclass=StoreMeta):

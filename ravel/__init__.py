@@ -1,6 +1,7 @@
 import typing
 from .schema import *
 from ravel.manifest import Manifest
+from ravel.resource import Resource, ResourceMeta
 from ravel.logging import ConsoleLoggerInterface
 from ravel.store.base.store import Store
 from ravel.store.base.store_history import StoreEvent, StoreHistory
@@ -11,7 +12,6 @@ from ravel.resource import Resource
 from ravel.entity import Entity
 from ravel.batch import Batch
 from ravel.util import is_resource, is_batch
-from ravel.resource import Resource
 from ravel.batch import Batch
 from ravel.query.query import Query
 from ravel.query.mode import QueryMode

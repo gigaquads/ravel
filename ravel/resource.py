@@ -7,8 +7,6 @@ from copy import deepcopy
 
 from appyratus.utils import DictObject
 
-import venusian
-
 from ravel.exceptions import ValidationError
 from ravel.store import Store, SimulationStore
 from ravel.util.dirty import DirtyDict
@@ -53,9 +51,6 @@ class ResourceMeta(type):
         cls._build_schema_type(fields, bases)
         cls.Batch = Batch.factory(cls)
 
-        if not cls.ravel.is_abstract:
-            cls._register_venusian_callback()
-
     def _initialize_class_state(resource_type):
         setattr(resource_type, IS_RESOURCE, True)
 
@@ -69,16 +64,6 @@ class ResourceMeta(type):
         resource_type.ravel.is_bound = False
         resource_type.ravel.schema = None
         resource_type.ravel.defaults = {}
-
-    def _register_venusian_callback(resource_type):
-        def callback(scanner, name, resource_type):
-            """
-            Callback used by Venusian for Resource class auto-discovery.
-            """
-            console.info(f'venusian scan found "{resource_type.__name__}" Resource')
-            scanner.resource_types.setdefault(name, resource_type)
-
-        venusian.attach(resource_type, callback, category='res')
 
     def _process_fields(cls):
         fields = {}

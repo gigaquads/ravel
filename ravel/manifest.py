@@ -11,7 +11,6 @@ import ravel
 from typing import Text, Dict
 from collections import defaultdict
 
-from venusian import Scanner
 from appyratus.memoize import memoized_property
 from appyratus.utils import DictUtils, DictObject
 from appyratus.files import Yaml, Json
@@ -20,6 +19,41 @@ from appyratus.env import Environment
 from ravel.exceptions import ManifestError
 from ravel.util.misc_functions import import_object, get_class_name
 from ravel.util.loggers import console
+from ravel.util.scanner import Scanner
+
+
+class TypeScanner(Scanner):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        from ravel.store.base.store import Store
+        from ravel.resource import Resource
+        from ravel.app.base.endpoint import Endpoint
+
+        self.Store = Store
+        self.Resource = Resource
+        self.Endpoint = Endpoint
+
+    def predicate(self, value) -> bool:
+        return (
+            isinstance(value, type) and
+            issubclass(value, (self.Endpoint, self.Resource, self.Store))
+        )
+
+    def callback(self, name, value, context):
+        if issubclass(value, self.Endpoint):
+            context.api[name] = value
+        elif issubclass(value, self.Resource):
+            context.res[name] = value
+        elif issubclass(value, self.Store):
+            context.dal[name] = value
+
+    def on_error(self, exc, module, context, name, value):
+        exc_str = traceback.format_exc()
+        console.warn(
+            message=f'manifest type scan failed for {name}',
+            data={'trace': exc_str.split('\n')}
+        )
 
 
 class Manifest(object):
@@ -35,8 +69,6 @@ class Manifest(object):
         data: Dict = None,
         env: Environment = None,
     ):
-        from ravel.store import SimulationStore
-
         self.data = data or {}
         self.path = path
         self.app = None
@@ -45,17 +77,8 @@ class Manifest(object):
         self._res_2_store_name = {}
         self.bootstraps = {}
         self.env = env or Environment()
-        self.types = DictObject({
-            'dal': {
-                'SimulationStore': SimulationStore
-            },
-            'res': {},
-        })
-        self.scanner = Scanner(
-            resource_types=self.types.res,
-            store_types=self.types.dal,
-            env=self.env,
-        )
+        self.types = DictObject({'dal': {}, 'res': {}, 'api': {}})
+        self.scanner = TypeScanner(context=self.types)
 
     def __getitem__(self, key):
         return self.data[key]
@@ -303,24 +326,11 @@ class Manifest(object):
         import ravel.store
         import ravel.ext
 
-        def on_error(name):
-            from ravel.util.loggers import console
-
-            exc_str = traceback.format_exc()
-            console.debug(
-                message=f'venusian scan failed for {name}',
-                data={'trace': exc_str.split('\n')}
-            )
-
         console.debug('venusian scan for Resource and Store types initiated')
-
-        self.scanner.scan(ravel.store, onerror=on_error)
-        self.scanner.scan(ravel.ext, onerror=on_error)
-
+        self.scanner.scan('ravel.store')
         pkg_path = self.package
         if pkg_path:
-            pkg = importlib.import_module(pkg_path)
-            self.scanner.scan(pkg, onerror=on_error)
+            self.scanner.scan(pkg_path)
 
     @staticmethod
     def _expand_environment_vars(env, data):
