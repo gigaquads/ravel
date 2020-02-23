@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import traceback
+import pkg_resources
 
 import yaml
 
@@ -40,18 +41,24 @@ class TypeScanner(Scanner):
             issubclass(value, (self.Endpoint, self.Resource, self.Store))
         )
 
-    def callback(self, name, value, context):
+    def on_match(self, name, value, context):
         if issubclass(value, self.Endpoint):
             context.api[name] = value
-        elif issubclass(value, self.Resource):
+        elif issubclass(value, self.Resource) and not value.ravel.is_abstract:
             context.res[name] = value
         elif issubclass(value, self.Store):
             context.dal[name] = value
 
-    def on_error(self, exc, module, context, name, value):
+    def on_import_error(self, exc, module_name, context):
+        console.error(
+            message=f'could not scan module {module_name}',
+            data={'trace': exc_str.split('\n')}
+        )
+
+    def on_match_error(self, exc, module, context, name, value):
         exc_str = traceback.format_exc()
-        console.warn(
-            message=f'manifest type scan failed for {name}',
+        console.warning(
+            message=f'error scanning {name} ({type(value)})',
             data={'trace': exc_str.split('\n')}
         )
 
@@ -79,6 +86,9 @@ class Manifest(object):
         self.env = env or Environment()
         self.types = DictObject({'dal': {}, 'res': {}, 'api': {}})
         self.scanner = TypeScanner(context=self.types)
+        self._installed_pkg_names = {
+            pkg.key for pkg in pkg_resources.working_set
+        }
 
     def __getitem__(self, key):
         return self.data[key]
@@ -231,8 +241,7 @@ class Manifest(object):
         self.app.binder.bind(rebind=rebind)
 
     def _discover_ravel_types(self, namespace: Dict):
-        # package name for venusian scan
-        self._scan_venusian()
+        self._scan_filesystem()
 
         if namespace:
             # load Resource and Store classes from a namespace dict
@@ -318,7 +327,7 @@ class Manifest(object):
                         f'dict: {v.__name__}'
                     )
 
-    def _scan_venusian(self):
+    def _scan_filesystem(self):
         """
         Use venusian simply to scan the endpoint packages/modules, causing the
         endpoint callables to register themselves with the Application instance.
@@ -327,10 +336,21 @@ class Manifest(object):
         import ravel.ext
 
         console.debug('venusian scan for Resource and Store types initiated')
+
+        # scan base ravel store and resource classes
         self.scanner.scan('ravel.store')
-        pkg_path = self.package
-        if pkg_path:
-            self.scanner.scan(pkg_path)
+        self.scanner.scan('ravel.resource')
+
+        # scan extension directories if the package installation requirements
+        # are met, like sqlalchemy and redis.
+        if 'sqlalchemy' in self._installed_pkg_names:
+            self.scanner.scan('ravel.ext.sqlalchemy')
+        if 'redis' in self._installed_pkg_names:
+            self.scanner.scan('ravel.ext.redis')
+
+        # scan the app project package
+        if self.package:
+            self.scanner.scan(self.package)
 
     @staticmethod
     def _expand_environment_vars(env, data):
