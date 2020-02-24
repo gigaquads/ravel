@@ -70,4 +70,15 @@ class TestRelationship:
         assert request.result is not None
         assert isinstance(request.result, list)
         assert len(request.result) == len(mother.children)
-        assert all(x._id == mother._id for x in request.result)
+        assert all(x.mother_id == mother._id for x in request.result)
+
+    def test_many_relationship_pre_resolve_batch(self, Human, mother):
+        batch = Human.Batch([mother, mother])
+        request = Human.children.select()
+
+        Human.ravel.resolvers['children'].resolve_batch(batch, request)
+
+        assert request.result is not None
+        assert isinstance(request.result, list)
+        assert len(request.result) == len(mother.children)
+        assert all(is_batch(x) for x in request.result)
