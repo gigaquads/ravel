@@ -10,7 +10,8 @@ from ravel.util.misc_functions import (
     flatten_sequence,
 )
 from ravel.util import (
-    is_resource, is_batch, is_resource_type, is_batch_type,
+    is_resource_type, is_batch_type,
+    is_resource, is_batch,
 )
 from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
@@ -39,6 +40,9 @@ class Resolver(object):
         on_resolve=None,
         pre_resolve=None,
         post_resolve=None,
+        on_resolve_batch=None,
+        pre_resolve_batch=None,
+        post_resolve_batch=None,
         on_select=None,
         on_save=None,
         on_set=None,
@@ -63,6 +67,9 @@ class Resolver(object):
         self.on_resolve = on_resolve or self.on_resolve
         self.pre_resolve = pre_resolve or self.pre_resolve
         self.post_resolve = post_resolve or self.post_resolve
+        self.on_resolve_batch = on_resolve_batch or self.on_resolve_batch
+        self.pre_resolve_batch = pre_resolve_batch or self.pre_resolve_batch
+        self.post_resolve_batch = post_resolve_batch or self.post_resolve_batch
         self.on_select = on_select or self.on_select
         self.on_save = on_save or self.on_save
         self.on_dump = on_dump or self.on_dump
@@ -162,7 +169,14 @@ class Resolver(object):
         self.on_bind()
         self._is_bound = True
 
-    def resolve(self, resource, request):
+    def resolve(self, entity: 'Entity', request):
+        if is_resource(entity):
+            return self.resolve_resource(entity, request)
+        else:
+            assert is_batch(entity)
+            return self.resolve_batch(entity, request)
+
+    def resolve_resource(self, entity: 'Entity', request):
         self.pre_resolve(resource, request)
 
         if request.mode == QueryMode.normal:

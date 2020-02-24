@@ -38,7 +38,6 @@ class Relationship(Resolver):
             pairs = [pairs]
 
         self.joins = [Join(l, r) for l, r in pairs]
-
         self.target = self.joins[-1].right_loader.owner
 
     def pre_resolve(self, resource, request):
@@ -68,6 +67,11 @@ class Relationship(Resolver):
         raise NotImplementedError()
 
     def pre_resolve_batch(self, batch, request):
+        if request.is_simulated:
+            # do nothing because, when simulating, we don't need
+            # to waste time trying to fetch data.
+            return
+
         mappings = []
         source = batch
 
@@ -76,30 +80,31 @@ class Relationship(Resolver):
             if j2 is not None:
                 query = query.select(j2.left_field.name)
 
-            queried_resources = defaultdict(set)
-            for res in query.execute():
+            value_2_queried_resource = defaultdict(set)
+            queried_resources = query.execute()
+
+            for res in queried_resources:
                 right_value = res[j1.right_field.name]
-                queried_resources[right_value].add(res)
+                value_2_queried_resource[right_value].add(res)
 
             mapping = {}
             for source_res in source:
                 source_value = source_res[j1.left_field.name]
-                mapping[source_res] = queried_resources[source_value]
+                mapping[source_res] = value_2_queried_resource[source_value]
 
             source = queried_resources
             mappings.append(mapping)
 
-        def extract(resource, mappings, index):
-            mapping = mappings[index]
+        def extract(key, mappings, index):
+            values = mappings[index]
             if index == len(mappings) - 1:
-                return mapping[resource]
+                return values
             else:
-                for res in resources:
-                    next_resources = mapping[res]
-                    return [
-                        extract(res, mappings, index + 1)
-                        for res in mapping[res]
-                    ]
+                results = []
+                for res in values[key]:
+                    extracted_values = extract(res, mappings, index + 1)
+                    results.extend(extracted_values)
+                return results
 
         request.result = []
         for res in batch:
