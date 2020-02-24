@@ -4,7 +4,7 @@ from typing import (
 )
 
 from appyratus.utils import DictUtils
-from mrs_doc.usage import (
+from appyratus.usage import (
     BaseUsage,
     BaseUsageRenderer,
 )

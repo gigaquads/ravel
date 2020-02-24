@@ -50,6 +50,7 @@ class TypeScanner(Scanner):
             context.dal[name] = value
 
     def on_import_error(self, exc, module_name, context):
+        exc_str = traceback.format_exc()
         console.error(
             message=f'could not scan module {module_name}',
             data={'trace': exc_str.split('\n')}
