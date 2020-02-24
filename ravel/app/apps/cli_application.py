@@ -130,9 +130,9 @@ class CliCommand(Endpoint):
 
     def on_bootstrap(self):
         self.program_name = self.decorator.kwargs.get('name', self.name)
-        self.subparser_kwargs = self._build_subparser_kwargs(func)
+        self.subparser_kwargs = self._build_subparser_kwargs(self.exc)
         self.subparser_type = self.decorator.kwargs.get('subparser', Subparser)
-        self.subparser = subparser_type(**self.subparser_kwargs)
+        self.subparser = self.subparser_type(**self.subparser_kwargs)
 
     def _build_subparser_kwargs(self, func):
         parser_kwargs = self.decorator.kwargs.get('parser') or {}
