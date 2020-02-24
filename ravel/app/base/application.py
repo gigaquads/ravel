@@ -30,7 +30,7 @@ class Application(object):
         self._state = DictObject()
         self._endpoints = {}
         self._res = DictObject()
-        self._dal = DictObject()
+        self._stores = DictObject()
         self._api = DictObject()
         self._manifest = None
         self._arg_loader = None
@@ -122,8 +122,8 @@ class Application(object):
         return self._api
 
     @property
-    def dal(self) -> DictObject:
-        return self._dal
+    def stores(self) -> DictObject:
+        return self._stores
 
     @property
     def is_bootstrapped(self) -> bool:
@@ -169,7 +169,7 @@ class Application(object):
                 else:
                     store_type = store_obj
 
-            self._dal[get_class_name(store_type)] = store_type
+            self._stores[get_class_name(store_type)] = store_type
             self._res[get_class_name(resource_type)] = resource_type
 
             if not resource_type.is_bootstrapped():
@@ -234,7 +234,7 @@ class Application(object):
         self._manifest.process(app=self, namespace=self._namespace)
 
         self._res.update(self._manifest.types.res)
-        self._dal.update(self._manifest.types.dal)
+        self._stores.update(self._manifest.types.stores)
         self._api.update(self._endpoints)
 
         self._manifest.bootstrap()
@@ -269,15 +269,15 @@ class Application(object):
         self._is_started = True
         return self.on_start()
 
-    def inject(self, func: Callable, res=True, dal=True, api=True) -> Callable:
+    def inject(self, func: Callable, res=True, stores=True, api=True) -> Callable:
         """
         Inject Resource, Store, and/or Endpoint classes into the lexical scope of
         the given function.
         """
         if res:
             inject(func, self.res)
-        if dal:
-            inject(func, self.dal)
+        if stores:
+            inject(func, self.stores)
         if api:
             inject(func, self.api)
 

@@ -19,7 +19,7 @@ class SqlalchemyMiddleware(Middleware):
         self.store_class_name = store_class_name or 'SqlalchemyStore'
 
     def on_bootstrap(self):
-        self.SqlalchemyStore = self.app.dal.get(self.store_class_name)
+        self.SqlalchemyStore = self.app.stores.get(self.store_class_name)
         if self.SqlalchemyStore is None:
             raise MiddlewareError(self, 'SqlalchemyStore class not found')
 

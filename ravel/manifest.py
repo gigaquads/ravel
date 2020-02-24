@@ -47,7 +47,7 @@ class TypeScanner(Scanner):
         elif issubclass(value, self.Resource) and not value.ravel.is_abstract:
             context.res[name] = value
         elif issubclass(value, self.Store):
-            context.dal[name] = value
+            context.stores[name] = value
 
     def on_import_error(self, exc, module_name, context):
         exc_str = traceback.format_exc()
@@ -85,7 +85,7 @@ class Manifest(object):
         self._res_2_store_name = {}
         self.bootstraps = {}
         self.env = env or Environment()
-        self.types = DictObject({'dal': {}, 'res': {}, 'api': {}})
+        self.types = DictObject({'stores': {}, 'res': {}, 'api': {}})
         self.scanner = TypeScanner(context=self.types)
         self._installed_pkg_names = {
             pkg.key for pkg in pkg_resources.working_set
@@ -198,13 +198,13 @@ class Manifest(object):
                     store_type = resource_type.__store__()
                     store_class_name = get_class_name(store_type)
                 else:
-                    assert store_class_name in self.types.dal
-                    store_type = self.types.dal[store_class_name]
+                    assert store_class_name in self.types.stores
+                    store_type = self.types.stores[store_class_name]
 
                 resource_type.bootstrap(app=self.app)
 
-                if store_class_name not in self.types.dal:
-                    self.types.dal[store_class_name] = store_type
+                if store_class_name not in self.types.stores:
+                    self.types.stores[store_class_name] = store_type
 
                 if resource_class_name not in self._res_2_store_name:
                     self._res_2_store_name[resource_class_name] = store_class_name
@@ -232,7 +232,7 @@ class Manifest(object):
         # all other endpoints, all Resource and Store classes.
         for endpoint in self.app.endpoints.values():
             endpoint.target.__globals__.update(self.types.res)
-            endpoint.target.__globals__.update(self.types.dal)
+            endpoint.target.__globals__.update(self.types.stores)
             endpoint.target.__globals__.update(
                 {p.name: p.target
                  for p in self.app.endpoints.values()}
@@ -253,7 +253,7 @@ class Manifest(object):
 
         # remove base Resource class from types dict
         self.types.res.pop('Resource', None)
-        self.types.dal.pop('Store', None)
+        self.types.stores.pop('Store', None)
 
     def _register_store_types(self):
         """
@@ -267,42 +267,42 @@ class Manifest(object):
                     f'cannot register {info.res} with ResourceBinder because '
                     f'the class was not found while processing the manifest'
                 )
-            store_type = self.types.dal[info.store]
+            store_type = self.types.stores[info.store]
             if not self.app.binder.is_registered(resource_type):
                 binding = self.app.binder.register(
                     resource_type=resource_type,
                     store_type=store_type,
                     store_bind_kwargs=info.params,
                 )
-                self.types.dal[info.store] = binding.store_type
+                self.types.stores[info.store] = binding.store_type
 
         # register all store types *not* currently declared in a binding
         # with the ResourceBinder.
-        for type_name, store_type in self.types.dal.items():
+        for type_name, store_type in self.types.stores.items():
             if not self.app.binder.get_store_type(type_name):
                 self.app.binder.register(None, store_type)
                 registered_store_type = self.app.binder.get_store_type(type_name)
-                self.types.dal[type_name] = registered_store_type
+                self.types.stores[type_name] = registered_store_type
 
     def _scan_dotted_paths(self):
         # gather Store and Resource types in "bindings" section
-        # into self.types.dal and self.types.res
+        # into self.types.stores and self.types.res
         for binding in self.bindings:
             if binding.res_module and binding.res not in self.types.res:
                 resourceresource_type = import_object(f'{binding.res_module}.{binding.res}')
                 self.types.res[binding.res] = resource_type
-            if binding.store_module and binding.store not in self.types.dal:
+            if binding.store_module and binding.store not in self.types.stores:
                 store_type = import_object(f'{binding.store_module}.{binding.store}')
-                self.types.dal[binding.store] = store_type
+                self.types.stores[binding.store] = store_type
 
-        # gather Store types in "bootstraps" section into self.types.dal
+        # gather Store types in "bootstraps" section into self.types.stores
         for store_class_name, bootstrap in self.bootstraps.items():
             if '.' in bootstrap.store:
                 store_class_path = bootstrap.store
-                if store_class_name not in self.types.dal:
+                if store_class_name not in self.types.stores:
                     store_type = import_object(store_class_path)
-                    self.types.dal[store_class_name] = store_type
-            elif bootstrap.store not in self.types.dal:
+                    self.types.stores[store_class_name] = store_type
+            elif bootstrap.store not in self.types.stores:
                 raise ManifestError(f'{bootstrap.store} not found')
 
     def _scan_namespace(self, namespace: Dict):
@@ -322,7 +322,7 @@ class Manifest(object):
                             f'namespace dict: {v.__name__}'
                         )
                 elif issubclass(v, Store):
-                    self.types.dal[k] = v
+                    self.types.stores[k] = v
                     console.debug(
                         f'detected Store class in namespace '
                         f'dict: {v.__name__}'
