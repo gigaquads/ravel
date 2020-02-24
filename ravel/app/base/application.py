@@ -15,8 +15,8 @@ from ravel.schema import Field, UuidString
 from ravel.constants import ID
 from ravel.app.exceptions import ApplicationError
 
-from .endpoint_decorator import EndpointDecorator
-from .endpoint import Endpoint
+from .action_decorator import ActionDecorator
+from .action import Action
 from .argument_loader import ArgumentLoader
 from .resource_binder import ResourceBinder
 
@@ -28,7 +28,7 @@ class Application(object):
         middleware: List['Middleware'] = None,
     ):
         self._state = DictObject()
-        self._endpoints = {}
+        self._actions = {}
         self._res = DictObject()
         self._stores = DictObject()
         self._api = DictObject()
@@ -44,23 +44,23 @@ class Application(object):
             if isinstance(self, m.app_types)
         ])
 
-    def __contains__(self, endpoint_name: Text):
-        return endpoint_name in self._endpoints
+    def __contains__(self, action_name: Text):
+        return action_name in self._actions
 
     def __repr__(self):
         return (
             f'{get_class_name(self)}('
             f'bootstrapped={self._is_bootstrapped}, '
             f'started={self._is_started}, '
-            f'size={len(self._endpoints)}'
+            f'size={len(self._actions)}'
             f')'
         )
 
     def __call__(
         self, *args, **kwargs
     ) -> Union[
-            EndpointDecorator,
-            List[EndpointDecorator],
+            ActionDecorator,
+            List[ActionDecorator],
             'Application'
         ]:
         """
@@ -82,12 +82,12 @@ class Application(object):
         return self.decorator_type(self, *args, **kwargs)
 
     @property
-    def decorator_type(self) -> Type[EndpointDecorator]:
-        return EndpointDecorator
+    def decorator_type(self) -> Type[ActionDecorator]:
+        return ActionDecorator
 
     @property
-    def endpoint_type(self) -> Type[Endpoint]:
-        return Endpoint
+    def action_type(self) -> Type[Action]:
+        return Action
 
     @property
     def manifest(self) -> Manifest:
@@ -102,8 +102,8 @@ class Application(object):
         return self._middleware
 
     @property
-    def endpoints(self) -> Dict[Text, Endpoint]:
-        return self._endpoints
+    def actions(self) -> Dict[Text, Action]:
+        return self._actions
 
     @property
     def loader(self) -> 'ArgumentLoader':
@@ -129,21 +129,21 @@ class Application(object):
     def is_bootstrapped(self) -> bool:
         return self._is_bootstrapped
 
-    def register(self, endpoint: 'Endpoint', overwrite=False) -> 'Application':
+    def register(self, action: 'Action', overwrite=False) -> 'Application':
         """
-        Add a Endpoint to this app.
+        Add a Action to this app.
         """
-        if endpoint.name not in self._endpoints or overwrite:
+        if action.name not in self._actions or overwrite:
             console.debug(
-                f'registering endpoint "{endpoint.name}" with '
+                f'registering action "{action.name}" with '
                 f'{get_class_name(self)}...'
             )
-            self._endpoints[endpoint.name] = endpoint
-            self._api[endpoint.name] = endpoint
+            self._actions[action.name] = action
+            self._api[action.name] = action
         else:
             raise ApplicationError(
-                message=f'endpoint already registered, {endpoint.name}',
-                data={'endpoint': endpoint}
+                message=f'action already registered, {action.name}',
+                data={'action': action}
             )
 
     def bind(
@@ -235,7 +235,7 @@ class Application(object):
 
         self._res.update(self._manifest.types.res)
         self._stores.update(self._manifest.types.stores)
-        self._api.update(self._endpoints)
+        self._api.update(self._actions)
 
         self._manifest.bootstrap()
         self._manifest.bind(rebind=True)
@@ -244,8 +244,8 @@ class Application(object):
         for mware in self.middleware:
             mware.bootstrap(app=self)
 
-        for endpoint in self._endpoints.values():
-            endpoint.bootstrap()
+        for action in self._actions.values():
+            action.bootstrap()
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
@@ -271,7 +271,7 @@ class Application(object):
 
     def inject(self, func: Callable, res=True, stores=True, api=True) -> Callable:
         """
-        Inject Resource, Store, and/or Endpoint classes into the lexical scope of
+        Inject Resource, Store, and/or Action classes into the lexical scope of
         the given function.
         """
         if res:
@@ -283,10 +283,10 @@ class Application(object):
 
         return func
 
-    def on_extract(self, endpoint, index, parameter, raw_args, raw_kwargs):
+    def on_extract(self, action, index, parameter, raw_args, raw_kwargs):
         """
         Return a value for the given the name of the `inspect` module's
-        parameter object. This is used by on_request when extracting endpoint
+        parameter object. This is used by on_request when extracting action
         arguments.
         """
         if index is not None:
@@ -300,7 +300,7 @@ class Application(object):
         Developer logic to execute upon calling app.bootstrap.
         """
 
-    def on_decorate(self, endpoint: 'Endpoint'):
+    def on_decorate(self, action: 'Action'):
         """
         We come here whenever a function is decorated by this app. Here we
         can add the decorated function to, say, a web framework as a route.
@@ -315,7 +315,7 @@ class Application(object):
 
     def on_request(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         *raw_args,
         **raw_kwargs
     ) -> Tuple[Tuple, Dict]:
@@ -327,7 +327,7 @@ class Application(object):
         args_dict = OrderedDict()
         kwargs = {}
 
-        for idx, param in enumerate(endpoint.signature.parameters.values()):
+        for idx, param in enumerate(action.signature.parameters.values()):
             target_dict = None
             index = None
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
@@ -344,7 +344,7 @@ class Application(object):
 
             if target_dict is not None:
                 target_dict[param.name] = self.on_extract(
-                    endpoint, index, param, raw_args, raw_kwargs
+                    action, index, param, raw_args, raw_kwargs
                 )
 
         # transform positional args dict into a named tuple
@@ -357,7 +357,7 @@ class Application(object):
 
     def on_response(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         raw_result: object,
         *raw_args,
         **raw_kwargs

@@ -7,42 +7,42 @@
     <link rel="stylesheet" href="../css/base.css">
     <link rel="stylesheet" href="../css/sunburst.css">
     <script src="https://cdn.jsdelivr.net/gh/google/code-prettify@master/loader/run_prettify.js"></script>
-    <title>Endpoints</title>
+    <title>Actions</title>
   </head>
   <body>
     <div id="gradient">.</div>
     <div id="card-column">
       <div class="card">
         <div>
-          <h1>Endpoints</h1>
+          <h1>Actions</h1>
           <div class="toc">
             <h2>Table of Contents</h2>
             <ol>
-              <li><a href="#endpoint-execution">Endpoint Execution</a></li>
+              <li><a href="#action-execution">Action Execution</a></li>
               <li><a href="#argument-loading">Polymorphic Arguments</a></li>
-              <li><a href="#guards">Guarded Endpoints</a></li>
+              <li><a href="#guards">Guarded Actions</a></li>
             </ol>
           </div>
-          <!-- <p>Endpoints define the
+          <!-- <p>Actions define the
           interface with the outside world. Many different kinds of frameworks
-          and platforms have the notion of endpoints, although they may go by
-          different names. In command-line applications, endpoints are called
+          and platforms have the notion of actions, although they may go by
+          different names. In command-line applications, actions are called
           <i>commands</i>; in GUI toolkits, they are often called <i>event
           callbacks</i>; and in web apps, they are called <i>routes</i>.</p> -->
 
           <p>
-            Endpoints are the building blocks of APIs. Different frameworks
+            Actions are the building blocks of APIs. Different frameworks
             have different terms for what is essentailly the same thing. Web
-            frameworks call them endpoints or routes; command-line applications call them
+            frameworks call them actions or routes; command-line applications call them
             commands; and frontend frameworks call them callbacks. As a
             meta-framework, Pybiz abstracts these differences out.
           </p>
           <p>
-            In Pybiz, each endpoint an arbitrary python function, consisting entirely of business logic, making no reference to things like requests and
+            In Pybiz, each action an arbitrary python function, consisting entirely of business logic, making no reference to things like requests and
             responses. The Pybiz application layer takes care of transforming native
-            inputs into the arguments expected by the endpoint and the return
+            inputs into the arguments expected by the action and the return
             value into the native response.
-            Here is an example of an endpoint that is simultaneously reachable as a <a href="">gRPC</a> method, an HTTP route, and a REPL function:
+            Here is an example of an action that is simultaneously reachable as a <a href="">gRPC</a> method, an HTTP route, and a REPL function:
           </p>
 
           <pre class="prettyprint">
@@ -62,14 +62,14 @@ def get_account_settings(account: Account) -> AccountSettings:
 
       </div>
 
-    <a class="card-anchor" name="endpoint-execution">
+    <a class="card-anchor" name="action-execution">
       <div class="card">
         <div>
-          <h2>Endpoint Execution</h2>
-          <p>When running endpoints, Pybiz executes a series of callbacks that apply
+          <h2>Action Execution</h2>
+          <p>When running actions, Pybiz executes a series of callbacks that apply
           middleware and transform native application inputs and outputs into and out
-          of the endpoint. In the following documentation (as well as in code),
-          the Python callable registered as an endpoint is called the <i>target</i>.
+          of the action. In the following documentation (as well as in code),
+          the Python callable registered as an action is called the <i>target</i>.
 
           </p>
 
@@ -80,7 +80,7 @@ def get_account_settings(account: Account) -> AccountSettings:
             <li><h4><code>Middleware.on_execute</code></h4><p>Performing
             services after the native inputs have been transformed but before the
             target executes.</p></li>
-            <li><h4><code>Endpoint.target</code></h4><p>Calling the function registered as an endpoint with the arguments prepared by the application.</p></li>
+            <li><h4><code>Action.target</code></h4><p>Calling the function registered as an action with the arguments prepared by the application.</p></li>
             <li><h4><code>Application.on_response</code></h4><p>Transforming the target's return value into the native response expected by the application.</p></li>
             <li><h4><code>Middleware.post_request</code> or <code>post_bad_request</code></h4><p>Performing services after the final response has been generated or an error has occured.</p></li>
           </ol>
@@ -93,9 +93,9 @@ def get_account_settings(account: Account) -> AccountSettings:
         <div>
           <h2>Polymorphic Arguments</h2>
           <p>
-          Most endpoints begin with a preamble of boilerplate queries intended
+          Most actions begin with a preamble of boilerplate queries intended
           to load objects referenced by the arguments. Imagine, if you will, an
-          endpoint that adds a task to a project, which takes as arguments the
+          action that adds a task to a project, which takes as arguments the
           ID of the user who owns the project, the ID of the project, and a data
           structure representing the new task:
           </p>
@@ -121,7 +121,7 @@ def add_task(owner_id: str, project_id: str, task_data: dict):
 
           <ul>
             <li>It's tedious.</li>
-            <li>It's unrelated to what the endpoint says it does.
+            <li>It's unrelated to what the action says it does.
             <li>The referenced <code>Resource</code> instances are not available in middleware.</li>
             <li>The call pattern is too rigid and low-level.</li>
           </ul>
@@ -131,7 +131,7 @@ def add_task(owner_id: str, project_id: str, task_data: dict):
           polymorphism</a>, in which IDs or dicts are accepted as valid
           arguments but resolved and normalized to corresponding
           <code>Resource</code> objects, either by loading them through the
-          <a href="">DAL</a> or creating new instances. We can now simplify the endpoint above, yielding:
+          <a href="">DAL</a> or creating new instances. We can now simplify the action above, yielding:
           </p>
 
           <pre class="prettyprint">
@@ -146,7 +146,7 @@ def add_task(owner: User, project: Project, task: Task) -> Task:
           </pre>
 
           <p>
-           Now, the semantics of endpoint more clearly reflect what its name says it does. On a side note, we could further simplify this endpoint using <a href="guarded-endpoints.html">guards</a> to perform authorization
+           Now, the semantics of action more clearly reflect what its name says it does. On a side note, we could further simplify this action using <a href="guarded-actions.html">guards</a> to perform authorization
           checks.
           </p>
 
@@ -154,9 +154,9 @@ def add_task(owner: User, project: Project, task: Task) -> Task:
           <p>
           Polymorphism is enabled by default on any argument annotated
           with <code>Resource</code> or <code>List[Resource]</code> (like <code>owner</code> and <code>project</code> above). The convenience of
-          this approach becomes apparent when you try to reuse endpoints
+          this approach becomes apparent when you try to reuse actions
           in different contexts. In web apps, for instance, you might want to
-          call an endpoint using IDs in the URL, but in a REPL, you might want
+          call an action using IDs in the URL, but in a REPL, you might want
           to pass the objects directly. In Pybiz, all of the following call patterns work:
           </p>
 
@@ -181,20 +181,20 @@ add_item_to_todo_list(owner, todo_list, item)
     <a class="card-anchor" name="guards">
       <div class="card">
         <div>
-          <h2>Endpoint Guards</h2>
+          <h2>Action Guards</h2>
           <p>
             According to <a href="https://en.wikipedia.org/wiki/Guard_(computer_science)">Wikipedia</a>,
             a <i>guard</i> is a boolean expression that must evaluate to true if the
             program execution is to continue. In Pybiz, you can use guards to
-            check if preconditions are met before executing a requested endpoint.
+            check if preconditions are met before executing a requested action.
           </p>
 
           <p>Using guards has several key advantages over performing similar
-          logic directly inside endpoints:</p>
+          logic directly inside actions:</p>
           <ul>
             <li>Guards make it easier to identify why requests fail.</li>
             <li>They are modular, reusable, composable, and easy to test.</li>
-            <li>They keep endpoint logic clean and pure.</li>
+            <li>They keep action logic clean and pure.</li>
           </ul>
           <p>
             Creating and using guards is easy. To do so, you implement two
@@ -243,7 +243,7 @@ class Exists(Guard):
 
           <h4>The <i>Matches</i> Guard</h4>
           <p>
-            The Matches guard ensures that the instance attributes of an endpoint
+            The Matches guard ensures that the instance attributes of an action
             argument match expected values.
           </p>
           <pre class="prettyprint">
@@ -275,9 +275,9 @@ class Matches(Guard):
                 )
           </pre>
 
-          <h3>Applying Guards to an Endpoint</h3>
+          <h3>Applying Guards to an Action</h3>
           <p>
-          Now that we have our guards, let's define an endpoint, which
+          Now that we have our guards, let's define an action, which
           simply returns a hypothetical User object.
         </p>
           <pre class="prettyprint">
@@ -299,13 +299,13 @@ def get_user(user: User) -> User:
           </pre>
           <h3>Expected Error Log Output</h3>
           <p>
-            Suppose we requested a user through this endpoint whose visibility
+            Suppose we requested a user through this action whose visibility
             was set to private rather than public. In the error logs, we'd see
             the following message:
            </p>
 
             <pre class="prettyprint">
-01/14/2020 05:40:10 (E) ravel - error/s occured in endpoint "get_user"
+01/14/2020 05:40:10 (E) ravel - error/s occured in action "get_user"
 
     {
       "exception": "GuardFailure",

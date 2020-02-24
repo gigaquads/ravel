@@ -22,13 +22,13 @@ class WebsocketServer(AsyncServer):
             server=websockets.serve(self.serve, self.host, self.port)
         )
 
-    def on_request(self, endpoint, socket, request: Dict) -> Tuple[Tuple, Dict]:
+    def on_request(self, action, socket, request: Dict) -> Tuple[Tuple, Dict]:
         args = tuple()
         kwargs = request.get('params', {}) or {}
         kwargs['socket'] = socket
         return (args, kwargs)
 
-    def on_response(self, endpoint, result, *args, **kwargs):
+    def on_response(self, action, result, *args, **kwargs):
         return ujson.dumps(result).encode('utf-8')
 
     async def serve(self, socket, path):
@@ -42,10 +42,10 @@ class WebsocketServer(AsyncServer):
                 print(f'invalid request data:  {message}')
 
             # route the request to the appropriate
-            # endpoint and await response
-            endpoint = self.endpoints.get(request['method'])
-            if endpoint is None:
+            # action and await response
+            action = self.actions.get(request['method'])
+            if action is None:
                 print(f'>>> Unrecognized method: {request["method"]}')
             else:
-                result = await endpoint(socket, request)
+                result = await action(socket, request)
                 await socket.send(result)

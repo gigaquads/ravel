@@ -2,7 +2,7 @@ from typing import Dict, List, Text, Type
 
 from IPython.terminal.embed import InteractiveShellEmbed
 
-from ravel.app.base import Application, Endpoint
+from ravel.app.base import Application, Action
 
 
 class Repl(Application):
@@ -18,7 +18,7 @@ class Repl(Application):
         self._namespace = {}
 
     @property
-    def endpoint_type(self) -> Type['ReplFunction']:
+    def action_type(self) -> Type['ReplFunction']:
         return ReplFunction
 
     @property
@@ -49,7 +49,7 @@ class Repl(Application):
         """
         Get list of names of all registered functions in the REPL.
         """
-        return sorted(self.endpoints.keys())
+        return sorted(self.actions.keys())
 
     def on_start(self):
         """
@@ -80,7 +80,7 @@ class Repl(Application):
         return super().on_response(repl_function, result, *args, **kwargs)
 
 
-class ReplFunction(Endpoint):
+class ReplFunction(Action):
     def __init__(self, func, decorator):
         super().__init__(func, decorator)
         self.return_values = []

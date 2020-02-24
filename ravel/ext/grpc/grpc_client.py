@@ -31,23 +31,23 @@ class GrpcClient(object):
         self._grpc_stub = GrpcApplicationStub(self._channel)
         self._funcs = {
             k: self._build_func(p)
-            for k, p in app.endpoints.items()
+            for k, p in app.actions.items()
         }
 
     def __getattr__(self, func_name: Text):
         return self._funcs[func_name]
 
-    def _build_func(self, endpoint):
-        key = StringUtils.camel(endpoint.name)
+    def _build_func(self, action):
+        key = StringUtils.camel(action.name)
         request_type = getattr(self._app.grpc.pb2, f'{key}Request')
-        send_request = getattr(self._grpc_stub, endpoint.name)
+        send_request = getattr(self._grpc_stub, action.name)
 
         def func(**kwargs):
             # prepare and send the request
             request = request_type(**kwargs)
             response = send_request(request)
             # translate the native proto response message to a plain dict
-            data = self._extract_fields(response, endpoint.response_schema)
+            data = self._extract_fields(response, action.response_schema)
             return data
 
         return func

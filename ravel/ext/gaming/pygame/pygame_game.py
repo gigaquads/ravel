@@ -16,7 +16,7 @@ import pygame as pg
 from pygame.time import Clock
 
 from ravel.util.misc_functions import flatten_sequence
-from ravel.app.base import Application, EndpointDecorator, Endpoint
+from ravel.app.base import Application, ActionDecorator, Action
 
 pygame_logger = getLogger('pygame')
 
@@ -93,7 +93,7 @@ class PygameGame(Application):
             EVENT_TYPE.QUIT: [lambda event: {'is_running': False}]
         })
 
-    def on_decorate(self, handler: 'Endpoint'):
+    def on_decorate(self, handler: 'Action'):
         event_type = handler.decorator.kwargs['event']
         if event_type in KEY_EVENT_TYPES:
             key_obj = handler.decorator.kwargs.get('key')
@@ -106,7 +106,7 @@ class PygameGame(Application):
     #
     # def on_request(
     #     self,
-    #     endpoint: 'Endpoint',
+    #     action: 'Action',
     #     *raw_args,
     #     **raw_kwargs
     # ) -> Tuple[Tuple, Dict]:
@@ -125,7 +125,7 @@ class PygameGame(Application):
 
         pg.init()
 
-    def on_extract(self, endpoint, index, parameter, raw_args, raw_kwargs):
+    def on_extract(self, action, index, parameter, raw_args, raw_kwargs):
         # API methods are not called with any arguments; hence, all prepared
         # arguments are plucked from the global game state dict.
         if raw_args and index == 0 and parameter.name == 'event':

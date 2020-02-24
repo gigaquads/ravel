@@ -21,7 +21,7 @@
             <ol>
               <li><a href="#registering">Registering Middleware With Applications</a></li>
               <li><a href="#sharing">Sharing Middleware Between Applications</a></li>
-              <li><a href="#arguments">Transforming Endpoint Arguments</a></li>
+              <li><a href="#arguments">Transforming Action Arguments</a></li>
             </ol>
           </div>
 
@@ -38,7 +38,7 @@
           To illustrate the downside of non-standardization, imagine that you
           currently rely on a web framework to manage database
           transactions using middleware. Imagine now that the need arises to execute the
-          same endpoint inside an <a href="">Celery</a> task or a
+          same action inside an <a href="">Celery</a> task or a
           command-line application where your web framework's middleware is not in
           play. At this point, you have no choice but to decouple transaction
           management from the middleware of your framework in order to
@@ -63,8 +63,8 @@
           <ul>
             <li><span>pre_request</span> - before raw arguments are processed</li>
             <li><span>on_request</span> - after raw arguments are processed</li>
-            <li><span>post_request</span> - after endpoint returns</li>
-            <li><span>post_bad_request</span> - after endpoint raises an exception</li>
+            <li><span>post_request</span> - after action returns</li>
+            <li><span>post_bad_request</span> - after action raises an exception</li>
           </ul>
 
           <pre class="prettyprint">
@@ -72,7 +72,7 @@
 
       def pre_request(
           self,
-          endpoint: 'Endpoint',
+          action: 'Action',
           raw_args: Tuple,
           raw_kwargs: Dict
       ):
@@ -85,7 +85,7 @@
 
       def on_request(
           self,
-          endpoint: 'Endpoint',
+          action: 'Action',
           raw_args: Tuple,
           raw_kwargs: Dict,
           processed_args: Tuple,
@@ -94,13 +94,13 @@
           """
           At the point `on_request` runs, the host application has transformed the
           `raw_args` and `raw_kwargs` into their processed counterparts, which
-          represent the args and kwargs expected by the underyling endpoint
+          represent the args and kwargs expected by the underyling action
           callable.
           """
 
       def post_request(
           self,
-          endpoint: 'Endpoint',
+          action: 'Action',
           raw_args: Tuple,
           raw_kwargs: Dict,
           processed_args: Tuple,
@@ -108,12 +108,12 @@
           result,
       ):
           """
-          If no exception was raised in the endpoint callable, we come here.
+          If no exception was raised in the action callable, we come here.
           """
 
       def post_bad_request(
           self,
-          endpoint: 'Endpoint',
+          action: 'Action',
           raw_args: Tuple,
           raw_kwargs: Dict,
           processed_args: Tuple,
@@ -121,7 +121,7 @@
           exc: Exception,
       ):
           """
-          If any exception was raised in the endpoint callable, we come here.
+          If any exception was raised in the action callable, we come here.
           """
           </pre>
 
@@ -157,7 +157,7 @@
           <h2><a name="sharing">Sharing Middleware Between Applications</a></h2>
           <p>
             In some case, you might want to share middleware between multiple
-            Application types. For example, you may want to execute an endpoint
+            Application types. For example, you may want to execute an action
             both within a Pybiz REPL for internal development purposes as well as
             in a web app through an HTTP server. When it comes to defining
             middleware for use in these applications, you have a couple options.
@@ -215,7 +215,7 @@
 
       <div class="card">
         <div>
-          <h2><a name="arguments">Transforming Endpoint Arguments</a></h2>
+          <h2><a name="arguments">Transforming Action Arguments</a></h2>
           <p>
           </p>
           <pre class="prettyprint">

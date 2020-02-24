@@ -13,7 +13,7 @@ from ravel.util.misc_functions import get_class_name, get_callable_name
 from ravel.exceptions import RavelError
 
 
-class EndpointError(RavelError):
+class ActionError(RavelError):
     """
     An `Error` simply keeps a record of an Exception that occurs and the
     middleware object which raised it, provided there was one. This is used
@@ -61,21 +61,21 @@ class EndpointError(RavelError):
 class BadRequest(RavelError):
     """
     If any exceptions are raised during the execution of Middleware or an
-    endpoint callable itself, we raise BadRequest.
+    action callable itself, we raise BadRequest.
     """
 
     def __init__(self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         state: 'ExecutionState',
         *args,
         **kwargs
     ):
         super().__init__(
-            f'error/s occured in endpoint '
-            f'"{endpoint.name}" (see logs)'
+            f'error/s occured in action '
+            f'"{action.name}" (see logs)'
         )
 
-        self.endpoint = endpoint
+        self.action = action
         self.state = state
 
 
@@ -92,16 +92,16 @@ class ExecutionState(object):
         self.result = None
 
 
-class Endpoint(object):
+class Action(object):
 
-    Error = EndpointError
+    Error = ActionError
     State = ExecutionState
     BadRequest = BadRequest
 
-    def __init__(self, func: Callable, decorator: 'EndpointDecorator'):
+    def __init__(self, func: Callable, decorator: 'ActionDecorator'):
         self._is_bootstrapped = False
         self._decorator = decorator
-        self._target = func.target if isinstance(func, Endpoint) else func
+        self._target = func.target if isinstance(func, Action) else func
         self._signature = inspect.signature(self._target)
         self._api_object = decorator.api_object
 
@@ -112,7 +112,7 @@ class Endpoint(object):
         return self.decorator.kwargs.get(key)
 
     def __call__(self, *raw_args, **raw_kwargs):
-        state = Endpoint.State(raw_args, raw_kwargs)
+        state = Action.State(raw_args, raw_kwargs)
 
         for func in (
             self._apply_middleware_pre_request,
@@ -198,7 +198,7 @@ class Endpoint(object):
                     mware.pre_request(self, state.raw_args, state.raw_kwargs)
                     state.middleware.append(mware)
                 except Exception as exc:
-                    error = EndpointError(exc, mware)
+                    error = ActionError(exc, mware)
                     state.errors.append(error)
                     break
         return error
@@ -213,7 +213,7 @@ class Endpoint(object):
                     state.processed_args, state.processed_kwargs,
                 )
             except Exception as exc:
-                error = Endpoint.Error(exc, mware)
+                error = Action.Error(exc, mware)
                 state.errors.append(error)
         return error
 
@@ -228,7 +228,7 @@ class Endpoint(object):
                     state.result
                 )
             except Exception as exc:
-                error = Endpoint.Error(exc, mware)
+                error = Action.Error(exc, mware)
                 state.errors.append(error)
         return error
 
@@ -243,7 +243,7 @@ class Endpoint(object):
                     state.target_error.exc
                 )
             except Exception as exc:
-                error = Endpoint.Error(exc, mware)
+                error = Action.Error(exc, mware)
                 state.errors.append(error)
         return error
 
@@ -255,7 +255,7 @@ class Endpoint(object):
                 state.processed_kwargs
             )
         except Exception as exc:
-            error = Endpoint.Error(exc)
+            error = Action.Error(exc)
             state.target_error = error
             state.errors.append(error)
 
@@ -273,7 +273,7 @@ class Endpoint(object):
                 **state.processed_kwargs
             )
         except Exception as exc:
-            error = Endpoint.Error(exc)
+            error = Action.Error(exc)
             state.errors.append(error)
 
         return error
@@ -297,15 +297,15 @@ class Endpoint(object):
                 self.app.loader.load(self, args, kwargs)
             )
         except Exception as exc:
-            error = Endpoint.Error(exc)
+            error = Action.Error(exc)
             state.errors.append(error)
 
         return error
 
 
-class AsyncEndpoint(Endpoint):
+class AsyncAction(Action):
     """
-    This specialized `Endpoint` can be used by any new `Application` type
+    This specialized `Action` can be used by any new `Application` type
     whose wrapped functions are coroutines.
     """
     # TODO: Implement

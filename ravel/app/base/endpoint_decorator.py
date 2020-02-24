@@ -1,10 +1,10 @@
 from typing import Union, Type
 from inspect import getmembers, ismethod
 
-from .endpoint import Endpoint
+from .action import Action
 
 
-class EndpointDecorator(object):
+class ActionDecorator(object):
     def __init__(self, app: 'Application', *args, **kwargs):
         super().__init__()
         self.app = app
@@ -12,44 +12,44 @@ class EndpointDecorator(object):
         self.kwargs = kwargs
         self._api_object = None
 
-    def __call__(self, obj) -> Union['Endpoint', Type]:
+    def __call__(self, obj) -> Union['Action', Type]:
         if isinstance(obj, type):
-            # interpret all non-private methods as endpoint functions
+            # interpret all non-private methods as action functions
             # and register them all
             api_type = obj
             self._api_object = api_type(self.app)
             predicate = lambda x: (
                 (ismethod(x) and x.__name__[0] != '_')
-                or isinstance(x, Endpoint)
+                or isinstance(x, Action)
             )
             for k, v in getmembers(self.api_object, predicate=predicate):
-                if isinstance(v, Endpoint):
-                    # customize existing endpoint
-                    existing_endpoint = self.app.endpoints.get(v.name)
-                    if not existing_endpoint:
-                        # it's an endpoint but for a different Application
-                        # i.e. existing_endpoint.app is not self.app
+                if isinstance(v, Action):
+                    # customize existing action
+                    existing_action = self.app.actions.get(v.name)
+                    if not existing_action:
+                        # it's an action but for a different Application
+                        # i.e. existing_action.app is not self.app
                         continue
 
                     kwargs = self.kwargs.copy()
-                    kwargs.update(existing_endpoint.decorator.kwargs)
+                    kwargs.update(existing_action.decorator.kwargs)
 
                     new_decorator = type(self)(self.app, *self.args, **kwargs)
                     new_decorator._api_object = self._api_object
-                    new_decorator.setup_endpoint(v.target, True)
+                    new_decorator.setup_action(v.target, True)
                 else:
-                    self.setup_endpoint(v.__func__, False)
+                    self.setup_action(v.__func__, False)
             return api_type
         else:
             func = obj
-            endpoint = self.setup_endpoint(func, False)
-            return endpoint
+            action = self.setup_action(func, False)
+            return action
 
-    def setup_endpoint(self, func, overwrite):
-        endpoint = self.app.endpoint_type(func, self)
-        self.app.register(endpoint, overwrite=overwrite)
-        self.app.on_decorate(endpoint)
-        return endpoint
+    def setup_action(self, func, overwrite):
+        action = self.app.action_type(func, self)
+        self.app.register(action, overwrite=overwrite)
+        self.app.on_decorate(action)
+        return action
 
     @property
     def api_object(self) -> 'Api':

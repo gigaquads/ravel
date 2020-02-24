@@ -120,7 +120,7 @@ class FalconService(AbstractWsgiService):
 
     def on_response(
         self,
-        endpoint,
+        action,
         result,
         raw_args=None,
         raw_kwargs=None,

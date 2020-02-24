@@ -3,12 +3,12 @@ from typing import Text, List
 from appyratus.schema import Schema
 from appyratus.utils import StringUtils
 
-from ravel.app import Endpoint
+from ravel.app import Action
 
 from .proto import MessageGenerator
 
 
-class GrpcFunction(Endpoint):
+class GrpcFunction(Action):
     def __init__(self, func, decorator):
         def build_schema(kwarg, name_suffix):
             type_name = self._msg_name_prefix + name_suffix

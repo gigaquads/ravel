@@ -11,7 +11,7 @@ from .store import SqlalchemyStore
 class SqlalchemyMiddleware(Middleware):
     """
     Manages a Sqlalchemy database transaction that encompasses the execution of
-    an Endpoint.
+    an Action.
     """
     def __init__(self, store_class_name: Text = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -25,7 +25,7 @@ class SqlalchemyMiddleware(Middleware):
 
     def pre_request(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         raw_args: Tuple,
         raw_kwargs: Dict
     ):
@@ -38,7 +38,7 @@ class SqlalchemyMiddleware(Middleware):
 
     def post_request(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         raw_args: Tuple,
         raw_kwargs: Dict,
         processed_args: Tuple,

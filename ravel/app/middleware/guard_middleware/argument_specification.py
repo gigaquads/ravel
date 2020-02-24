@@ -8,7 +8,7 @@ class ArgumentSpecification(object):
     """
     ArgumentSpecification determines which positional and keyword arguments a
     given Guard needs. GuardMiddleware and CompositeGuard use this information
-    to know which incoming endpoint arguments should be bound to the arguments
+    to know which incoming action arguments should be bound to the arguments
     declared by the corresponding Guard.execute method.
     """
 

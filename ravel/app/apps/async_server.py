@@ -4,7 +4,7 @@ import uvloop
 
 from typing import Type, Coroutine
 
-from ravel.app.base import Application, AsyncEndpoint
+from ravel.app.base import Application, AsyncAction
 
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -17,8 +17,8 @@ class AsyncServer(Application):
         self.loop = None
 
     @property
-    def endpoint_type(self) -> Type['Endpoint']:
-        return AsyncEndpoint
+    def action_type(self) -> Type['Action']:
+        return AsyncAction
 
     def on_bootstrap(self, server):
         self.server = server

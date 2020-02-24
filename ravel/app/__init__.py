@@ -1,3 +1,3 @@
 from .base.application import Application
-from .base.endpoint import Endpoint
-from .base.endpoint_decorator import EndpointDecorator
+from .base.action import Action
+from .base.action_decorator import ActionDecorator

@@ -6,7 +6,7 @@ from appyratus.utils import StringUtils
 
 from ravel.util import get_class_name, is_resource, is_batch
 from ravel.api import Api
-from ravel.app.base import Application, Endpoint
+from ravel.app.base import Application, Action
 
 
 DEFAULT_BROKER = 'amqp://'
@@ -19,7 +19,7 @@ class CeleryApplication(Application):
         self.options = {}
 
     @property
-    def endpoint_type(self):
+    def action_type(self):
         return CeleryTask
 
     @property
@@ -40,27 +40,27 @@ class CeleryApplication(Application):
             self.celery_app_name,
             broker=self.celery_broker
         )
-        # register endpoints as Tasks with Celery
-        for endpoint in self.api.values():
-            func = lambda *args, **kwargs: endpoint(*args, **kwargs)
-            func.__name__ = endpoint.name
+        # register actions as Tasks with Celery
+        for action in self.api.values():
+            func = lambda *args, **kwargs: action(*args, **kwargs)
+            func.__name__ = action.name
 
-            task = self.celery_app.task(**endpoint.decorator.kwargs)
-            endpoint.celery_task = task(func)
+            task = self.celery_app.task(**action.decorator.kwargs)
+            action.celery_task = task(func)
 
     def on_request(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         *raw_args,
         **raw_kwargs
     ) -> Tuple[Tuple, Dict]:
-        args, kwargs = super().on_request(endpoint, *raw_args, **raw_kwargs)
+        args, kwargs = super().on_request(action, *raw_args, **raw_kwargs)
         print(raw_args, raw_kwargs, args, kwargs)
         return (args, kwargs)
 
     def on_response(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         raw_result: object,
         *raw_args,
         **raw_kwargs
@@ -73,7 +73,7 @@ class CeleryApplication(Application):
         return self.celery_app
 
 
-class CeleryTask(Endpoint):
+class CeleryTask(Action):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.celery_task = None

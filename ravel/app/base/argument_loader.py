@@ -18,12 +18,12 @@ from ravel.util import (
 class ArgumentLoader(object):
     """
     A `ArgumentLoader` instance is used by each `Application` object. When enabled
-    (which it is, by default), arguments passed into API endpoints (AKA Endpoint
+    (which it is, by default), arguments passed into API actions (AKA Action
     objects) are automatically loaded or converted to their corresponding
     Resources, replacing the raw arguments, provided that the arguments are
     declared using a Resource as the type annotation.
 
-    For example, if you have an API endpoint, like:
+    For example, if you have an API action, like:
 
     ```python3
     @repl()
@@ -64,13 +64,13 @@ class ArgumentLoader(object):
         self._on_load = (
             on_load or (lambda spec, raw_value, loaded_value: loaded_value)
         )
-        self._endpoint_2_specs = defaultdict(list)
+        self._action_2_specs = defaultdict(list)
         self.bind()
 
     def bind(self):
-        self._endpoint_2_specs = defaultdict(list)
-        for endpoint in self._app.endpoints.values():
-            for idx, param in enumerate(endpoint.signature.parameters.values()):
+        self._action_2_specs = defaultdict(list)
+        for action in self._app.actions.values():
+            for idx, param in enumerate(action.signature.parameters.values()):
                 ann = param.annotation
                 many, res_class_name = extract_res_info_from_annotation(ann)
                 resource_type = self._app.res.get(res_class_name)
@@ -81,17 +81,17 @@ class ArgumentLoader(object):
                     spec = ArgumentLoader.ArgumentSpec(
                         idx, param.name, many, resource_type
                     )
-                    self._endpoint_2_specs[endpoint].append(spec)
+                    self._action_2_specs[action].append(spec)
 
 
-    def load(self, endpoint: 'Endpoint', args: Tuple, kwargs: Dict) -> Tuple:
+    def load(self, action: 'Action', args: Tuple, kwargs: Dict) -> Tuple:
         """
         Replace args and kwargs with corresponding Entity and return them
         """
         loaded_args = list(args)
         loaded_kwargs = kwargs.copy()
 
-        for spec in self._endpoint_2_specs[endpoint]:
+        for spec in self._action_2_specs[action]:
             if spec.position is not None and spec.position < len(args):
                 raw_arg_value = args[spec.position]
                 loaded_args_or_kwargs = loaded_args

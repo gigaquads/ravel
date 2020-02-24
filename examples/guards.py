@@ -4,7 +4,7 @@ from ravel.app.middleware import Guard, GuardMiddleware
 
 class Exists(Guard):
     """
-    This guard ensures that a named endpoint argument exists in the DAL.
+    This guard ensures that a named action argument exists in the DAL.
     """
 
     def __init__(self, arg: str):
@@ -24,7 +24,7 @@ class Exists(Guard):
 
 class Matches(Guard):
     """
-    This guard ensures that a named endpoint argument has one or more attributes
+    This guard ensures that a named action argument has one or more attributes
     equal to the given values, specified through __init__ kwargs.
     """
 
@@ -61,7 +61,7 @@ if __name__ == '__main__':
         color = String()
         age = Int()
 
-    # define an endpoint with a guard
+    # define an action with a guard
     @app(guard=Exists('dog') & Matches('dog', color='red'))
     def get_dog(dog: Dog):
         return dog

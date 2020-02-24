@@ -15,7 +15,7 @@ from appyratus.files import Yaml
 from appyratus.utils import StringUtils, SysUtils
 
 from ravel.util import is_batch, is_resource
-from ravel.app.base import Application, EndpointDecorator, Endpoint
+from ravel.app.base import Application, ActionDecorator, Action
 
 
 class CliApplication(Application):
@@ -47,7 +47,7 @@ class CliApplication(Application):
         }
 
     @property
-    def endpoint_type(self):
+    def action_type(self):
         return CliCommand
 
     def on_bootstrap(self, cli_args=None):
@@ -55,7 +55,7 @@ class CliApplication(Application):
         Collect subparsers and build cli program
         """
         self._cli_args = cli_args
-        subparsers = [c.subparser for c in self.endpoints.values() if c.subparser]
+        subparsers = [c.subparser for c in self.actions.values() if c.subparser]
         self._cli_program = CliProgram(
             subparsers=subparsers, cli_args=self._cli_args, **self._cli_program_kwargs
         )
@@ -66,13 +66,13 @@ class CliApplication(Application):
         """
         SysUtils.safe_main(self._cli_program.run, debug_level=2)
 
-    def on_request(self, endpoint, *args, **kwargs):
+    def on_request(self, action, *args, **kwargs):
         """
         Extract command line arguments and bind them to the arguments expected
         by the registered function's signature.
         """
         args, kwargs = [], {}
-        for k, param in endpoint.signature.parameters.items():
+        for k, param in action.signature.parameters.items():
             value = getattr(self._cli_program.cli_args, k, None)
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
@@ -85,8 +85,8 @@ class CliApplication(Application):
                 kwargs[k] = value
         return (args, kwargs)
 
-    def on_response(self, endpoint, result, *args, **kwargs):
-        response = super().on_response(endpoint, result, *args, **kwargs)
+    def on_response(self, action, result, *args, **kwargs):
+        response = super().on_response(action, result, *args, **kwargs)
         dumped_result = _dump_result_obj(response)
         if self._echo:
             output_format = getattr(self._cli_program.cli_args, 'format', None)
@@ -116,7 +116,7 @@ def _dump_result_obj(obj):
         return obj
 
 
-class CliCommand(Endpoint):
+class CliCommand(Action):
     """
     CliCommand represents a top-level CliProgram Subparser.
     """

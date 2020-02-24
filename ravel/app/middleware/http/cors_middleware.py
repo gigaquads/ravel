@@ -36,7 +36,7 @@ class CorsMiddleware(Middleware):
         return (FalconService, )
 
     def post_request(
-        self, endpoint: 'Endpoint', raw_args: Tuple, raw_kwargs: Dict, *args, **kwargs
+        self, action: 'Action', raw_args: Tuple, raw_kwargs: Dict, *args, **kwargs
     ):
         request, response = raw_args
         response.set_headers(

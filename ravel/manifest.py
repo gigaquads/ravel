@@ -29,20 +29,20 @@ class TypeScanner(Scanner):
 
         from ravel.store.base.store import Store
         from ravel.resource import Resource
-        from ravel.app.base.endpoint import Endpoint
+        from ravel.app.base.action import Action
 
         self.Store = Store
         self.Resource = Resource
-        self.Endpoint = Endpoint
+        self.Action = Action
 
     def predicate(self, value) -> bool:
         return (
             isinstance(value, type) and
-            issubclass(value, (self.Endpoint, self.Resource, self.Store))
+            issubclass(value, (self.Action, self.Resource, self.Store))
         )
 
     def on_match(self, name, value, context):
-        if issubclass(value, self.Endpoint):
+        if issubclass(value, self.Action):
             context.api[name] = value
         elif issubclass(value, self.Resource) and not value.ravel.is_abstract:
             context.res[name] = value
@@ -228,14 +228,14 @@ class Manifest(object):
 
         console.debug(f'finished bootstrapped Store and Resource classes')
 
-        # inject the following into each endpoint target's lexical scope:
-        # all other endpoints, all Resource and Store classes.
-        for endpoint in self.app.endpoints.values():
-            endpoint.target.__globals__.update(self.types.res)
-            endpoint.target.__globals__.update(self.types.stores)
-            endpoint.target.__globals__.update(
+        # inject the following into each action target's lexical scope:
+        # all other actions, all Resource and Store classes.
+        for action in self.app.actions.values():
+            action.target.__globals__.update(self.types.res)
+            action.target.__globals__.update(self.types.stores)
+            action.target.__globals__.update(
                 {p.name: p.target
-                 for p in self.app.endpoints.values()}
+                 for p in self.app.actions.values()}
             )
 
     def bind(self, rebind=False):
@@ -330,8 +330,8 @@ class Manifest(object):
 
     def _scan_filesystem(self):
         """
-        Use venusian simply to scan the endpoint packages/modules, causing the
-        endpoint callables to register themselves with the Application instance.
+        Use venusian simply to scan the action packages/modules, causing the
+        action callables to register themselves with the Application instance.
         """
         import ravel.store
         import ravel.ext

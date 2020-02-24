@@ -56,7 +56,7 @@ class Middleware(object):
 
     def pre_request(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         raw_args: Tuple,
         raw_kwargs: Dict
     ):
@@ -69,7 +69,7 @@ class Middleware(object):
 
     def on_request(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         raw_args: Tuple,
         raw_kwargs: Dict,
         processed_args: Tuple,
@@ -78,13 +78,13 @@ class Middleware(object):
         """
         At the point `on_request` runs, the host application has transformed the
         `raw_args` and `raw_kwargs` into their processed counterparts, which
-        represent the args and kwargs expected by the underyling endpoint
+        represent the args and kwargs expected by the underyling action
         callable.
         """
 
     def post_request(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         raw_args: Tuple,
         raw_kwargs: Dict,
         processed_args: Tuple,
@@ -92,12 +92,12 @@ class Middleware(object):
         result,
     ):
         """
-        If no exception was raised in the endpoint callable, we come here.
+        If no exception was raised in the action callable, we come here.
         """
 
     def post_bad_request(
         self,
-        endpoint: 'Endpoint',
+        action: 'Action',
         raw_args: Tuple,
         raw_kwargs: Dict,
         processed_args: Tuple,
@@ -105,5 +105,5 @@ class Middleware(object):
         exc: Exception,
     ):
         """
-        If any exception was raised in the endpoint callable, we come here.
+        If any exception was raised in the action callable, we come here.
         """

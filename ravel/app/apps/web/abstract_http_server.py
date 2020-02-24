@@ -3,7 +3,7 @@ import requests
 
 from collections import defaultdict
 
-from ravel.app.base import Application, Endpoint, EndpointDecorator
+from ravel.app.base import Application, Action, ActionDecorator
 
 
 class AbstractHttpServer(Application):
@@ -16,15 +16,15 @@ class AbstractHttpServer(Application):
         return HttpDecorator
 
     @property
-    def endpoint_type(self):
+    def action_type(self):
         return HttpRoute
 
     def route(self, http_method, url_path, args=None, kwargs=None):
         http_method = http_method.lower()
         url_path = url_path.lower()
-        http_method2endpoint = self.routes.get(url_path)
-        if http_method2endpoint:
-            route = http_method2endpoint.get(http_method)
+        http_method2action = self.routes.get(url_path)
+        if http_method2action:
+            route = http_method2action.get(http_method)
             return route(*(args or tuple()), **(kwargs or dict()))
         return None
 
@@ -32,7 +32,7 @@ class AbstractHttpServer(Application):
         return HttpClient(self, scheme, host, port)
 
 
-class HttpDecorator(EndpointDecorator):
+class HttpDecorator(ActionDecorator):
     def __init__(self,
         app,
         http_method: str,
@@ -59,7 +59,7 @@ class HttpDecorator(EndpointDecorator):
 
     def __call__(self, func):
         """
-        We wrap each registered func in a Endpoint and store it in a table
+        We wrap each registered func in a Action and store it in a table
         that lets us look it up by url_path and http_method for use in routing
         requests.
         """
@@ -68,10 +68,10 @@ class HttpDecorator(EndpointDecorator):
         return route
 
 
-class HttpRoute(Endpoint):
+class HttpRoute(Action):
     """
     Stores metadata related to the "target" callable, which in the Http context
-    is the endpoint of some URL route.
+    is the action of some URL route.
     """
 
     def __init__(self, func, decorator):

@@ -45,7 +45,7 @@ class HttpServer(AbstractHttpServer):
             arguments = body.copy()
             arguments.update(params)
 
-            # Apply endpoint callable
+            # Apply action callable
             return self.service.route(
                 http_method, url.path, args=(arguments, )
             )
@@ -107,10 +107,10 @@ class HttpServer(AbstractHttpServer):
         print('Listening on http://{}:{}'.format(self.host, self.port))
         self.server.serve_forever()
 
-    def on_request(self, endpoint, arguments: Dict) -> dict:
+    def on_request(self, action, arguments: Dict) -> dict:
         args, kwargs = [], {}
 
-        for k, param in endpoint.signature.parameters.items():
+        for k, param in action.signature.parameters.items():
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
                     args.append(arguments.get(k))
