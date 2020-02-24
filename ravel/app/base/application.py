@@ -328,6 +328,10 @@ class Application(object):
         kwargs = {}
 
         for idx, param in enumerate(action.signature.parameters.values()):
+            if not idx:
+                # idx 0 is for the Request object injected elsewhere
+                continue
+
             target_dict = None
             index = None
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:

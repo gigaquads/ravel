@@ -110,7 +110,9 @@ class HttpServer(AbstractHttpServer):
     def on_request(self, action, arguments: Dict) -> dict:
         args, kwargs = [], {}
 
-        for k, param in action.signature.parameters.items():
+        for idx, (k, param) in enumerate(action.signature.parameters.items()):
+            if not idx:
+                continue
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
                     args.append(arguments.get(k))

@@ -176,7 +176,7 @@ class Resolver(object):
             assert is_batch(entity)
             return self.resolve_batch(entity, request)
 
-    def resolve_resource(self, entity: 'Entity', request):
+    def resolve_resource(self, resource: 'Resource', request):
         self.pre_resolve(resource, request)
 
         if request.mode == QueryMode.normal:
@@ -190,7 +190,7 @@ class Resolver(object):
         processed_result = self.post_resolve(resource, request, result)
         return processed_result
 
-    def resolve_batch(self, batch, request):
+    def resolve_batch(self, batch: 'Batch', request):
         self.pre_resolve_batch(batch, request)
 
         if request.mode == QueryMode.normal:

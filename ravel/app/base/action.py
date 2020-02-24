@@ -80,7 +80,8 @@ class BadRequest(RavelError):
 
 
 class ExecutionState(object):
-    def __init__(self, raw_args, raw_kwargs):
+    def __init__(self, action, raw_args, raw_kwargs):
+        self.action = action
         self.errors = []
         self.target_error = None
         self.middleware = []
@@ -90,6 +91,23 @@ class ExecutionState(object):
         self.processed_kwargs = None
         self.raw_result = None
         self.result = None
+
+
+class Request(object):
+    def __init__(self, state):
+        self.__dict__['internal'] = state
+        self.__dict__['_context'] = {}
+
+    def __repr__(self):
+        return (
+            f'Request(action="{self.internal.action.name}")'
+        )
+
+    def __getattr__(self, name):
+        return self._context.get(name)
+
+    def __setattr__(self, name, value):
+        self._context[name] = value
 
 
 class Action(object):
@@ -112,7 +130,8 @@ class Action(object):
         return self.decorator.kwargs.get(key)
 
     def __call__(self, *raw_args, **raw_kwargs):
-        state = Action.State(raw_args, raw_kwargs)
+        state = ExecutionState(self, raw_args, raw_kwargs)
+        request = Request(state)
 
         for func in (
             self._apply_middleware_pre_request,
@@ -121,14 +140,14 @@ class Action(object):
             self._apply_target_callable,
             self._apply_app_on_response,
         ):
-            error = func(state)
+            error = func(request)
             if error is not None:
                 break
 
         if state.target_error is None:
-            self._apply_middleware_post_request(state)
+            self._apply_middleware_post_request(request)
         else:
-            self._apply_middleware_post_bad_request(state)
+            self._apply_middleware_post_bad_request(request)
 
         if state.errors:
             console.error(
@@ -187,10 +206,8 @@ class Action(object):
     def on_bootstrap(self):
         pass
 
-    def on_call(self, args, kwargs):
-        return self._target(*args, **kwargs)
-
-    def _apply_middleware_pre_request(self, state):
+    def _apply_middleware_pre_request(self, request):
+        state = request.internal
         error = None
         for mware in self.app.middleware:
             if isinstance(self.app, mware.app_types):
@@ -203,7 +220,8 @@ class Action(object):
                     break
         return error
 
-    def _apply_middleware_on_request(self, state):
+    def _apply_middleware_on_request(self, request):
+        state = request.internal
         error = None
         for mware in state.middleware:
             try:
@@ -217,7 +235,8 @@ class Action(object):
                 state.errors.append(error)
         return error
 
-    def _apply_middleware_post_request(self, state):
+    def _apply_middleware_post_request(self, request):
+        state = request.internal
         error = None
         for mware in state.middleware:
             try:
@@ -232,7 +251,8 @@ class Action(object):
                 state.errors.append(error)
         return error
 
-    def _apply_middleware_post_bad_request(self, state):
+    def _apply_middleware_post_bad_request(self, request):
+        state = request.internal
         error = None
         for mware in state.middleware:
             try:
@@ -247,12 +267,14 @@ class Action(object):
                 state.errors.append(error)
         return error
 
-    def _apply_target_callable(self, state):
+    def _apply_target_callable(self, request):
+        state = request.internal
         try:
             error = None
-            state.raw_result = self.on_call(
-                state.processed_args,
-                state.processed_kwargs
+            state.raw_result = self._target(
+                request,
+                *state.processed_args,
+                **state.processed_kwargs
             )
         except Exception as exc:
             error = Action.Error(exc)
@@ -261,7 +283,8 @@ class Action(object):
 
         return error
 
-    def _apply_app_on_response(self, state):
+    def _apply_app_on_response(self, request):
+        state = request.internal
         error = None
         try:
             state.result = self.decorator.app.on_response(
@@ -278,7 +301,8 @@ class Action(object):
 
         return error
 
-    def _apply_app_on_request(self, state):
+    def _apply_app_on_request(self, request):
+        state = request.internal
         error = None
         try:
             if self._api_object is not None:

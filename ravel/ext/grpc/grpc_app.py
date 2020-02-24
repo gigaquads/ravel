@@ -140,6 +140,8 @@ class Grpc(Application):
             k: getattr(request, k, None)
             for k in action.request_schema.fields
         }
+        # TODO: revise on_request to take just the new Request object
+        # TODO: inject the Request object into all_arguments
 
         # process field_data into args and kwargs
         args, kwargs = FuncUtils.partition_arguments(

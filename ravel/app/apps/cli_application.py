@@ -72,7 +72,9 @@ class CliApplication(Application):
         by the registered function's signature.
         """
         args, kwargs = [], {}
-        for k, param in action.signature.parameters.items():
+        for idx, (k, param) in enumerate(action.signature.parameters.items()):
+            if not idx:
+                continue
             value = getattr(self._cli_program.cli_args, k, None)
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
