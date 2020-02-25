@@ -161,8 +161,8 @@ class FilesystemStore(Store):
                     ids_to_fetch_from_fs.add(record_id)
         # otherwise we will go straight to the filesystem
         else:
-            fs_record_ids = self._fetch_all_ids()
-            cached_records = self.fetch_many(fs_record_ids)
+            cached_records = {}
+            ids_to_fetch_from_fs = self._fetch_all_ids()
 
         # if there are any remaining ID's not returned from cache,
         # fetch them from file system
