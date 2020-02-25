@@ -41,6 +41,10 @@ class Executor(object):
         query: 'Query',
         fields: Set[Text],
     ) -> List['Resource']:
+        """
+        # Fetch Resources
+        This is where we take the query params and send them to the store
+        """
         resource_type = query.target
         store = resource_type.ravel.store
         where_predicate = query.parameters.where

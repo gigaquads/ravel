@@ -143,7 +143,7 @@ class FilesystemStore(Store):
         """
         """
         if not _ids:
-            return {}
+            _ids = []
 
         # reduce _ids to its unique members by making it a set
         if not isinstance(_ids, set):
@@ -153,16 +153,16 @@ class FilesystemStore(Store):
 
         ids_to_fetch_from_fs = set()
 
-        # if we're using the cache, read from it here
+        # we do not want to ignore the cache here
         if not ignore_cache:
-            cached_records = self._cache_store.fetch_many(
-                all_ids, fields=fields
-            )
+            cached_records = self._cache_store.fetch_many(all_ids, fields=fields)
             for record_id, record in cached_records.items():
                 if record is None:
                     ids_to_fetch_from_fs.add(record_id)
+        # otherwise we will go straight to the filesystem
         else:
-            cached_records = {}
+            fs_record_ids = self._fetch_all_ids()
+            cached_records = self.fetch_many(fs_record_ids)
 
         # if there are any remaining ID's not returned from cache,
         # fetch them from file system
