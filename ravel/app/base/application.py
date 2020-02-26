@@ -23,9 +23,19 @@ from .resource_binder import ResourceBinder
 
 class Application(object):
 
+    class Mode(EnumValueStr):
+        @staticmethod
+        def values():
+            return {
+                'normal',
+                'simulation',
+            }
+
+
     def __init__(
         self,
         middleware: List['Middleware'] = None,
+        mode: Mode = Mode.normal,
     ):
         self._state = DictObject()
         self._actions = {}
@@ -39,6 +49,7 @@ class Application(object):
         self._namespace = {}
         self._json_encoder = JsonEncoder()
         self._binder = ResourceBinder()
+        self._mode = mode
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.app_types)
@@ -80,6 +91,10 @@ class Application(object):
         ```
         """
         return self.decorator_type(self, *args, **kwargs)
+
+    @property
+    def mode(self) -> Mode:
+        return self._mode
 
     @property
     def decorator_type(self) -> Type[ActionDecorator]:

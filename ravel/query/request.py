@@ -5,12 +5,14 @@ from appyratus.utils import DictObject
 from ravel.util.misc_functions import get_class_name
 
 from .parameters import ParameterAssignment
-from .mode import QueryMode
 
 
 class Request(object):
 
-    # TODO: implement "where" method
+    # Query is set at runtime as a side-effect of
+    # importing the Query module.
+    Query = None
+
 
     def __init__(
         self,
@@ -30,7 +32,7 @@ class Request(object):
             f'target={get_class_name(self.resolver.owner)}.'
             f'{self.resolver.name}, '
             f'result={bool(self.result)}, '
-            f'mode={self.mode}'
+            f'query={self.query}'
             f')'
         )
 
@@ -44,18 +46,8 @@ class Request(object):
             self.parameters.select.append(kwargs)
         return self
 
-    @property
-    def mode(self) -> 'QueryMode':
-        if self.query is not None:
-            mode = self.query.options.get('mode', QueryMode.normal)
-        else:
-            mode = QueryMode.normal
-        return mode
-
-    @property
-    def is_simulated(self) -> bool:
-        return self.mode == QueryMode.simulation
-
-    @property
-    def is_backfilled(self) -> bool:
-        return self.mode == QueryMode.backfill
+    def to_query(self, **query_kwargs) -> 'Query':
+        # NOTE: the Query class must be available in the global namespace.
+        # it is not imported here to avoid cyclic import error and also
+        # to avoid the uglyness of a lexically-scoped import.
+        return Request.Query(request=self, **query_kwargs)

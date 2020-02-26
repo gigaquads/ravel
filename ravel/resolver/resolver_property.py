@@ -19,6 +19,10 @@ class ResolverProperty(property):
             fdel=self.fdel,
         )
 
+    @property
+    def app(self) -> 'Application':
+        return self.resolver.owner.ravel.app
+
     def select(self, *items: Tuple[Text]):
         request = Request(self.resolver)
         request.select(*items)

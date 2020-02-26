@@ -69,12 +69,9 @@ class Batch(Entity):
         self.internal.resources[index] = value
 
     def __repr__(self):
-        dirty_count = sum(
-            1 for x in self if x and x.internal.state.dirty
-        )
         return (
             f'{get_class_name(self.ravel.owner)}.Batch('
-            f'size={len(self)}, dirty={dirty_count})'
+            f'size={len(self)})'
         )
 
     def __add__(self, other):

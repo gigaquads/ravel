@@ -44,6 +44,8 @@ def import_object(dotted_path: Text) -> object:
 
 
 def get_class_name(obj):
+    if not obj:
+        return None
     if isinstance(obj, type):
         return obj.__name__
     else:

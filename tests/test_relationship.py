@@ -40,12 +40,15 @@ def Human(app):
     app.bind([Human, Custody])
     return Human
 
+@pytest.fixture(scope='function')
+def child_count():
+    return 2
 
 @pytest.fixture(scope='function')
-def mother(Human):
+def mother(Human, child_count):
     mother = Human(name='mother').create()
-    for i in range(2):
-        child = Human(name=f'child_{i}', mother_id=mother._id).create()
+    for i in range(child_count):
+        child = Human(name=f'child_{i+1}', mother_id=mother._id).create()
         custody = Custody(parent_id=mother._id, child_id=child._id).create()
     return mother
 
@@ -82,3 +85,10 @@ class TestRelationship:
         assert isinstance(request.result, list)
         assert len(request.result) == len(mother.children)
         assert all(is_batch(x) for x in request.result)
+
+    def test_simulate(self, Human, mother):
+        query = Human.select(Human.name, Human.children).where(_id=mother._id)
+        query.configure(mode=Query.Mode.simulation)
+
+        human = query.execute(first=True)
+

@@ -57,14 +57,23 @@ class Relationship(Resolver):
             source = result
 
         query = final_join.build(source)
-        query.select(final_join.right_loader.owner.ravel.resolvers.fields)
+
+        # set values passed in through request
+        if request.parameters.select:
+            query.select(request.parameters.select)
+        if request.parameters.where:
+            query.where(request.parameters.where)
+        if request.parameters.order_by:
+            query.order_by(request.parameters.order_by)
+        if request.parameters.limit:
+            query.order_by(request.parameters.limit)
+        if request.parameters.offset:
+            query.order_by(request.parameters.offset)
+
         result = query.execute(first=not self.many)
         results.append(result)
 
         request.result = results[-1]
-
-    def on_backfill(self, resource, request, result):
-        raise NotImplementedError()
 
     def pre_resolve_batch(self, batch, request):
         if request.is_simulated:
@@ -119,6 +128,13 @@ class Relationship(Resolver):
 
     def on_resolve_batch(self, batch, request):
         return request.result
+
+    def on_simulate(self, resource, request):
+        entity = super().on_simulate(resource, request)
+        if len(self.joins) == 1:
+            joined_value = getattr(resource, join.left_field.name)
+            setattr(entity, join.right_field.name, joined_value)
+        return entity
 
 
 class Join(object):

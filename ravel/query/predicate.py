@@ -58,15 +58,15 @@ RE_INT = re.compile(r'\d+')
 RE_FLOAT = re.compile(r'\d*(\.\d+)')
 RE_STRING = re.compile(r'\'.+\'')
 
+AND_FUNC = lambda x, y: x & y
+OR_FUNC = lambda x, y: x | y
+
 
 class Predicate(object):
     TYPE = PREDICATE_TYPE
-    AND_FUNC = lambda x, y: x & y
-    OR_FUNC = lambda x, y: x | y
 
     def __init__(self, code):
         self.code = code
-        self.fields = set()
         self.targets = set()
 
     def serialize(self) -> Text:
@@ -103,11 +103,11 @@ class Predicate(object):
 
     @classmethod
     def reduce_and(cls, *predicates) -> 'Predicate':
-        return cls._reduce(cls.AND_FUNC, predicates)
+        return cls._reduce(AND_FUNC, predicates)
 
     @classmethod
     def reduce_or(cls, *predicates) -> 'Predicate':
-        return cls._reduce(cls.OR_FUNC, predicates)
+        return cls._reduce(OR_FUNC, predicates)
 
     @staticmethod
     def _reduce(func, predicates: List['Predicate']) -> 'Predicate':
@@ -127,6 +127,77 @@ class Predicate(object):
     def is_boolean_predicate(self):
         return self.code == PREDICATE_TYPE.BOOLEAN
 
+    def satisfy(self) -> Dict:
+
+        def group_by_conditionals(predicate, groups=None):
+            groups = defaultdict(list) if groups is None else groups
+            if predicate.is_boolean_predicate:
+                group_by_conditionals(predicate.lhs, groups=groups)
+                group_by_conditionals(predicate.rhs, groups=groups)
+            else:
+                assert predicate.is_conditional_predicate
+                groups[predicate.resolver.field].append(predicate)
+            return groups
+
+        groups = group_by_conditionals(self)
+        nul = {}
+
+        for field, group in groups.items():
+            exact_value = nil
+            including = set()
+            excluding = set()
+            lower_value = None
+            lower_inclusive = None
+            upper_value = None
+            upper_inclusive = None
+
+            for pred in group:
+                if pred.op == OP_CODE.EQ:
+                    exact_value = pred.value
+                elif pred.op == OP_CODE.NEQ:
+                    excluding.append(pred.op)
+                elif pred.op == OP_CODE.LT:
+                    if upper_value is None or pred.value <= upper_value:
+                        upper_value = pred.value
+                        upper_inclusive = False
+                elif pred.op == OP_CODE.LEQ:
+                    if upper_value is None or pred.value <= upper_value:
+                        upper_value = pred.value
+                        upper_inclusive = True
+                elif pred.op == OP_CODE.GT:
+                    if lower_value is None or pred.value >= lower_value:
+                        lower_value = pred.value
+                        lower_inclusive = True
+                elif pred.op == OP_CODE.LEQ:
+                    if lower_value is None or pred.value >= lower_value:
+                        lower_value = pred.value
+                        lower_inclusive = False
+                elif pred.op == OP_CODE.INCLUDING:
+                    including.update(pred.op_value)
+                elif pred.op == OP_CODE.EXCLUDING:
+                    excluding.update(pred.op_value)
+
+            if exact_value is not nil:
+                values[field] = exact_value
+                continue
+
+            if including:
+                if excluding:
+                    including -= excluding
+                if including:
+                    values[field] = random.choice(list(including))
+                    continue
+
+            values[field] = field.generate(
+                excluding=excluding,
+                lower=lower_value,
+                lower_inclusive=lower_inclusive,
+                upper=upper_value,
+                upper_inclusive=upper_inclusive,
+            )
+
+        return values
+
 
 class ConditionalPredicate(Predicate):
     """
@@ -134,12 +205,12 @@ class ConditionalPredicate(Predicate):
     and a value. The field name is made available through the FieldProperty
     objects that instantiated the predicate.
     """
+
     def __init__(self, op: Text, prop: 'FieldProperty', value):
         super().__init__(code=PREDICATE_TYPE.CONDITIONAL)
         self.op = op
         self.prop = prop
         self.value = value
-        self.fields.add(self.prop.resolver.field)
         self.targets.add(self.prop.resolver.owner)
         self.is_scalar = op not in NON_SCALAR_OP_CODES
 
@@ -163,6 +234,11 @@ class ConditionalPredicate(Predicate):
     def __and__(self, other):
         return BooleanPredicate(OP_CODE.AND, self, other)
 
+    @classmethod
+    def load(cls, resource_type: Type['Resource'], data: Dict):
+        field_prop = getattr(resource_type, data['field'])
+        return cls(data['op'], field_prop, data['value'])
+
     @property
     def field(self):
         return self.prop.resolver.field
@@ -174,11 +250,6 @@ class ConditionalPredicate(Predicate):
             'value': self.value,
             'code': self.code,
         }
-
-    @classmethod
-    def load(cls, resource_type: Type['Resource'], data: Dict):
-        field_prop = getattr(resource_type, data['field'])
-        return cls(data['op'], field_prop, data['value'])
 
 
 class BooleanPredicate(Predicate):
@@ -192,10 +263,6 @@ class BooleanPredicate(Predicate):
         self.op = op
         self.lhs = lhs
         self.rhs = rhs
-        if lhs.code == PREDICATE_TYPE.CONDITIONAL:
-            self.fields.add(lhs.prop.resolver.field)
-        if rhs.code == PREDICATE_TYPE.CONDITIONAL:
-            self.fields.add(rhs.prop.resolver.field)
 
     def __or__(self, other):
         return BooleanPredicate(OP_CODE.OR, self, other)
@@ -226,14 +293,6 @@ class BooleanPredicate(Predicate):
 
         return f'({substr})'
 
-    def dump(self):
-        return {
-            'op': self.op,
-            'lhs': self.lhs.dump(),
-            'rhs': self.rhs.dump(),
-            'code': self.code,
-        }
-
     @classmethod
     def load(cls, resource_type: Type['Resource'], data: Dict):
         return cls(
@@ -241,6 +300,14 @@ class BooleanPredicate(Predicate):
             Predicate.load(resource_type, data['lhs']),
             Predicate.load(resource_type, data['rhs']),
         )
+
+    def dump(self):
+        return {
+            'op': self.op,
+            'lhs': self.lhs.dump(),
+            'rhs': self.rhs.dump(),
+            'code': self.code,
+        }
 
 
 class PredicateParser(object):

@@ -15,12 +15,7 @@ class Executor(object):
         # the fetched resources.
         resources = self._fetch_resources(query, info['fields'])
         self._execute_requests(query, resources, info['requests'])
-
-        # compute the final return value
-        retval = resources
-        if query.options.first:
-            retval = resources[0] if resources else None
-        return retval
+        return resources
 
     def _analyze_query(self, query) -> Dict:
         fields_to_fetch = {ID, REV}

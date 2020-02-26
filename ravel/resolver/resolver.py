@@ -38,11 +38,7 @@ class Resolver(object):
         target=None,
         decorator=None,
         on_resolve=None,
-        pre_resolve=None,
-        post_resolve=None,
         on_resolve_batch=None,
-        pre_resolve_batch=None,
-        post_resolve_batch=None,
         on_select=None,
         on_save=None,
         on_set=None,
@@ -65,11 +61,7 @@ class Resolver(object):
         self.many = many
 
         self.on_resolve = on_resolve or self.on_resolve
-        self.pre_resolve = pre_resolve or self.pre_resolve
-        self.post_resolve = post_resolve or self.post_resolve
         self.on_resolve_batch = on_resolve_batch or self.on_resolve_batch
-        self.pre_resolve_batch = pre_resolve_batch or self.pre_resolve_batch
-        self.post_resolve_batch = post_resolve_batch or self.post_resolve_batch
         self.on_select = on_select or self.on_select
         self.on_save = on_save or self.on_save
         self.on_dump = on_dump or self.on_dump
@@ -96,6 +88,10 @@ class Resolver(object):
     @classmethod
     def property_type(cls):
         return ResolverProperty
+
+    @property
+    def app(self) -> 'Application':
+        return self.owner.ravel.app
 
     @classmethod
     def build_property(cls, decorator=None, args=None, kwargs=None):
@@ -181,9 +177,6 @@ class Resolver(object):
 
         if request.mode == QueryMode.normal:
             result = self.on_resolve(resource, request)
-        elif request.mode == QueryMode.backfill:
-            resolved_result = self.on_resolve(resource, request)
-            result = self.on_backfill(resource, request, resolved_result)
         elif request.mode == QueryMode.simulation:
             result = self.on_simulate(resource, request)
 
@@ -195,9 +188,6 @@ class Resolver(object):
 
         if request.mode == QueryMode.normal:
             result = self.on_resolve_batch(batch, request)
-        elif request.mode == QueryMode.backfill:
-            resolved_result = self.on_resolve_batch(batch, request)
-            result = self.on_backfill_batch(batch, request, resolved_result)
         elif request.mode == QueryMode.simulation:
             result = self.on_simulate_batch(batch, request)
 
@@ -248,20 +238,16 @@ class Resolver(object):
         pass
 
     def on_simulate(self, resource, request):
-        from ravel.query.query import Query
-
-        resolver = request.resolver
-        query = Query(request=request)
-        select = set(query.requests.keys())
-
+        query = request.to_query()
+        if query.parameters.where is not None:
+            values = query.parameters.where.satisfy()
         if self.many:
             count = request.parameters.get('limit', randint(1, 10))
-            return self.target.Batch.generate(resolvers=select, count=count)
+            return self.target.Batch.generate(
+                query.requests, values=values, count=count
+            )
         else:
-            return self.target.generate(resolvers=select)
-
-    def on_backfill(self, resource, request, result):
-        raise NotImplementedError()
+            return self.target.generate(query.requests, values=values)
 
     def pre_resolve_batch(self, batch, request):
         return
@@ -271,10 +257,3 @@ class Resolver(object):
 
     def post_resolve_batch(self, batch, request, result):
         return result
-
-    def on_simulate_batch(self, batch, request):
-        raise NotImplementedError()
-
-    def on_backfill_batch(self, batch, request, result):
-        raise NotImplementedError()
-

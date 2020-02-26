@@ -15,7 +15,6 @@ from ravel.util import is_resource, is_resource_type
 from ravel.resolver.resolver_property import ResolverProperty
 from ravel.resolver.resolvers.loader import LoaderProperty, Loader
 
-from .mode import QueryMode
 from .order_by import OrderBy
 from .request import Request
 from .parameters import ParameterAssignment
@@ -34,7 +33,7 @@ class Query(object):
     ):
         self.target = target
         self.parent = parent
-        self.options = DictObject(mode=QueryMode.normal)
+        self.options = DictObject()
         self.from_request = request
         self.requests = {}
         self.parameters = DictObject(
@@ -82,6 +81,18 @@ class Query(object):
     def __iter__(self):
         return iter(self.requests)
 
+    def __repr__(self):
+        offset = self.parameters.offest
+        limit = self.parameters.limit
+        return (
+            f'Query('
+            f'target={get_class_name(self.target)}['
+            f'{offset if offset is not None else ""}'
+            f':'
+            f'{limit if limit is not None else ""}'
+            f'])'
+        )
+
     def merge(self, other: 'Query', in_place=False) -> 'Query':
         if in_place:
             self.parameters.update(deepcopy(other.parameters))
@@ -98,12 +109,23 @@ class Query(object):
             merged_query.merge(other, in_place=True)
             return merged_query
 
-    def execute(self, first=None):
-        if first is not None:
-            self.options.first = first
+    def configure(
+        self,
+        options: Dict = None,
+        **more_options
+    ) -> 'Query':
+        options = dict(options or {}, **more_options)
+        self.options.update(options)
+        return self
 
+    def execute(self, first=None) -> 'Entity':
         executor = Executor()
-        return executor.execute(self)
+        batch = executor.execute(self)
+
+        if first:
+            return batch[0] if batch else None
+        else:
+            return batch
 
     def select(self, *args):
         args = flatten_sequence(args)
@@ -195,3 +217,9 @@ class Query(object):
         else:
             self.parameters.limit = None
         return self
+
+
+# To convenience and cyclic import avoidance,
+# we'll set a global reference to the Query
+# class on the Request class here:
+Request.Query = Query
