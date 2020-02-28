@@ -144,19 +144,18 @@ class ArgumentLoader(object):
                     preloaded[ID] = preloaded.pop('id')
                 if 'rev' in preloaded:
                     preloaded[REV] = preloaded.pop('rev')
-                return resource_type(preloaded)
+                return resource_type(state=preloaded)
             else:
                 return resource_type.get(_id=preloaded)
         elif is_sequence(preloaded):
             if isinstance(preloaded, set):
                 preloaded = list(preloaded)
             if is_resource(preloaded[0]):
-                return resource_type.Batch(preloaded)
+                return resource_type.Batch(resources=preloaded)
             elif isinstance(preloaded[0], dict):
                 return resource_type.Batch(
-                    resource_type(record).clean() if record.get('id') is not None
-                    else resource_type(record)
-                        for record in preloaded
+                    resource_type(state=record).merge(_id=None, _rev=None)
+                    for record in preloaded
                 )
             else:
                 return resource_type.get_many(_ids=preloaded)
