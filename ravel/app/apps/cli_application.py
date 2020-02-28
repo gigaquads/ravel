@@ -155,6 +155,11 @@ class CliCommand(Action):
         args = []
         custom_args_by_name = {a.name: a for a in custom_args}
         for k, param in self.signature.parameters.items():
+            if k == 'request':
+                # we do not want to include `request` in with the supported
+                # args for passing into the action
+                # TODO is this the best way?
+                continue
             if k in custom_args_by_name.keys():
                 # if a custom argument was passed into the decorator, then this
                 # should take precedent over the inferred arg created in this
