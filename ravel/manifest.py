@@ -139,7 +139,7 @@ class Manifest(object):
         # replace env $var names with values from env
         self._expand_environment_vars(self.env, self.data)
 
-        console.debug(message='manifest loaded!', data={'manifest': self.data})
+        console.debug(message='loaded manifest', data={'manifest': self.data})
 
         self.package = self.data.get('package')
 
@@ -190,7 +190,7 @@ class Manifest(object):
             if not (resource_type.ravel.is_abstract
                     or resource_type.ravel.is_bootstrapped):
                 console.debug(
-                    f'bootstrapping "{resource_type.__name__}" Resource...'
+                    f'bootstrapping {get_class_name(resource_type)}'
                 )
                 resource_class_name = get_class_name(resource_type)
                 store_class_name = self._res_2_store_name.get(resource_class_name)
@@ -221,12 +221,10 @@ class Manifest(object):
                 else:
                     visited_store_types.add(store_type)
 
-                console.debug(f'bootstrapping "{store_class_name}" Store...')
+                console.debug(f'bootstrapping {store_class_name}')
                 bootstrap_object = self.bootstraps.get(store_class_name)
                 bootstrap_kwargs = bootstrap_object.params if bootstrap_object else {}
                 store_type.bootstrap(app=self.app, **bootstrap_kwargs)
-
-        console.debug(f'finished bootstrapped Store and Resource classes')
 
         # inject the following into each action target's lexical scope:
         # all other actions, all Resource and Store classes.
@@ -336,7 +334,7 @@ class Manifest(object):
         import ravel.store
         import ravel.ext
 
-        console.debug('venusian scan for Resource and Store types initiated')
+        console.debug('scanning for resource and store types')
 
         # scan base ravel store and resource classes
         self.scanner.scan('ravel.store')

@@ -93,8 +93,7 @@ class ResourceBinder(object):
             self._named_store_types[store_class_name] = store_type
 
             console.debug(
-                f'registered Store "{store_class_name}" '
-                f'with {get_class_name(self)}'
+                f'detected {store_class_name}'
             )
 
         if store_instance is not None:
@@ -115,8 +114,7 @@ class ResourceBinder(object):
             )
 
             console.debug(
-                f'registered Resource "{resource_type_name}" '
-                f'with {get_class_name(self)}'
+                f'detected {resource_type_name}'
             )
             return binding
 
@@ -155,8 +153,8 @@ class ResourceBinder(object):
         if rebind or ((not binding.is_bound) and bind):
             console.debug(
                 message=(
-                    f'binding "{get_class_name(binding.store_instance)}" '
-                    f'with "{get_class_name(binding.resource_type)}"'
+                    f'binding {get_class_name(binding.store_instance)} '
+                    f'with {get_class_name(binding.resource_type)}'
                 )
             )
             binding.bind(binder=self)
