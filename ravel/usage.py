@@ -35,9 +35,6 @@ class ApplicationUsage(BaseUsage):
         self._fields = fields
 
     def render(self, context: Dict = None, **kwargs):
-        if not isinstance(self._action, str):
-            pass
-            #self._app = self._action.app
         base_context = {
             'fields': self._fields,
             'data': self._data,
@@ -52,11 +49,25 @@ class ApplicationUsageRenderer(BaseUsageRenderer):
 
 
 class CliApplicationUsageRenderer(ApplicationUsageRenderer):
+    """
+    # Cli Application Usage Renderer
+    Renders command line code for shell interpreters
+    """
 
     SPLIT = " \\\n"
     INDENT = "  "
 
-    def __init__(self, split_args=False, split_kwargs=True, indent_after_command=True, **kwargs):
+    def __init__(
+        self, split_args=False, split_kwargs=True, indent_after_command=True, **kwargs
+    ):
+        """
+        # Init
+        # Args 
+        - `split_args`, split up each argument into a new line
+        - `split_kwargs`, split up each kwarg into a new line
+        - `indent_after_command`, Following the command on the first line,
+          indent subsequent elements into a new line with proper escape
+        """
         self._split_args = split_args
         self._split_kwargs = split_kwargs
         self._indent_after_command = indent_after_command
@@ -64,7 +75,6 @@ class CliApplicationUsageRenderer(ApplicationUsageRenderer):
 
     @classmethod
     def get_template(cls):
-        #return "{entrypoint} {app} {action} {args} {kwargs}"
         return "{cli_display}"
 
     def perform(self, context: Dict = None, **kwargs):
@@ -73,33 +83,30 @@ class CliApplicationUsageRenderer(ApplicationUsageRenderer):
         ctx = self.get_context()
         ctx.update(
             {
-                'entrypoint': StringUtils.dash(self.usage._package.__name__),
                 'app': 'cli',
+                'entrypoint': StringUtils.dash(self.usage._package.__name__),
                 'action': StringUtils.dash(self.usage._action.__name__),
             }
         )
         ctx.update(context)
 
         # build a shell command
-        # the first item is the script
+        # the first item is the command
         # the remaining items are arguments and kwarguments
-        command_line = []
-
         command = ctx['entrypoint']
-        args = self.build_args([ctx['app'], ctx['action']])
+        args = self.build_args([ctx['app'], ctx['action']] + ctx['args'])
         kwargs = self.build_kwargs(ctx['kwargs'])
-
-        command_line.append(command)
+        command_line = [command]
         command_line.extend(args)
         command_line.extend(kwargs)
 
         # optionally indent every line but the first
         if self._indent_after_command:
             command_line[1:] = [f'{self.INDENT}{k}' for k in command_line[1:]]
+        # set the value of cli display for when rendering the template
         ctx['cli_display'] = self.SPLIT.join(command_line)
+        # finally render the template
         return super().perform(context=ctx)
-
-        # format shell script
 
     @classmethod
     def get_context(cls):
@@ -112,6 +119,9 @@ class CliApplicationUsageRenderer(ApplicationUsageRenderer):
         }
 
     def build_args(self, args=None):
+        """
+        # Build Args
+        """
         if not args:
             return []
         if not self._split_args:
@@ -119,6 +129,9 @@ class CliApplicationUsageRenderer(ApplicationUsageRenderer):
         return args
 
     def build_kwargs(self, kwargs=None, split_newline=True):
+        """
+        # Build Kwargs
+        """
         if not kwargs:
             return []
         flat_kwargs = DictUtils.flatten_keys(kwargs)
