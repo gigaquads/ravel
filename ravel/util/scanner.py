@@ -1,3 +1,4 @@
+import re
 import os
 import inspect
 import importlib
@@ -18,6 +19,10 @@ class Scanner:
             self.scan_module(root_module, context)
         else:
             package_dir = os.path.split(root_module.__file__)[0]
+            if re.match(f'\./', package_dir):
+                # ensure we use an absolute path for the package dir
+                # to prevent strange string truncation results below
+                package_dir = os.path.realpath(package_dir)
             package_path_len = package_name.count('.') + 1
             package_parent_dir = '/' + '/'.join(
                 package_dir.strip('/').split('/')[:-package_path_len]
@@ -33,6 +38,7 @@ class Scanner:
                                 module = importlib.import_module(mod_path)
                             except Exception as exc:
                                 self.on_import_error(exc, mod_path, context)
+                                continue
                             self.scan_module(module, context)
         return context
 
