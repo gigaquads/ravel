@@ -56,7 +56,7 @@ def Tree(app):
                     children = cls.Batch.generate(
                         values={
                             'parent_id': parent._id,
-                            'root_id': parent.root_id or parent._id,
+                            'root_id': parent.root_id,
                         },
                         count=2,
                     ).save()

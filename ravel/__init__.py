@@ -14,7 +14,6 @@ from ravel.batch import Batch
 from ravel.util import is_resource, is_batch, is_resource_type, is_batch_type
 from ravel.batch import Batch
 from ravel.query.query import Query
-from ravel.query.mode import QueryMode
 from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
 from ravel.query.predicate import Predicate, ConditionalPredicate, BooleanPredicate

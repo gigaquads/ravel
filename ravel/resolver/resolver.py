@@ -15,7 +15,6 @@ from ravel.util import (
 )
 from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
-from ravel.query.mode import QueryMode
 from ravel.query.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -81,6 +80,13 @@ class Resolver(object):
 
         self._is_bootstrapped = False
 
+    def __repr__(self):
+        return (
+            f'{get_class_name(self)}('
+            f'target={get_class_name(self.owner)}.{self.name}'
+            f')'
+        )
+
     @property
     def is_bootstrapped(self):
         return self._is_bootstrapped
@@ -88,10 +94,6 @@ class Resolver(object):
     @classmethod
     def property_type(cls):
         return ResolverProperty
-
-    @property
-    def app(self) -> 'Application':
-        return self.owner.ravel.app
 
     @classmethod
     def build_property(cls, decorator=None, args=None, kwargs=None):
@@ -175,29 +177,37 @@ class Resolver(object):
     def resolve_resource(self, resource: 'Resource', request):
         self.pre_resolve(resource, request)
 
-        if request.mode == QueryMode.normal:
+        if self.app.mode == 'normal':
             result = self.on_resolve(resource, request)
-        elif request.mode == QueryMode.simulation:
+        elif self.app.mode == 'simulation':
             result = self.on_simulate(resource, request)
 
         processed_result = self.post_resolve(resource, request, result)
+        request.result = processed_result
         return processed_result
 
     def resolve_batch(self, batch: 'Batch', request):
         self.pre_resolve_batch(batch, request)
 
-        if request.mode == QueryMode.normal:
+        if self.app.mode == 'normal':
             result = self.on_resolve_batch(batch, request)
-        elif request.mode == QueryMode.simulation:
-            result = self.on_simulate_batch(batch, request)
+        elif self.app.mode == 'simulation':
+            result = {res: self.on_simulate(res, request) for res in batch}
 
         processed_result = self.post_resolve_batch(batch, request, result)
         return processed_result
 
-    def simulate(self, instance, request):
+    def generate(self, instance=None, request=None):
+        if instance is None:
+            instance = self.owner.generate()
+
+        if request is None:
+            request = Request(self)
+
         self.pre_resolve(instance, request)
         result = self.on_simulate(instance, request)
         processed_result = self.post_resolve(instance, request, result)
+
         return processed_result
 
     def dump(self, dumper: 'Dumper', value):
@@ -239,15 +249,10 @@ class Resolver(object):
 
     def on_simulate(self, resource, request):
         query = request.to_query()
-        if query.parameters.where is not None:
-            values = query.parameters.where.satisfy()
         if self.many:
-            count = request.parameters.get('limit', randint(1, 10))
-            return self.target.Batch.generate(
-                query.requests, values=values, count=count
-            )
+            return query.execute(simulate=True)
         else:
-            return self.target.generate(query.requests, values=values)
+            return query.execute(first=True, simulate=True)
 
     def pre_resolve_batch(self, batch, request):
         return

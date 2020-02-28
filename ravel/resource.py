@@ -282,7 +282,7 @@ class Resource(Entity, metaclass=ResourceMeta):
     @classmethod
     def generate(cls, resolvers: Set[Text] = None, values: Dict = None) -> 'Resource':
         values = values or {}
-        keys = resolvers or set(cls.ravel.resolvers.fields.keys())
+        keys = resolvers or set(cls.ravel.schema.fields.keys())
         resolver_objs = Resolver.sort(
             cls.ravel.resolvers[k] for k in keys
             if k not in {REV}
@@ -294,8 +294,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             if resolver.name in values:
                 value = values[resolver.name]
             else:
-                request = getattr(cls, resolver.name).select()
-                value = resolver.simulate(instance, request)
+                value = resolver.generate(instance)
             instance.internal.state[resolver.name] = value
 
         return instance

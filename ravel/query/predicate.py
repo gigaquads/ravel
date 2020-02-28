@@ -16,12 +16,11 @@ from sqlparse.sql import (
 
 from appyratus.enum import Enum
 from appyratus.utils import DictObject
-from appyratus.schema import RangeConstraint, ConstantValueConstraint
 
 from ravel.util.misc_functions import (
     flatten_sequence, is_sequence, get_class_name
 )
-from ravel.schema import Enum as EnumField
+from ravel.schema import Enum as EnumField, Field
 from ravel.constants import ID, REV, OP_CODE
 from ravel.util import is_resource, is_batch
 
@@ -136,11 +135,12 @@ class Predicate(object):
                 group_by_conditionals(predicate.rhs, groups=groups)
             else:
                 assert predicate.is_conditional_predicate
-                groups[predicate.resolver.field].append(predicate)
+                groups[predicate.field].append(predicate)
             return groups
 
         groups = group_by_conditionals(self)
-        nul = {}
+        values = {}
+        nil = {}
 
         for field, group in groups.items():
             exact_value = nil
@@ -178,23 +178,27 @@ class Predicate(object):
                     excluding.update(pred.op_value)
 
             if exact_value is not nil:
-                values[field] = exact_value
+                values[field.name] = exact_value
                 continue
 
             if including:
                 if excluding:
                     including -= excluding
                 if including:
-                    values[field] = random.choice(list(including))
+                    values[field.name] = random.choice(list(including))
                     continue
 
-            values[field] = field.generate(
-                excluding=excluding,
-                lower=lower_value,
-                lower_inclusive=lower_inclusive,
-                upper=upper_value,
-                upper_inclusive=upper_inclusive,
-            )
+            bounds = None
+            if lower is not None or upper is not None:
+                bounds = Field.Bounds(
+                    lower=lower_value,
+                    upper=upper_value,
+                    lower_inclusive=lower_inclusive,
+                    upper_inclusive=upper_inclusive,
+                    exclude=excluding,
+                )
+
+            values[field.name] = field.generate(bounds=bounds)
 
         return values
 

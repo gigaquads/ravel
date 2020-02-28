@@ -1,11 +1,17 @@
+from random import randint
+
 from typing import List, Set, Text, Dict
 
+from ravel.util import is_batch
 from ravel.util.loggers import console
 from ravel.batch import Batch
 from ravel.constants import ID, REV
 
 
 class Executor(object):
+    def __init__(self, simulate: bool = False):
+        self.simulate = simulate
+
     def execute(self, query: 'Query') -> 'Entity':
         # extract information needed to perform execution logic
         info = self._analyze_query(query)
@@ -41,14 +47,23 @@ class Executor(object):
         This is where we take the query params and send them to the store
         """
         resource_type = query.target
-        store = resource_type.ravel.store
-        where_predicate = query.parameters.where
+        predicate = query.parameters.where
+        mode = query.target.ravel.app.mode
         kwargs = query.parameters.to_dict()
-        records = store.query(where_predicate, fields=fields, **kwargs)
-        return resource_type.Batch(
-            resource_type(state=record).clean()
-            for record in records
-        )
+
+        if mode == 'normal' and (not self.simulate):
+            store = resource_type.ravel.store
+            records = store.query(predicate, fields=fields, **kwargs)
+            return resource_type.Batch(
+                resource_type(state=record).clean()
+                for record in records
+            )
+        else:
+            values = predicate.satisfy() if predicate else None
+            count = kwargs.get('limit') or randint(1, 10)
+            return resource_type.Batch.generate(
+                resolvers=fields, values=values, count=count
+            )
 
     def _execute_requests(self, query, resources, requests):
         for request in requests:
@@ -59,9 +74,9 @@ class Executor(object):
                 if results:
                     for resource in resources:
                         value = results.get(resource)
-                        if self.many and value is None:
+                        if resolver.many and value is None:
                             value = self.target.Batch()
-                        elif (not self.many) and is_batch(value):
+                        elif (not resolver.many) and is_batch(value):
                             value = None
                         resource.internal.state[resolver.name] = value
                     return

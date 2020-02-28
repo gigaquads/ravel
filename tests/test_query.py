@@ -22,7 +22,7 @@ class TestQueryExecution:
         params_owner = query  # type: Union[Query, Request].
         for _ in range(depth - 1):
             request = Tree.children.select(Tree.name)
-            params_owner.select(request)
+            params_owner.select(request).limit(2)
             params_owner = request
 
         count = {'value': 0}

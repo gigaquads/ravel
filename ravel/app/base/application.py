@@ -96,6 +96,21 @@ class Application(object):
     def mode(self) -> Mode:
         return self._mode
 
+    @mode.setter
+    def mode(self, mode):
+        self._mode = Application.Mode(mode)
+
+    @property
+    def is_simulation(self) -> bool:
+        return self._mode == Application.Mode.simulation
+
+    @is_simulation.setter
+    def is_simulation(self, is_simulation):
+        if is_simulation:
+            self._mode = Application.Mode.simulation
+        else:
+            self._mode = Application.Mode.normal
+
     @property
     def decorator_type(self) -> Type[ActionDecorator]:
         return ActionDecorator

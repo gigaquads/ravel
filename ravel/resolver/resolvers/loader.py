@@ -62,7 +62,6 @@ class Loader(Resolver):
         if state is not None:
             resource.merge(state)
         else:
-            import ipdb; ipdb.set_trace()
             state = {}
 
         return state.get(request.resolver.field.name)
@@ -71,6 +70,7 @@ class Loader(Resolver):
         value = None
 
         if self.nullable and self._field.name != ID:
+            # use None as the simulated value 10% of the time
             if randint(1, 10) > 1:
                 value = self._field.generate()
         else:

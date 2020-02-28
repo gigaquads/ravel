@@ -22,9 +22,6 @@ from .executor import Executor
 
 
 class Query(object):
-
-    Mode = QueryMode
-
     def __init__(
         self,
         target: Union[Type['Resource'], Callable] = None,
@@ -118,8 +115,8 @@ class Query(object):
         self.options.update(options)
         return self
 
-    def execute(self, first=None) -> 'Entity':
-        executor = Executor()
+    def execute(self, first=None, simulate=False) -> 'Entity':
+        executor = Executor(simulate=simulate)
         batch = executor.execute(self)
 
         if first:

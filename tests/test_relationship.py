@@ -10,14 +10,14 @@ from ravel import (
 def Human(app):
     class Human(Resource):
         name = String(required=True)
-        mother_id = Id(lambda: Human)
-        father_id = Id(lambda: Human)
+        mother_id = Id(lambda: Human, nullable=True)
+        father_id = Id(lambda: Human, nullable=True)
 
         @relationship(join=lambda: (Human.mother_id, Human._id))
         def mother(self, request) -> 'Human':
             return request.result
 
-        @relationship(join=lambda: (Human.mother_id, Human._id))
+        @relationship(join=lambda: (Human.father_id, Human._id))
         def father(self, request) -> 'Human':
             return request.result
 
@@ -44,6 +44,7 @@ def Human(app):
 def child_count():
     return 2
 
+
 @pytest.fixture(scope='function')
 def mother(Human, child_count):
     mother = Human(name='mother').create()
@@ -54,7 +55,30 @@ def mother(Human, child_count):
 
 
 class TestRelationship:
-    def test_relationship_pre_resolve(self, Human, mother):
+    def test_relationship_batch_resolve(self, Human, mother):
+        batch = mother.children
+        request = Human.children.select()
+
+        Human.ravel.resolvers['mother'].resolve_batch(batch, request)
+
+        assert request.result is not None
+        assert isinstance(request.result, dict)
+        assert len(request.result) == len(mother.children)
+        assert all(c.mother_id == m._id for c, m in request.result.items())
+
+    def test_many_relationship_batch_resolve(self, Human, mother):
+        batch = Human.Batch([mother, mother])
+        request = Human.children.select()
+
+        Human.ravel.resolvers['children'].resolve_batch(batch, request)
+
+        assert request.result is not None
+        assert isinstance(request.result, dict)
+        assert len(request.result) == 1  # only one unique element in batch
+        assert all(is_batch(x) for x in request.result.values())
+        assert all(len(x) == len(mother.children) for x in request.result.values())
+
+    def test_relationship_lazy_loads(self, Human, mother):
         assert mother.mother is None
         assert mother.father is None
         assert mother.children is not None
@@ -64,31 +88,35 @@ class TestRelationship:
         assert all(c.mother is not None for c in mother.children)
         assert all(isinstance(c.mother, Human) for c in mother.children)
 
-    def test_relationship_pre_resolve_batch(self, Human, mother):
-        batch = mother.children
-        request = Human.children.select()
+    def test_simulated_relationship_lazy_loading(self, app, Human):
+        app.mode = 'simulation'
 
-        Human.ravel.resolvers['mother'].resolve_batch(batch, request)
+        human = Human()
 
-        assert request.result is not None
-        assert isinstance(request.result, list)
-        assert len(request.result) == len(mother.children)
-        assert all(x.mother_id == mother._id for x in request.result)
+        # lazy simulate father_id
+        father_id = human.father_id
+        assert father_id is not None
 
-    def test_many_relationship_pre_resolve_batch(self, Human, mother):
-        batch = Human.Batch([mother, mother])
-        request = Human.children.select()
+        # lazy simlate father
+        assert human.father.is_dirty
+        assert human.father._id == human.father_id
 
-        Human.ravel.resolvers['children'].resolve_batch(batch, request)
+    def test_simulated_relationship_query(self, app, Human):
+        app.mode = 'simulation'
 
-        assert request.result is not None
-        assert isinstance(request.result, list)
-        assert len(request.result) == len(mother.children)
-        assert all(is_batch(x) for x in request.result)
-
-    def test_simulate(self, Human, mother):
-        query = Human.select(Human.name, Human.children).where(_id=mother._id)
-        query.configure(mode=Query.Mode.simulation)
+        query = Human.select(
+            Human.name,
+            Human.children,
+            Human.father,
+        ).where(
+            Human.name == 'Sir Lancelot'
+        )
 
         human = query.execute(first=True)
 
+        assert human.is_dirty
+        assert human.name == 'Sir Lancelot'
+        assert human.father._id == human.father_id
+        assert is_batch(human.children)
+        assert all(x.is_dirty for x in human.children)
+        assert human.children

@@ -41,7 +41,7 @@ class Relationship(Resolver):
         self.target = self.joins[-1].right_loader.owner
 
     def pre_resolve(self, resource, request):
-        if request.is_simulated:
+        if self.app.is_simulation:
             # do nothing because, when simulating, we don't need
             # to waste time trying to fetch data.
             return
@@ -76,7 +76,7 @@ class Relationship(Resolver):
         request.result = results[-1]
 
     def pre_resolve_batch(self, batch, request):
-        if request.is_simulated:
+        if self.app.is_simulation:
             # do nothing because, when simulating, we don't need
             # to waste time trying to fetch data.
             return
@@ -107,7 +107,7 @@ class Relationship(Resolver):
         def extract(key, mappings, index):
             values = mappings[index]
             if index == len(mappings) - 1:
-                return values
+                return values.get(key) or []
             else:
                 results = []
                 for res in values[key]:
@@ -115,13 +115,14 @@ class Relationship(Resolver):
                     results.extend(extracted_values)
                 return results
 
-        request.result = []
+        request.result = {}
+
         for res in batch:
             extracted_resources = extract(res, mappings, 0)
             if self.many:
-                request.result.append(self.target.Batch(extracted_resources))
+                request.result[res] = self.target.Batch(extracted_resources)
             else:
-                request.result.append(
+                request.result[res] = (
                     list(extracted_resources)[0] if extracted_resources
                     else None
                 )
@@ -130,10 +131,12 @@ class Relationship(Resolver):
         return request.result
 
     def on_simulate(self, resource, request):
-        entity = super().on_simulate(resource, request)
+        query = request.to_query()
         if len(self.joins) == 1:
+            join = self.joins[0]
             joined_value = getattr(resource, join.left_field.name)
-            setattr(entity, join.right_field.name, joined_value)
+            query.where(join.right_loader_property == joined_value)
+        entity = query.execute(first=not self.many)
         return entity
 
 
