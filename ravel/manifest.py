@@ -350,6 +350,8 @@ class Manifest(object):
             self.scanner.scan('ravel.ext.redis')
         if 'pygame' in self._installed_pkg_names:
             self.scanner.scan('ravel.ext.gaming.pygame')
+        if 'falcon' in self._installed_pkg_names:
+            self.scanner.scan('ravel.ext.falcon')
 
         # scan the app project package
         if self.package:
