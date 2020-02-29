@@ -6,8 +6,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from ravel.util.json_encoder import JsonEncoder
+from ravel.util.loggers import console
 
-from .abstract_http_server import AbstractHttpServer, HttpRoute
+from .abstract_http_server import AbstractHttpServer, Endpoint
 
 
 class HttpServer(AbstractHttpServer):
@@ -104,7 +105,9 @@ class HttpServer(AbstractHttpServer):
         self.server = HTTPServer((self.host, self.port), self.handler)
 
     def on_start(self):
-        print('Listening on http://{}:{}'.format(self.host, self.port))
+        console.info(
+            f'HTTP server listening on http://{self.host}:{self.port}'
+        )
         self.server.serve_forever()
 
     def on_request(self, action, arguments: Dict) -> dict:
