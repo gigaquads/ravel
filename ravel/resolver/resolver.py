@@ -167,7 +167,10 @@ class Resolver(object):
         self.on_bind()
         self._is_bound = True
 
-    def resolve(self, entity: 'Entity', request):
+    def resolve(self, entity: 'Entity', request=None):
+        if request is None:
+            request = Request(self)
+
         if is_resource(entity):
             return self.resolve_resource(entity, request)
         else:

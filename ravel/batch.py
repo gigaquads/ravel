@@ -1,3 +1,4 @@
+from random import randint
 from typing import Text, Tuple, List, Set, Dict, Type, Union
 from collections import defaultdict, deque
 from itertools import islice
@@ -23,9 +24,48 @@ from ravel.entity import Entity
 
 
 class Batch(Entity):
+    """
+    A Batch is a collection of Resources. At runtime, Ravel creates a new Batch
+    subclass for each Resource type in the app. For example, a User resource
+    will have User.Batch. An Account resource will have Account.Batch. Each
+    Batch subclass has non-scalar versions of the ResolverProperties owned by
+    the corresponding Resource type.
+
+    ## Accessing Resource State in Batch
+    Resource and Batch types both implement the same property-based system for
+    accessing and writing state, allowing both `user.name` to access the name of
+    a single User and `users.name`, where `users` is a User.Batch instance, to
+    access a list of all names in the batch. For example:
+
+    ```python
+    users = User.Batch([User(name='Augustus'), User(name='Caligula')])
+    assert users.name == ['Augustus', 'Caligula']
+    ```
+
+    ## CRUD
+    Batches implement the same CRUD interface as Resource types, performing the
+    batch version of each operation. For example, `users.create()` will call
+    `User.create_many(users)` under the hood.
+
+    ## Filtering
+    It is possible to filter batches with a "where" method. For this to work,
+    a batch must be indexed. Indexing is enabled by default but can be toggled
+    through a constructor argument. Filtering is O(log N). The "where" method
+    returns a new batch containing the filtered results. This looks like:
+
+    ```python
+    filered_users = users.where(User.name == 'Caligula')
+    ```
+
+    ## Random Access
+    It is possible to access specific resources by indexing a batch like an
+    array. For example `users[1:]`. Note that `users["name"]` will not work; for
+    that, do `users.name`.
+    """
 
     ravel = DictObject()
     ravel.properties = {}
+    ravel.indexed_field_types = (String, Int, Id, Bool, Float)
     ravel.owner = None
 
     def __init__(self, resources: List = None, indexed=True):
@@ -35,7 +75,9 @@ class Batch(Entity):
         self.internal.indexes = defaultdict(BTree)
         if indexed:
             self.internal.indexes.update({
-                k: BTree() for k in self.ravel.properties
+                k: BTree()
+                for k, field in self.ravel.owner.Schema.fields.items()
+                if isinstance(field, self.ravel.indexed_field_types)
             })
 
     def __len__(self):
@@ -48,6 +90,10 @@ class Batch(Entity):
         return iter(self.internal.resources)
 
     def __getitem__(self, index):
+        """
+        Return a single resource or a new batch, for the given positional index
+        or slice.
+        """
         if isinstance(index, slice):
             return type(self)(
                 islice(
@@ -59,16 +105,21 @@ class Batch(Entity):
             assert isinstance(index, int)
             return self.internal.resources[index]
 
-    def __setitem__(self, index, resource):
+    def __setitem__(self, index: int, resource: 'Resource'):
+        """
+        Write a resource to a specified index. The resource being written to the
+        batch must belong to the same type as all other elements. That type is
+        stored in `Batch.ravel.owner`.
+        """
         owner = self.ravel.owner
         if owner and not isinstance(resource, owner):
-            raise ValueError(
-                f'expected value with type '
-                f'{get_class_name(owner)}'
-            )
+            raise ValueError(f'wrong Resource type')
         self.internal.resources[index] = value
 
     def __repr__(self):
+        """
+        Show the name of the batch, its owner resource type, and its size.
+        """
         return (
             f'{get_class_name(self.ravel.owner)}.Batch('
             f'size={len(self)})'
@@ -92,15 +143,21 @@ class Batch(Entity):
 
     @classmethod
     def factory(cls, owner: Type['Resource'], type_name=None):
-        type_name = type_name or 'Batch'
+        """
+        Thie factory method returns new Batch subtypes and is used internally at
+        runtime by the Resource metaclass. For example, if you have a Resource
+        type called `User`, then this method is invoked to create `User.Batch`.
+        """
+        type_name = type_name or 'Batch'  # name of new class
 
         # start with inherited ravel object
         ravel = DictObject()
 
         ravel.owner = owner
-        ravel.indexed_field_types = cls.get_indexed_field_types()
+        ravel.indexed_field_types = (String, Int, Id, Bool, Float)
         ravel.properties = {}
 
+        # create a batch resolver property for each indexed field type
         for k, resolver in owner.ravel.resolvers.fields.items():
             ravel.properties[k] = BatchResolverProperty(resolver)
 
@@ -108,23 +165,31 @@ class Batch(Entity):
             ravel=ravel, **ravel.properties
         ))
 
+        # IS_BATCH is a type flag used in is_batch utility methods
         setattr(derived_batch_type, IS_BATCH, True)
 
         return derived_batch_type
-
-    @classmethod
-    def get_indexed_field_types(cls) -> Tuple['Field']:
-        return (String, Bool, Int, Float, Id)
 
     @classmethod
     def generate(
         cls,
         resolvers: Set[Text] = None,
         values: Dict = None,
-        count: int = 1
+        count: int = None,
     ):
-        count = max(1, count)
+        """
+        Generate a Batch of fixtures, generating random values for the
+        specified resolvers.
+
+        ## Arguments
+        - `resolvers`: list of resolver names for which to generate values.
+        - `values`: dict of static values to use.
+        - `count`: number of resources to generate. defaults between [1, 10].
+        """
         owner = cls.ravel.owner
+
+        # if no count, randomize between [1, 10]
+        count = max(count, 1) if count is not None else randint(1, 10)
 
         if owner is None:
             # this batch isn't associated with any Resource type
@@ -134,24 +199,39 @@ class Batch(Entity):
         if not resolvers:
             resolvers = set(owner.ravel.resolvers.fields.keys())
 
+        # create and return the new batch
         return cls(
             owner.generate(resolvers=resolvers, values=values)
-            for i in range(count)
+            for _ in range(count)
         )
 
-    def merge(self, data=None, **more_data):
-        data = dict(data or {}, **more_data)
+    def merge(
+        self,
+        other: Union[Dict, 'Resource'] = None,
+        **values
+    ) -> 'Batch':
+        """
+        Batch merge the given dict or resource into all resources contained in
+        the batch.
+        """
         for resource in self.internal.resources:
-            resource.merge(data)
+            resource.merge(other)
+            resource.merge(values)
         return self
 
     def insert(self, index, resource):
+        """
+        Insert a resource at the specified index.
+        """
         self.internal.resources.insert(index, resource)
         if self.internal.indexed:
             self._update_indexes(resource)
         return self
 
     def remove(self, resource):
+        """
+        Remove a resource at the specified index.
+        """
         try:
             self.internal.resources.remove(resource)
             self._prune_indexes(resource)
@@ -160,65 +240,115 @@ class Batch(Entity):
         return self
 
     def append(self, resource):
+        """
+        Add a resource at the end of the batch.
+        """
         self.insert(-1, resource)
         return self
 
     def appendleft(self, resource):
+        """
+        Add a resource at the front of the batch (index: 0)
+        """
         self.insert(0, resource)
         return self
 
     def extend(self, resources):
+        """
+        Insert a collection of resource at the end of the batch.
+        """
         self.internal.resources.extend(resources)
         for resource in resources:
             self._update_indexes(resource)
 
     def extendleft(self, resources):
+        """
+        Insert a collection of resource at the front of the batch.
+        """
         self.internal.resources.extendleft(resources)
         for resource in resources:
             self._update_indexes(resource)
 
     def pop(self, index=-1):
+        """
+        Remove and return the resource at the end of the batch.
+        """
         resource = self.internal.resources.pop(index)
         self._prune_indexes(resource)
+        return resource
 
     def popleft(self, index=-1):
+        """
+        Remove and return the resource at the front of the batch.
+        """
         resource = self.internal.resources.popleft(index)
         self._prune_indexes(resource)
 
     def rotate(self, n=1):
+        """
+        Shift ever element to the right so that the element at index -1 wraps
+        around, back to index 0. The direction can be reversed using a negative
+        value of `n`.
+        """
         self.internal.resources.rotate(n)
         return self
 
-    def where(self, *predicates, indexed=False):
+    def where(self, *predicates: Tuple['Predicate'], indexed=False) -> 'Batch':
+        """
+        Return a new batch, containing the resources whose attributes match the
+        given predicates, like `User.created_at >= cutoff_date`, for instance.
+        The new batch is *not* indexed by default, so make sure to set
+        `indexed=True` if you intend to filter the filtered batch further.
+        """
         predicate = Predicate.reduce_and(flatten_sequence(predicates))
         resources = self._apply_indexes(predicate)
         return type(self)(resources, indexed=indexed)
 
     def create(self):
+        """
+        Insert all resources into the store.
+        """
         self.ravel.owner.create_many(self.internal.resources)
         return self
 
     def update(self, state: Dict = None, **more_state):
+        """
+        Apply an update to all resources in the batch, writing it to the store.
+        """
         self.ravel.owner.update_many(self, data=state, **more_state)
         return self
 
     def delete(self):
+        """
+        Delete all resources in the batch fro mthe store.
+        """
         self.ravel.owner.delete_many({
             resource._id for resource in self.internal.resources
         })
         return self
 
     def save(self, depth=0):
+        """
+        Save all resources in the batch, effectively creating some and updating
+        others.
+        """
         self.ravel.owner.save_many(self.internal.resources, depth=depth)
         return self
 
     def clean(self, resolvers: Set[Text] = None):
+        """
+        Mark all resources in the batch as clean, meaning that no state elements
+        are considered dirty and in need up saving to the store.
+        """
         for resource in self.internal.resources:
             # TODO: renamed fields kwarg to resolvers
             resource.clean(fields=resolvers)
         return self
 
     def mark(self, resolvers: Set[Text] = None):
+        """
+        Mark the given resolvers as dirty, for all resources in the batch.
+        """
         for resource in self.internal.resources:
             resource.mark(fields=resolvers)
         return self
@@ -228,30 +358,41 @@ class Batch(Entity):
         resolvers: Set[Text] = None,
         style: 'DumpStyle' = None,
     ) -> List[Dict]:
+        """
+        Return a list with the dump of each resource in the batch.
+        """
         return [
             resource.dump(resolvers=resolvers, style=style)
             for resource in self.internal.resources
         ]
 
-    def load(self, resolvers: Set[Text] = None):
-        stale_id_2_object = {}
-        for resource in self.internal.data:
-            if resource and resource._id:
-                stale_id_2_object[resource._id] = resource
+    def resolve(self, resolvers: Union[Text, Set[Text]] = None) -> 'Batch':
+        """
+        Execute each of the resolvers, specified by name, storing the results in
+        `self.internal.state`.
+        """
+        if self._id is None:
+            return self
 
-        if stale_id_2_object:
-            fresh_objects = self.get_many(
-                stale_id_2_object.keys(), select=resolvers
-            )
-            for fresh_obj in fresh_objects:
-                stale_obj = stale_id_2_object.get(fresh_obj._id)
-                if stale_obj is not None:
-                    stale_obj.merge(fresh_obj)
-                    stale_obj.clean(fresh_obj.internal.state.keys())
+        if isinstance(resolvers, str):
+            resolvers = {resolvers}
+
+        # execute all requested resolvers
+        for k in resolvers:
+            resolver = self.ravel.owner.ravel.resolvers.get(k)
+            if resolver is not None:
+                resolver.resolve.batch(self)
+
+        # clean the resolved values so they arent't accidently saved on
+        # update/create, as we just fetched them from the store.
+        self.clean(resolvers)
 
         return self
 
     def unload(self, resolvers: Set[Text] = None) -> 'Batch':
+        """
+        Clear resolved state data from all resources in the batch.
+        """
         if not resolvers:
             resolvers = set(self.owner.Schema.fields.keys())
         resolvers.discard(ID)

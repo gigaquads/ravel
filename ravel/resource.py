@@ -362,28 +362,30 @@ class Resource(Entity, metaclass=ResourceMeta):
         clone = type(self)(state=deepcopy(self.internal.state))
         return clone.clean()
 
-    def load(self, resolvers: Set[Text] = None) -> 'Resource':
+    def resolve(self, resolvers: Union[Text, Set[Text]] = None) -> 'Resource':
+        """
+        Execute each of the resolvers, specified by name, storing the results in
+        `self.internal.state`.
+        """
         if self._id is None:
             return self
 
         if isinstance(resolvers, str):
             resolvers = {resolvers}
 
-        # TODO: fix up Query so that even if the fresh object does exist in the
-        # DAL, it will still try to execute the resolvers on the uncreated
-        # object.
+        # execute all requested resolvers
+        for k in resolvers:
+            resolver = self.ravel.resolvers.get(k)
+            if resolver is not None:
+                resolver.resolve(self)
 
-        # resolve a fresh copy throught the DAL and merge state
-        # into this Resource.
-        query = self.select(resolvers).where(_id=self._id)
-        fresh = query.execute(first=True)
-        if fresh:
-            self.merge(fresh)
-            self.clean(fresh.internal.state.keys())
+        # clean the resolved values so they arent't accidently saved on
+        # update/create, as we just fetched them from the store.
+        self.clean(resolvers)
 
         return self
 
-    def reload(self, resolvers: Set[Text] = None) -> 'Resource':
+    def reload(self, resolvers: Union[Text, Set[Text]] = None) -> 'Resource':
         if isinstance(resolvers, str):
             resolvers = {resolvers}
         loading_resolvers = {k for k in resolvers if self.is_loaded(k)}
@@ -437,7 +439,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         # extract only those elements of state data that correspond to
         # Fields declared on this Resource class.
         if ID not in self.internal.state:
-            self._id = self.store.create_id(record)
+            self._id = self.ravel.store.create_id(record)
 
         # when inserting or updating, we don't want to write the _rev value on
         # accident. The DAL is solely responsible for modifying this value.
@@ -485,7 +487,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         prepared_record = self._prepare_record_for_create()
         prepared_record.pop(REV, None)
 
-        created_record = self.store.dispatch('create', (prepared_record, ))
+        created_record = self.ravel.store.dispatch('create', (prepared_record, ))
 
         self.internal.state.update(created_record)
         return self.clean()
@@ -567,7 +569,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         Call delete on this object's store and therefore mark all fields as dirty
         and delete its _id so that save now triggers Store.create.
         """
-        self.store.dispatch('delete', (self._id, ))
+        self.ravel.store.dispatch('delete', (self._id, ))
         self.mark(self.internal.state.keys())
         self._id = None
         self._rev = None
@@ -645,9 +647,13 @@ class Resource(Entity, metaclass=ResourceMeta):
             self.merge(data)
 
         prepared_record = self._prepare_record_for_create()
+
+        # pop REV because it's owned and managed by the store.
         prepared_record.pop(REV, None)
 
-        created_record = self.store.dispatch('create', (prepared_record, ))
+        created_record = self.ravel.store.dispatch(
+            'create', (prepared_record, )
+        )
 
         self.internal.state.update(created_record)
         return self.clean()
@@ -679,7 +685,7 @@ class Resource(Entity, metaclass=ResourceMeta):
                 }
             )
 
-        updated_record = self.store.dispatch(
+        updated_record = self.ravel.store.dispatch(
             'update', (self._id, prepared_record)
         )
 

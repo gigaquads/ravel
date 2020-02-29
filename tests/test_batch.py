@@ -14,30 +14,24 @@ def trees(Tree):
 def test_factory_method(Tree, trees):
     assert isinstance(getattr(Tree.Batch, 'ravel', None), DictObject)
     assert Tree.Batch.ravel.owner is Tree
-    assert Tree.Batch.ravel.indexed_field_types \
-            == Tree.Batch.get_indexed_field_types()
     assert Tree.Batch.ravel.properties
     assert len(Tree.Batch.ravel.properties) == len({
         resolver for resolver in Tree.ravel.resolvers.fields.values()
-        if isinstance(resolver.field, Tree.Batch.get_indexed_field_types())
+        if isinstance(resolver.field, Tree.Batch.ravel.indexed_field_types)
     })
 
     # ensure that BatchResolverProperty are created for each indexable
     # field type on its associated Resource class.
     for resolver in Tree.ravel.resolvers.fields.values():
-        if isinstance(resolver.field, Batch.get_indexed_field_types()):
+        if isinstance(resolver.field, Batch.ravel.indexed_field_types):
             attr = getattr(Tree.Batch, resolver.name, None)
             assert isinstance(attr, BatchResolverProperty)
-            print(
-                f'Batch class has expected resolver property: {resolver.name}'
-            )
 
     trees = Tree.Batch()
 
     for resolver in Tree.ravel.resolvers.fields.values():
-        if isinstance(resolver.field, Batch.get_indexed_field_types()):
+        if isinstance(resolver.field, Batch.ravel.indexed_field_types):
             assert resolver.name in trees.internal.indexes
-            print(f'Batch object has expected index: {resolver.name}')
         else:
             assert resolver.name not in trees.internal.indexes
 

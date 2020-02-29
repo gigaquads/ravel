@@ -89,7 +89,7 @@ class TestRelationship:
         assert all(isinstance(c.mother, Human) for c in mother.children)
 
     def test_simulated_relationship_lazy_loading(self, app, Human):
-        app.mode = 'simulation'
+        app.is_simulation = True
 
         human = Human()
 
@@ -102,7 +102,7 @@ class TestRelationship:
         assert human.father._id == human.father_id
 
     def test_simulated_relationship_query(self, app, Human):
-        app.mode = 'simulation'
+        app.is_simulation = True
 
         query = Human.select(
             Human.name,

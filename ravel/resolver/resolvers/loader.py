@@ -55,7 +55,7 @@ class Loader(Resolver):
         unloaded_field_names = list(
             resource.Schema.fields.keys() - resource.internal.state.keys()
         )
-        state = resource.store.dispatch('fetch',
+        state = resource.ravel.store.dispatch('fetch',
             args=(resource._id, ),
             kwargs={'fields': unloaded_field_names}
         )

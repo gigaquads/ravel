@@ -84,7 +84,7 @@ class RecursiveList(Resource):
             if not node.size:
                 return
             copied_children = self.Batch([])
-            node.children.load(fields)
+            node.children.resolve(fields)
             for child in node.children:
                 copied_child = copy_one(child, parent_id, fields)
                 copied_children.append(copied_child)
