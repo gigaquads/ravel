@@ -11,8 +11,8 @@ from appyratus.env import Environment
 from ravel.app.apps.web import AbstractWsgiService
 from ravel.util.json_encoder import JsonEncoder
 
-from .resource import ResourceManager
 from .media import JsonHandler
+from .resource import FalconResource
 
 
 class FalconService(AbstractWsgiService):
@@ -22,8 +22,7 @@ class FalconService(AbstractWsgiService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._json_encoder = JsonEncoder()
-        self._resource_manager = ResourceManager()
-        self._route2resource = {}
+        self._route_2_resource = {}
 
     @property
     def falcon_middleware(self):
@@ -62,15 +61,21 @@ class FalconService(AbstractWsgiService):
         falcon_app.resp_options = Response.Options()
         falcon_app.add_error_handler(Exception, self.handle_error)
 
-        for route, resource in self._route2resource.items():
+        for route, resource in self._route_2_resource.items():
             falcon_app.add_route(route, resource)
 
         return falcon_app
 
     def on_decorate(self, endpoint):
-        resource = self._resource_manager.add_endpoint(endpoint)
-        if resource:
-            self._route2resource[endpoint.route] = resource
+        super().on_decorate(endpoint)
+        for route in endpoint.routes:
+            resource = self._route_2_resource.get(route)
+            if resource is None:
+                resource = FalconResource(route)
+                self._route_2_resource[route] = resource
+                resource.add_endpoint(endpoint)
+            else:
+                resource.add_endpoint(endpoint)
 
     def on_request(self, endpoint, request, response, *args, **kwargs):
         if request.content_length:

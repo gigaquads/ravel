@@ -1,7 +1,7 @@
 import traceback
 
 from collections import defaultdict
-from typing import Text, Type, Callable
+from typing import Text, Type, Callable, List
 
 import requests
 
@@ -25,12 +25,20 @@ class AbstractHttpServer(Application):
     def action_type(self) -> Type['Endpoint']:
         return Endpoint
 
+    def on_decorate(self, endpoint: 'Endpoint'):
+        endpoint.routes.append(
+            f'/{StringUtils.dash(endpoint.name).lower()}'
+        )
+        for route in endpoint.routes:
+            if route in self.route_2_endpoint:
+                self.app.route_2_endpoint[route][endpoint.method] = endpoint
+
     def route(self, method, route, args=None, kwargs=None):
         method = method.lower()
         route = route.lower()
-        method2endpoint = self.route_2_endpoint.get(route)
-        if method2endpoint:
-            endpoint = method2endpoint.get(method)
+        method_2_endpoint = self.route_2_endpoint.get(route)
+        if method_2_endpoint:
+            endpoint = method_2_endpoint.get(method)
             return endpoint(*(args or tuple()), **(kwargs or dict()))
         return None
 
@@ -43,32 +51,32 @@ class EndpointDecorator(ActionDecorator):
         app: 'AbstractHttpServer',
         method: Text,
         route: Text = None,
-        *args,
-        **kwargs
+        routes: List[Text] = None,
+        *args, **kwargs
     ):
         super().__init__(app, *args, **kwargs)
         self.method = method.lower()
-        self.route = route.lower() if route else None
+        self.routes = self._build_routes_list(route, routes)
 
-    def __call__(self, target: Callable) -> 'Endpoint':
+    def _build_routes_list(self, route, routes):
         """
-        We wrap each registered func in a Action and store it in a table
-        that lets us look it up by route and method for use in routing
-        requests.
+        Combine `route` and `routes` constructor kwargs.
         """
-        # default null route to the name of the target callable
-        if self.route is None:
-            if isinstance(target, Action):
-                self.route = StringUtils.dash(target.name.lower())
+        route_set = set()
+        if route is not None:
+            if isinstance(route, (list, tuple, set)):
+                route_set.update(route)
             else:
-                self.route = StringUtils.dash(get_callable_name(target).lower())
-
-        if not self.route.startswith('/'):
-            self.route = '/' + self.route
-
-        endpoint = super().__call__(target)
-        self.app.route_2_endpoint[self.route][self.method] = endpoint
-        return endpoint
+                assert isinstance(route, str)
+                route_set.add(route)
+        if routes:
+            route_set.update(routes)
+        # normalize all routes to lower case and ensure they all begin with a
+        # single forward slash and no trailing slash.
+        return [
+            '/' + route.strip('/').lower()
+            for route in route_set
+        ]
 
 
 class Endpoint(Action):
@@ -80,7 +88,7 @@ class Endpoint(Action):
     def __init__(self, target, decorator):
         super().__init__(target, decorator)
         self.method = decorator.method
-        self.route = decorator.route
+        self.routes = decorator.routes
 
     def __repr__(self):
         return '{}({})'.format(
@@ -88,7 +96,7 @@ class Endpoint(Action):
             ', '.join([
                 f'name={self.name}',
                 f'method={self.decorator.method.upper()}',
-                f'route={self.decorator.route}',
+                f'routes={self.decorator.routes}',
             ])
         )
 
@@ -107,8 +115,8 @@ class HttpClient(object):
         self._port = port
         self._scheme = scheme
 
-        for method2endpoint in self._app.route_2_endpoint.values():
-            for method, endpoint in method2endpoint .items():
+        for method_2_endpoint in self._app.route_2_endpoint.values():
+            for method, endpoint in method_2_endpoint .items():
                 self._handlers[endpoint.name] = self._build_handler(
                     method, endpoint
                 )

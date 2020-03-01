@@ -44,19 +44,3 @@ class FalconResource(object):
         is_recognized = method.upper() in HTTP_METHODS
         is_registered = method.upper() in self._method_2_endpoint
         return (is_recognized and is_registered)
-
-
-class ResourceManager(object):
-    def __init__(self):
-        self.resources = {}
-
-    def add_endpoint(self, endpoint) -> FalconResource:
-        resource = self.resources.get(endpoint.route)
-        if resource is None:
-            resource = FalconResource(endpoint.route)
-            self.resources[endpoint.route] = resource
-            resource.add_endpoint(endpoint)
-            return resource
-        else:
-            resource.add_endpoint(endpoint)
-            return None
