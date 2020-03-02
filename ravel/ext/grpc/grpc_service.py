@@ -1,15 +1,12 @@
 import os
 import json
 import sys
-import socket
 import inspect
 import shutil
 import subprocess
 import traceback
 import time
 import re
-import pickle
-import codecs
 import multiprocessing as mp
 
 import grpc
@@ -41,7 +38,7 @@ from .util import (
 
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = '50051'
-DEFAULT_GRACE = 5
+DEFAULT_GRACE = 5.0
 DEFAULT_IS_SECURE = False
 REGISTRY_PROTO_FILE = 'app.proto'
 PB2_MODULE_PATH_FSTR = '{}.grpc.app_pb2'
@@ -65,7 +62,8 @@ class GrpcService(Application):
         server_host = fields.String(required=True, default=DEFAULT_HOST)
         secure_channel = fields.String(required=True, default=DEFAULT_IS_SECURE)
         port = fields.String(required=True, default=DEFAULT_PORT)
-        grace = fields.String(required=True, default=DEFAULT_GRACE)
+        grace = fields.Float(required=True, default=DEFAULT_GRACE)
+
 
     def __init__(self, middleware=None, initializer=None):
         super().__init__(middleware=middleware)
@@ -235,8 +233,6 @@ class GrpcService(Application):
             }
         )
 
-        stop_grace_period = 5  # seconds
-
         try:
             while True:
                 time.sleep(9999)
@@ -244,9 +240,9 @@ class GrpcService(Application):
             if self.grpc.server is not None:
                 console.info(
                     message='stopping gRPC server',
-                    data={'grace': stop_grace_period}
+                    data={'grace_period': self.grpc.options.grace}
                 )
-                self.grpc.server.stop(grace=stop_grace_period)
+                self.grpc.server.stop(grace=self.grpc.options.grace)
 
     def _grpc_servicer_factory(self):
         """
