@@ -20,7 +20,7 @@ from importlib import import_module
 
 from google.protobuf.message import Message
 
-from appyratus.schema import fields
+from appyratus.schema import Schema, fields
 from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 
@@ -31,9 +31,17 @@ from ravel.app.base import Application
 
 from .grpc_function import GrpcFunction
 from .grpc_client import GrpcClient
+from .util import (
+    touch_file,
+    is_port_in_use,
+    bind_message,
+    dump_result_obj,
+)
+
 
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = '50051'
+DEFAULT_GRACE = 5
 DEFAULT_IS_SECURE = False
 REGISTRY_PROTO_FILE = 'app.proto'
 PB2_MODULE_PATH_FSTR = '{}.grpc.app_pb2'
@@ -51,6 +59,13 @@ class GrpcService(Application):
     """
     Grpc server and client interface.
     """
+
+    class GrpcOptionsSchema(Schema):
+        client_host = fields.String(required=True, default=DEFAULT_HOST)
+        server_host = fields.String(required=True, default=DEFAULT_HOST)
+        secure_channel = fields.String(required=True, default=DEFAULT_IS_SECURE)
+        port = fields.String(required=True, default=DEFAULT_PORT)
+        grace = fields.String(required=True, default=DEFAULT_GRACE)
 
     def __init__(self, middleware=None, initializer=None):
         super().__init__(middleware=middleware)
@@ -87,19 +102,19 @@ class GrpcService(Application):
         manifest_options = self.manifest.data.get('grpc', {})
         computed_options = DictUtils.merge(kwarg_options, manifest_options)
 
-        grpc.options = DictObject(computed_options)
-        if grpc.options.data is None:
-            grpc.options.data = {}
-        grpc.options.data.setdefault('client_host', DEFAULT_HOST)
-        grpc.options.data.setdefault('server_host', DEFAULT_HOST)
-        grpc.options.data.setdefault('secure_channel', DEFAULT_IS_SECURE)
-        grpc.options.data.setdefault('port', DEFAULT_PORT)
+        # generate default values into gRPC options data
+        schema = self.GrpcOptionsSchema()
+        options, errors = schema.process(computed_options)
+        if errors:
+            raise Excpetion(f'invalid gRPC options: {errors}')
+
+        grpc.options = DictObject(options)
 
         grpc.options.server_address = (
-            f"{grpc.options.data['server_host']}:{grpc.options.data['port']}"
+            f"{grpc.options['server_host']}:{grpc.options['port']}"
         )
         grpc.options.client_address = (
-            f"{grpc.options.data['client_host']}:{grpc.options.data['port']}"
+            f"{grpc.options['client_host']}:{grpc.options['port']}"
         )
 
         # create the build directory and add it to PYTHONPATH
@@ -172,9 +187,9 @@ class GrpcService(Application):
 
         if result:
             schema = action.schemas.response
-            dumped_result = _dump_result_obj(result)
+            dumped_result = dump_result_obj(result)
             response_data, errors = schema.process(dumped_result, strict=True)
-            response = _bind_message(response, response_data)
+            response = bind_message(response, response_data)
             if errors:
                 console.error(
                     message=f'response validation errors',
@@ -186,7 +201,7 @@ class GrpcService(Application):
         """
         Start the RPC client or server.
         """
-        if _is_port_in_use(self.grpc.options.server_address):
+        if is_port_in_use(self.grpc.options.server_address):
             exit(
                 f'>>> {self.grpc.options.server_address} already in use! '
                 f'Exiting...'
@@ -213,18 +228,25 @@ class GrpcService(Application):
         # now suspend the main thread while the grpc server runs
         # in the ThreadPoolExecutor.
         console.info(
-            message='gRPC serving. Press ctrl+c to stop.',
+            message='gRPC server started. Press ctrl+c to stop.',
             data={
-                'address': self.grpc.options.server_address
+                'listen': self.grpc.options.server_address,
+                'methods': list(self.api.keys()),
             }
         )
+
+        stop_grace_period = 5  # seconds
 
         try:
             while True:
                 time.sleep(9999)
         except KeyboardInterrupt:
             if self.grpc.server is not None:
-                self.grpc.server.stop(grace=5)
+                console.info(
+                    message='stopping gRPC server',
+                    data={'grace': stop_grace_period}
+                )
+                self.grpc.server.stop(grace=stop_grace_period)
 
     def _grpc_servicer_factory(self):
         """
@@ -313,9 +335,13 @@ class GrpcService(Application):
 
         source = '\n'.join(lines)
 
-        if self.grpc.proto_file:
-            with open(self.grpc.proto_file, 'w') as fout:
-                fout.write(source)
+        console.info(
+            message='generating gRPC proto file',
+            data={'destination': self.grpc.proto_file}
+        )
+
+        with open(self.grpc.proto_file, 'w') as fout:
+            fout.write(source)
 
         return source
 
@@ -344,72 +370,3 @@ class GrpcService(Application):
         )
         if err_msg:
             exit(err_msg)
-
-
-def _touch_file(filepath):
-    """
-    Ensure a file exists at the given file path, creating one if does not
-    exist.
-    """
-    with open(os.path.join(filepath), 'a'):
-        pass
-
-
-def _is_port_in_use(addr):
-    """
-    Utility method for determining if the server address is already in use.
-    """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        host, port_str = addr.split(':')
-        sock.bind((host, int(port_str)))
-        return False
-    except OSError as err:
-        if err.errno == 48:
-            return True
-        else:
-            raise err
-    finally:
-        sock.close()
-
-
-def _bind_message(message, source: Dict):
-    if source is None:
-        return None
-
-    for k, v in source.items():
-        if isinstance(getattr(message, k), Message):
-            sub_message = getattr(message, k)
-            assert isinstance(v, dict)
-            _bind_message(sub_message, v)
-        elif isinstance(v, dict):
-            v_bytes = codecs.encode(pickle.dumps(v), 'base64')
-            setattr(message, k, v_bytes)
-        elif isinstance(v, (list, tuple, set)):
-            list_field = getattr(message, k)
-            sub_message_type_name = (
-                '{}Schema'.format(k.title().replace('_', ''))
-            )
-            sub_message = getattr(message, sub_message_type_name, None)
-            if sub_message:
-                list_field.extend(
-                    _bind_message(sub_message(), v_i)
-                    for v_i in v
-                )
-            else:
-                list_field.extend(v)
-        else:
-            setattr(message, k, v)
-
-    return message
-
-
-def _dump_result_obj(obj):
-    if is_resource(obj) or is_batch(obj):
-        return obj.dump()
-    elif isinstance(obj, (list, set, tuple)):
-        return [_dump_result_obj(x) for x in obj]
-    elif isinstance(obj, dict):
-        return {k: _dump_result_obj(v) for k, v in obj.items()}
-    else:
-        return obj
