@@ -1,4 +1,5 @@
 import os
+import json
 import sys
 import socket
 import inspect
@@ -23,8 +24,9 @@ from appyratus.schema import fields
 from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 
-from ravel.util import is_resource, is_batch
+from ravel.util import is_resource, is_batch, get_class_name
 from ravel.util.json_encoder import JsonEncoder
+from ravel.util.loggers import console
 from ravel.app.base import Application
 
 from .grpc_function import GrpcFunction
@@ -36,9 +38,16 @@ DEFAULT_IS_SECURE = False
 REGISTRY_PROTO_FILE = 'app.proto'
 PB2_MODULE_PATH_FSTR = '{}.grpc.app_pb2'
 PB2_GRPC_MODULE_PATH_FSTR = '{}.grpc.app_pb2_grpc'
+PROTOC_COMMAND_FSTR = '''
+python3 -m grpc_tools.protoc
+    -I {include_dir}
+    --python_out={build_dir}
+    --grpc_python_out={build_dir}
+    {proto_file}
+'''
 
 
-class Grpc(Application):
+class GrpcService(Application):
     """
     Grpc server and client interface.
     """
@@ -61,7 +70,7 @@ class Grpc(Application):
     def action_type(self):
         return GrpcFunction
 
-    def on_bootstrap(self, rebuild=False, options: Dict = None):
+    def on_bootstrap(self, build=False, options: Dict = None):
         grpc = self.grpc
 
         # get the python package containing this Application
@@ -109,7 +118,7 @@ class Grpc(Application):
             #traceback.print_exc()
 
         # build the pb2 and pb2_grpc modules
-        if rebuild or pb2_module_dne:
+        if build or pb2_module_dne:
             self._build_pb2_modules()
             time.sleep(0.25)
 
@@ -120,10 +129,14 @@ class Grpc(Application):
         # build a lookup table of protobuf response Message types
         self.grpc.response_types = {
             action: getattr(
-                self.grpc.pb2, f'{StringUtils.camel(action.name)}Response'
+                self.grpc.pb2,
+                f'{StringUtils.camel(get_class_name(action.schemas.response))}'
             )
             for action in self.actions.values()
         }
+
+    def build(self, manifest=None, options: Dict = None):
+        self.bootstrap(manifest=manifest, build=True, options=options)
 
     def on_decorate(self, action):
         pass
@@ -133,12 +146,12 @@ class Grpc(Application):
         Take the attributes on the incoming protobuf Message object and
         map them to the args and kwargs expected by the action target.
         """
-        print(f'>>> Calling "{action.name}" RPC function...')
+        console.debug(f'calling "{action.name}" RPC method')
 
         # get field data to process into args and kwargs
         all_arguments = {
             k: getattr(request, k, None)
-            for k in action.request_schema.fields
+            for k in action.schemas.request.fields
         }
         # TODO: revise on_request to take just the new Request object
         # TODO: inject the Request object into all_arguments
@@ -158,13 +171,15 @@ class Grpc(Application):
         response = response_type()
 
         if result:
-            schema = action.response_schema
+            schema = action.schemas.response
             dumped_result = _dump_result_obj(result)
             response_data, errors = schema.process(dumped_result, strict=True)
             response = _bind_message(response, response_data)
             if errors:
-                print(f'>>> response validation errors: {errors}')
-
+                console.error(
+                    message=f'response validation errors',
+                    data={'errors': errors}
+                )
         return response
 
     def on_start(self):
@@ -197,18 +212,19 @@ class Grpc(Application):
 
         # now suspend the main thread while the grpc server runs
         # in the ThreadPoolExecutor.
-        print('>>> gRPC server is running. Press ctrl+c to stop.')
-        print(f'>>> Listening on {self.grpc.options.server_address}...')
+        console.info(
+            message='gRPC serving. Press ctrl+c to stop.',
+            data={
+                'address': self.grpc.options.server_address
+            }
+        )
 
         try:
             while True:
                 time.sleep(9999)
         except KeyboardInterrupt:
-            print()
             if self.grpc.server is not None:
-                print('>>> Stopping grpc server...')
                 self.grpc.server.stop(grace=5)
-            print('>>> Groodbye!')
 
     def _grpc_servicer_factory(self):
         """
@@ -249,6 +265,16 @@ class Grpc(Application):
         with open(os.path.join(self.grpc.build_dir, '__init__.py'), 'a'):
             pass
 
+        dot_file_name  = os.path.join(self.grpc.build_dir, '.ravel')
+        if not os.path.isfile(dot_file_name):
+            with open(dot_file_name, 'w') as dot_file:
+                json.dump({'scanner': {'ignore': True}}, dot_file)
+        else:
+            with open(dot_file_name, 'rw') as dot_file:
+                dot_data = json.load(dot_file) or {}
+                dot_data.setdefault('scanner', {})['ignore'] = True
+                json.dump(dot_data, dot_file)
+
         # generate the .proto file and generate grpc python modules from it
         self._grpc_generate_proto_file()
         self._grpc_compile_pb2_modules()
@@ -258,11 +284,24 @@ class Grpc(Application):
         Iterate over function actions, using request and response schemas to
         generate protobuf message and service types.
         """
+        visited_schema_types = set()
         lines = ['syntax = "proto3";']
-
         func_decls = []
+
         for action in self.actions.values():
-            lines.extend(action.generate_protobuf_message_types())
+            # generate protocol buffer Message types from action schemas
+            if action.schemas.request:
+                type_name = get_class_name(action.schemas.request)
+                if type_name not in visited_schema_types:
+                    lines.append(action.generate_request_message_type())
+                    visited_schema_types.add(type_name)
+            if action.schemas.response:
+                type_name = get_class_name(action.schemas.response)
+                if type_name not in visited_schema_types:
+                    lines.append(action.generate_response_message_type())
+                    visited_schema_types.add(type_name)
+
+            # function declaration MUST be generated AFTER the message types
             func_decls.append(action.generate_protobuf_function_declaration())
 
         lines.append('service GrpcApplication {')
@@ -287,23 +326,22 @@ class Grpc(Application):
         by the grpc server and client.
         """
         # build the shell command to run....
-        protoc_command = re.sub(
-            r'\s+', ' ', '''
-            python3 -m grpc_tools.protoc
-                -I {include_dir}
-                --python_out={build_dir}
-                --grpc_python_out={build_dir}
-                {proto_file}
-        '''.format(
-                include_dir=os.path.realpath(
-                    os.path.dirname(self.grpc.proto_file)
-                ) or '.',
-                build_dir=self.grpc.build_dir,
-                proto_file=os.path.basename(self.grpc.proto_file),
-            ).strip()
+        protoc_command = PROTOC_COMMAND_FSTR.format(
+            include_dir=os.path.realpath(
+                os.path.dirname(self.grpc.proto_file)
+            ) or '.',
+            build_dir=self.grpc.build_dir,
+            proto_file=os.path.basename(self.grpc.proto_file),
+        ).strip()
+
+        console.info(
+            message='generating gRPC pb2 modules',
+            data={'command': protoc_command.split('\n')}
         )
-        print(protoc_command + '\n')
-        err_msg = subprocess.getoutput(protoc_command)
+
+        err_msg = subprocess.getoutput(
+            re.sub(r'\s+', ' ', protoc_command)
+        )
         if err_msg:
             exit(err_msg)
 
@@ -338,6 +376,7 @@ def _is_port_in_use(addr):
 def _bind_message(message, source: Dict):
     if source is None:
         return None
+
     for k, v in source.items():
         if isinstance(getattr(message, k), Message):
             sub_message = getattr(message, k)
@@ -361,6 +400,7 @@ def _bind_message(message, source: Dict):
                 list_field.extend(v)
         else:
             setattr(message, k, v)
+
     return message
 
 

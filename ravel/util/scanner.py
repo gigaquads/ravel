@@ -5,6 +5,10 @@ import importlib
 
 from os.path import splitext
 
+from appyratus.files.json import Json
+
+from ravel.util.loggers import console
+
 
 class Scanner:
     def __init__(self, context=None):
@@ -28,6 +32,14 @@ class Scanner:
                 package_dir.strip('/').split('/')[:-package_path_len]
             )
             for dir_name, sub_dirs, file_names in os.walk(package_dir):
+                file_names = set(file_names)
+                if '.ravel' in file_names:
+                    dot_file_path = os.path.join(dir_name, '.ravel')
+                    dot_data = Json.read(dot_file_path) or {}
+                    ignore = dot_data.get('scanner', {}).get('ignore', False)
+                    if ignore:
+                        console.debug(f'scanner ignoring {dir_name}')
+                        continue
                 if '__init__.py' in file_names:
                     dir_name_offset = len(package_parent_dir)
                     pkg_path = dir_name[dir_name_offset + 1:].replace("/", ".")

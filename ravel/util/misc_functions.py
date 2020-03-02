@@ -113,6 +113,9 @@ def extract_res_info_from_annotation(annotation) -> Tuple[bool, Text]:
             key = extract_res_info_from_annotation(arg)[1]
             many = True
 
+    if key == '_empty':
+        key = None
+
     return (many, key)
 
 
