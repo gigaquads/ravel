@@ -31,13 +31,17 @@ class GrpcFunction(Action):
         self._returns_stream = False
         self.schemas = DictObject()
 
+    def __call__(self, *raw_args, **raw_kwargs):
+        return super().__call__(*(raw_args[:1]), **raw_kwargs)
+
     def on_bootstrap(self):
         self._msg_name_prefix = StringUtils.camel(self.name)
         self.schemas.request = self._build_request_schema()
         self.schemas.response = self._build_response_schema()
 
-    def __call__(self, *raw_args, **raw_kwargs):
-        return super().__call__(*(raw_args[:1]), **raw_kwargs)
+    @property
+    def streams_response(self) -> bool:
+        return self._returns_stream
 
     def generate_request_message_type(self) -> Text:
         return self._msg_gen.emit(self.schemas.request) + '\n'

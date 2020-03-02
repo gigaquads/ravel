@@ -60,7 +60,7 @@ class LoggerInterface(object):
         self._logger.critical(self.process_message('critical', message, data))
 
     def error(self, message=None, data: Dict = None):
-        self._logger.critical(self.process_message('error', message, data))
+        self._logger.error(self.process_message('error', message, data))
 
     def exception(self, message=None, data: Dict = None):
         exc_type, exc_obj, exc_tb = sys.exc_info()

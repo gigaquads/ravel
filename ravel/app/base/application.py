@@ -295,7 +295,6 @@ class Application(object):
         Enter the main loop in whatever program context your Application is
         being used, like in a web framework or a REPL.
         """
-        console.debug(f'starting {get_class_name(self)}...\n')
         self._is_started = True
         return self.on_start()
 

@@ -70,8 +70,10 @@ def bind_message(message: Message, source: Dict) -> Message:
 
 
 def dump_result_obj(obj) -> Union[Dict, List]:
-    if is_resource(obj) or is_batch(obj):
-        return obj.dump()
+    if is_resource(obj):
+        return obj.internal.state
+    elif is_batch(obj):
+        return [x.internal.state for x in obj]
     elif isinstance(obj, (list, set, tuple)):
         return [dump_result_obj(x) for x in obj]
     elif isinstance(obj, dict):

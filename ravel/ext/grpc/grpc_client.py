@@ -7,6 +7,7 @@ from typing import Text
 
 from appyratus.utils import StringUtils
 
+from ravel.util.loggers import console
 from ravel.schema import fields, Schema, Field
 
 
@@ -17,14 +18,20 @@ class GrpcClient(object):
         self._address = app.grpc.options.client_address
         self._app = app
 
-        print('Connecting to {}'.format(self._address))
-
         if app.grpc.options.secure_channel:
             self._channel = grpc.secure_channel(
                 self._address, grpc.ssl_channel_credentials()
             )
         else:
             self._channel = grpc.insecure_channel(self._address)
+
+        console.info(
+            message='gRPC client initialized',
+            data={
+                'address': self._address,
+                'secure': app.grpc.options.secure_channel
+            }
+        )
 
         GrpcApplicationStub = app.grpc.pb2_grpc.GrpcApplicationStub
 
@@ -47,7 +54,13 @@ class GrpcClient(object):
             request = request_type(**kwargs)
             response = send_request(request)
             # translate the native proto response message to a plain dict
-            data = self._extract_fields(response, action.response_schema)
+            if action.streams_response:
+                data = [
+                    self._extract_fields(x, action.schemas.response)
+                    for x in response
+                ]
+            else:
+                data = self._extract_fields(response, action.schemas.response)
             return data
 
         return func

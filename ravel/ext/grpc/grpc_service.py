@@ -60,7 +60,7 @@ class GrpcService(Application):
     class GrpcOptionsSchema(Schema):
         client_host = fields.String(required=True, default=DEFAULT_HOST)
         server_host = fields.String(required=True, default=DEFAULT_HOST)
-        secure_channel = fields.String(required=True, default=DEFAULT_IS_SECURE)
+        secure_channel = fields.Bool(required=True, default=DEFAULT_IS_SECURE)
         port = fields.String(required=True, default=DEFAULT_PORT)
         grace = fields.Float(required=True, default=DEFAULT_GRACE)
 
@@ -74,10 +74,6 @@ class GrpcService(Application):
         self.grpc.server = None
         self.grpc.servicer = None
         self.initializer = initializer
-
-    @memoized_property
-    def client(self) -> GrpcClient:
-        return GrpcClient(self)
 
     @property
     def action_type(self):
@@ -166,13 +162,18 @@ class GrpcService(Application):
             k: getattr(request, k, None)
             for k in action.schemas.request.fields
         }
-        # TODO: revise on_request to take just the new Request object
-        # TODO: inject the Request object into all_arguments
+
+        # add a dummy request object so that partition_arguments can
+        # run below; then remove it from the resulting args tuple.
+        all_arguments['request'] = None
 
         # process field_data into args and kwargs
         args, kwargs = FuncUtils.partition_arguments(
             action.signature, all_arguments
         )
+
+        args = args[1:]
+
         return (args, kwargs)
 
     def on_response(self, action, result, *raw_args, **raw_kwargs):
@@ -182,17 +183,41 @@ class GrpcService(Application):
         """
         response_type = self.grpc.response_types[action]
         response = response_type()
+        response_data = None
 
-        if result:
-            schema = action.schemas.response
-            dumped_result = dump_result_obj(result)
-            response_data, errors = schema.process(dumped_result, strict=True)
-            response = bind_message(response, response_data)
+        console.debug('binding gRPC method result to proto message')
+
+        def validate(data):
+            data, errors = schema.process(data, strict=True)
             if errors:
                 console.error(
                     message=f'response validation errors',
                     data={'errors': errors}
                 )
+            return data
+
+
+        if result:
+            schema = action.schemas.response
+            dumped_result = dump_result_obj(result)
+            if isinstance(dumped_result, list):
+                response_data = [validate(x) for x in dumped_result]
+            else:
+                response_data = validate(dumped_result)
+
+        console.debug(message='validated gRPC response data')
+
+        if response_data:
+            if isinstance(response_data, list):
+                response = iter(
+                    bind_message(response_type(), data)
+                    for data in response_data
+                )
+            else:
+                response = bind_message(response, response_data)
+
+        console.debug('gRPC response message built')
+
         return response
 
     def on_start(self):
@@ -228,7 +253,7 @@ class GrpcService(Application):
         console.info(
             message='gRPC server started. Press ctrl+c to stop.',
             data={
-                'listen': self.grpc.options.server_address,
+                'address': self.grpc.options.server_address,
                 'methods': list(self.api.keys()),
             }
         )
@@ -243,6 +268,9 @@ class GrpcService(Application):
                     data={'grace_period': self.grpc.options.grace}
                 )
                 self.grpc.server.stop(grace=self.grpc.options.grace)
+
+    def build_client(self) -> GrpcClient:
+        return GrpcClient(self)
 
     def _grpc_servicer_factory(self):
         """
