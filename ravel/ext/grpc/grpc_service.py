@@ -14,8 +14,9 @@ import codecs
 
 import grpc
 
+from threading import get_ident
 from concurrent.futures import ThreadPoolExecutor
-from typing import Text, List, Dict, Type, Union
+from typing import Text, List, Dict, Type, Union, Type
 from importlib import import_module
 
 from google.protobuf.message import Message
@@ -68,15 +69,15 @@ class GrpcService(Application):
         grace = fields.Float(required=True, default=DEFAULT_GRACE)
 
 
-    def __init__(self, middleware=None, initializer=None):
-        super().__init__(middleware=middleware)
+    def __init__(self, middleware=None, *args, **kwargs):
+        super().__init__(middleware=middleware, *args, **kwargs)
         self.grpc = DictObject()
         self.grpc.options = DictObject()
+        self.grpc.max_workers = mp.cpu_count() + 1
         self.grpc.pb2 = None
         self.grpc.pb2_grpc = None
         self.grpc.server = None
         self.grpc.servicer = None
-        self._initializer = initializer
         self._client = None
 
     @property
@@ -96,15 +97,15 @@ class GrpcService(Application):
     def action_type(self):
         return GrpcMethod
 
-    def on_bootstrap(self, build=False, options: Dict = None):
+    def on_bootstrap(self, options: Dict = None, build=False):
         """
         Compute gRPC configuration variables, build the proto file and grpcio
         "pb2" Python modules, and compute other metadata needed to route
         requests to RPC API methods.
         """
-        self._configure_grpc(options)
-        self._build_and_import_grpc_modules(build)
-        self._aggregate_response_message_types()
+        self._on_bootstrap_configure_grpc(options)
+        self._on_bootstrap_build_and_import_grpc_modules(build)
+        self._on_bootstrap_aggregate_response_message_types()
 
     def build(self, manifest=None, options: Dict = None):
         self.bootstrap(manifest=manifest, build=True, options=options)
@@ -176,6 +177,17 @@ class GrpcService(Application):
 
         return response
 
+    @staticmethod
+    def on_start_worker(app):
+        """
+        This method runs as the "initializer" for each thread in the grpc
+        server's thread pool. Override in subclass.
+        """
+        console.info(
+            f're-boostrapping stores in worker thread {get_ident()}'
+        )
+        app.storage.bootstrap()
+
     def on_start(self):
         """
         Start the RPC client or server.
@@ -184,11 +196,20 @@ class GrpcService(Application):
             console.error(f'{self.grpc.options.server_address} already in use')
             exit(-1)
 
+        console.debug(
+            f'creating gRPC thread pool with {self.grpc.max_workers} threads'
+        )
+
         # the grpc server runs in a thread pool
         self.grpc.executor = ThreadPoolExecutor(
-            max_workers=mp.cpu_count() + 1,
-            initializer=self._initializer,
+            max_workers=self.grpc.max_workers,
+            initializer=self.on_start_worker,
+            initargs=(self, )
         )
+
+        for i in range(self.grpc.max_workers):
+            self.grpc.executor.submit(lambda: None)
+
         # build the grpc server
         self.grpc.server = grpc.server(self.grpc.executor)
         self.grpc.server.add_insecure_port(self.grpc.options.server_address)
@@ -226,7 +247,7 @@ class GrpcService(Application):
                 )
                 self.grpc.server.stop(grace=self.grpc.options.grace)
 
-    def _configure_grpc(self, options: Dict):
+    def _on_bootstrap_configure_grpc(self, options: Dict):
         """
         Compute the gRPC options dict and other values needed to run this
         application as a gRPC service.
@@ -267,7 +288,7 @@ class GrpcService(Application):
         # the pb2 modules are when it tries to import them.
         sys.path.append(grpc.build_dir)
 
-    def _build_and_import_grpc_modules(self, build: bool):
+    def _on_bootstrap_build_and_import_grpc_modules(self, build: bool):
         """
         Call an external grpcio command to generate the gRPC python modules
         necessary for running this service. Then we import them, because we need
@@ -294,7 +315,7 @@ class GrpcService(Application):
         grpc.pb2 = import_module(grpc.pb2_mod_path, pkg_path)
         grpc.pb2_grpc = import_module(grpc.pb2_grpc_mod_path, pkg_path)
 
-    def _aggregate_response_message_types(self):
+    def _on_bootstrap_aggregate_response_message_types(self):
         """
         Build a lookup table of protobuf response Message types for use when
         routing requests to their downstream actions.
@@ -326,9 +347,7 @@ class GrpcService(Application):
             raise Exception('could not find grpc Servicer class')
 
         # create dynamic Servicer subclass
-        servicer = type(
-            servicer_type_name, (abstract_type, ), self.actions.copy()
-        )()
+        servicer = type(servicer_type_name, (abstract_type, ), self.actions)()
 
         # register the Servicer with the server
         servicer.add_to_grpc_server = (
@@ -492,3 +511,4 @@ class GrpcService(Application):
             return {k: self._dump_result_obj(v) for k, v in obj.items()}
         else:
             return obj
+

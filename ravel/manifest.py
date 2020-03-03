@@ -9,7 +9,7 @@ import yaml
 
 import ravel
 
-from typing import Text, Dict
+from typing import Text, Dict, Type
 from collections import defaultdict
 
 from appyratus.memoize import memoized_property
@@ -235,6 +235,14 @@ class Manifest(object):
                 {p.name: p.target
                  for p in self.app.actions.values()}
             )
+
+    def get_bootstrap_params(self, store_type: Type['Store']) -> Dict:
+        """
+        Return the bootstrap kwargs dict associated with the given store type.
+        """
+        store_type_name = get_class_name(store_type)
+        bootstrap_object = self.bootstraps.get(store_type_name)
+        return bootstrap_object.params if bootstrap_object else {}
 
     def bind(self, rebind=False):
         self.app.binder.bind(rebind=rebind)

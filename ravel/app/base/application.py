@@ -40,7 +40,8 @@ class Application(object):
         self._state = DictObject()
         self._actions = {}
         self._res = DictObject()
-        self._stores = DictObject()
+        self._store_types = DictObject()
+        self._store_manager = None
         self._api = DictObject()
         self._manifest = None
         self._arg_loader = None
@@ -152,8 +153,8 @@ class Application(object):
         return self._api
 
     @property
-    def stores(self) -> DictObject:
-        return self._stores
+    def storage(self) -> 'StoreManager':
+        return self._store_manager
 
     @property
     def is_bootstrapped(self) -> bool:
@@ -199,13 +200,14 @@ class Application(object):
                 else:
                     store_type = store_obj
 
-            self._stores[get_class_name(store_type)] = store_type
+            self._store_types[get_class_name(store_type)] = store_type
             self._res[get_class_name(resource_type)] = resource_type
 
             if not resource_type.is_bootstrapped():
                 resource_type.bootstrap(self)
             if not store_type.is_bootstrapped():
-                store_type.bootstrap(self)
+                kwargs = self.manifest.get_bootstrap_params(store_type)
+                store_type.bootstrap(self, **kwargs)
 
             binding = self.binder.register(
                 resource_type=resource_type,
@@ -263,12 +265,13 @@ class Application(object):
         self._manifest.load()
         self._manifest.process(app=self, namespace=self._namespace)
 
+        self._store_manager = StoreManager(self, self._manifest.types.stores)
         self._res.update(self._manifest.types.res)
-        self._stores.update(self._manifest.types.stores)
         self._api.update(self._actions)
 
         self._manifest.bootstrap()
         self._manifest.bind(rebind=True)
+
 
         # bootstrap the middlware
         for mware in self.middleware:
@@ -402,3 +405,30 @@ class Application(object):
         executed.
         """
         return raw_result
+
+
+# TODO: move this class into ravel/app/base/store_manager.py
+class StoreManager(object):
+    """
+    StoreManager is a high-level interface to performing logic related to the
+    lifecycle of store instances utilized in a bootstrapped app.
+    """
+
+    def __init__(self, app: 'Application', store_types: DictObject):
+        self._app = app
+        self._store_types = store_types
+
+    @property
+    def store_types(self) -> DictObject:
+        return self._store_types
+
+    @property
+    def utilized_store_types(self) -> Dict[Text, Type['Store']]:
+        return list({
+            type(res_type.ravel.store) for res_type in self._app.res.values()
+        })
+
+    def bootstrap(self):
+        for store_type in self.utilized_store_types:
+            kwargs = self._app.manifest.get_bootstrap_params(store_type)
+            store_type.bootstrap(self._app, **kwargs)

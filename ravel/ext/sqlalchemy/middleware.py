@@ -19,9 +19,11 @@ class SqlalchemyMiddleware(Middleware):
         self.store_class_name = store_class_name or 'SqlalchemyStore'
 
     def on_bootstrap(self):
-        self.SqlalchemyStore = self.app.stores.get(self.store_class_name)
-        if self.SqlalchemyStore is None:
-            raise MiddlewareError(self, 'SqlalchemyStore class not found')
+        self.store_type = self.app.store_types.get(self.store_class_name)
+        if self.store_type is None:
+            raise MiddlewareError(
+                self, f'{self.store_class_name} class not found'
+            )
 
     def pre_request(
         self,
@@ -33,8 +35,8 @@ class SqlalchemyMiddleware(Middleware):
         Get a connection from Sqlalchemy's connection pool and begin a
         transaction.
         """
-        self.SqlalchemyStore.connect()
-        self.SqlalchemyStore.begin()
+        self.store_type.connect()
+        self.store_type.begin()
 
     def post_request(
         self,
@@ -57,11 +59,11 @@ class SqlalchemyMiddleware(Middleware):
             console.debug(
                 f'{get_class_name(self)} trying to commit transaction'
             )
-            self.SqlalchemyStore.commit()
+            self.store_type.commit()
         except:
             console.error(
                 f'{get_class_name(self)} rolling back transaction'
             )
-            self.SqlalchemyStore.rollback()
+            self.store_type.rollback()
         finally:
-            self.SqlalchemyStore.close()
+            self.store_type.close()
