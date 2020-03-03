@@ -18,7 +18,6 @@ from importlib import import_module
 from google.protobuf.message import Message
 
 from appyratus.schema import Schema, fields
-from appyratus.memoize import memoized_property
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 
 from ravel.util import is_resource, is_batch, get_class_name
@@ -26,7 +25,7 @@ from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
 from ravel.app.base import Application
 
-from .grpc_function import GrpcFunction
+from .grpc_method import GrpcMethod
 from .grpc_client import GrpcClient
 from .util import (
     touch_file,
@@ -34,30 +33,38 @@ from .util import (
     bind_message,
     dump_result_obj,
 )
-
-
-DEFAULT_HOST = '127.0.0.1'
-DEFAULT_PORT = '50051'
-DEFAULT_GRACE = 5.0
-DEFAULT_IS_SECURE = False
-REGISTRY_PROTO_FILE = 'app.proto'
-PB2_MODULE_PATH_FSTR = '{}.grpc.app_pb2'
-PB2_GRPC_MODULE_PATH_FSTR = '{}.grpc.app_pb2_grpc'
-PROTOC_COMMAND_FSTR = '''
-python3 -m grpc_tools.protoc
-    -I {include_dir}
-    --python_out={build_dir}
-    --grpc_python_out={build_dir}
-    {proto_file}
-'''
+from .constants import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_GRACE,
+    DEFAULT_IS_SECURE,
+    REGISTRY_PROTO_FILE,
+    PB2_MODULE_PATH_FSTR,
+    PB2_GRPC_MODULE_PATH_FSTR,
+    PROTOC_COMMAND_FSTR,
+)
 
 
 class GrpcService(Application):
     """
-    Grpc server and client interface.
+    Grpc server.
+
+    All configuration options and data structures pertaining to gRPC itself are
+    kept in self.grpc. For the most part, this object is constructed during
+    bootstrap.
+
+    It is possible to generate a gRPC client for the service via the "client"
+    property. The service must be bootstrapped before accessing the client.
+
+    Note that gRPC manages its server as a thread pool. When we call
+    GrpcService.start, we are really just starting the threads in the pool and
+    then putting the main thread in a spin lock.
     """
 
     class GrpcOptionsSchema(Schema):
+        """
+        Manifest gRPC options schema
+        """
         client_host = fields.String(required=True, default=DEFAULT_HOST)
         server_host = fields.String(required=True, default=DEFAULT_HOST)
         secure_channel = fields.Bool(required=True, default=DEFAULT_IS_SECURE)
@@ -73,76 +80,35 @@ class GrpcService(Application):
         self.grpc.pb2_grpc = None
         self.grpc.server = None
         self.grpc.servicer = None
-        self.initializer = initializer
+        self._initializer = initializer
+        self._client = None
+
+    @property
+    def client(self) -> GrpcClient:
+        """
+        Return a memoized GrpcClient instance. However, if the service isn't
+        bootstrapped, None will be returned, as the client derives itself from a
+        bootstrapped service.
+        """
+        if not self.is_bootstrapped:
+            return None
+        elif self._client is None:
+            self._client = GrpcClient(self)
+        return self._client
 
     @property
     def action_type(self):
-        return GrpcFunction
+        return GrpcMethod
 
     def on_bootstrap(self, build=False, options: Dict = None):
-        grpc = self.grpc
-
-        # get the python package containing this Application
-        pkg_path = self.manifest.package
-        pkg = import_module(self.manifest.package)
-
-        # compute some file and module paths
-        grpc.pkg_dir = os.path.dirname(pkg.__file__)
-        grpc.build_dir = os.path.join(grpc.pkg_dir, 'grpc')
-        grpc.proto_file = os.path.join(grpc.build_dir, REGISTRY_PROTO_FILE)
-
-        # compute grpc options dict from options kwarg and manifest data
-        kwarg_options = options or {}
-        manifest_options = self.manifest.data.get('grpc', {})
-        computed_options = DictUtils.merge(kwarg_options, manifest_options)
-
-        # generate default values into gRPC options data
-        schema = self.GrpcOptionsSchema()
-        options, errors = schema.process(computed_options)
-        if errors:
-            raise Excpetion(f'invalid gRPC options: {errors}')
-
-        grpc.options = DictObject(options)
-
-        grpc.options.server_address = (
-            f"{grpc.options['server_host']}:{grpc.options['port']}"
-        )
-        grpc.options.client_address = (
-            f"{grpc.options['client_host']}:{grpc.options['port']}"
-        )
-
-        # create the build directory and add it to PYTHONPATH
-        sys.path.append(grpc.build_dir)
-
-        # build dotted paths to the auto-generated pb2, pb2_grpc modules
-        pb2_mod_path = PB2_MODULE_PATH_FSTR.format(pkg_path)
-        pb2_grpc_mod_path = PB2_GRPC_MODULE_PATH_FSTR.format(pkg_path)
-
-        # try to import the pb2 module just to see if it exists
-        try:
-            import_module(pb2_mod_path, pkg_path)
-            pb2_module_dne = False    # dne: does not exist
-        except Exception:
-            pb2_module_dne = True
-            #traceback.print_exc()
-
-        # build the pb2 and pb2_grpc modules
-        if build or pb2_module_dne:
-            self._build_pb2_modules()
-            time.sleep(0.25)
-
-        # now import the dynamically-generated pb2 modules
-        self.grpc.pb2 = import_module(pb2_mod_path, pkg_path)
-        self.grpc.pb2_grpc = import_module(pb2_grpc_mod_path, pkg_path)
-
-        # build a lookup table of protobuf response Message types
-        self.grpc.response_types = {
-            action: getattr(
-                self.grpc.pb2,
-                f'{StringUtils.camel(get_class_name(action.schemas.response))}'
-            )
-            for action in self.actions.values()
-        }
+        """
+        Compute gRPC configuration variables, build the proto file and grpcio
+        "pb2" Python modules, and compute other metadata needed to route
+        requests to RPC API methods.
+        """
+        self._configure_grpc(options)
+        self._build_and_import_grpc_modules(build)
+        self._aggregate_response_message_types()
 
     def build(self, manifest=None, options: Dict = None):
         self.bootstrap(manifest=manifest, build=True, options=options)
@@ -185,8 +151,6 @@ class GrpcService(Application):
         response = response_type()
         response_data = None
 
-        console.debug('binding gRPC method result to proto message')
-
         def validate(data):
             data, errors = schema.process(data, strict=True)
             if errors:
@@ -205,8 +169,6 @@ class GrpcService(Application):
             else:
                 response_data = validate(dumped_result)
 
-        console.debug(message='validated gRPC response data')
-
         if response_data:
             if isinstance(response_data, list):
                 response = iter(
@@ -216,8 +178,6 @@ class GrpcService(Application):
             else:
                 response = bind_message(response, response_data)
 
-        console.debug('gRPC response message built')
-
         return response
 
     def on_start(self):
@@ -225,15 +185,13 @@ class GrpcService(Application):
         Start the RPC client or server.
         """
         if is_port_in_use(self.grpc.options.server_address):
-            exit(
-                f'>>> {self.grpc.options.server_address} already in use! '
-                f'Exiting...'
-            )
+            console.error(f'{self.grpc.options.server_address} already in use')
+            exit(-1)
 
         # the grpc server runs in a thread pool
         self.grpc.executor = ThreadPoolExecutor(
             max_workers=mp.cpu_count() + 1,
-            initializer=self.initializer,
+            initializer=self._initializer,
         )
         # build the grpc server
         self.grpc.server = grpc.server(self.grpc.executor)
@@ -258,10 +216,13 @@ class GrpcService(Application):
             }
         )
 
+        # spin-lock the main thread to keep the server running,
+        # as the server runs as a daemon.
         try:
             while True:
                 time.sleep(9999)
         except KeyboardInterrupt:
+            # stop server on ctrl+c
             if self.grpc.server is not None:
                 console.info(
                     message='stopping gRPC server',
@@ -269,8 +230,87 @@ class GrpcService(Application):
                 )
                 self.grpc.server.stop(grace=self.grpc.options.grace)
 
-    def build_client(self) -> GrpcClient:
-        return GrpcClient(self)
+    def _configure_grpc(self, options: Dict):
+        """
+        Compute the gRPC options dict and other values needed to run this
+        application as a gRPC service.
+        """
+        grpc = self.grpc
+
+        # get the python package containing this Application
+        pkg_path = self.manifest.package
+        pkg = import_module(self.manifest.package)
+
+        # compute some file and module paths
+        grpc.pkg_dir = os.path.dirname(pkg.__file__)
+        grpc.build_dir = os.path.join(grpc.pkg_dir, 'grpc')
+        grpc.proto_file = os.path.join(grpc.build_dir, REGISTRY_PROTO_FILE)
+
+        # compute grpc options dict from options kwarg and manifest data
+        kwarg_options = options or {}
+        manifest_options = self.manifest.data.get('grpc', {})
+        computed_options = DictUtils.merge(kwarg_options, manifest_options)
+
+        # generate default values into gRPC options data
+        schema = self.GrpcOptionsSchema()
+        options, errors = schema.process(computed_options)
+        if errors:
+            raise Excpetion(f'invalid gRPC options: {errors}')
+
+        port = options['port']
+        server_host = options['server_host']
+        client_host = options['client_host']
+
+        grpc.options = DictObject(options)
+        grpc.options.server_address = (f'{server_host}:{port}')
+        grpc.options.client_address = (f'{client_host}:{port}')
+        grpc.pb2_mod_path = PB2_MODULE_PATH_FSTR.format(pkg_path)
+        grpc.pb2_grpc_mod_path = PB2_GRPC_MODULE_PATH_FSTR.format(pkg_path)
+
+        # add build directory to PYTHONPATH; otherwise, gRPC won't know where
+        # the pb2 modules are when it tries to import them.
+        sys.path.append(grpc.build_dir)
+
+    def _build_and_import_grpc_modules(self, build: bool):
+        """
+        Call an external grpcio command to generate the gRPC python modules
+        necessary for running this service. Then we import them, because we need
+        to derive client and servicer subclasses and procedures from the
+        autogenerated base components contained therein.
+        """
+        grpc = self.grpc
+        pkg_path = self.manifest.package
+
+        # try to import the pb2 module just to see if it exists
+        try:
+            import_module(grpc.pb2_mod_path, pkg_path)
+            pb2_module_dne = False    # dne: does not exist
+        except Exception:
+            console.warning(f'{grpc.pb2_mod_path} does not exist. rebuilding')
+            pb2_module_dne = True
+
+        # build the pb2 and pb2_grpc modules
+        if build or pb2_module_dne:
+            self._build_pb2_modules()
+            time.sleep(0.25)
+
+        # now import the dynamically-generated pb2 modules
+        grpc.pb2 = import_module(grpc.pb2_mod_path, pkg_path)
+        grpc.pb2_grpc = import_module(grpc.pb2_grpc_mod_path, pkg_path)
+
+    def _aggregate_response_message_types(self):
+        """
+        Build a lookup table of protobuf response Message types for use when
+        routing requests to their downstream actions.
+        """
+        grpc = self.grpc
+        grpc.response_types = {
+            action: getattr(
+                grpc.pb2,
+                f'{StringUtils.camel(get_class_name(action.schemas.response))}'
+            )
+            for action in self.actions.values()
+        }
 
     def _grpc_servicer_factory(self):
         """
@@ -302,15 +342,22 @@ class GrpcService(Application):
         return servicer
 
     def _build_pb2_modules(self):
+        """
+        Create the build dir inside the host package, generating the proto file
+        and grpcio modules into it.
+        """
         # recreate the build directory
         if os.path.isdir(self.grpc.build_dir):
             shutil.rmtree(self.grpc.build_dir)
+
         os.makedirs(os.path.join(self.grpc.build_dir), exist_ok=True)
 
         # touch the __init__.py file
         with open(os.path.join(self.grpc.build_dir, '__init__.py'), 'a'):
             pass
 
+        # upsert the .ravel file in the build dir with a directive to ignore
+        # this directory during project component discovery.
         dot_file_name  = os.path.join(self.grpc.build_dir, '.ravel')
         if not os.path.isfile(dot_file_name):
             with open(dot_file_name, 'w') as dot_file:
@@ -322,10 +369,10 @@ class GrpcService(Application):
                 json.dump(dot_data, dot_file)
 
         # generate the .proto file and generate grpc python modules from it
-        self._grpc_generate_proto_file()
-        self._grpc_compile_pb2_modules()
+        self._generate_proto_file()
+        self._compile_pb2_modules()
 
-    def _grpc_generate_proto_file(self):
+    def _generate_proto_file(self):
         """
         Iterate over function actions, using request and response schemas to
         generate protobuf message and service types.
@@ -341,6 +388,7 @@ class GrpcService(Application):
                 if type_name not in visited_schema_types:
                     lines.append(action.generate_request_message_type())
                     visited_schema_types.add(type_name)
+
             if action.schemas.response:
                 type_name = get_class_name(action.schemas.response)
                 if type_name not in visited_schema_types:
@@ -352,8 +400,7 @@ class GrpcService(Application):
 
         lines.append('service GrpcApplication {')
 
-        for decl in func_decls:
-            lines.append('  ' + decl)
+        for decl in func_decls: lines.append('  ' + decl)
 
         lines.append('}\n')
 
@@ -367,9 +414,7 @@ class GrpcService(Application):
         with open(self.grpc.proto_file, 'w') as fout:
             fout.write(source)
 
-        return source
-
-    def _grpc_compile_pb2_modules(self):
+    def _compile_pb2_modules(self):
         """
         Compile the grpc .proto file, generating pb2 and pb2_grpc modules in the
         build directory. These modules contain abstract base classes required

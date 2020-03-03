@@ -55,14 +55,19 @@ def bind_message(message: Message, source: Dict) -> Message:
             sub_message_type_name = (
                 '{}Schema'.format(k.title().replace('_', ''))
             )
-            sub_message = getattr(message, sub_message_type_name, None)
-            if sub_message:
+            sub_message_type = getattr(message, sub_message_type_name, None)
+            if sub_message_type:
                 list_field.extend(
-                    bind_message(sub_message(), v_i)
+                    bind_message(sub_message_type(), v_i)
                     for v_i in v
                 )
             else:
-                list_field.extend(v)
+                v_prime = [
+                    x if not isinstance(x, dict)
+                        else codecs.encode(pickle.dumps(x), 'base64')
+                    for x in v
+                ]
+                list_field.extend(v_prime)
         else:
             setattr(message, k, v)
 

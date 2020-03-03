@@ -11,7 +11,7 @@ from ravel.constants import ID, REV
 from .proto import MessageGenerator
 
 
-class GrpcFunction(Action):
+class GrpcMethod(Action):
 
     _py_type_2_field_type = {
         'int': field_types.Int,
