@@ -9,5 +9,6 @@ from .misc_functions import (
     get_class_name,
     is_sequence,
     flatten_sequence,
+    is_port_in_use,
     union,
 )

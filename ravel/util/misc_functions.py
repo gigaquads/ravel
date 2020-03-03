@@ -1,4 +1,5 @@
 import inspect
+import socket
 
 from uuid import UUID
 from importlib import import_module
@@ -150,4 +151,23 @@ def union(sequences):
             return set.union(*sequences)
     else:
         return set()
+
+
+def is_port_in_use(addr: Text) -> bool:
+    """
+    Utility method for determining if the server address is already in use.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        host, port_str = addr.split(':')
+        sock.bind((host, int(port_str)))
+        return False
+    except OSError as err:
+        if err.errno == 48:
+            return True
+        else:
+            raise err
+    finally:
+        sock.close()
+
 

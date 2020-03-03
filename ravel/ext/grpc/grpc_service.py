@@ -8,31 +8,27 @@ import traceback
 import time
 import re
 import multiprocessing as mp
+import socket
+import pickle
+import codecs
 
 import grpc
 
 from concurrent.futures import ThreadPoolExecutor
-from typing import Text, List, Dict, Type
+from typing import Text, List, Dict, Type, Union
 from importlib import import_module
 
 from google.protobuf.message import Message
-
 from appyratus.schema import Schema, fields
 from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
 
-from ravel.util import is_resource, is_batch, get_class_name
+from ravel.util import is_resource, is_batch, get_class_name, is_port_in_use
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
 from ravel.app.base import Application
 
 from .grpc_method import GrpcMethod
 from .grpc_client import GrpcClient
-from .util import (
-    touch_file,
-    is_port_in_use,
-    bind_message,
-    dump_result_obj,
-)
 from .constants import (
     DEFAULT_HOST,
     DEFAULT_PORT,
@@ -163,7 +159,7 @@ class GrpcService(Application):
 
         if result:
             schema = action.schemas.response
-            dumped_result = dump_result_obj(result)
+            dumped_result = self._dump_result_obj(result)
             if isinstance(dumped_result, list):
                 response_data = [validate(x) for x in dumped_result]
             else:
@@ -172,11 +168,11 @@ class GrpcService(Application):
         if response_data:
             if isinstance(response_data, list):
                 response = iter(
-                    bind_message(response_type(), data)
+                    self.build_response_message(response_type(), data)
                     for data in response_data
                 )
             else:
-                response = bind_message(response, response_data)
+                response = self.build_response_message(response, response_data)
 
         return response
 
@@ -439,3 +435,60 @@ class GrpcService(Application):
         )
         if err_msg:
             exit(err_msg)
+
+    def build_response_message(self, message: Message, source: Dict) -> Message:
+        """
+        Recursively bind each value in a source dict to the corresponding
+        attribute in a grpc Message object, resulting in the prepared response
+        message, ready to be sent back to the client.
+        """
+        if source is None:
+            return None
+
+        for k, v in source.items():
+            if isinstance(getattr(message, k), Message):
+                sub_message = getattr(message, k)
+                assert isinstance(v, dict)
+                self.build_response_message(sub_message, v)
+            elif isinstance(v, dict):
+                v_bytes = codecs.encode(pickle.dumps(v), 'base64')
+                setattr(message, k, v_bytes)
+            elif isinstance(v, (list, tuple, set)):
+                list_field = getattr(message, k)
+                sub_message_type_name = (
+                    '{}Schema'.format(k.title().replace('_', ''))
+                )
+                sub_message_type = getattr(message, sub_message_type_name, None)
+                if sub_message_type:
+                    list_field.extend(
+                        self.build_response_message(sub_message_type(), v_i)
+                        for v_i in v
+                    )
+                else:
+                    v_prime = [
+                        x if not isinstance(x, dict)
+                            else codecs.encode(pickle.dumps(x), 'base64')
+                        for x in v
+                    ]
+                    list_field.extend(v_prime)
+            else:
+                setattr(message, k, v)
+
+        return message
+
+    def _dump_result_obj(self, obj) -> Union[Dict, List]:
+        """
+        Currently, GrpcService is intended to be used for internal
+        service-to-service comm. This is why we "dump" Resources here by simply
+        returning their internal state dicts.
+        """
+        if is_resource(obj):
+            return obj.internal.state
+        elif is_batch(obj):
+            return [x.internal.state for x in obj]
+        elif isinstance(obj, (list, set, tuple)):
+            return [self._dump_result_obj(x) for x in obj]
+        elif isinstance(obj, dict):
+            return {k: self._dump_result_obj(v) for k, v in obj.items()}
+        else:
+            return obj
