@@ -29,6 +29,7 @@ class RecursiveList(Resource):
     - `position`: The positional index of this RecursiveList in its parent
     """
 
+    '''
     size = fields.Int(nullable=False, default=lambda: 0, required=True)
     depth = fields.Int(nullable=False, default=lambda: 0, required=True)
     position = fields.Int(nullable=False, required=True, default=lambda: -1, private=True)
@@ -36,13 +37,13 @@ class RecursiveList(Resource):
 
     parent = Relationship(
         join=lambda cls: (cls.parent_id, cls._id),
-        readonly=True,
+        immutable=True,
     )
 
     children = Relationship(
         join=lambda cls: (cls._id, cls.parent_id),
         #order_by=lambda cls: cls.position.asc,
-        readonly=True,
+        immutable=True,
         many=True,
     )
 
@@ -52,7 +53,7 @@ class RecursiveList(Resource):
             (sources.resource_type.parent_id == sources[0].parent_id) &
             (sources.resource_type.position == sources[0].position - 1)
         ),
-        readonly=True,
+        immutable=True,
     )
 
     following = Relationship(
@@ -61,7 +62,7 @@ class RecursiveList(Resource):
             (sources.resource_type.parent_id == sources[0].parent_id) &
             (sources.resource_type.position == sources[0].position + 1)
         ),
-        readonly=True,
+        immutable=True,
     )
 
 
@@ -226,7 +227,7 @@ class RecursiveList(Resource):
                 results.extend(child_results)
         return results
 
-
+'''
 
 
 

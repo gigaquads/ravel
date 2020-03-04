@@ -44,12 +44,19 @@ from ravel.entity import Entity
 
 class ResourceMeta(type):
     def __init__(cls, name, bases, dct):
-        cls._initialize_class_state()
-
-        fields = cls._process_fields()
-
-        cls._build_schema_type(fields, bases)
+        declared_fields = cls._initialize_class_state()
+        cls._inherit_resolvers(bases)
+        cls._build_schema_type(declared_fields, bases)
         cls.Batch = Batch.factory(cls)
+
+    def _inherit_resolvers(cls, base_classes):
+        for base_class in base_classes:
+            if is_resource_type(base_class):
+                for key, resolver in base_class.ravel.resolvers.items():
+                    copied_resolver = resolver.copy()
+                    resolver_property = ResolverProperty(copied_resolver)
+                    cls.ravel.resolvers.register(copied_resolver)
+                    setattr(cls, key, resolver_property)
 
     def _initialize_class_state(resource_type):
         setattr(resource_type, IS_RESOURCE, True)
@@ -64,6 +71,8 @@ class ResourceMeta(type):
         resource_type.ravel.is_bound = False
         resource_type.ravel.schema = None
         resource_type.ravel.defaults = {}
+
+        return resource_type._process_fields()
 
     def _process_fields(cls):
         fields = {}
@@ -372,12 +381,14 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         if isinstance(resolvers, str):
             resolvers = {resolvers}
+        elif not resolvers:
+            resolvers = self.ravel.resolvers.keys()
 
         # execute all requested resolvers
         for k in resolvers:
             resolver = self.ravel.resolvers.get(k)
             if resolver is not None:
-                resolver.resolve(self)
+                setattr(self, k, resolver.resolve(self))
 
         # clean the resolved values so they arent't accidently saved on
         # update/create, as we just fetched them from the store.

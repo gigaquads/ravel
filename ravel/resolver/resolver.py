@@ -2,6 +2,7 @@ import sys
 
 from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
 from collections import defaultdict
+from copy import deepcopy
 from random import randint
 
 from ravel.util.loggers import console
@@ -47,6 +48,7 @@ class Resolver(object):
         private=False,
         nullable=True,
         required=False,
+        immutable=False,
         many=False,
     ):
         self.name = name
@@ -145,6 +147,13 @@ class Resolver(object):
         from first to last.
         """
         return sorted(resolvers, key=lambda resolver: resolver.priority())
+
+    def copy(self) -> 'Resolver':
+        clone = deepcopy(self)
+        clone.app = None
+        clone._is_bootstrapped = False
+        clone._is_bound = False
+        return clone
 
     def bootstrap(cls, app: 'Application'):
         cls.app = app
