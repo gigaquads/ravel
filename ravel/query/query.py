@@ -25,9 +25,11 @@ class Query(object):
     def __init__(
         self,
         target: Union[Type['Resource'], Callable] = None,
+        sources: List['Resource'] = None,
         parent: 'Query' = None,
         request: 'Reqeust' = None
     ):
+        self.sources = sources or []
         self.target = target
         self.parent = parent
         self.options = DictObject()
@@ -115,14 +117,60 @@ class Query(object):
         self.options.update(options)
         return self
 
-    def execute(self, first=None, simulate=False) -> 'Entity':
+    def execute(
+        self,
+        first=None,
+        simulate=False
+    ) -> Union['Resource', 'Batch']:
+        """
+        Execute the query, returning a single Resource ora a Batch.
+        """
         executor = Executor(simulate=simulate)
-        batch = executor.execute(self)
-
+        batch = executor.execute(self, sources=self.sources)
         if first:
             return batch[0] if batch else None
         else:
             return batch
+
+    def deselect(self, *args):
+        """
+        Remove the given arguments from the query's requests dict.
+        """
+        args = flatten_sequence(args)
+        keys = set()
+
+        for obj in args:
+            if isinstance(obj, str):
+                # if obj is str, replace it with the corresponding resolver
+                # property from the target Resource class.
+                _obj = getattr(self.target, obj, None)
+                if _obj is None:
+                    raise ValueError(f'unknown resolver: {obj}')
+                obj = _obj
+            elif is_resource(obj):
+                keys.update(obj.internal.state.keys())
+                continue
+            elif is_resource_type(obj):
+                keys.update(obj.ravel.resolvers.keys())
+                continue
+
+            # build a resolver request
+            request = None
+            if isinstance(obj, LoaderProperty) and (obj.decorator is None):
+                resolver_property = obj
+                keys.add(resolver_property.resolver.name)
+            elif isinstance(obj, ResolverProperty):
+                resolver_property = obj
+                keys.add(resolver_property.resolver.name)
+            elif isinstance(obj, Request):
+                request = obj
+                keys.add(request.resolver.name)
+
+        for key in keys:
+            if key in self.requests:
+                del self.requests[key]
+
+        return self
 
     def select(self, *args):
         args = flatten_sequence(args)

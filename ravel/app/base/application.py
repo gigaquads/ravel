@@ -309,7 +309,7 @@ class Application(object):
         if res:
             inject(func, self.res)
         if stores:
-            inject(func, self.stores)
+            inject(func, self.storage.utilized_store_types)
         if api:
             inject(func, self.api)
 
@@ -424,11 +424,12 @@ class StoreManager(object):
 
     @property
     def utilized_store_types(self) -> Dict[Text, Type['Store']]:
-        return list({
-            type(res_type.ravel.store) for res_type in self._app.res.values()
-        })
+        return {
+            get_class_name(res_type.ravel.store): type(res_type.ravel.store)
+            for res_type in self._app.res.values()
+        }
 
     def bootstrap(self):
-        for store_type in self.utilized_store_types:
+        for store_type in self.utilized_store_types.values():
             kwargs = self._app.manifest.get_bootstrap_params(store_type)
             store_type.bootstrap(self._app, **kwargs)

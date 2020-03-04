@@ -402,17 +402,25 @@ class Batch(Entity):
         return self
 
     def _update_indexes(self, resource):
+        """
+        Insert a Resource from the index B-trees.
+        """
         for k, index in self.internal.indexes.items():
-            value = resource[k]
-            if value not in index:
-                index[value] = set()
-            index[value].add(resource)
+            if k in resource.internal.state:
+                value = resource[k]
+                if value not in index:
+                    index[value] = set()
+                index[value].add(resource)
 
     def _prune_indexes(self, resource):
+        """
+        Remove a Resource from the index B-trees.
+        """
         for k, index in self.internal.indexes.items():
-            value = resource[k]
-            if value in index:
-                index[value].remove(resource)
+            if k in resource.internal.state:
+                value = resource[k]
+                if value in index:
+                    index[value].remove(resource)
 
     def _apply_indexes(self, predicate):
         if predicate is None:

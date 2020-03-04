@@ -12,14 +12,18 @@ class Executor(object):
     def __init__(self, simulate: bool = False):
         self.simulate = simulate
 
-    def execute(self, query: 'Query') -> 'Entity':
+    def execute(
+        self,
+        query: 'Query',
+        sources: List['Resource'] = None
+    ) -> 'Batch':
         # extract information needed to perform execution logic
         info = self._analyze_query(query)
 
         # fetch target fields from the DAL and execute all other requested
         # resolvers that don't correspond to fields, merging the results into
         # the fetched resources.
-        resources = self._fetch_resources(query, info['fields'])
+        resources = self._fetch_resources(query, info['fields'], sources)
         self._execute_requests(query, resources, info['requests'])
         return resources
 
@@ -41,6 +45,7 @@ class Executor(object):
         self,
         query: 'Query',
         fields: Set[Text],
+        sources: List['Resource'] = None
     ) -> List['Resource']:
         """
         # Fetch Resources
@@ -54,16 +59,21 @@ class Executor(object):
         if mode == 'normal' and (not self.simulate):
             store = resource_type.ravel.store
             records = store.query(predicate, fields=fields, **kwargs)
-            return resource_type.Batch(
+            batch = resource_type.Batch(
                 resource_type(state=record).clean()
                 for record in records
             )
         else:
             values = predicate.satisfy() if predicate else None
             count = kwargs.get('limit') or randint(1, 10)
-            return resource_type.Batch.generate(
+            batch = resource_type.Batch.generate(
                 resolvers=fields, values=values, count=count
             )
+
+        if sources:
+            batch.extend(sources)
+
+        return batch
 
     def _execute_requests(self, query, resources, requests):
         for request in requests:
