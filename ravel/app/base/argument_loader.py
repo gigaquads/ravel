@@ -92,10 +92,12 @@ class ArgumentLoader(object):
         loaded_kwargs = kwargs.copy()
 
         for spec in self._action_2_specs[action]:
-            if spec.position is not None and spec.position < len(args):
-                raw_arg_value = args[spec.position]
+            pos = spec.position
+            posindex = pos-1
+            if pos is not None and pos <= len(args):
+                raw_arg_value = args[posindex]
                 loaded_args_or_kwargs = loaded_args
-                key = spec.position
+                key = posindex
                 is_positional = True
             else:
                 raw_arg_value = kwargs.get(spec.arg_name)
