@@ -61,7 +61,7 @@ class Repl(Application):
         local_ns['repl'] = self
 
         local_ns.update(self._namespace)
-        local_ns.update(self.api)
+        local_ns.update(self.actions)
         local_ns.update(self.res)
         local_ns.update(self.stores)
 

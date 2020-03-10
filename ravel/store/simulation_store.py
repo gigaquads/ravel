@@ -95,9 +95,9 @@ class SimulationStore(Store):
 
                 # remove keys not specified in "fields" argument
                 if fields and (record is not None):
-                        record_keys = set(record.keys())
-                        for k in record_keys - fields:
-                            del record[k]
+                    record_keys = set(record.keys())
+                    for k in record_keys - fields:
+                        del record[k]
 
             return records
 
@@ -115,14 +115,8 @@ class SimulationStore(Store):
         schema = self.resource_type.ravel.schema
 
         with self.lock:
-
             record[ID] = self.create_id(record)
             record[REV] = self.increment_rev()
-
-            # ensure missing nullable fields are written to store with
-            # a value of None for the sake of normalizing the data structure.
-            for k in (schema.nullable_fields.keys() - record.keys()):
-                record[k] = None
 
             _id = record[ID]
 
@@ -256,10 +250,11 @@ class SimulationStore(Store):
         index_names = set(index_names or record.keys())
         for k in index_names:
             index = self.indexes.get(k)
-            if index is not None:
-                v = record[k]
-                if v in index:
-                    index[v].remove(_id)
+            if index is not None and k in record:
+                if k in record:
+                    v = record[k]
+                    if v in index:
+                        index[v].remove(_id)
 
     def _eval_predicate(self, predicate):
         if predicate is None:

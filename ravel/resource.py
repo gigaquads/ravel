@@ -458,19 +458,37 @@ class Resource(Entity, metaclass=ResourceMeta):
             del self.internal.state[REV]
 
         record = {}
-        for k, v in self.internal.state.items():
-            resolver = self.ravel.resolvers.fields.get(k)
-            if resolver is not None:
-                if v is None and (not resolver.nullable):
-                    gen_default_value = self.ravel.defaults.get(k)
-                    if gen_default_value is not None:
-                        record[k] = gen_default_value()
-                    else:
-                        raise ValidationError(
-                            f'{resolver.name} is not nullable'
+
+        for key in self.ravel.schema.fields:
+            resolver = self.ravel.resolvers[key]
+            default = self.ravel.defaults.get(key)
+            if key not in self.internal.state:
+                if default is not None:
+                    self.internal.state[key] = value = default()
+                    record[key] = value
+                elif resolver.required:
+                    raise ValidationError(f'{key} is a required field')
+            else:
+                value = self.internal.state[key]
+                if value is None and (not resolver.nullable):
+                    if default:
+                        self.internal.state[key] = value = default()
+                    # if the value is still none, just remove it from
+                    # the state dict instead of raising
+                    if self.internal.state[key] is None:
+                        console.warning(
+                            message=(
+                                'trying to save None while not nullable. '
+                                ' removing key from resource state',
+                            ),
+                            data={
+                                'resource': get_class_name(self),
+                                'field': key,
+                            }
                         )
-                else:
-                    record[k] = v
+                        del self.internal.state[key]
+                        continue
+                record[key] = self.internal.state[key]
 
         return record
 

@@ -4,7 +4,7 @@ from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name, flatten_sequence
 from ravel.util import is_resource, is_batch
 from ravel.resolver.resolver import Resolver
-
+from ravel.batch import BatchResolverProperty
 
 
 class Relationship(Resolver):
@@ -145,6 +145,16 @@ class Join(object):
         self.left_loader_property = left
         self.left_loader = left.resolver
         self.left_field = left.resolver.field
+
+        if isinstance(right, BatchResolverProperty):
+            # in this case, the right-hand field in the join is specified
+            # through Batch, like `User.Batch._id`. This is used to indicate
+            # that the final query in the Relationship returns "many". This
+            # information is already handled before we get here, so at this
+            # point, we just replace the batch resolver property with the
+            # non-batch one.
+            right = getattr(right.resolver.owner, right.resolver.name)
+
         self.right_loader_property = right
         self.right_loader = right.resolver
         self.right_field = right.resolver.field

@@ -39,6 +39,7 @@ class Scanner:
                     ignore = dot_data.get('scanner', {}).get('ignore', False)
                     if ignore:
                         console.debug(f'scanner ignoring {dir_name}')
+                        sub_dirs.clear()
                         continue
                 if '__init__.py' in file_names:
                     dir_name_offset = len(package_parent_dir)
@@ -55,6 +56,9 @@ class Scanner:
         return context
 
     def scan_module(self, module, context):
+        if None in module.__dict__:
+            # XXX: why is this happenings?
+            del module.__dict__[None]
         for k, v in inspect.getmembers(module, predicate=self.predicate):
             try:
                 self.on_match(k, v, context)
@@ -68,7 +72,19 @@ class Scanner:
         pass
 
     def on_import_error(self, exc, module_path, context):
-        raise exc
+        console.exception(
+            message='scanner encountered an import error',
+            data={
+                'module': module_path,
+            }
+        )
 
     def on_match_error(self, exc, module, context, name, value):
-        raise exc
+        console.exception(
+            message=f'scanner encountered an error while scanning object',
+            data={
+                'module': module.__name__,
+                'object': name,
+                'type': type(value),
+            }
+        )

@@ -5,7 +5,7 @@ import logging
 from inspect import Signature
 from typing import Dict, Text, Tuple, Callable
 
-from appyratus.utils import TimeUtils
+from appyratus.utils import TimeUtils, DictObject
 
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name, get_callable_name
@@ -27,10 +27,14 @@ class ActionError(RavelError):
         self.exc = exc
         if isinstance(exc, RavelError) and exc.wrapped_traceback:
             self.trace = self.exc.wrapped_traceback.strip().split('\n')[1:]
-            self.exc_message = self.trace.pop().split(': ', 1)[1]
+            self.exc_message = self.trace[-1].split(': ', 1)[1]
         else:
             self.trace = traceback.format_exc().strip().split('\n')[1:]
-            self.exc_message = self.trace.pop().split(': ', 1)[1]
+            final_line = self.trace[-1]
+            if ':' in final_line:
+                self.exc_message = final_line.split(':', 1)[1]
+            else:
+                self.exc_message = None
 
     def to_dict(self):
         data = {
@@ -92,22 +96,28 @@ class ExecutionState(object):
         self.raw_result = None
         self.result = None
 
+    @property
+    def app(self) -> 'Application':
+        return self.action.app
+
 
 class Request(object):
     def __init__(self, state):
         self.__dict__['internal'] = state
-        self.__dict__['_context'] = {}
+        self.__dict__['context'] = DictObject()
 
     def __repr__(self):
         return (
             f'Request(action="{self.internal.action.name}")'
         )
 
-    def __getattr__(self, name):
-        return self._context.get(name)
+    @property
+    def session(self) -> 'Session':
+        return self.context.session
 
-    def __setattr__(self, name, value):
-        self._context[name] = value
+    @property
+    def app(self) -> 'Application':
+        return self.internal.app
 
 
 class Action(object):
@@ -212,7 +222,9 @@ class Action(object):
         for mware in self.app.middleware:
             if isinstance(self.app, mware.app_types):
                 try:
-                    mware.pre_request(self, state.raw_args, state.raw_kwargs)
+                    mware.pre_request(
+                        self, request, state.raw_args, state.raw_kwargs
+                    )
                     state.middleware.append(mware)
                 except Exception as exc:
                     error = ActionError(exc, mware)
@@ -227,8 +239,9 @@ class Action(object):
             try:
                 mware.on_request(
                     self,
-                    state.raw_args, state.raw_kwargs,
-                    state.processed_args, state.processed_kwargs,
+                    request,
+                    state.processed_args,
+                    state.processed_kwargs,
                 )
             except Exception as exc:
                 error = Action.Error(exc, mware)
@@ -242,8 +255,7 @@ class Action(object):
             try:
                 mware.post_request(
                     self,
-                    state.raw_args, state.raw_kwargs,
-                    state.processed_args, state.processed_kwargs,
+                    request,
                     state.result
                 )
             except Exception as exc:
@@ -258,8 +270,7 @@ class Action(object):
             try:
                 mware.post_bad_request(
                     self,
-                    state.raw_args, state.raw_kwargs,
-                    state.processed_args, state.processed_kwargs,
+                    request,
                     state.target_error.exc
                 )
             except Exception as exc:

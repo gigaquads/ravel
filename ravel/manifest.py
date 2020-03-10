@@ -76,6 +76,7 @@ class Manifest(object):
         path: Text = None,
         data: Dict = None,
         env: Environment = None,
+        load: bool = True
     ):
         self.data = data or {}
         self.path = path
@@ -91,11 +92,28 @@ class Manifest(object):
             pkg.key for pkg in pkg_resources.working_set
         }
 
+        if load:
+            self.load()
+
     def __getitem__(self, key):
         return self.data[key]
 
     def __setitem__(self, key, value):
         self.data[key] = value
+
+    @classmethod
+    def from_object(cls, obj) -> 'Manifest':
+        if obj is None:
+            manifest = Manifest()
+        elif isinstance(obj, Manifest):
+            manifest = obj
+        elif isinstance(obj, str):
+            manifest = Manifest(path=obj)
+        elif isinstance(manifest, dict):
+            manifest = Manifest(data=obj)
+        else:
+            manifest = manifest
+        return manifest
 
     def get(self, key, default=None):
         return self.data.get(key, default)
@@ -115,20 +133,28 @@ class Manifest(object):
             2. self.bindings
             3. self.bootstraps
         """
+        file_data = {}
         base_data = self.data
         if not (self.data or self.path):
             return self
 
         # try to load manifest file from a YAML or JSON file
         if self.path is not None:
-            console.debug(message='loading manifest file', data={'path': self.path})
-            ext = os.path.splitext(self.path)[1].lstrip('.').lower()
-            if ext in Yaml.extensions():
-                file_data = Yaml.read(self.path)
-            elif ext in Json.extensions():
-                file_data = Json.read(self.path)
+            if not os.path.isfile(self.path):
+                console.error(
+                    message=f'cannot find manifest file. expect problems!',
+                    data={'path': self.path}
+                )
             else:
-                file_data = {}
+                console.debug(
+                    message=f'reading manifest file',
+                    data={'path': self.path}
+                )
+                ext = os.path.splitext(self.path)[1].lstrip('.').lower()
+                if ext in Yaml.extensions():
+                    file_data = Yaml.read(self.path)
+                elif ext in Json.extensions():
+                    file_data = Json.read(self.path)
 
             # merge contents of file with data dict arg
             self.data = DictUtils.merge(file_data, self.data)
@@ -245,6 +271,7 @@ class Manifest(object):
         return bootstrap_object.params if bootstrap_object else {}
 
     def bind(self, rebind=False):
+        # TODO: do away with "rebind" madness. forgot why it's even there.
         self.app.binder.bind(rebind=rebind)
 
     def _discover_ravel_types(self, namespace: Dict):
@@ -358,6 +385,8 @@ class Manifest(object):
             self.scanner.scan('ravel.ext.gaming.pygame')
         if 'falcon' in self._installed_pkg_names:
             self.scanner.scan('ravel.ext.falcon')
+        if 'celery' in self._installed_pkg_names:
+            self.scanner.scan('ravel.ext.celery')
 
         # scan the app project package
         if self.package:
