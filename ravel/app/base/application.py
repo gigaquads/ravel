@@ -1,6 +1,7 @@
 import inspect
 import logging
 
+from threading import local
 from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
 from collections import deque, OrderedDict, namedtuple
 
@@ -35,29 +36,31 @@ class Application(object):
     def __init__(
         self,
         middleware: List['Middleware'] = None,
+        manifest: Manifest = None,
         mode: Mode = Mode.normal,
     ):
-        self._state = DictObject()
-        self._actions = {}
-        self._res = DictObject()
-        self._store_types = DictObject()
-        self._store_manager = None
-        self._api = DictObject()
-        self._manifest = None
-        self._arg_loader = None
-        self._is_bootstrapped = False
-        self._is_started = False
-        self._namespace = {}
-        self._json_encoder = JsonEncoder()
-        self._binder = ResourceBinder()
+        self.manifest = Manifest.from_object(manifest)
+        self.local = local()
+
         self._mode = mode
+        self._res = DictObject()
+        self._storage = None
+        self._actions = DictObject()
+        self._namespace = {}
+        self._json = JsonEncoder()
+        self._arg_loader = None
+        self._binder = ResourceBinder()
+
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.app_types)
         ])
 
-    def __contains__(self, action_name: Text):
-        return action_name in self._actions
+        self._is_bootstrapped = False
+        self._is_started = False
+
+    def __contains__(self, action: Text):
+        return action in self._actions
 
     def __repr__(self):
         return (
@@ -70,11 +73,7 @@ class Application(object):
 
     def __call__(
         self, *args, **kwargs
-    ) -> Union[
-            ActionDecorator,
-            List[ActionDecorator],
-            'Application'
-        ]:
+    ) ->Union[ActionDecorator, List[ActionDecorator]]:
         """
         Use this to decorate functions, adding them to this Application.
         Each time a function is decorated, it arives at the "on_decorate"
@@ -94,12 +93,24 @@ class Application(object):
         return self.decorator_type(self, *args, **kwargs)
 
     @property
+    def decorator_type(self) -> Type[ActionDecorator]:
+        return ActionDecorator
+
+    @property
+    def action_type(self) -> Type[Action]:
+        return Action
+
+    @property
     def mode(self) -> Mode:
         return self._mode
 
     @mode.setter
     def mode(self, mode):
         self._mode = Application.Mode(mode)
+
+    @property
+    def is_bootstrapped(self) -> bool:
+        return self._is_bootstrapped
 
     @property
     def is_simulation(self) -> bool:
@@ -113,28 +124,12 @@ class Application(object):
             self._mode = Application.Mode.normal
 
     @property
-    def decorator_type(self) -> Type[ActionDecorator]:
-        return ActionDecorator
-
-    @property
-    def action_type(self) -> Type[Action]:
-        return Action
-
-    @property
-    def manifest(self) -> Manifest:
-        return self._manifest
-
-    @property
-    def state(self) -> DictObject:
-        return self._state
+    def json(self) -> JsonEncoder:
+        return self._json
 
     @property
     def middleware(self) -> List['Middleware']:
         return self._middleware
-
-    @property
-    def actions(self) -> Dict[Text, Action]:
-        return self._actions
 
     @property
     def loader(self) -> 'ArgumentLoader':
@@ -149,16 +144,12 @@ class Application(object):
         return self._res
 
     @property
-    def api(self) -> DictObject:
-        return self._api
+    def actions(self) -> DictObject:
+        return self._actions
 
     @property
     def storage(self) -> 'StoreManager':
-        return self._store_manager
-
-    @property
-    def is_bootstrapped(self) -> bool:
-        return self._is_bootstrapped
+        return self._storage
 
     def register(self, action: 'Action', overwrite=False) -> 'Application':
         """
@@ -170,7 +161,6 @@ class Application(object):
                 f'{get_class_name(self)}...'
             )
             self._actions[action.name] = action
-            self._api[action.name] = action
         else:
             raise ApplicationError(
                 message=f'action already registered: {action.name}',
@@ -200,7 +190,7 @@ class Application(object):
                 else:
                     store_type = store_obj
 
-            self._store_types[get_class_name(store_type)] = store_type
+            self._storage.store_types[get_class_name(store_type)] = store_type
             self._res[get_class_name(resource_type)] = resource_type
 
             if not resource_type.is_bootstrapped():
@@ -231,47 +221,47 @@ class Application(object):
         manifest: Manifest = None,
         namespace: Dict = None,
         middleware: List = None,
+        force=False,
         *args,
         **kwargs
     ) -> 'Application':
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
-        if self.is_bootstrapped:
-            console.warning(f'{self} already bootstrapped. skipping...')
+        if self.is_bootstrapped and (not force):
+            console.warning(
+                f'{get_class_name(self)} already bootstrapped. '
+                f'skipping'
+            )
+            return self
 
-        console.debug(f'bootstrapping "{get_class_name(self)}" Application...')
+        console.debug(f'bootstrapping {get_class_name(self)} application')
+
+        # merge additional namespace data into namespace accumulator
+        self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
         if middleware:
             self._middleware.extend(
                 m for m in middleware if isinstance(self, m.app_types)
             )
 
-        # merge additional namespace data into namespace accumulator
-        self._namespace = DictUtils.merge(self._namespace, namespace or {})
-
-        # create, load, and process the manifest
-        # bootstrap the res and data access layers, and
-        # bind each Resource class with its Store object.
-        if manifest is None:
-            self._manifest = Manifest()
-        elif isinstance(manifest, str):
-            self._manifest = Manifest(path=manifest)
-        elif isinstance(manifest, dict):
-            self._manifest = Manifest(data=manifest)
+        if manifest is not None:
+            self.manifest = Manifest.from_object(manifest)
         else:
-            self._manifest = manifest
+            # manifest expected to have been passed into ctor
+            assert self.manifest is not None
 
-        self._manifest.load()
-        self._manifest.process(app=self, namespace=self._namespace)
+        self.manifest.process(app=self, namespace=self._namespace)
 
-        self._store_manager = StoreManager(self, self._manifest.types.stores)
-        self._res.update(self._manifest.types.res)
-        self._api.update(self._actions)
+        self._storage = StoreManager(self, self.manifest.types.stores)
+        self._res.update(self.manifest.types.res)
 
-        self._manifest.bootstrap()
-        self._manifest.bind(rebind=True)
+        self.manifest.bootstrap()
+        self.manifest.bind(rebind=True)
 
+        # init the arg loader, which is responsible for replacing arguments
+        # passed in as ID's with their respective Resources
+        self._arg_loader = ArgumentLoader(self)
 
         # bootstrap the middlware
         for mware in self.middleware:
@@ -282,15 +272,9 @@ class Application(object):
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
-
         self._is_bootstrapped = True
 
-        # init the arg loader, which is responsible for replacing arguments
-        # passed in as ID's with their respective Resources
-        self._arg_loader = ArgumentLoader(self)
-
-        console.debug(f'finished bootstrapping application')
-
+        console.debug(f'finished bootstrapping {get_class_name(self)}')
         return self
 
     def start(self, *args, **kwargs):
@@ -299,19 +283,25 @@ class Application(object):
         being used, like in a web framework or a REPL.
         """
         self._is_started = True
-        return self.on_start()
+        return self.on_start(*args, **kwargs)
 
-    def inject(self, func: Callable, res=True, stores=True, api=True) -> Callable:
+    def inject(
+        self,
+        func: Callable,
+        include_resource_types=True,
+        include_store_types=True,
+        include_actions=False
+    ) -> Callable:
         """
         Inject Resource, Store, and/or Action classes into the lexical scope of
         the given function.
         """
-        if res:
+        if include_resource_types:
             inject(func, self.res)
-        if stores:
-            inject(func, self.storage.utilized_store_types)
-        if api:
-            inject(func, self.api)
+        if include_store_types:
+            inject(func, self.storage.store_types)
+        if include_actions:
+            inject(func, self.actions)
 
         return func
 
@@ -338,7 +328,7 @@ class Application(object):
         can add the decorated function to, say, a web framework as a route.
         """
 
-    def on_start(self) -> object:
+    def on_start(self, *args, **kwargs) -> object:
         """
         Custom logic to perform when app.start is called. The return value from
         on_start is used at the return value of start.
@@ -369,7 +359,7 @@ class Application(object):
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
                     target_dict = args_dict
-                    index = idx
+                    index = idx - 1  # -1 because of injected "request" arg
                 else:
                     target_dict = kwargs
             elif param.kind == inspect.Parameter.POSITIONAL_ONLY:

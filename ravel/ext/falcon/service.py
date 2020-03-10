@@ -10,6 +10,8 @@ from appyratus.env import Environment
 
 from ravel.app.apps.web import AbstractWsgiService
 from ravel.util.json_encoder import JsonEncoder
+from ravel.util.loggers import console
+from ravel.util import get_class_name
 
 from .media import JsonHandler
 from .resource import FalconResource
@@ -41,7 +43,14 @@ class FalconService(AbstractWsgiService):
         response.status = falcon.HTTP_500
         traceback.print_exc()
 
-    def start(self, *args, **kwargs):
+    def on_start(self, *args, **kwargs):
+        console.info(
+            message=f'starting Falcon web service',
+            data={
+                'address': f'{self.host}:{self.port}',
+                'endpoints': sorted(self.actions.keys()),
+            }
+        )
         return self.entrypoint(*args, **kwargs)
 
     def entrypoint(

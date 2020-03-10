@@ -83,10 +83,11 @@ class ResolverProperty(property):
             if (value is not None) or resolver.nullable:
                 resource.internal.state[resolver.name] = value
             elif (value is None) and (not resolver.nullable):
-                console.warning(
+                console.debug(
                     message=f'ignoring attempt to assign None to {self}',
                     data={
                         'resource': resource._id,
+                        'resolver': self.resolver.name,
                         'reason': 'resolver not nullable',
                     }
                 )

@@ -2,11 +2,12 @@ from typing import Dict, Tuple
 
 from ravel.exceptions import NotAuthorized
 from ravel.util.misc_functions import is_sequence, normalize_to_tuple
-from ..base import Middleware
+from ravel.app.middleware.middleware import Middleware
+
 from .guard import Guard, GuardFailure
 
 
-class GuardMiddleware(Middleware):
+class EvaluateGuards(Middleware):
     """
     Apply the Guard(s) associated with a action, set via the `auth`
     ActionDecorator keyword argument, e.g., repl(auth=IsFoo()).
@@ -16,8 +17,7 @@ class GuardMiddleware(Middleware):
     def on_request(
         self,
         action: 'Action',
-        raw_args: Tuple,
-        raw_kwargs: Dict,
+        request: 'Request',
         processed_args: Tuple,
         processed_kwargs: Dict,
     ):

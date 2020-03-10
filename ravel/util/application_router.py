@@ -4,6 +4,8 @@ from typing import Text, Dict, List
 
 from appyratus.cli import CliProgram, PositionalArg, OptionalArg
 
+from ravel.util.misc_functions import import_object
+
 
 class ApplicationRouter(CliProgram):
     """
@@ -25,10 +27,16 @@ class ApplicationRouter(CliProgram):
         Do not merge unknown args into the args dict, as the app router
         only cares about the app field and nothing else.
         """
-        self._manifest = manifest
-        self._apps = applications or {}
-        self._default_app = default_app
         super().__init__(merge_unknown=False, *args, **kwargs)
+        self._manifest = manifest
+        self._default_app = default_app
+        self._apps = applications or {}
+
+        # if applications were specified by dotted-path,
+        # we perform the import here dynamically.
+        for k, v in self._apps.items():
+            if isinstance(v, str):
+                self._apps[k] = import_object(v)
 
     def args(self):
         """

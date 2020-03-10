@@ -2,8 +2,6 @@ import inspect
 
 from typing import Dict, Tuple, Set, Type, List
 
-from appyratus.memoize import memoized_property
-
 from ravel.util.misc_functions import get_class_name
 from ravel.util.loggers import console
 
@@ -33,18 +31,18 @@ class Middleware(object):
         self.on_bootstrap()
         self._is_bootstrapped = True
 
-    def on_bootstrap(self):
-        pass
-
     @property
     def is_bootstrapped(self) -> bool:
         return self._is_bootstrapped
 
     @property
     def app(self) -> 'Application':
+        """
+        The Application using this middleware.
+        """
         return self._app
 
-    @memoized_property
+    @property
     def app_types(self) -> Tuple[Type['Application']]:
         """
         Return a tuple of Application class objects for which this middleware
@@ -54,9 +52,15 @@ class Middleware(object):
 
         return (ravel.Application, )
 
+    def on_bootstrap(self):
+        """
+        Developer-defined custom logic triggered while bootstrapping.
+        """
+
     def pre_request(
         self,
         action: 'Action',
+        request: 'Request',
         raw_args: Tuple,
         raw_kwargs: Dict
     ):
@@ -70,8 +74,7 @@ class Middleware(object):
     def on_request(
         self,
         action: 'Action',
-        raw_args: Tuple,
-        raw_kwargs: Dict,
+        request: 'Request',
         processed_args: Tuple,
         processed_kwargs: Dict
     ):
@@ -85,10 +88,7 @@ class Middleware(object):
     def post_request(
         self,
         action: 'Action',
-        raw_args: Tuple,
-        raw_kwargs: Dict,
-        processed_args: Tuple,
-        processed_kwargs: Dict,
+        request: 'Request',
         result,
     ):
         """
@@ -98,10 +98,7 @@ class Middleware(object):
     def post_bad_request(
         self,
         action: 'Action',
-        raw_args: Tuple,
-        raw_kwargs: Dict,
-        processed_args: Tuple,
-        processed_kwargs: Dict,
+        request: 'Request',
         exc: Exception,
     ):
         """

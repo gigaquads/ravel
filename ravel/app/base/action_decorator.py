@@ -43,7 +43,7 @@ class ActionDecorator(object):
         else:
             func = obj
             action = self.setup_action(func, False)
-            return action
+            return func
 
     def setup_action(self, func, overwrite):
         action = self.app.action_type(func, self)

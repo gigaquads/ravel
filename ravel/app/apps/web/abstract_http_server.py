@@ -12,10 +12,15 @@ from ravel.util import get_class_name
 from ravel.util.misc_functions import get_callable_name
 
 
+DEFAULT_HOST = 'localhost'
+DEFAULT_PORT = 8081
+
 class AbstractHttpServer(Application):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.route_2_endpoint = defaultdict(dict)
+        self.host = None
+        self.port = None
 
     @property
     def decorator_type(self) -> Type['EndpointDecorator']:
@@ -33,6 +38,10 @@ class AbstractHttpServer(Application):
             if route in self.route_2_endpoint:
                 self.app.route_2_endpoint[route][endpoint.method] = endpoint
 
+    def on_bootstrap(self, host: Text = None, port: int = None):
+        self.host = host or DEFAULT_HOST
+        self.port = port or DEFAULT_PORT
+
     def route(self, method, route, args=None, kwargs=None):
         method = method.lower()
         route = route.lower()
@@ -44,6 +53,7 @@ class AbstractHttpServer(Application):
 
     def client(self, host, port, scheme='http'):
         return HttpClient(self, scheme, host, port)
+
 
 
 class EndpointDecorator(ActionDecorator):
@@ -99,6 +109,7 @@ class Endpoint(Action):
                 f'routes={self.decorator.routes}',
             ])
         )
+
 
 
 class HttpClient(object):

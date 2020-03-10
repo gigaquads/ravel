@@ -5,7 +5,7 @@ from appyratus.enum import Enum
 from ravel.util.misc_functions import get_class_name
 from ravel.exceptions import RavelError
 
-from .argument_specification import ArgumentSpecification
+from .argument import ArgumentSpecification
 
 OP_CODE = Enum(AND='AND', OR='OR', NOT='NOT')
 

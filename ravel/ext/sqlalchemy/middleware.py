@@ -8,7 +8,7 @@ from ravel.util.loggers import console
 from .store import SqlalchemyStore
 
 
-class SqlalchemyMiddleware(Middleware):
+class ManageSqlalchemyTransaction(Middleware):
     """
     Manages a Sqlalchemy database transaction that encompasses the execution of
     an Action.
@@ -28,6 +28,7 @@ class SqlalchemyMiddleware(Middleware):
     def pre_request(
         self,
         action: 'Action',
+        request: 'Request',
         raw_args: Tuple,
         raw_kwargs: Dict
     ):
@@ -41,29 +42,29 @@ class SqlalchemyMiddleware(Middleware):
     def post_request(
         self,
         action: 'Action',
-        raw_args: Tuple,
-        raw_kwargs: Dict,
-        processed_args: Tuple,
-        processed_kwargs: Dict,
+        request: 'Request',
         result,
-        exc: Exception = None,
     ):
         """
         Commit or rollback the tranaction.
         """
-        # TODO: pass in exc to post_request if there
-        #   was an exception and rollback
+        console.debug(f'committing sqlalchemy transaction')
         try:
-            if exc is not None:
-                raise exc
-            console.debug(
-                f'{get_class_name(self)} trying to commit transaction'
-            )
             self.store_type.commit()
         except:
-            console.error(
-                f'{get_class_name(self)} rolling back transaction'
-            )
+            console.exception(f'rolling back sqlalchemy transaction')
+            self.store_type.rollback()
+        finally:
+            self.store_type.close()
+
+    def post_bad_request(
+        self,
+        action: 'Action',
+        request: 'Request',
+        exc: Exception,
+    ):
+        console.warning(f'rolling back sqlalchemy transaction')
+        try:
             self.store_type.rollback()
         finally:
             self.store_type.close()

@@ -95,13 +95,10 @@ class HttpServer(AbstractHttpServer):
         super().__init__(*args, **kwargs)
         self.handler = type('Handler', (self.Handler, ), {'service': self})
         self.json_encode = json_encode or JsonEncoder().encode
-        self.host = None
-        self.port = None
         self.server = None
 
     def on_bootstrap(self, host, port):
-        self.host = host
-        self.port = port
+        super.on_bootstrap(host, port)
         self.server = HTTPServer((self.host, self.port), self.handler)
 
     def on_start(self):
