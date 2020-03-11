@@ -27,7 +27,6 @@ class ApplicationRouter(CliProgram):
         Do not merge unknown args into the args dict, as the app router
         only cares about the app field and nothing else.
         """
-        super().__init__(merge_unknown=False, *args, **kwargs)
         self._manifest = manifest
         self._default_app = default_app
         self._apps = applications or {}
@@ -37,6 +36,7 @@ class ApplicationRouter(CliProgram):
         for k, v in self._apps.items():
             if isinstance(v, str):
                 self._apps[k] = import_object(v)
+        super().__init__(merge_unknown=False, *args, **kwargs)
 
     def args(self):
         """
@@ -46,7 +46,7 @@ class ApplicationRouter(CliProgram):
         routed to
         """
         app_names = ', '.join([r for r in self._apps.keys()])
-        app_arg_args = {'name': 'app', 'usage': f'the app to utilize [{app_names}'}
+        app_arg_args = {'name': 'app', 'usage': f'the app to utilize [{app_names}]'}
         if self._default_app:
             # default app is provided, so we will not require the app positional key
             app_arg = OptionalArg(**app_arg_args, default=self._default_app)
