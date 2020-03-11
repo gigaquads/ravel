@@ -70,7 +70,7 @@ class GrpcMethod(Action):
         obj = self.decorator.kwargs.get('response')
 
         if isinstance(obj, dict):
-            schema = Schema.factory(default_type_name, kwarg)()
+            schema = Schema.factory(default_type_name, obj)()
         elif isinstance(obj, Schema):
             schema = obj
         elif is_resource_type(obj):
@@ -107,7 +107,7 @@ class GrpcMethod(Action):
         obj = self.decorator.kwargs.get('request')
 
         if isinstance(obj, dict):
-            schema = Schema.factory(default_type_name, kwarg)()
+            schema = Schema.factory(default_type_name, obj)()
         elif isinstance(obj, Schema):
             schema = obj
         elif is_resource_type(obj):
