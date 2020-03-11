@@ -39,6 +39,7 @@ class Relationship(Resolver):
 
         self.joins = [Join(l, r) for l, r in pairs]
         self.target = self.joins[-1].right_loader.owner
+        self.many = self.joins[-1].right_many
 
     def pre_resolve(self, resource, request):
         if self.app.is_simulation:
@@ -88,6 +89,18 @@ class Relationship(Resolver):
             query = j1.build(source)
             if j2 is not None:
                 query = query.select(j2.left_field.name)
+            else:
+                # set values passed in through request
+                if request.parameters.select:
+                    query.select(request.parameters.select)
+                if request.parameters.where:
+                    query.where(request.parameters.where)
+                if request.parameters.order_by:
+                    query.order_by(request.parameters.order_by)
+                if request.parameters.limit:
+                    query.order_by(request.parameters.limit)
+                if request.parameters.offset:
+                    query.order_by(request.parameters.offset)
 
             value_2_queried_resource = defaultdict(set)
             queried_resources = query.execute()
@@ -145,6 +158,7 @@ class Join(object):
         self.left_loader_property = left
         self.left_loader = left.resolver
         self.left_field = left.resolver.field
+        self.right_many = False
 
         if isinstance(right, BatchResolverProperty):
             # in this case, the right-hand field in the join is specified
@@ -154,6 +168,7 @@ class Join(object):
             # point, we just replace the batch resolver property with the
             # non-batch one.
             right = getattr(right.resolver.owner, right.resolver.name)
+            self.right_many = True
 
         self.right_loader_property = right
         self.right_loader = right.resolver

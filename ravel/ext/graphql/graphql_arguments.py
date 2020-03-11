@@ -6,7 +6,7 @@ from ravel.query.predicate import Predicate
 from ravel.query.order_by import OrderBy
 
 
-class GraphQLArguments(object):
+class GraphqlArguments(object):
     """
     This class is responsible for parsing and normalizing the base arguments
     supplied to a GraphQL query node into the corresponding arguments expected
@@ -23,7 +23,7 @@ class GraphQLArguments(object):
         }
 
     @classmethod
-    def parse(cls, resource_type, ast_node) -> 'GraphQLArguments':
+    def parse(cls, resource_type, ast_node) -> 'GraphqlArguments':
         args = cls.extract_arguments_dict(ast_node)
         return cls(
             where=cls._parse_where(resource_type, args.pop('where', None)),

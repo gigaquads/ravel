@@ -77,6 +77,7 @@ class Executor(object):
 
     def _execute_requests(self, query, resources, requests):
         for request in requests:
+            request.query = query
             resolver = request.resolver
             # first try resolving in batch
             if len(resources) > 1:
@@ -89,7 +90,7 @@ class Executor(object):
                         elif (not resolver.many) and is_batch(value):
                             value = None
                         resource.internal.state[resolver.name] = value
-                    return
+                    continue
 
             # default on resolving for each resource separatesly
             for resource in resources:

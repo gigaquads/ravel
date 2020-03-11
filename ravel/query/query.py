@@ -194,13 +194,12 @@ class Query(object):
             request = None
             if isinstance(obj, LoaderProperty) and (obj.decorator is None):
                 resolver_property = obj
-                request = Request(resolver_property.resolver, query=self)
+                request = Request(resolver_property.resolver)
             elif isinstance(obj, ResolverProperty):
                 resolver_property = obj
-                request = Request(resolver_property.resolver, query=self)
+                request = Request(resolver_property.resolver)
             elif isinstance(obj, Request):
                 request = obj
-                request.query = self
 
             if request:
                 if self.from_request is not None:

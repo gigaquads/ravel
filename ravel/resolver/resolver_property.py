@@ -44,7 +44,7 @@ class ResolverProperty(property):
         """
         return self.resolver.owner.ravel.app
 
-    def select(self, *items: Tuple[Text]):
+    def select(self, *items: Tuple):
         """
         Build and return a query request. This is used in query-building syntax.
         It's used like this:

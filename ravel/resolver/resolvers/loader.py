@@ -17,6 +17,7 @@ from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
 from ravel.resolver.resolver import Resolver
 from ravel.resolver.resolver_property import ResolverProperty
+from ravel.schema import fields
 
 
 class Loader(Resolver):
