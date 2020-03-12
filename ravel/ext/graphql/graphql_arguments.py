@@ -1,6 +1,6 @@
 import re
 
-from typing import Dict, Set, Text, List, Type, Tuple
+from typing import Dict, Set, Text, List, Type, Tuple, Union
 
 from ravel.query.predicate import Predicate
 from ravel.query.order_by import OrderBy
@@ -12,8 +12,6 @@ class GraphqlArguments(object):
     supplied to a GraphQL query node into the corresponding arguments expected
     by a ravel Query object.
     """
-
-    _re_order_by = re.compile(r'(\w+)\s+((?:desc)|(?:asc))', re.I)
 
     @staticmethod
     def extract_arguments_dict(ast_node) -> Dict:
@@ -34,19 +32,38 @@ class GraphqlArguments(object):
         )
 
     @classmethod
-    def _parse_order_by(cls, order_by_strs: Tuple[Text]) -> Tuple[OrderBy]:
-        order_by_strs = order_by_strs or []
-        order_by_list = []
+    def _parse_order_by(cls, order_by_strs: Union[Text, Tuple[Text]]) -> Tuple[OrderBy]:
+        if isinstance(order_by_strs, str):
+            order_by_strs = [order_by_strs]
+        else:
+            order_by_strs = order_by_strs or []
+
+        order_bys = []
+
         for order_by_str in order_by_strs:
-            match = self._re_order_by.match(order_by_str)
-            if match is not None:
-                key, asc_or_desc = match.groups()
-                order_by = OrderBy.load({
-                    'desc': asc_or_desc.lower() == 'desc',
-                    'key': key,
-                })
-                order_by_list.append(order_by)
-        return tuple(order_by_list)
+            parts = order_by_str.strip().split()
+
+            if len(parts) == 1:
+                key = parts
+                desc = False
+            elif len(parts) == 2:
+                key = parts[0]
+
+                ordering = parts[1].lower()
+                if ordering == 'desc':
+                    desc = True
+                elif ordering == 'asc':
+                    desc = False
+                else:
+                    raise ValueError(
+                        f'unrecognized "order by" value: {order_by_str}'
+                    )
+
+                desc = True if parts[1].lower() == 'desc' else False
+                order_by = OrderBy.load({'key': key, 'desc': desc})
+                order_bys.append(order_by)
+
+        return tuple(order_bys)
 
     @classmethod
     def _parse_offset(cls, raw_offset) -> int:
