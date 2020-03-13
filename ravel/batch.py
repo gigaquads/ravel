@@ -21,6 +21,7 @@ from ravel.schema import Field, String, Int, Bool, Float, Id
 from ravel.util.loggers import console
 from ravel.util import is_batch, is_resource
 from ravel.entity import Entity
+from ravel.query.order_by import OrderBy
 
 
 class Batch(Entity):
@@ -204,6 +205,12 @@ class Batch(Entity):
             owner.generate(resolvers=resolvers, values=values)
             for _ in range(count)
         )
+
+    def sort(self, order_by) -> 'Batch':
+        self.internal.resources = OrderBy.sort(
+            self.internal.resources, order_by
+        )
+        return self
 
     def merge(
         self,

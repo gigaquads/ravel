@@ -17,6 +17,7 @@ from appyratus.utils import DictUtils
 from ravel.schema import Schema, Field, fields
 from ravel.constants import ID, REV
 from ravel.util import union
+from ravel.query.order_by import OrderBy
 from ravel.query.predicate import (
     Predicate,
     ConditionalPredicate,
@@ -221,12 +222,8 @@ class SimulationStore(Store):
 
             # order the records
             if order_by:
-                for order_by_spec in order_by:
-                    records = sorted(
-                        records,
-                        key=lambda x: x[order_by_spec.key],
-                        reverse=order_by_spec.desc
-                    )
+                records = OrderBy.sort(records, order_by)
+
             # paginate after ordering
             if offset is not None:
                 if limit is not None:
