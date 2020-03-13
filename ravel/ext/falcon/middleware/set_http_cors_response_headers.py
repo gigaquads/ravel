@@ -53,7 +53,7 @@ class SetHttpCorsResponseHeaders(Middleware):
         request: 'Request',
         result
     ):
-        falcon_request, falcon_response = request.raw_args[:2]
+        falcon_request, falcon_response = request.internal.raw_args[:2]
         falcon_response.set_headers(
             {
                 'Access-Control-Allow-Origin': self._allow_origin,

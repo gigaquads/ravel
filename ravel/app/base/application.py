@@ -22,16 +22,17 @@ from .argument_loader import ArgumentLoader
 from .resource_binder import ResourceBinder
 
 
+class Mode(EnumValueStr):
+    @staticmethod
+    def values():
+        return {
+            'normal',
+            'simulation',
+        }
+
+
 class Application(object):
-
-    class Mode(EnumValueStr):
-        @staticmethod
-        def values():
-            return {
-                'normal',
-                'simulation',
-            }
-
+    Mode = Mode
 
     def __init__(
         self,
@@ -151,6 +152,9 @@ class Application(object):
     def storage(self) -> 'StoreManager':
         return self._storage
 
+    def action(self, *args, **kwargs):
+        return self.decorator_type(self, *args, **kwargs)
+
     def register(self, action: 'Action', overwrite=False) -> 'Application':
         """
         Add a Action to this app.
@@ -221,6 +225,7 @@ class Application(object):
         manifest: Manifest = None,
         namespace: Dict = None,
         middleware: List = None,
+        mode: Mode = Mode.normal,
         force=False,
         *args,
         **kwargs
@@ -236,6 +241,10 @@ class Application(object):
             return self
 
         console.debug(f'bootstrapping {get_class_name(self)} application')
+
+        # override mode set in constructor
+        if mode is not None:
+            self._mode = Application.Mode(mode)
 
         # merge additional namespace data into namespace accumulator
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
