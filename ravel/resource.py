@@ -290,6 +290,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     @classmethod
     def generate(cls, resolvers: Set[Text] = None, values: Dict = None) -> 'Resource':
+        instance = cls()
         values = values or {}
         keys = resolvers or set(cls.ravel.schema.fields.keys())
         resolver_objs = Resolver.sort(
@@ -505,7 +506,7 @@ class Resource(Entity, metaclass=ResourceMeta):
     # CRUD Methods
 
     @classmethod
-    def select(cls, *resolvers: Tuple[Text], parent: 'Query' = None):
+    def select(cls, *resolvers: Tuple[Text], parent: 'Query' = None) -> 'Query':
         return Query(target=cls, parent=parent).select(resolvers)
 
     def create(self, data: Dict = None, **more_data) -> 'Resource':
