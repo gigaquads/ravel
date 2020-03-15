@@ -261,9 +261,3 @@ class Query(object):
         else:
             self.parameters.limit = None
         return self
-
-
-# To convenience and cyclic import avoidance,
-# we'll set a global reference to the Query
-# class on the Request class here:
-Request.Query = Query

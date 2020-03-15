@@ -55,7 +55,7 @@ class GrpcService(Application):
 
     Note that gRPC manages its server as a thread pool. When we call
     GrpcService.start, we are really just starting the threads in the pool and
-    then putting the main thread in a spin lock.
+    then putting the main thread in a sleep lock.
     """
 
     class GrpcOptionsSchema(Schema):
@@ -229,11 +229,11 @@ class GrpcService(Application):
             message='gRPC server started. Press ctrl+c to stop.',
             data={
                 'address': self.grpc.options.server_address,
-                'methods': list(self.api.keys()),
+                'methods': list(self.actions.keys()),
             }
         )
 
-        # spin-lock the main thread to keep the server running,
+        # sleep-lock the main thread to keep the server running,
         # as the server runs as a daemon.
         try:
             while True:
@@ -347,7 +347,10 @@ class GrpcService(Application):
             raise Exception('could not find grpc Servicer class')
 
         # create dynamic Servicer subclass
-        servicer = type(servicer_type_name, (abstract_type, ), self.actions)()
+        servicer_type = type(
+            servicer_type_name, (abstract_type, ), self.actions.to_dict()
+        )
+        servicer = servicer_type()
 
         # register the Servicer with the server
         servicer.add_to_grpc_server = (
