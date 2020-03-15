@@ -63,7 +63,7 @@ class Repl(Application):
         local_ns.update(self._namespace)
         local_ns.update(self.actions)
         local_ns.update(self.res)
-        local_ns.update(self.stores)
+        local_ns.update(self.storage.utilized_store_types)
 
         # enter an ipython shell
         self.shell.mainloop(local_ns=local_ns)
