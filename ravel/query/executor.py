@@ -69,6 +69,8 @@ class Executor(object):
             batch = resource_type.Batch.generate(
                 resolvers=fields, values=values, count=count
             )
+            if query.parameters.order_by:
+                batch.sort(query.parameters.order_by)
 
         if sources:
             batch.extend(sources)

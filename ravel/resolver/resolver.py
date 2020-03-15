@@ -33,9 +33,9 @@ class Resolver(object):
 
     def __init__(
         self,
+        target=None,
         name=None,
         owner=None,
-        target=None,
         decorator=None,
         on_resolve=None,
         on_resolve_batch=None,

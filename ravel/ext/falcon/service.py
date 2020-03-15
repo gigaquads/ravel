@@ -47,7 +47,6 @@ class FalconService(AbstractWsgiService):
         console.info(
             message=f'starting Falcon web service',
             data={
-                'address': f'{self.host}:{self.port}',
                 'endpoints': sorted(self.actions.keys()),
             }
         )

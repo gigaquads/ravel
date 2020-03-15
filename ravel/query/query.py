@@ -120,7 +120,7 @@ class Query(object):
     def execute(
         self,
         first=None,
-        simulate=False
+        simulate=False,
     ) -> Union['Resource', 'Batch']:
         """
         Execute the query, returning a single Resource ora a Batch.
