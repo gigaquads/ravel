@@ -1,4 +1,6 @@
-from typing import Text, List
+import inspect 
+
+from typing import Text, List, Set, Dict, ByteString
 
 from appyratus.schema import Schema, fields as field_types
 from appyratus.utils import DictObject, StringUtils
@@ -6,6 +8,7 @@ from appyratus.utils import DictObject, StringUtils
 from ravel.app import Action
 from ravel.util.misc_functions import extract_res_info_from_annotation
 from ravel.util import is_resource_type, get_class_name
+from ravel.util.loggers import console
 from ravel.constants import ID, REV
 
 from .proto import MessageGenerator
@@ -14,14 +17,19 @@ from .proto import MessageGenerator
 class GrpcMethod(Action):
 
     _py_type_2_field_type = {
-        'int': field_types.Int,
-        'float': field_types.Float,
-        'str': field_types.String,
-        'bool': field_types.Bool,
-        'bytes': field_types.Bytes,
-        'dict': field_types.Dict,
-        'list': field_types.List,
-        'set': field_types.Set,
+        int: field_types.Int,
+        float: field_types.Float,
+        str: field_types.String,
+        Text: field_types.String,
+        bool: field_types.Bool,
+        bytes: field_types.Bytes,
+        ByteString: field_types.Bytes,
+        dict: field_types.Dict,
+        Dict: field_types.Dict,
+        list: field_types.List,
+        List: field_types.List,
+        set: field_types.Set,
+        Set: field_types.Set,
     }
 
     def __init__(self, target, decorator):
@@ -44,14 +52,20 @@ class GrpcMethod(Action):
         return self._returns_stream
 
     def generate_request_message_type(self) -> Text:
-        return self._msg_gen.emit(self.schemas.request) + '\n'
+        text = self._msg_gen.emit(self.app, self.schemas.request)
+        return text + '\n' if text is not None else None
 
     def generate_response_message_type(self) -> Text:
-        return self._msg_gen.emit(self.schemas.response) + '\n'
+        text = self._msg_gen.emit(self.app, self.schemas.response)
+        return text + '\n' if text is not None else None
 
     def generate_protobuf_function_declaration(self, stream=None) -> Text:
         req_msg_type = get_class_name(self.schemas.request)
+        if req_msg_type.endswith('Schema'):
+            req_msg_type = req_msg_type[:-len('Schema')]
         resp_msg_type = get_class_name(self.schemas.response)
+        if resp_msg_type.endswith('Schema'):
+            resp_msg_type = resp_msg_type[:-len('Schema')]
         if stream is not None:
             stream_str = 'stream ' if stream else ''
         elif self._returns_stream:
@@ -137,12 +151,21 @@ class GrpcMethod(Action):
                 field = field_types.List(self.app.res[type_name].Schema())
             else:
                 field = field_types.Nested(self.app.res[type_name].Schema())
-        elif type_name is not None:
-            field_type = self._py_type_2_field_type.get(type_name)
-            if many:
-                field = field_types.List(field_type())
-            else:
-                field = field_type()
+        elif annotation is not None:
+            field_type = self._py_type_2_field_type.get(annotation)
+            if field_type:
+                if many:
+                    field = field_types.List(field_type())
+                else:
+                    field = field_type()
+            elif annotation is not inspect._empty:
+                console.error(
+                    message=f'cannot infer protobuf field type',
+                    data={
+                        'annotation': str(annotation),
+                        'name': name,
+                    }
+                )
 
         if field is not None and name:
             field.name = name

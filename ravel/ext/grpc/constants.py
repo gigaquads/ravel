@@ -12,3 +12,15 @@ python3 -m grpc_tools.protoc
     --grpc_python_out={build_dir}
     {proto_file}
 '''
+PROTOC_WEB_GENERATE_MESSAGE_CLASSES_COMMAND = '''
+protoc 
+    -I {include_dir}
+    --js_out=import_style=commonjs:{build_dir}
+    {proto_file}
+'''
+PROTOC_WEB_GENERATE_CLIENT_COMMAND = '''
+protoc
+    -I {include_dir}
+    --grpc-web_out=import_style=commonjs,mode=grpcwebtext:{build_dir}
+    {proto_file}
+'''

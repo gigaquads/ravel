@@ -8,73 +8,6 @@ from appyratus.schema import Schema, fields
 from ravel.exceptions import RavelError
 from ravel.util.misc_functions import get_class_name
 
-
-
-class ActionError(RavelError):
-    """
-    An `Error` simply keeps a record of an Exception that occurs and the
-    middleware object which raised it, provided there was one. This is used
-    in the processing of requests, where the existence of errors has
-    implications on control flow for middleware.
-    """
-
-    def __init__(self, exc, middleware=None):
-        self.middleware = middleware
-        self.timestamp = TimeUtils.utc_now()
-        self.exc = exc
-        if isinstance(exc, RavelError) and exc.wrapped_traceback:
-            self.trace = self.exc.wrapped_traceback.strip().split('\n')[1:]
-            self.exc_message = self.trace.pop().split(': ', 1)[1]
-        else:
-            self.trace = traceback.format_exc().strip().split('\n')[1:]
-            self.exc_message = self.trace.pop().split(': ', 1)[1]
-
-    def to_dict(self):
-        data = {
-            'timestamp': self.timestamp.isoformat(),
-            'message': self.exc_message,
-            'traceback': self.trace,
-        }
-
-        if isinstance(self.exc, RavelError):
-            if not self.exc.wrapped_exception:
-                data['exception'] = get_class_name(self.exc)
-            else:
-                data['exception'] = get_class_name(self.exc.wrapped_exception)
-
-            if self.exc.logged_traceback_depth is not None:
-                depth = self.exc.logged_traceback_depth
-                data['traceback'] = data['traceback'][-2*depth:]
-
-        if self.middleware is not None:
-            data['middleware'] = get_class_name(self.middleware)
-
-        if isinstance(self.exc, RavelError):
-            data.update(self.exc.data)
-
-        return data
-
-
-class BadRequest(RavelError):
-    """
-    If any exceptions are raised during the execution of Middleware or an
-    action callable itself, we raise BadRequest.
-    """
-
-    def __init__(self,
-        action: 'Action',
-        state: 'ExecutionState',
-        *args,
-        **kwargs
-    ):
-        super().__init__(
-            f'error/s occured in action '
-            f'"{action.name}" (see logs)'
-        )
-
-        self.action = action
-
-
 from .field_adapters import (
     FieldAdapter,
     SchemaFieldAdapter,
@@ -82,7 +15,6 @@ from .field_adapters import (
     ScalarFieldAdapter,
     ArrayFieldAdapter,
 )
-
 
 class MessageGenerator(object):
     def __init__(self, adapters: Dict[Type[fields.Field], FieldAdapter]=None):
@@ -92,6 +24,7 @@ class MessageGenerator(object):
             fields.Nested: NestedFieldAdapter(),
             fields.String: ScalarFieldAdapter('string'),
             fields.FormatString: ScalarFieldAdapter('string'),
+            fields.Field: ScalarFieldAdapter('string'),
             fields.Email: ScalarFieldAdapter('string'),
             fields.Uuid: ScalarFieldAdapter('string'),
             fields.Bool: ScalarFieldAdapter('bool'),
@@ -130,9 +63,11 @@ class MessageGenerator(object):
 
     def emit(
         self,
+        app: 'Application',
         schema_type: Type['Schema'],
         type_name: Text = None,
-        depth=1
+        depth=1,
+        force=False,
     ) -> Text:
         """
         Recursively generate a protocol buffer message type declaration string
@@ -140,10 +75,17 @@ class MessageGenerator(object):
         """
         if isinstance(schema_type, (type, Schema)):
             type_name = type_name or get_class_name(schema_type)
+            if type_name.endswith('Schema'):
+                type_name = type_name[:-len('Schema')]
         else:
             raise ValueError(
                 'unrecognized schema type: "{}"'.format(schema_type)
             )
+
+        # we don't want to create needless copies of to Resource schemas
+        # while recursively generating nested message types.
+        if (not force) and (type_name in app.res):
+            return None
 
         field_no2field = {}
         prepared_data = []
@@ -170,12 +112,13 @@ class MessageGenerator(object):
             field_decl = adapter.emit(field, field_no)
             field_decls.append(('  ' * depth) + field_decl + ';')
 
-        nested_message_types = [
-            self.emit(nested_schema, depth=depth + 1)
-            for nested_schema in {
-                type(s) for s in schema_type.children
-            }
-        ]
+        nested_message_types = []
+        for nested_schema in {type(s) for s in schema_type.children}:
+            type_source = self.emit(
+                app, nested_schema, depth=depth + 1, force=force
+            )
+            if type_source is not None:
+                nested_message_types.append(type_source)
 
         MESSAGE_TYPE_FSTR = (
             (('   ' * (depth - 1)) + '''message {type_name} ''') + \

@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+import random
 import inspect
 import shutil
 import subprocess
@@ -30,6 +31,7 @@ from ravel.app.base import Application
 
 from .grpc_method import GrpcMethod
 from .grpc_client import GrpcClient
+from .proto import MessageGenerator
 from .constants import (
     DEFAULT_HOST,
     DEFAULT_PORT,
@@ -39,6 +41,8 @@ from .constants import (
     PB2_MODULE_PATH_FSTR,
     PB2_GRPC_MODULE_PATH_FSTR,
     PROTOC_COMMAND_FSTR,
+    PROTOC_WEB_GENERATE_CLIENT_COMMAND,
+    PROTOC_WEB_GENERATE_MESSAGE_CLASSES_COMMAND,
 )
 
 
@@ -109,6 +113,15 @@ class GrpcService(Application):
 
     def build(self, manifest=None, options: Dict = None):
         self.bootstrap(manifest=manifest, build=True, options=options)
+
+    def build_js(self, manifest: Text, dest: Text):
+        """
+        Generate JavaScript files containing the porotobuf message types and
+        client stub.
+        """
+        self.bootstrap(manifest=manifest, build=False)
+        self._compile_grpc_web_message_classes(dest)
+        self._compile_grpc_web_client_stub(dest)
 
     def on_decorate(self, action):
         pass
@@ -321,13 +334,13 @@ class GrpcService(Application):
         routing requests to their downstream actions.
         """
         grpc = self.grpc
-        grpc.response_types = {
-            action: getattr(
-                grpc.pb2,
-                f'{StringUtils.camel(get_class_name(action.schemas.response))}'
-            )
-            for action in self.actions.values()
-        }
+        grpc.response_types = {}
+        for action in self.actions.values():
+            schema_type_name = get_class_name(action.schemas.response)
+            message_type_name = StringUtils.camel(schema_type_name)
+            if message_type_name.endswith('Schema'):
+                message_type_name = message_type_name[:-len('Schema')]
+            grpc.response_types[action.name] = message_type_name
 
     def _grpc_servicer_factory(self):
         """
@@ -395,20 +408,46 @@ class GrpcService(Application):
         Iterate over function actions, using request and response schemas to
         generate protobuf message and service types.
         """
+        msg_gen = MessageGenerator()
         visited_schema_types = set()
         lines = ['syntax = "proto3";']
         func_decls = []
+
+        def assign_field_numbers(schema):
+            all_field_nos = set(range(1, 1 + len(schema.fields)))
+            taken_field_nos = {
+                f.meta['field_no'] for f in schema.fields.values()
+                if 'field_no' in f.meta
+            }
+            available_field_nos = list(all_field_nos - taken_field_nos)
+            for field in schema.fields.values():
+                if 'field_no' not in field.meta:
+                    field.meta['field_no'] = available_field_nos.pop()
+
+        for resource_type in self.res.values():
+            schema = resource_type.ravel.schema
+            assign_field_numbers(schema)
+            type_name = get_class_name(schema)
+            if type_name.endswith('Schema'):
+                type_name = type_name[:-len('Schema')]
+            if type_name not in visited_schema_types:
+                visited_schema_types.add(type_name)
+                lines.append(msg_gen.emit(self, schema, force=True) + '\n')
 
         for action in self.actions.values():
             # generate protocol buffer Message types from action schemas
             if action.schemas.request:
                 type_name = get_class_name(action.schemas.request)
+                if type_name.endswith('Schema'):
+                    type_name = type_name[:-len('Schema')]
                 if type_name not in visited_schema_types:
                     lines.append(action.generate_request_message_type())
                     visited_schema_types.add(type_name)
 
             if action.schemas.response:
                 type_name = get_class_name(action.schemas.response)
+                if type_name.endswith('Schema'):
+                    type_name = type_name[:-len('Schema')]
                 if type_name not in visited_schema_types:
                     lines.append(action.generate_response_message_type())
                     visited_schema_types.add(type_name)
@@ -418,10 +457,10 @@ class GrpcService(Application):
 
         lines.append('service GrpcApplication {')
 
-        for decl in func_decls: lines.append('  ' + decl)
+        for decl in func_decls:
+            lines.append('  ' + decl)
 
         lines.append('}\n')
-
         source = '\n'.join(lines)
 
         console.info(
@@ -452,6 +491,56 @@ class GrpcService(Application):
             data={'command': protoc_command.split('\n')}
         )
 
+        err_msg = subprocess.getoutput(
+            re.sub(r'\s+', ' ', protoc_command)
+        )
+        if err_msg:
+            exit(err_msg)
+
+    def _compile_grpc_web_message_classes(self, dest: Text):
+        """
+        Compile the grpc .proto file, generating pb2 and pb2_grpc modules in the
+        build directory. These modules contain abstract base classes required
+        by the grpc server and client.
+        """
+        # build the shell command to run....
+        protoc_command = PROTOC_WEB_GENERATE_MESSAGE_CLASSES_COMMAND.format(
+            include_dir=os.path.realpath(
+                os.path.dirname(self.grpc.proto_file)
+            ) or '.',
+            build_dir=dest,
+            proto_file=os.path.basename(self.grpc.proto_file),
+        ).strip()
+
+        console.info(
+            message='generating gRPC-web message classes',
+            data={'command': protoc_command.split('\n')}
+        )
+        err_msg = subprocess.getoutput(
+            re.sub(r'\s+', ' ', protoc_command)
+        )
+        if err_msg:
+            exit(err_msg)
+
+    def _compile_grpc_web_client_stub(self, dest: Text):
+        """
+        Compile the grpc .proto file, generating pb2 and pb2_grpc modules in the
+        build directory. These modules contain abstract base classes required
+        by the grpc server and client.
+        """
+        # build the shell command to run....
+        protoc_command = PROTOC_WEB_GENERATE_CLIENT_COMMAND.format(
+            include_dir=os.path.realpath(
+                os.path.dirname(self.grpc.proto_file)
+            ) or '.',
+            build_dir=dest,
+            proto_file=os.path.basename(self.grpc.proto_file),
+        ).strip()
+
+        console.info(
+            message='generating gRPC-web client stub',
+            data={'command': protoc_command.split('\n')}
+        )
         err_msg = subprocess.getoutput(
             re.sub(r'\s+', ' ', protoc_command)
         )
