@@ -14,6 +14,7 @@ import pickle
 import codecs
 import pprint
 
+from multiprocessing import Process
 from threading import get_ident
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -52,6 +53,7 @@ from .constants import (
     PROTOC_WEB_GENERATE_MESSAGE_CLASSES_COMMAND,
 )
 
+# TODO: ensure all store types are thread-safe
 
 class GrpcService(Application):
     """
@@ -84,7 +86,8 @@ class GrpcService(Application):
         super().__init__(middleware=middleware, *args, **kwargs)
         self.grpc = DictObject()
         self.grpc.options = DictObject()
-        self.grpc.max_workers = mp.cpu_count() + 1
+        self.grpc.worker_process_count = mp.cpu_count() + 1
+        self.grpc.worker_thread_pool_size = 1
         self.grpc.pb2 = None
         self.grpc.pb2_grpc = None
         self.grpc.server = None
@@ -138,11 +141,8 @@ class GrpcService(Application):
         Take the attributes on the incoming protobuf Message object and
         map them to the args and kwargs expected by the action target.
         """
-        console.info(
-            message=f'RPC request',
-            data={
-                'method': action.name
-            }
+        console.debug(
+            message=f'RPC method {action.name} requested',
         )
 
         # get field data to process into args and kwargs
@@ -218,11 +218,6 @@ class GrpcService(Application):
         This method runs as the "initializer" for each thread in the grpc
         server's thread pool. Override in subclass.
         """
-        console.info(
-            f'bootrapping gRPC service in '
-            f'worker subprocess (pid: {os.getpid()})'
-        )
-        app.bootstrap(force=True, build=False)
 
     def on_start(self):
         """
@@ -235,18 +230,47 @@ class GrpcService(Application):
             )
             exit(-1)
 
-        console.debug(
-            f'creating gRPC thread pool with {self.grpc.max_workers} threads'
+        console.info(
+            message='strating gRPC server. Press ctrl+c to stop.',
+            data={
+                'address': self.grpc.options.server_address,
+                'methods': list(self.actions.keys()),
+                'worker_process_count': self.grpc.worker_process_count,
+                'worker_thread_pool_size': self.grpc.worker_thread_pool_size,
+            }
         )
 
+        if self.grpc.worker_process_count == 1:
+            # serve in main forground process
+            self.serve()
+        else:
+            # serve in forked subprocesses
+            self._spawn_worker_processes()
+
+    def _spawn_worker_processes(self):
+        def main(service):
+            service.bootstrap(force=True)
+            service.serve()
+
+        processes = []
+
+        for _ in range(self.grpc.worker_process_count):
+            process = Process(target=main, args=(self, ))
+            processes.append(process)
+            process.start()
+
+        for process in processes:
+            process.join(timeout=10)
+
+    def serve(self):
         # the grpc server runs in a thread pool
         self.grpc.executor = ThreadPoolExecutor(
-            max_workers=self.grpc.max_workers,
+            max_workers=self.grpc.worker_thread_pool_size,
             initializer=self.on_start_worker,
             initargs=(self, )
         )
 
-        for i in range(self.grpc.max_workers):
+        for i in range(self.grpc.worker_thread_pool_size):
             self.grpc.executor.submit(lambda: None)
 
         # build grpc server
@@ -261,15 +285,6 @@ class GrpcService(Application):
 
         self.grpc.server.start()
 
-        # suspend foreground process while grpc server runs in background
-        console.info(
-            message='gRPC server started. Press ctrl+c to stop.',
-            data={
-                'address': self.grpc.options.server_address,
-                'methods': list(self.actions.keys()),
-            }
-        )
-
         # sleep-lock the main thread to keep the server running,
         # as the server runs as a daemon.
         try:
@@ -280,7 +295,10 @@ class GrpcService(Application):
             if self.grpc.server is not None:
                 console.info(
                     message='stopping gRPC server',
-                    data={'grace_period': self.grpc.options.grace}
+                    data={
+                        'grace_period': self.grpc.options.grace,
+                        'pid': os.getpid(),
+                    }
                 )
                 self.grpc.server.stop(grace=self.grpc.options.grace)
 
