@@ -57,7 +57,7 @@ class Store(object, metaclass=StoreMeta):
         """
         Delegate a Store call to the named method, performing any side-effects,
         like creating a StoreHistory event if need be. This is used internally
-        by Resource to call into DAO methods.
+        by Resource to call into store methods.
         """
         # call the requested Store method
         func = getattr(self, method_name)

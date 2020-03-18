@@ -239,10 +239,9 @@ class GrpcService(Application):
                 'worker_thread_pool_size': self.grpc.worker_thread_pool_size,
             }
         )
-
         if self.grpc.worker_process_count == 1:
             # serve in main forground process
-            self.serve()
+            self._init_server_and_run()
         else:
             # serve in forked subprocesses
             self._spawn_worker_processes()
@@ -250,7 +249,7 @@ class GrpcService(Application):
     def _spawn_worker_processes(self):
         def main(service):
             service.bootstrap(force=True)
-            service.serve()
+            service._init_server_and_run()
 
         processes = []
 
@@ -262,7 +261,7 @@ class GrpcService(Application):
         for process in processes:
             process.join(timeout=10)
 
-    def serve(self):
+    def _init_server_and_run(self):
         # the grpc server runs in a thread pool
         self.grpc.executor = ThreadPoolExecutor(
             max_workers=self.grpc.worker_thread_pool_size,

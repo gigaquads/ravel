@@ -4,6 +4,7 @@ import glob
 from typing import Text, List, Set, Dict, Tuple
 from collections import defaultdict
 from datetime import datetime
+from threading import RLock
 
 from appyratus.env import Environment
 from appyratus.files import BaseFile, Yaml
@@ -16,6 +17,7 @@ from appyratus.utils import (
 
 from ravel.util.misc_functions import import_object
 from ravel.constants import ID, REV
+from ravel.loggers import console
 from ravel.exceptions import RavelError
 
 from .base import Store
@@ -47,7 +49,9 @@ class FilesystemStore(Store):
 
         self._paths = DictObject()
         self._cache_store = SimulationStore()
-
+        self._table_lock = RLock()
+        self._row_locks = defaultdict(RLock)
+        k
         # convert the ftype string arg into a File class ref
         if not ftype:
             self._ftype = Yaml
@@ -95,12 +99,14 @@ class FilesystemStore(Store):
         os.makedirs(self.paths.records, exist_ok=True)
 
         # bootstrap, bind, and backfill the in-memory cache
-        self._cache_store.bootstrap(resource_type.ravel.app)
-        self._cache_store.bind(resource_type)
-        self._cache_store.create_many(
-            record for record in self.fetch_all(ignore_cache=True).values()
-            if record
-        )
+        with self._table_lock:
+            if not self._cache_store.is_bootstrapped:
+                self._cache_store.bootstrap(resource_type.ravel.app)
+                self._cache_store.bind(resource_type)
+                self._cache_store.create_many(
+                    record for record in self.fetch_all(ignore_cache=True).values()
+                    if record
+                )
 
     def create_id(self, record):
         return record.get(ID, UuidString.next_id())
@@ -113,10 +119,11 @@ class FilesystemStore(Store):
 
     def create(self, record: Dict) -> Dict:
         _id = self.create_id(record)
-        record = self.update(_id, record)
-        record[ID] = _id
-        self._cache_store.create(record)
-        return record
+        with self._row_locks[_id]:
+            record = self.update(_id, record)
+            record[ID] = _id
+            self._cache_store.create(record)
+            return record
 
     def create_many(self, records):
         created_records = []
@@ -179,7 +186,16 @@ class FilesystemStore(Store):
 
             for _id in ids_to_fetch_from_fs:
                 fpath = self.mkpath(_id)
-                record = self.ftype.read(fpath)
+                with self._row_locks[_id]:
+                    try:
+                        record = self.ftype.read(fpath)
+                    except FileNotFoundError:
+                        records[_id] = None
+                        console.debug(
+                            message='file not found by filesystem store',
+                            data={'filepath': fpath}
+                        )
+                        continue
 
                 if record:
                     record, errors = self.schema.process(record)
@@ -211,21 +227,27 @@ class FilesystemStore(Store):
 
     def update(self, _id, data: Dict) -> Dict:
         fpath = self.mkpath(_id)
-        base_record = self.ftype.read(fpath)
-        base_record, errors = self.resource_type.ravel.schema.process(base_record)
+        j
+        with self._row_locks[_id]:
+            base_record = self.ftype.read(fpath)
+
+        schema = self.resource_type.ravel.schema
+        base_record, errors = schema.process(base_record)
+
         if base_record:
             # this is an upsert
             record = DictUtils.merge(base_record, data)
         else:
             record = data
 
+        record[REV] = self.increment_rev(record.get(REV))
         if ID not in record:
             record[ID] = _id
 
-        record[REV] = self.increment_rev(record.get(REV))
+        with self._row_locks[_id]:
+            self.ftype.write(path=fpath, data=record)
 
         self._cache_store.update(_id, record)
-        self.ftype.write(path=fpath, data=record)
         return record
 
     def update_many(self, _ids: List, updates: List = None) -> Dict:
@@ -237,7 +259,8 @@ class FilesystemStore(Store):
     def delete(self, _id) -> None:
         self._cache_store.delete(_id)
         fpath = self.mkpath(_id)
-        os.remove(fpath)
+        with self._row_locks[_id]:
+            os.remove(fpath)
 
     def delete_many(self, _ids: List) -> None:
         for _id in _ids:
