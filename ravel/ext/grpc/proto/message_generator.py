@@ -31,7 +31,7 @@ class MessageGenerator(object):
             fields.Float: ScalarFieldAdapter('double'),
             fields.Int: ScalarFieldAdapter('uint64'),
             fields.DateTime: ScalarFieldAdapter('uint64'),
-            fields.Dict: ScalarFieldAdapter('bytes'),
+            fields.Dict: ScalarFieldAdapter('string'),
             fields.List: ArrayFieldAdapter(),
             fields.Set: ArrayFieldAdapter(),
             # XXX redundant to List?  does not exist in schema.fields

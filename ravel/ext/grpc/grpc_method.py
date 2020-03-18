@@ -160,7 +160,7 @@ class GrpcMethod(Action):
                     field = field_type()
             elif annotation is not inspect._empty:
                 console.error(
-                    message=f'cannot infer protobuf field type',
+                    message=f'cannot infer protobuf field from annotation',
                     data={
                         'annotation': str(annotation),
                         'name': name,

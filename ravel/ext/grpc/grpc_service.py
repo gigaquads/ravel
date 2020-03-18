@@ -12,17 +12,24 @@ import multiprocessing as mp
 import socket
 import pickle
 import codecs
+import pprint
+
+from threading import get_ident
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    ProcessPoolExecutor,
+)
+from typing import Text, List, Dict, Type, Union, Type
+from importlib import import_module
+from datetime import date, datetime
 
 import grpc
 
-from threading import get_ident
-from concurrent.futures import ThreadPoolExecutor
-from typing import Text, List, Dict, Type, Union, Type
-from importlib import import_module
-
 from google.protobuf.message import Message
 from appyratus.schema import Schema, fields
-from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
+from appyratus.utils import (
+    StringUtils, FuncUtils, DictUtils, DictObject, TimeUtils
+)
 
 from ravel.util import is_resource, is_batch, get_class_name, is_port_in_use
 from ravel.util.json_encoder import JsonEncoder
@@ -131,13 +138,26 @@ class GrpcService(Application):
         Take the attributes on the incoming protobuf Message object and
         map them to the args and kwargs expected by the action target.
         """
-        console.debug(f'calling "{action.name}" RPC method')
+        console.info(
+            message=f'RPC request',
+            data={
+                'method': action.name
+            }
+        )
 
         # get field data to process into args and kwargs
-        all_arguments = {
-            k: getattr(request, k, None)
-            for k in action.schemas.request.fields
-        }
+        def deserialize_protobuf_value(field, value):
+            if isinstance(field, fields.Dict):
+                if not value:
+                    value = None if field.nullable else {}
+                else:
+                    value = self.json.decode(value)
+            return value
+
+        all_arguments = {}
+        for field in action.schemas.request.fields.values():
+            value = getattr(request, field.name, None)
+            all_arguments[field.name] = deserialize_protobuf_value(field, value)
 
         # add a dummy request object so that partition_arguments can
         # run below; then remove it from the resulting args tuple.
@@ -157,19 +177,21 @@ class GrpcService(Application):
         Map the return dict from the action to the expected outgoing protobuf
         response Message object.
         """
-        response_type = self.grpc.response_types[action]
+        response_type = self.grpc.response_types[action.name]
         response = response_type()
         response_data = None
 
         def validate(data):
-            data, errors = schema.process(data, strict=True)
+            data, errors = schema.process(data)
             if errors:
                 console.error(
                     message=f'response validation errors',
-                    data={'errors': errors}
+                    data={
+                        'data': pprint.pformat(data),
+                        'errors': errors,
+                    }
                 )
             return data
-
 
         if result:
             schema = action.schemas.response
@@ -197,16 +219,20 @@ class GrpcService(Application):
         server's thread pool. Override in subclass.
         """
         console.info(
-            f're-boostrapping stores in worker thread {get_ident()}'
+            f'bootrapping gRPC service in '
+            f'worker subprocess (pid: {os.getpid()})'
         )
-        app.storage.bootstrap()
+        app.bootstrap(force=True, build=False)
 
     def on_start(self):
         """
         Start the RPC client or server.
         """
         if is_port_in_use(self.grpc.options.server_address):
-            console.error(f'{self.grpc.options.server_address} already in use')
+            console.error(
+                f'gRPC service address {self.grpc.options.server_address} '
+                f'already in use'
+            )
             exit(-1)
 
         console.debug(
@@ -223,21 +249,19 @@ class GrpcService(Application):
         for i in range(self.grpc.max_workers):
             self.grpc.executor.submit(lambda: None)
 
-        # build the grpc server
+        # build grpc server
         self.grpc.server = grpc.server(self.grpc.executor)
         self.grpc.server.add_insecure_port(self.grpc.options.server_address)
 
-        # build the grpc servicer and connect with server
+        # build grpcio "servicer" class
         self.grpc.servicer = self._grpc_servicer_factory()
         self.grpc.servicer.add_to_grpc_server(
             self.grpc.servicer, self.grpc.server
         )
 
-        # start the server. note that it is non-blocking.
         self.grpc.server.start()
 
-        # now suspend the main thread while the grpc server runs
-        # in the ThreadPoolExecutor.
+        # suspend foreground process while grpc server runs in background
         console.info(
             message='gRPC server started. Press ctrl+c to stop.',
             data={
@@ -340,7 +364,8 @@ class GrpcService(Application):
             message_type_name = StringUtils.camel(schema_type_name)
             if message_type_name.endswith('Schema'):
                 message_type_name = message_type_name[:-len('Schema')]
-            grpc.response_types[action.name] = message_type_name
+            response_message_type = getattr(self.grpc.pb2, message_type_name)
+            grpc.response_types[action.name] = response_message_type
 
     def _grpc_servicer_factory(self):
         """
@@ -557,13 +582,21 @@ class GrpcService(Application):
             return None
 
         for k, v in source.items():
-            if isinstance(getattr(message, k), Message):
+            if v is None:
+                # protobufs don't understand null values
+                continue
+
+            # TODO: move conversion logic into adapters
+            if isinstance(v, (date, datetime)):
+                ts = TimeUtils.to_timestamp(v)
+                setattr(message, k, ts)
+            elif isinstance(getattr(message, k), Message):
                 sub_message = getattr(message, k)
                 assert isinstance(v, dict)
                 self.build_response_message(sub_message, v)
             elif isinstance(v, dict):
-                v_bytes = codecs.encode(pickle.dumps(v), 'base64')
-                setattr(message, k, v_bytes)
+                json_str = self.json.encode(v)
+                setattr(message, k, json_str)
             elif isinstance(v, (list, tuple, set)):
                 list_field = getattr(message, k)
                 sub_message_type_name = (
@@ -578,7 +611,7 @@ class GrpcService(Application):
                 else:
                     v_prime = [
                         x if not isinstance(x, dict)
-                            else codecs.encode(pickle.dumps(x), 'base64')
+                            else self.json.encode(x)
                         for x in v
                     ]
                     list_field.extend(v_prime)
