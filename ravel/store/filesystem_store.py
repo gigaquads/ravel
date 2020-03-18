@@ -16,8 +16,8 @@ from appyratus.utils import (
 )
 
 from ravel.util.misc_functions import import_object
+from ravel.util.loggers import console
 from ravel.constants import ID, REV
-from ravel.loggers import console
 from ravel.exceptions import RavelError
 
 from .base import Store
@@ -51,7 +51,7 @@ class FilesystemStore(Store):
         self._cache_store = SimulationStore()
         self._table_lock = RLock()
         self._row_locks = defaultdict(RLock)
-        k
+
         # convert the ftype string arg into a File class ref
         if not ftype:
             self._ftype = Yaml
