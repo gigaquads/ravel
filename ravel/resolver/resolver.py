@@ -59,6 +59,7 @@ class Resolver(object):
         self.required = required
         self.target_callback = None
         self.target = None
+        self.schema = None
         self.many = many
 
         self.on_resolve = on_resolve or self.on_resolve
@@ -175,9 +176,9 @@ class Resolver(object):
 
         self.on_bind()
 
-        if not (self.target and self.target.ravel.schema.name):
-            self.target.ravel.schema.name = self.name
-            
+        if self.target is not None:
+            self.schema = self.target.Schema(name=self.name)
+
         self._is_bound = True
 
     def resolve(self, entity: 'Entity', request=None):

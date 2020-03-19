@@ -450,34 +450,27 @@ class GrpcService(Application):
         Iterate over function actions, using request and response schemas to
         generate protobuf message and service types.
         """
-        msg_gen = MessageGenerator()
-        visited_schema_types = set()
+        # all lines in proto source code accumulated into "lines"
         lines = ['syntax = "proto3";']
-        func_decls = []
 
-        def assign_field_numbers(schema):
-            all_field_nos = set(range(1, 1 + len(schema.fields)))
-            taken_field_nos = {
-                f.meta['field_no'] for f in schema.fields.values()
-                if 'field_no' in f.meta
-            }
-            available_field_nos = list(all_field_nos - taken_field_nos)
-            for field in schema.fields.values():
-                if 'field_no' not in field.meta:
-                    field.meta['field_no'] = available_field_nos.pop()
+        # service interface function delaration string accumulator
+        decls = []
 
-        for resource_type in self.res.values():
-            schema = resource_type.ravel.schema
-            assign_field_numbers(schema)
-            type_name = get_class_name(schema)
-            if type_name.endswith('Schema'):
-                type_name = type_name[:-len('Schema')]
-            if type_name not in visited_schema_types:
-                visited_schema_types.add(type_name)
-                lines.append(msg_gen.emit(self, schema, force=True) + '\n')
+        # generate proto messages for each Resource class in this app
+        msg_gen = MessageGenerator()
+        for name, resource_type in self.res.items():
+            lines.append(msg_gen.emit_resource_message(resource_type) + '\n')
 
+        # keep track of which top-level schemas we've already generated
+        # to prevent duplicate generation, using visited_schema_types
+        # to check uniqueness
+        visited_schema_types = set(self.res.keys())
+
+        # generate service request and response schemas along
+        # with service interface function declarations, deriving them
+        # from actions registered with this app
         for action in self.actions.values():
-            # generate protocol buffer Message types from action schemas
+            # generate request proto message
             if action.schemas.request:
                 type_name = get_class_name(action.schemas.request)
                 if type_name.endswith('Schema'):
@@ -485,7 +478,7 @@ class GrpcService(Application):
                 if type_name not in visited_schema_types:
                     lines.append(action.generate_request_message_type())
                     visited_schema_types.add(type_name)
-
+            # same for response
             if action.schemas.response:
                 type_name = get_class_name(action.schemas.response)
                 if type_name.endswith('Schema'):
@@ -495,11 +488,11 @@ class GrpcService(Application):
                     visited_schema_types.add(type_name)
 
             # function declaration MUST be generated AFTER the message types
-            func_decls.append(action.generate_protobuf_function_declaration())
+            decls.append(action.generate_protobuf_function_declaration())
 
         lines.append('service GrpcApplication {')
 
-        for decl in func_decls:
+        for decl in decls:
             lines.append('  ' + decl)
 
         lines.append('}\n')

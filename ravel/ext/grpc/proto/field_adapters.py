@@ -75,7 +75,7 @@ class NestedFieldAdapter(FieldAdapter):
 
 
 class SchemaFieldAdapter(FieldAdapter):
-    def emit(self, field, field_no):
+    def emit(self, field, field_no, is_repeated=False):
         field_type_name = get_class_name(field)
         if field_type_name.endswith('Schema'):
             field_type_name = field_type_name[:-len('Schema')]
@@ -83,6 +83,7 @@ class SchemaFieldAdapter(FieldAdapter):
             field_type=field_type_name,
             field_no=field_no,
             field_name=field.name,
+            is_repeated=is_repeated
         )
 
 

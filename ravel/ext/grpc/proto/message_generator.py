@@ -54,12 +54,62 @@ class MessageGenerator(object):
         else:
             adapter = self.adapters.get(type(field))
             if adapter is None:
-                for field_type, adapter in self.adapters.items():
-                    if issubclass(type(field), field_type):
+                unknown_field_type = type(field)
+                for known_field_type, adapter in self.adapters.items():
+                    if issubclass(unknown_field_type, known_field_type):
                         break
             if adapter is None:
                 raise Exception(f'adapter for field {field} not found')
-            return adapter
+        return adapter
+
+    def emit_resource_message(self, resource_type) -> Text:
+        schema = resource_type.ravel.schema
+        resolvers = resource_type.ravel.resolvers
+
+        all_field_numbers = set(
+            range(1, 1 + len(resolvers))
+        )
+        unavailable_field_numbers = {
+            f.meta['field_no'] for f in schema.fields.values()
+            if f.meta.get('field_no')
+        }
+        available_field_numbers = sorted(
+            all_field_numbers - unavailable_field_numbers,
+            reverse=True  # we want to pop in asc order below
+        )
+
+        body = []
+
+        for resolver in resolvers.sort():
+            line = None
+            if resolver.name in schema.fields:
+                adapter = self.get_adapter(resolver.field)
+                if adapter is not None:
+                    field = resolver.field
+                    field_no = field.meta.get('field_no')
+                    if not field_no:
+                        field_no = available_field_numbers.pop()
+                    line = adapter.emit(field=field, field_no=field_no)
+            elif resolver.target is not None:
+                adapter = self.get_adapter(resolver.schema)
+                field_no = available_field_numbers.pop()
+                line = adapter.emit(
+                    field=resolver.schema,
+                    field_no=field_no,
+                    is_repeated=resolver.many
+                )
+
+            if line is not None:
+                if line.strip().startswith('Customer created_at'):
+                    import ipdb; ipdb.set_trace()
+                body.append((field_no, f'   {line};\n'))
+
+        header = f'message {get_class_name(resource_type)} {{\n'
+        body = ''.join(x[1] for x in sorted(body))
+        coda = '}'
+
+        message = header + body + coda
+        return message
 
     def emit(
         self,
@@ -87,7 +137,6 @@ class MessageGenerator(object):
         if (not force) and (type_name in app.res):
             return None
 
-        field_no2field = {}
         prepared_data = []
         field_decls = []
 
