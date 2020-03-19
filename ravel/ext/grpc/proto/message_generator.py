@@ -3,11 +3,12 @@ import sys
 from typing import Text, List, Dict, Type
 
 from google.protobuf.message import Message
-from appyratus.schema import Schema, fields
 
 from ravel.exceptions import RavelError
 from ravel.util.misc_functions import get_class_name
+from ravel.schema import Schema, fields
 
+from ..util import get_stripped_schema_name
 from .field_adapters import (
     FieldAdapter,
     SchemaFieldAdapter,
@@ -124,9 +125,9 @@ class MessageGenerator(object):
         from a given Schema class.
         """
         if isinstance(schema_type, (type, Schema)):
-            type_name = type_name or get_class_name(schema_type)
-            if type_name.endswith('Schema'):
-                type_name = type_name[:-len('Schema')]
+            type_name = get_stripped_schema_name(
+                type_name or get_class_name(schema_type)
+            )
         else:
             raise ValueError(
                 'unrecognized schema type: "{}"'.format(schema_type)
