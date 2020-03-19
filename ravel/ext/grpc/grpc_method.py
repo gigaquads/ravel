@@ -11,6 +11,7 @@ from ravel.util import is_resource_type, get_class_name
 from ravel.util.loggers import console
 from ravel.constants import ID, REV
 
+from .util import get_stripped_schema_name
 from .proto import MessageGenerator
 
 
@@ -35,7 +36,6 @@ class GrpcMethod(Action):
     def __init__(self, target, decorator):
         super().__init__(target, decorator)
         self._msg_gen = MessageGenerator()
-        self._msg_name_prefix = None
         self._returns_stream = False
         self.schemas = DictObject()
 
@@ -60,12 +60,9 @@ class GrpcMethod(Action):
         return text + '\n' if text is not None else None
 
     def generate_protobuf_function_declaration(self, stream=None) -> Text:
-        req_msg_type = get_class_name(self.schemas.request)
-        if req_msg_type.endswith('Schema'):
-            req_msg_type = req_msg_type[:-len('Schema')]
-        resp_msg_type = get_class_name(self.schemas.response)
-        if resp_msg_type.endswith('Schema'):
-            resp_msg_type = resp_msg_type[:-len('Schema')]
+        request_type_name = get_stripped_schema_name(self.schemas.request)
+        response_type_name = get_stripped_schema_name(self.schemas.response)
+
         if stream is not None:
             stream_str = 'stream ' if stream else ''
         elif self._returns_stream:
@@ -74,32 +71,35 @@ class GrpcMethod(Action):
             stream_str = ''
 
         return (
-            f'rpc {self.name}({req_msg_type}) '
-            f'returns ({stream_str}{resp_msg_type})'
+            f'rpc {self.name}({request_type_name}) '
+            f'returns ({stream_str}{response_type_name})'
             f' {{}}'
         )
 
     def _build_response_schema(self):
-        default_type_name = f'{self._msg_name_prefix}Response'
+        type_name = f'{StringUtils.camel(self.name)}ResponseSchema'
         obj = self.decorator.kwargs.get('response')
 
         if isinstance(obj, dict):
-            schema = Schema.factory(default_type_name, obj)()
+            schema = Schema.factory(type_name, obj)()
         elif isinstance(obj, Schema):
-            schema = obj
+            response_schema_type = type(type_name, (type(obj), ), {})
+            schema = response_schema_type()
         elif is_resource_type(obj):
-            schema = obj.Schema()
+            response_schema_type = type(type_name, (obj.Schema, ), {})
+            schema = response_schema_type()
         else:
-            many, type_name = extract_res_info_from_annotation(
+            many, resource_type_name = extract_res_info_from_annotation(
                 self.signature.return_annotation
             )
             self._returns_stream = many
-            if type_name in self.app.res:
-                schema = self.app.res[type_name].Schema()
+            if resource_type_name in self.app.res:
+                base_schema_type = self.app.res[resource_type_name].Schema
+                response_schema_type = type(type_name, (base_schema_type, ), {})
+                schema = response_schema_type()
             else:
-                schema = Schema.factory(default_type_name, {})()
+                schema = Schema.factory(type_name, {})()
 
-        schema.name = StringUtils.snake(get_class_name(schema))
         self._insert_field_numbers(schema)
         return schema
 
@@ -117,20 +117,21 @@ class GrpcMethod(Action):
                 counter += 1
 
     def _build_request_schema(self):
-        default_type_name = f'{self._msg_name_prefix}Request'
+        type_name = f'{StringUtils.camel(self.name)}RequestSchema'
         obj = self.decorator.kwargs.get('request')
 
         if isinstance(obj, dict):
-            schema = Schema.factory(default_type_name, obj)()
+            schema = Schema.factory(type_name, obj)()
         elif isinstance(obj, Schema):
-            schema = obj
+            request_schema_type = type(type_name, (type(obj), ), {})
+            schema = request_schema_type()
         elif is_resource_type(obj):
-            schema = obj.Schema()
+            request_schema_type = type(type_name, (obj.Schema, ), {})
+            schema = request_schema_type()
         else:
             fields = self._infer_request_fields()
-            schema = Schema.factory(default_type_name, fields)()
+            schema = Schema.factory(type_name, fields)()
 
-        schema.name = StringUtils.snake(get_class_name(schema))
         self._insert_field_numbers(schema)
         return schema
 

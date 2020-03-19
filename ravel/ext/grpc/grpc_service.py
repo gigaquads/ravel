@@ -27,7 +27,6 @@ from datetime import date, datetime
 import grpc
 
 from google.protobuf.message import Message
-from appyratus.schema import Schema, fields
 from appyratus.utils import (
     StringUtils, FuncUtils, DictUtils, DictObject, TimeUtils
 )
@@ -36,9 +35,11 @@ from ravel.util import is_resource, is_batch, get_class_name, is_port_in_use
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
 from ravel.app.base import Application
+from ravel.schema import Schema, fields
 
 from .grpc_method import GrpcMethod
 from .grpc_client import GrpcClient
+from .util import get_stripped_schema_name
 from .proto import MessageGenerator
 from .constants import (
     DEFAULT_HOST,
@@ -378,9 +379,9 @@ class GrpcService(Application):
         grpc.response_types = {}
         for action in self.actions.values():
             schema_type_name = get_class_name(action.schemas.response)
-            message_type_name = StringUtils.camel(schema_type_name)
-            if message_type_name.endswith('Schema'):
-                message_type_name = message_type_name[:-len('Schema')]
+            message_type_name = get_stripped_schema_name(
+                StringUtils.camel(schema_type_name)
+            )
             response_message_type = getattr(self.grpc.pb2, message_type_name)
             grpc.response_types[action.name] = response_message_type
 
@@ -461,50 +462,28 @@ class GrpcService(Application):
         for name, resource_type in self.res.items():
             lines.append(msg_gen.emit_resource_message(resource_type) + '\n')
 
-        # keep track of which top-level schemas we've already generated
-        # to prevent duplicate generation, using visited_schema_types
-        # to check uniqueness
-        visited_schema_types = set(self.res.keys())
-
-        # generate service request and response schemas along
-        # with service interface function declarations, deriving them
-        # from actions registered with this app
+        # generate request and response schemas along with service
+        # interface function declarations, derived them application actions
         for action in self.actions.values():
-            # generate request proto message
-            if action.schemas.request:
-                type_name = get_class_name(action.schemas.request)
-                if type_name.endswith('Schema'):
-                    type_name = type_name[:-len('Schema')]
-                if type_name not in visited_schema_types:
-                    lines.append(action.generate_request_message_type())
-                    visited_schema_types.add(type_name)
-            # same for response
-            if action.schemas.response:
-                type_name = get_class_name(action.schemas.response)
-                if type_name.endswith('Schema'):
-                    type_name = type_name[:-len('Schema')]
-                if type_name not in visited_schema_types:
-                    lines.append(action.generate_response_message_type())
-                    visited_schema_types.add(type_name)
-
-            # function declaration MUST be generated AFTER the message types
             decls.append(action.generate_protobuf_function_declaration())
+            if action.schemas.request:
+                lines.append(action.generate_request_message_type())
+            if action.schemas.response:
+                lines.append(action.generate_response_message_type())
 
+        # assemble service interface definition block
         lines.append('service GrpcApplication {')
-
         for decl in decls:
             lines.append('  ' + decl)
-
         lines.append('}\n')
-        source = '\n'.join(lines)
 
+        # write final protobuf source code to file
         console.info(
             message='generating gRPC proto file',
             data={'destination': self.grpc.proto_file}
         )
-
         with open(self.grpc.proto_file, 'w') as fout:
-            fout.write(source)
+            fout.write('\n'.join(lines))
 
     def _compile_pb2_modules(self):
         """
