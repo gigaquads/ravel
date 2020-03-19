@@ -174,6 +174,10 @@ class Resolver(object):
                 raise Exception('unrecognized target type')
 
         self.on_bind()
+
+        if not (self.target and self.target.ravel.schema.name):
+            self.target.ravel.schema.name = self.name
+            
         self._is_bound = True
 
     def resolve(self, entity: 'Entity', request=None):
