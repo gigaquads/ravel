@@ -31,12 +31,14 @@ class CliApplication(Application):
         tagline=None,
         defaults=None,
         echo=False,
+        debug_level=2,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
         self._commands = []
         self._echo = echo
+        self._debug_level = debug_level
         self._cli_program = None
         self._cli_args = None
         self._cli_program_kwargs = {
@@ -64,7 +66,7 @@ class CliApplication(Application):
         """
         Run the CliProgram.
         """
-        SysUtils.safe_main(self._cli_program.run, debug_level=2)
+        SysUtils.safe_main(self._cli_program.run, debug_level=self._debug_level)
 
     def on_request(self, action, *args, **kwargs):
         """

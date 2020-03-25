@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+import glob
 import random
 import inspect
 import shutil
@@ -23,17 +24,21 @@ from concurrent.futures import (
 from typing import Text, List, Dict, Type, Union, Type
 from importlib import import_module
 from datetime import date, datetime
+from collections import OrderedDict
 
 import grpc
+import jsbeautifier
 
 from google.protobuf.message import Message
 from appyratus.utils import (
-    StringUtils, FuncUtils, DictUtils, DictObject, TimeUtils
+    StringUtils, FuncUtils, DictUtils,
+    DictObject, TimeUtils, JinjaTemplateEnvironment,
 )
 
 from ravel.util import is_resource, is_batch, get_class_name, is_port_in_use
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
+from ravel.util.json_schema import JsonSchemaGenerator
 from ravel.app.base import Application
 from ravel.schema import Schema, fields
 
@@ -130,9 +135,70 @@ class GrpcService(Application):
         Generate JavaScript files containing the porotobuf message types and
         client stub.
         """
+        # TODO: move these methods into a grpc_web module
         self.bootstrap(manifest=manifest, build=False)
         self._compile_grpc_web_message_classes(dest)
         self._compile_grpc_web_client_stub(dest)
+        self._render_grpc_web_client_files(dest)
+
+    def _render_grpc_web_client_files(self, dest):
+        dest = os.path.realpath(dest)
+
+        # generate JSON schemas for all ravel schemas
+        # referenced in this app
+        def unnest(schema, unnested):
+            for child_schema in schema.children:
+                child_schema_name = get_stripped_schema_name(child_schema)
+                if child_schema_name in unnested:
+                    console.warning(
+                        message=(
+                            f'gRPC web client build process '
+                            f'ignoring schema with duplicate name'
+                        ),
+                        data={
+                            'schema': child_schema_name,
+                            'parent_schema': get_stripped_schema_name(schema),
+                        }
+                    )
+                unnested[child_schema_name] = schema
+                unnest(child_schema, unnested)
+
+        nested_schemas = OrderedDict()
+        for resource_type in self.res.values():
+            unnest(resource_type.ravel.schema, nested_schemas)
+
+        action_schemas = OrderedDict();
+        for action in self.actions.values():
+            for schema in action.schemas.values():
+                action_schemas[get_stripped_schema_name(schema)] = schema
+
+        # initialize Jinja templating engine
+        template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        jinja = JinjaTemplateEnvironment(template_dir)
+        template_context = {
+            'resource_types': self.res,
+            'nested_schemas': nested_schemas,
+            'action_schemas': action_schemas,
+            'json_schema_generator': JsonSchemaGenerator(),
+            'app_name': self.manifest.package,
+        }
+
+        console.info(
+            f'jinja2 using template directory {template_dir}'
+        )
+
+        # render each template in templte dir
+        for js_fname in glob.glob(f'{template_dir}/*.js'):
+            js_fname = os.path.basename(js_fname)
+            with open(os.path.join(dest, js_fname), 'w') as js_file:
+                # render template from file
+                template = jinja.from_filename(js_fname)
+                js_source = template.render(template_context)
+                # lint the generated JS code
+                formated_js_source = jsbeautifier.beautify(js_source)
+                # write to dest directory
+                console.info(f'writing {dest}/{os.path.basename(js_fname)}')
+                js_file.write(formated_js_source)
 
     def on_decorate(self, action):
         pass
@@ -327,7 +393,7 @@ class GrpcService(Application):
         schema = self.GrpcOptionsSchema()
         options, errors = schema.process(computed_options)
         if errors:
-            raise Excpetion(f'invalid gRPC options: {errors}')
+            raise Exception(f'invalid gRPC options: {errors}')
 
         port = options['port']
         server_host = options['server_host']
@@ -625,4 +691,3 @@ class GrpcService(Application):
             return {k: self._dump_result_obj(v) for k, v in obj.items()}
         else:
             return obj
-
