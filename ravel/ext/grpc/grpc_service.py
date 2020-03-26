@@ -32,7 +32,7 @@ import jsbeautifier
 from google.protobuf.message import Message
 from appyratus.utils import (
     StringUtils, FuncUtils, DictUtils,
-    DictObject, TimeUtils, JinjaTemplateEnvironment,
+    DictObject, TimeUtils, TemplateEnvironment,
 )
 
 from ravel.util import is_resource, is_batch, get_class_name, is_port_in_use
@@ -172,9 +172,9 @@ class GrpcService(Application):
             for schema in action.schemas.values():
                 action_schemas[get_stripped_schema_name(schema)] = schema
 
-        # initialize Jinja templating engine
+        # initialize templating engine
         template_dir = os.path.join(os.path.dirname(__file__), 'templates')
-        jinja = JinjaTemplateEnvironment(template_dir)
+        jinja = TemplateEnvironment(template_dir)
         template_context = {
             'resource_types': self.res,
             'nested_schemas': nested_schemas,
