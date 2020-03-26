@@ -1,5 +1,7 @@
 import inspect
 import logging
+import os
+import threading
 
 from threading import local
 from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
@@ -235,8 +237,11 @@ class Application(object):
         """
         if self.is_bootstrapped and (not force):
             console.warning(
-                f'{get_class_name(self)} already bootstrapped. '
-                f'skipping'
+                message=f'{get_class_name(self)} already bootstrapped.',
+                data={
+                    'pid': os.getpid(),
+                    'thread': threading.get_ident(),
+                }
             )
             return self
 

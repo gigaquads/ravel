@@ -1,6 +1,8 @@
 import os
 import json
 import sys
+import glob
+import random
 import inspect
 import shutil
 import subprocess
@@ -11,25 +13,39 @@ import multiprocessing as mp
 import socket
 import pickle
 import codecs
+import pprint
 
-import grpc
-
+from multiprocessing import Process
 from threading import get_ident
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    ProcessPoolExecutor,
+)
 from typing import Text, List, Dict, Type, Union, Type
 from importlib import import_module
+from datetime import date, datetime
+from collections import OrderedDict
+
+import grpc
+import jsbeautifier
 
 from google.protobuf.message import Message
-from appyratus.schema import Schema, fields
-from appyratus.utils import StringUtils, FuncUtils, DictUtils, DictObject
+from appyratus.utils import (
+    StringUtils, FuncUtils, DictUtils,
+    DictObject, TimeUtils, JinjaTemplateEnvironment,
+)
 
 from ravel.util import is_resource, is_batch, get_class_name, is_port_in_use
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
+from ravel.util.json_schema import JsonSchemaGenerator
 from ravel.app.base import Application
+from ravel.schema import Schema, fields
 
 from .grpc_method import GrpcMethod
 from .grpc_client import GrpcClient
+from .util import get_stripped_schema_name
+from .proto import MessageGenerator
 from .constants import (
     DEFAULT_HOST,
     DEFAULT_PORT,
@@ -39,8 +55,11 @@ from .constants import (
     PB2_MODULE_PATH_FSTR,
     PB2_GRPC_MODULE_PATH_FSTR,
     PROTOC_COMMAND_FSTR,
+    PROTOC_WEB_GENERATE_CLIENT_COMMAND,
+    PROTOC_WEB_GENERATE_MESSAGE_CLASSES_COMMAND,
 )
 
+# TODO: ensure all store types are thread-safe
 
 class GrpcService(Application):
     """
@@ -55,7 +74,7 @@ class GrpcService(Application):
 
     Note that gRPC manages its server as a thread pool. When we call
     GrpcService.start, we are really just starting the threads in the pool and
-    then putting the main thread in a spin lock.
+    then putting the main thread in a sleep lock.
     """
 
     class GrpcOptionsSchema(Schema):
@@ -73,7 +92,8 @@ class GrpcService(Application):
         super().__init__(middleware=middleware, *args, **kwargs)
         self.grpc = DictObject()
         self.grpc.options = DictObject()
-        self.grpc.max_workers = mp.cpu_count() + 1
+        self.grpc.worker_process_count = mp.cpu_count() + 1
+        self.grpc.worker_thread_pool_size = 1
         self.grpc.pb2 = None
         self.grpc.pb2_grpc = None
         self.grpc.server = None
@@ -110,6 +130,76 @@ class GrpcService(Application):
     def build(self, manifest=None, options: Dict = None):
         self.bootstrap(manifest=manifest, build=True, options=options)
 
+    def build_js(self, manifest: Text, dest: Text):
+        """
+        Generate JavaScript files containing the porotobuf message types and
+        client stub.
+        """
+        # TODO: move these methods into a grpc_web module
+        self.bootstrap(manifest=manifest, build=False)
+        self._compile_grpc_web_message_classes(dest)
+        self._compile_grpc_web_client_stub(dest)
+        self._render_grpc_web_client_files(dest)
+
+    def _render_grpc_web_client_files(self, dest):
+        dest = os.path.realpath(dest)
+
+        # generate JSON schemas for all ravel schemas
+        # referenced in this app
+        def unnest(schema, unnested):
+            for child_schema in schema.children:
+                child_schema_name = get_stripped_schema_name(child_schema)
+                if child_schema_name in unnested:
+                    console.warning(
+                        message=(
+                            f'gRPC web client build process '
+                            f'ignoring schema with duplicate name'
+                        ),
+                        data={
+                            'schema': child_schema_name,
+                            'parent_schema': get_stripped_schema_name(schema),
+                        }
+                    )
+                unnested[child_schema_name] = schema
+                unnest(child_schema, unnested)
+
+        nested_schemas = OrderedDict()
+        for resource_type in self.res.values():
+            unnest(resource_type.ravel.schema, nested_schemas)
+
+        action_schemas = OrderedDict();
+        for action in self.actions.values():
+            for schema in action.schemas.values():
+                action_schemas[get_stripped_schema_name(schema)] = schema
+
+        # initialize Jinja templating engine
+        template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        jinja = JinjaTemplateEnvironment(template_dir)
+        template_context = {
+            'resource_types': self.res,
+            'nested_schemas': nested_schemas,
+            'action_schemas': action_schemas,
+            'json_schema_generator': JsonSchemaGenerator(),
+            'app_name': self.manifest.package,
+        }
+
+        console.info(
+            f'jinja2 using template directory {template_dir}'
+        )
+
+        # render each template in templte dir
+        for js_fname in glob.glob(f'{template_dir}/*.js'):
+            js_fname = os.path.basename(js_fname)
+            with open(os.path.join(dest, js_fname), 'w') as js_file:
+                # render template from file
+                template = jinja.from_filename(js_fname)
+                js_source = template.render(template_context)
+                # lint the generated JS code
+                formated_js_source = jsbeautifier.beautify(js_source)
+                # write to dest directory
+                console.info(f'writing {dest}/{os.path.basename(js_fname)}')
+                js_file.write(formated_js_source)
+
     def on_decorate(self, action):
         pass
 
@@ -118,13 +208,23 @@ class GrpcService(Application):
         Take the attributes on the incoming protobuf Message object and
         map them to the args and kwargs expected by the action target.
         """
-        console.debug(f'calling "{action.name}" RPC method')
+        console.debug(
+            message=f'RPC method {action.name} requested',
+        )
 
         # get field data to process into args and kwargs
-        all_arguments = {
-            k: getattr(request, k, None)
-            for k in action.schemas.request.fields
-        }
+        def deserialize_protobuf_value(field, value):
+            if isinstance(field, fields.Dict):
+                if not value:
+                    value = None if field.nullable else {}
+                else:
+                    value = self.json.decode(value)
+            return value
+
+        all_arguments = {}
+        for field in action.schemas.request.fields.values():
+            value = getattr(request, field.name, None)
+            all_arguments[field.name] = deserialize_protobuf_value(field, value)
 
         # add a dummy request object so that partition_arguments can
         # run below; then remove it from the resulting args tuple.
@@ -144,19 +244,21 @@ class GrpcService(Application):
         Map the return dict from the action to the expected outgoing protobuf
         response Message object.
         """
-        response_type = self.grpc.response_types[action]
+        response_type = self.grpc.response_types[action.name]
         response = response_type()
         response_data = None
 
         def validate(data):
-            data, errors = schema.process(data, strict=True)
+            data, errors = schema.process(data)
             if errors:
                 console.error(
                     message=f'response validation errors',
-                    data={'errors': errors}
+                    data={
+                        'data': pprint.pformat(data),
+                        'errors': errors,
+                    }
                 )
             return data
-
 
         if result:
             schema = action.schemas.response
@@ -183,57 +285,73 @@ class GrpcService(Application):
         This method runs as the "initializer" for each thread in the grpc
         server's thread pool. Override in subclass.
         """
-        console.info(
-            f're-boostrapping stores in worker thread {get_ident()}'
-        )
-        app.storage.bootstrap()
 
     def on_start(self):
         """
         Start the RPC client or server.
         """
         if is_port_in_use(self.grpc.options.server_address):
-            console.error(f'{self.grpc.options.server_address} already in use')
+            console.error(
+                f'gRPC service address {self.grpc.options.server_address} '
+                f'already in use'
+            )
             exit(-1)
 
-        console.debug(
-            f'creating gRPC thread pool with {self.grpc.max_workers} threads'
+        console.info(
+            message='strating gRPC server. Press ctrl+c to stop.',
+            data={
+                'address': self.grpc.options.server_address,
+                'methods': list(self.actions.keys()),
+                'worker_process_count': self.grpc.worker_process_count,
+                'worker_thread_pool_size': self.grpc.worker_thread_pool_size,
+            }
         )
+        if self.grpc.worker_process_count == 1:
+            # serve in main forground process
+            self._init_server_and_run()
+        else:
+            # serve in forked subprocesses
+            self._spawn_worker_processes()
 
+    def _spawn_worker_processes(self):
+        def main(service):
+            service.bootstrap(force=True)
+            service._init_server_and_run()
+
+        processes = []
+
+        for _ in range(self.grpc.worker_process_count):
+            process = Process(target=main, args=(self, ))
+            processes.append(process)
+            process.start()
+
+        for process in processes:
+            process.join(timeout=10)
+
+    def _init_server_and_run(self):
         # the grpc server runs in a thread pool
         self.grpc.executor = ThreadPoolExecutor(
-            max_workers=self.grpc.max_workers,
+            max_workers=self.grpc.worker_thread_pool_size,
             initializer=self.on_start_worker,
             initargs=(self, )
         )
 
-        for i in range(self.grpc.max_workers):
+        for i in range(self.grpc.worker_thread_pool_size):
             self.grpc.executor.submit(lambda: None)
 
-        # build the grpc server
+        # build grpc server
         self.grpc.server = grpc.server(self.grpc.executor)
         self.grpc.server.add_insecure_port(self.grpc.options.server_address)
 
-        # build the grpc servicer and connect with server
+        # build grpcio "servicer" class
         self.grpc.servicer = self._grpc_servicer_factory()
         self.grpc.servicer.add_to_grpc_server(
             self.grpc.servicer, self.grpc.server
         )
 
-        # start the server. note that it is non-blocking.
         self.grpc.server.start()
 
-        # now suspend the main thread while the grpc server runs
-        # in the ThreadPoolExecutor.
-        console.info(
-            message='gRPC server started. Press ctrl+c to stop.',
-            data={
-                'address': self.grpc.options.server_address,
-                'methods': list(self.api.keys()),
-            }
-        )
-
-        # spin-lock the main thread to keep the server running,
+        # sleep-lock the main thread to keep the server running,
         # as the server runs as a daemon.
         try:
             while True:
@@ -243,7 +361,10 @@ class GrpcService(Application):
             if self.grpc.server is not None:
                 console.info(
                     message='stopping gRPC server',
-                    data={'grace_period': self.grpc.options.grace}
+                    data={
+                        'grace_period': self.grpc.options.grace,
+                        'pid': os.getpid(),
+                    }
                 )
                 self.grpc.server.stop(grace=self.grpc.options.grace)
 
@@ -272,7 +393,7 @@ class GrpcService(Application):
         schema = self.GrpcOptionsSchema()
         options, errors = schema.process(computed_options)
         if errors:
-            raise Excpetion(f'invalid gRPC options: {errors}')
+            raise Exception(f'invalid gRPC options: {errors}')
 
         port = options['port']
         server_host = options['server_host']
@@ -321,13 +442,14 @@ class GrpcService(Application):
         routing requests to their downstream actions.
         """
         grpc = self.grpc
-        grpc.response_types = {
-            action: getattr(
-                grpc.pb2,
-                f'{StringUtils.camel(get_class_name(action.schemas.response))}'
+        grpc.response_types = {}
+        for action in self.actions.values():
+            schema_type_name = get_class_name(action.schemas.response)
+            message_type_name = get_stripped_schema_name(
+                StringUtils.camel(schema_type_name)
             )
-            for action in self.actions.values()
-        }
+            response_message_type = getattr(self.grpc.pb2, message_type_name)
+            grpc.response_types[action.name] = response_message_type
 
     def _grpc_servicer_factory(self):
         """
@@ -347,7 +469,10 @@ class GrpcService(Application):
             raise Exception('could not find grpc Servicer class')
 
         # create dynamic Servicer subclass
-        servicer = type(servicer_type_name, (abstract_type, ), self.actions)()
+        servicer_type = type(
+            servicer_type_name, (abstract_type, ), self.actions.to_dict()
+        )
+        servicer = servicer_type()
 
         # register the Servicer with the server
         servicer.add_to_grpc_server = (
@@ -392,42 +517,39 @@ class GrpcService(Application):
         Iterate over function actions, using request and response schemas to
         generate protobuf message and service types.
         """
-        visited_schema_types = set()
+        # all lines in proto source code accumulated into "lines"
         lines = ['syntax = "proto3";']
-        func_decls = []
 
+        # service interface function delaration string accumulator
+        decls = []
+
+        # generate proto messages for each Resource class in this app
+        msg_gen = MessageGenerator()
+        for name, resource_type in self.res.items():
+            lines.append(msg_gen.emit_resource_message(resource_type) + '\n')
+
+        # generate request and response schemas along with service
+        # interface function declarations, derived them application actions
         for action in self.actions.values():
-            # generate protocol buffer Message types from action schemas
+            decls.append(action.generate_protobuf_function_declaration())
             if action.schemas.request:
-                type_name = get_class_name(action.schemas.request)
-                if type_name not in visited_schema_types:
-                    lines.append(action.generate_request_message_type())
-                    visited_schema_types.add(type_name)
-
+                lines.append(action.generate_request_message_type())
             if action.schemas.response:
-                type_name = get_class_name(action.schemas.response)
-                if type_name not in visited_schema_types:
-                    lines.append(action.generate_response_message_type())
-                    visited_schema_types.add(type_name)
+                lines.append(action.generate_response_message_type())
 
-            # function declaration MUST be generated AFTER the message types
-            func_decls.append(action.generate_protobuf_function_declaration())
-
+        # assemble service interface definition block
         lines.append('service GrpcApplication {')
-
-        for decl in func_decls: lines.append('  ' + decl)
-
+        for decl in decls:
+            lines.append('  ' + decl)
         lines.append('}\n')
 
-        source = '\n'.join(lines)
-
+        # write final protobuf source code to file
         console.info(
             message='generating gRPC proto file',
             data={'destination': self.grpc.proto_file}
         )
-
         with open(self.grpc.proto_file, 'w') as fout:
-            fout.write(source)
+            fout.write('\n'.join(lines))
 
     def _compile_pb2_modules(self):
         """
@@ -455,6 +577,56 @@ class GrpcService(Application):
         if err_msg:
             exit(err_msg)
 
+    def _compile_grpc_web_message_classes(self, dest: Text):
+        """
+        Compile the grpc .proto file, generating pb2 and pb2_grpc modules in the
+        build directory. These modules contain abstract base classes required
+        by the grpc server and client.
+        """
+        # build the shell command to run....
+        protoc_command = PROTOC_WEB_GENERATE_MESSAGE_CLASSES_COMMAND.format(
+            include_dir=os.path.realpath(
+                os.path.dirname(self.grpc.proto_file)
+            ) or '.',
+            build_dir=dest,
+            proto_file=os.path.basename(self.grpc.proto_file),
+        ).strip()
+
+        console.info(
+            message='generating gRPC-web message classes',
+            data={'command': protoc_command.split('\n')}
+        )
+        err_msg = subprocess.getoutput(
+            re.sub(r'\s+', ' ', protoc_command)
+        )
+        if err_msg:
+            exit(err_msg)
+
+    def _compile_grpc_web_client_stub(self, dest: Text):
+        """
+        Compile the grpc .proto file, generating pb2 and pb2_grpc modules in the
+        build directory. These modules contain abstract base classes required
+        by the grpc server and client.
+        """
+        # build the shell command to run....
+        protoc_command = PROTOC_WEB_GENERATE_CLIENT_COMMAND.format(
+            include_dir=os.path.realpath(
+                os.path.dirname(self.grpc.proto_file)
+            ) or '.',
+            build_dir=dest,
+            proto_file=os.path.basename(self.grpc.proto_file),
+        ).strip()
+
+        console.info(
+            message='generating gRPC-web client stub',
+            data={'command': protoc_command.split('\n')}
+        )
+        err_msg = subprocess.getoutput(
+            re.sub(r'\s+', ' ', protoc_command)
+        )
+        if err_msg:
+            exit(err_msg)
+
     def build_response_message(self, message: Message, source: Dict) -> Message:
         """
         Recursively bind each value in a source dict to the corresponding
@@ -465,13 +637,21 @@ class GrpcService(Application):
             return None
 
         for k, v in source.items():
-            if isinstance(getattr(message, k), Message):
+            if v is None:
+                # protobufs don't understand null values
+                continue
+
+            # TODO: move conversion logic into adapters
+            if isinstance(v, (date, datetime)):
+                ts = TimeUtils.to_timestamp(v)
+                setattr(message, k, ts)
+            elif isinstance(getattr(message, k), Message):
                 sub_message = getattr(message, k)
                 assert isinstance(v, dict)
                 self.build_response_message(sub_message, v)
             elif isinstance(v, dict):
-                v_bytes = codecs.encode(pickle.dumps(v), 'base64')
-                setattr(message, k, v_bytes)
+                json_str = self.json.encode(v)
+                setattr(message, k, json_str)
             elif isinstance(v, (list, tuple, set)):
                 list_field = getattr(message, k)
                 sub_message_type_name = (
@@ -486,7 +666,7 @@ class GrpcService(Application):
                 else:
                     v_prime = [
                         x if not isinstance(x, dict)
-                            else codecs.encode(pickle.dumps(x), 'base64')
+                            else self.json.encode(x)
                         for x in v
                     ]
                     list_field.extend(v_prime)
@@ -511,4 +691,3 @@ class GrpcService(Application):
             return {k: self._dump_result_obj(v) for k, v in obj.items()}
         else:
             return obj
-

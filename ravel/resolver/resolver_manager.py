@@ -81,6 +81,9 @@ class ResolverManager(object):
     def private_resolvers(self) -> Set['Resolver']:
         return self._private_resolvers
 
+    def sort(self) -> List['Resolver']:
+        return Resolver.sort(list(self._resolvers.values()))
+
     def register(self, resolver):
         name = resolver.name
         old_resolver = self._resolvers.get(name)

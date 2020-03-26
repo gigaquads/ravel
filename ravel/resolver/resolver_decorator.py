@@ -1,5 +1,6 @@
 from typing import Text, Type, Union, Callable
 
+from ravel.util.misc_functions import get_callable_name
 
 class ResolverDecorator(object):
     """
@@ -25,6 +26,7 @@ class ResolverDecorator(object):
         Resolver.
         """
         self.kwargs['on_resolve'] = func
+        self.kwargs.setdefault('name', get_callable_name(func))
         return self
 
     def __getattr__(self, key):

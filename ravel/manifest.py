@@ -207,8 +207,8 @@ class Manifest(object):
         return self
 
     def bootstrap(self):
-        # visited_store_types is used to keep track of which DAO classes we've
-        # already bootstrapped in the process of bootstrapping the DAO classes
+        # visited_store_types is used to keep track of which store classes we've
+        # already bootstrapped in the process of bootstrapping the store classes
         # bound to Resource classes.
         visited_store_types = set()
 

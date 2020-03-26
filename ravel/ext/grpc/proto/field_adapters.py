@@ -1,6 +1,7 @@
 from appyratus.schema import Schema
 from appyratus.schema.fields import Field
 
+from ravel.util import get_class_name
 
 class FieldAdapter(object):
     def __init__(self):
@@ -36,19 +37,22 @@ class ScalarFieldAdapter(FieldAdapter):
 
 class ArrayFieldAdapter(FieldAdapter):
     def emit(self, field, field_no):
-        if isinstance(field.nested, Schema):
-            nested_field_type = field.nested.__class__.__name__
-        else:
+        try:
             adapter = self.msg_gen.get_adapter(field.nested)
-            try:
-                if isinstance(adapter, SchemaFieldAdapter):
-                    nested_field_type = field.nested.__class__.__name__
-                elif isinstance(adapter, NestedFieldAdapter):
-                    nested_field_type = field.nested.schema_type.__name__
-                else:
-                    nested_field_type = adapter.type_name
-            except:
-                raise Exception('Unable to establish nested field type')
+        except:
+            import ipdb; ipdb.set_trace()
+        try:
+            if isinstance(adapter, SchemaFieldAdapter):
+                nested_field_type = get_class_name(field.nested),
+            elif isinstance(adapter, NestedFieldAdapter):
+                nested_field_type = get_class_name(field.nested.schema_type)
+            else:
+                nested_field_type = adapter.type_name
+        except:
+            raise Exception('Unable to establish nested field type')
+
+        if nested_field_type.endswith('Schema'):
+            nested_field_type = nested_field_type[:-len('Schema')]
 
         return super().emit(
             field_type=nested_field_type,
@@ -60,19 +64,26 @@ class ArrayFieldAdapter(FieldAdapter):
 
 class NestedFieldAdapter(FieldAdapter):
     def emit(self, field, field_no):
+        field_type_name = get_class_name(field.schema_type)
+        if field_type_name.endswith('Schema'):
+            field_type_name = field_type_name[:-len('Schema')]
         return super().emit(
-            field_type=field.schema.__class__.__name__,
+            field_type=field_type_name,
             field_no=field_no,
             field_name=field.name,
         )
 
 
 class SchemaFieldAdapter(FieldAdapter):
-    def emit(self, field, field_no):
+    def emit(self, field, field_no, is_repeated=False):
+        field_type_name = get_class_name(field)
+        if field_type_name.endswith('Schema'):
+            field_type_name = field_type_name[:-len('Schema')]
         return super().emit(
-            field_type=field.__class__.__name__,
+            field_type=field_type_name,
             field_no=field_no,
             field_name=field.name,
+            is_repeated=is_repeated
         )
 
 

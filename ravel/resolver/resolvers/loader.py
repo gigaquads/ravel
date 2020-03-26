@@ -143,6 +143,7 @@ class LoaderProperty(ResolverProperty):
             console.error(
                 message=f'cannot set {self}',
                 data={
+                    'resolver': str(self.resolver),
                     'value': str(value),
                     'errors': errors,
                 }

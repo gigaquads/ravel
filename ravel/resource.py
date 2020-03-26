@@ -775,7 +775,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         assert part2 == {user2}
         ```
 
-        A spearate DAO call to `update_many` will be made for each partition.
+        A spearate store call to `update_many` will be made for each partition.
         """
         # common_values are values that should be updated
         # across all objects.

@@ -3,78 +3,12 @@ import sys
 from typing import Text, List, Dict, Type
 
 from google.protobuf.message import Message
-from appyratus.schema import Schema, fields
 
 from ravel.exceptions import RavelError
 from ravel.util.misc_functions import get_class_name
+from ravel.schema import Schema, fields
 
-
-
-class ActionError(RavelError):
-    """
-    An `Error` simply keeps a record of an Exception that occurs and the
-    middleware object which raised it, provided there was one. This is used
-    in the processing of requests, where the existence of errors has
-    implications on control flow for middleware.
-    """
-
-    def __init__(self, exc, middleware=None):
-        self.middleware = middleware
-        self.timestamp = TimeUtils.utc_now()
-        self.exc = exc
-        if isinstance(exc, RavelError) and exc.wrapped_traceback:
-            self.trace = self.exc.wrapped_traceback.strip().split('\n')[1:]
-            self.exc_message = self.trace.pop().split(': ', 1)[1]
-        else:
-            self.trace = traceback.format_exc().strip().split('\n')[1:]
-            self.exc_message = self.trace.pop().split(': ', 1)[1]
-
-    def to_dict(self):
-        data = {
-            'timestamp': self.timestamp.isoformat(),
-            'message': self.exc_message,
-            'traceback': self.trace,
-        }
-
-        if isinstance(self.exc, RavelError):
-            if not self.exc.wrapped_exception:
-                data['exception'] = get_class_name(self.exc)
-            else:
-                data['exception'] = get_class_name(self.exc.wrapped_exception)
-
-            if self.exc.logged_traceback_depth is not None:
-                depth = self.exc.logged_traceback_depth
-                data['traceback'] = data['traceback'][-2*depth:]
-
-        if self.middleware is not None:
-            data['middleware'] = get_class_name(self.middleware)
-
-        if isinstance(self.exc, RavelError):
-            data.update(self.exc.data)
-
-        return data
-
-
-class BadRequest(RavelError):
-    """
-    If any exceptions are raised during the execution of Middleware or an
-    action callable itself, we raise BadRequest.
-    """
-
-    def __init__(self,
-        action: 'Action',
-        state: 'ExecutionState',
-        *args,
-        **kwargs
-    ):
-        super().__init__(
-            f'error/s occured in action '
-            f'"{action.name}" (see logs)'
-        )
-
-        self.action = action
-
-
+from ..util import get_stripped_schema_name
 from .field_adapters import (
     FieldAdapter,
     SchemaFieldAdapter,
@@ -82,7 +16,6 @@ from .field_adapters import (
     ScalarFieldAdapter,
     ArrayFieldAdapter,
 )
-
 
 class MessageGenerator(object):
     def __init__(self, adapters: Dict[Type[fields.Field], FieldAdapter]=None):
@@ -92,13 +25,14 @@ class MessageGenerator(object):
             fields.Nested: NestedFieldAdapter(),
             fields.String: ScalarFieldAdapter('string'),
             fields.FormatString: ScalarFieldAdapter('string'),
+            fields.Field: ScalarFieldAdapter('string'),
             fields.Email: ScalarFieldAdapter('string'),
             fields.Uuid: ScalarFieldAdapter('string'),
             fields.Bool: ScalarFieldAdapter('bool'),
             fields.Float: ScalarFieldAdapter('double'),
             fields.Int: ScalarFieldAdapter('uint64'),
             fields.DateTime: ScalarFieldAdapter('uint64'),
-            fields.Dict: ScalarFieldAdapter('bytes'),
+            fields.Dict: ScalarFieldAdapter('string'),
             fields.List: ArrayFieldAdapter(),
             fields.Set: ArrayFieldAdapter(),
             # XXX redundant to List?  does not exist in schema.fields
@@ -121,31 +55,89 @@ class MessageGenerator(object):
         else:
             adapter = self.adapters.get(type(field))
             if adapter is None:
-                for field_type, adapter in self.adapters.items():
-                    if issubclass(type(field), field_type):
+                unknown_field_type = type(field)
+                for known_field_type, adapter in self.adapters.items():
+                    if issubclass(unknown_field_type, known_field_type):
                         break
             if adapter is None:
                 raise Exception(f'adapter for field {field} not found')
-            return adapter
+        return adapter
+
+    def emit_resource_message(self, resource_type) -> Text:
+        schema = resource_type.ravel.schema
+        resolvers = resource_type.ravel.resolvers
+
+        all_field_numbers = set(
+            range(1, 1 + len(resolvers))
+        )
+        unavailable_field_numbers = {
+            f.meta['field_no'] for f in schema.fields.values()
+            if f.meta.get('field_no')
+        }
+        available_field_numbers = sorted(
+            all_field_numbers - unavailable_field_numbers,
+            reverse=True  # we want to pop in asc order below
+        )
+
+        body = []
+
+        for resolver in resolvers.sort():
+            line = None
+            if resolver.name in schema.fields:
+                adapter = self.get_adapter(resolver.field)
+                if adapter is not None:
+                    field = resolver.field
+                    field_no = field.meta.get('field_no')
+                    if not field_no:
+                        field_no = available_field_numbers.pop()
+                    line = adapter.emit(field=field, field_no=field_no)
+            elif resolver.target is not None:
+                adapter = self.get_adapter(resolver.schema)
+                field_no = available_field_numbers.pop()
+                line = adapter.emit(
+                    field=resolver.schema,
+                    field_no=field_no,
+                    is_repeated=resolver.many
+                )
+
+            if line is not None:
+                if line.strip().startswith('Customer created_at'):
+                    import ipdb; ipdb.set_trace()
+                body.append((field_no, f'   {line};\n'))
+
+        header = f'message {get_class_name(resource_type)} {{\n'
+        body = ''.join(x[1] for x in sorted(body))
+        coda = '}'
+
+        message = header + body + coda
+        return message
 
     def emit(
         self,
+        app: 'Application',
         schema_type: Type['Schema'],
         type_name: Text = None,
-        depth=1
+        depth=1,
+        force=False,
     ) -> Text:
         """
         Recursively generate a protocol buffer message type declaration string
         from a given Schema class.
         """
         if isinstance(schema_type, (type, Schema)):
-            type_name = type_name or get_class_name(schema_type)
+            type_name = get_stripped_schema_name(
+                type_name or get_class_name(schema_type)
+            )
         else:
             raise ValueError(
                 'unrecognized schema type: "{}"'.format(schema_type)
             )
 
-        field_no2field = {}
+        # we don't want to create needless copies of to Resource schemas
+        # while recursively generating nested message types.
+        if (not force) and (type_name in app.res):
+            return None
+
         prepared_data = []
         field_decls = []
 
@@ -170,12 +162,13 @@ class MessageGenerator(object):
             field_decl = adapter.emit(field, field_no)
             field_decls.append(('  ' * depth) + field_decl + ';')
 
-        nested_message_types = [
-            self.emit(nested_schema, depth=depth + 1)
-            for nested_schema in {
-                type(s) for s in schema_type.children
-            }
-        ]
+        nested_message_types = []
+        for nested_schema in {type(s) for s in schema_type.children}:
+            type_source = self.emit(
+                app, nested_schema, depth=depth + 1, force=force
+            )
+            if type_source is not None:
+                nested_message_types.append(type_source)
 
         MESSAGE_TYPE_FSTR = (
             (('   ' * (depth - 1)) + '''message {type_name} ''') + \
