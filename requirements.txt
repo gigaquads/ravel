@@ -23,3 +23,4 @@ base36
 pygame
 celery
 prompt-toolkit>=3.0.4
+jsbeautifier
