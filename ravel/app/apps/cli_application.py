@@ -9,6 +9,7 @@ from appyratus.cli import (
     PositionalArg,
     ListArg,
     FlagArg,
+    FileArg,
     Subparser,
 )
 from appyratus.files import Yaml
@@ -143,11 +144,11 @@ class CliCommand(Action):
         custom_args = self.decorator.kwargs.get('args') or []
         cli_args = self._build_cli_args(func, custom_args)
         name = StringUtils.dash(parser_kwargs.get('name') or self.program_name)
-        return dict(parser_kwargs, **dict(
-            name=name,
-            args=cli_args,
-            perform=self,
-        ))
+        return dict(parser_kwargs, **{
+            'name': name,
+            'args': cli_args,
+            'perform': self,
+        })
 
     def _build_cli_args(self, func, custom_args: List = None):
         if custom_args is None:
@@ -193,6 +194,9 @@ class CliCommand(Action):
                 arg_type = ListArg
             elif 'bool' in str(dtype):
                 arg_type = FlagArg
+            elif 'File' in str(dtype):
+                arg_type = FileArg
+
             if arg_type:
                 arg = arg_type(**arg_params)
             if arg is not None:

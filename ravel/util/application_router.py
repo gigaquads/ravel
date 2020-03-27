@@ -54,20 +54,21 @@ class ApplicationRouter(CliProgram):
             app_arg = PositionalArg(**app_arg_args)
         return [app_arg]
 
-    def perform(self, program: 'CliProgram'):
+    @staticmethod
+    def perform(program):
         """
         # Perform routing
         Route to the app provided in the CLI's first argument
         """
-        app_name = self.cli_args.app
-        app = self.get_app(app_name)
+        app_name = program.cli_args.app
+        app = program.get_app(app_name)
         if not app:
             raise Exception(f'Unable to locate app "{app_name}"')
-        app_method = getattr(self, f'run_{app_name}', None)
+        app_method = getattr(program, f'run_{app_name}', None)
         if callable(app_method):
             return app_method(app)
         else:
-            self.app_lifecycle(app=app)
+            program.app_lifecycle(app=app)
 
     def get_app(self, name: Text):
         """

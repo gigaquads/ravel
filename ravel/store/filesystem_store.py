@@ -100,13 +100,13 @@ class FilesystemStore(Store):
 
         # bootstrap, bind, and backfill the in-memory cache
         with self._table_lock:
-            if not self._cache_store.is_bootstrapped:
+            if not self._cache_store.is_bootstrapped():
                 self._cache_store.bootstrap(resource_type.ravel.app)
-                self._cache_store.bind(resource_type)
-                self._cache_store.create_many(
-                    record for record in self.fetch_all(ignore_cache=True).values()
-                    if record
-                )
+
+            self._cache_store.bind(resource_type)
+            self._cache_store.create_many(
+                record for record in self.fetch_all(ignore_cache=True).values() if record
+            )
 
     def create_id(self, record):
         return record.get(ID, UuidString.next_id())
