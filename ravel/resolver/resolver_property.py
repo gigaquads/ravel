@@ -80,11 +80,19 @@ class ResolverProperty(property):
         if resolver.name not in resource.internal.state:
             request = Request(resolver)
             value = resolver.resolve(resource, request)
+
+            # if resolver is for a field, we know that the resolved
+            # field has been loaded ON the returned resource (value)
+            if resolver.name in resource.ravel.resolvers.fields:
+                value = resource[resolver.name]
+
             if (value is not None) or resolver.nullable:
                 resource.internal.state[resolver.name] = value
             elif (value is None) and (not resolver.nullable):
+                if resource.internal.state.get(resolver.name) is None:
+                    resource.internal.state.pop(resolver.name, None)
                 console.debug(
-                    message=f'ignoring attempt to assign None to {self}',
+                    message=f'ignoring assignment: {self.name} = None',
                     data={
                         'resource': resource._id,
                         'resolver': self.resolver.name,

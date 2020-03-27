@@ -65,7 +65,29 @@ class Loader(Resolver):
         else:
             state = {}
 
-        return state.get(request.resolver.field.name)
+        return resource
+
+    def on_resolve_batch(self, batch, request):
+        id_2_resource = {res._id: res for res in batch}
+        resource_ids = []
+        for res in batch:
+            id_2_resource[res._id] = res
+            res_id = res.internal.state.get('_id')
+            if res_id is not None:
+                resource_ids.append(res_id)
+
+        # field names to fetch (fetch all eagerly)
+        field_names = set(self.target.ravel.schema.fields.keys())
+        state_dicts = resource.ravel.store.dispatch('fetch_many',
+            args=(batch_ids, ),
+            kwargs={'fields': field_names}
+        )
+
+        for res_id, state in state_dicts.items():
+            if state:
+                id_2_resource[res_id].merge(state)
+
+        return batch
 
     def on_simulate(self, resource, request):
         value = None
