@@ -28,6 +28,7 @@ from ravel.constants import (
 )
 
 from ravel.query.query import Query
+from ravel.query.predicate import PredicateParser
 from ravel.resolver.resolver import Resolver
 from ravel.resolver.resolver_decorator import ResolverDecorator
 from ravel.resolver.resolver_property import ResolverProperty
@@ -65,6 +66,7 @@ class ResourceMeta(type):
         resource_type.ravel.is_bound = False
         resource_type.ravel.schema = None
         resource_type.ravel.defaults = {}
+        resource_type.ravel.predicate_parser = PredicateParser(resource_type)
 
         return resource_type._process_fields()
 

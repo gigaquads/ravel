@@ -70,6 +70,17 @@ class GraphqlInterpreter(object):
         request = Request(resolver, query=query)
         args = GraphqlArguments.parse(resolver.target, node)
 
+        if args.where:
+            request.where(args.where)
+        if args.order_by:
+            request.order_by(args.order_by)
+        if args.offset:
+            request.offset(args.offset)
+        if args.limit:
+            request.limit(args.limit)
+        if args.custom:
+            request.parameters.update(args.custom)
+
         for child_node in node.selections:
             name = child_node.name
             if name not in resolvers:
@@ -82,17 +93,6 @@ class GraphqlInterpreter(object):
                 child_request = self._build_request(
                     child_node, query, child_resolver
                 )
-
-                if args.where:
-                    request.where(args.where)
-                if args.order_by:
-                    request.order_by(args.order_by)
-                if args.offset:
-                    request.offset(args.offset)
-                if args.limit:
-                    request.limit(args.limit)
-                if args.custom:
-                    request.parameters.update(args.custom)
 
                 request.select(child_request)
 

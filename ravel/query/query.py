@@ -45,7 +45,7 @@ class Query(object):
         )
 
         if request:
-            self.merge(request)
+            self.merge(request, in_place=True)
 
         if self.target is not None:
             self.select(self.target.ravel.schema.required_fields.keys())

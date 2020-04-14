@@ -76,9 +76,3 @@ class Request(object):
                 self.parameters.select.append(obj)
 
         return self
-
-    def to_query(self, **query_kwargs) -> 'Query':
-        # NOTE: the Query class must be available in the global namespace.
-        # it is not imported here to avoid cyclic import error and also
-        # to avoid the uglyness of a lexically-scoped import.
-        return Request.Query(request=self, **query_kwargs)
