@@ -1,12 +1,13 @@
 import asyncio
 import websockets
-import ujson
 
 from typing import List, Type, Dict, Tuple, Text
 
 from ravel.util.json_encoder import JsonEncoder
 
 from ..async_server import AsyncServer
+
+json = JsonEncoder()
 
 
 class WebsocketServer(AsyncServer):
@@ -29,7 +30,7 @@ class WebsocketServer(AsyncServer):
         return (args, kwargs)
 
     def on_response(self, action, result, *args, **kwargs):
-        return ujson.dumps(result).encode('utf-8')
+        return json.encode(result).encode('utf-8')
 
     async def serve(self, socket, path):
         async for message in socket:
@@ -37,9 +38,9 @@ class WebsocketServer(AsyncServer):
 
             # decode raw request bytes
             try:
-                request = JsonEncoder.decode(message)
-            except ValueError as exc:
-                print(f'invalid request data:  {message}')
+                request = json.decode(message)
+            except ValueError:
+                print(f'invalid request data: {message}')
 
             # route the request to the appropriate
             # action and await response

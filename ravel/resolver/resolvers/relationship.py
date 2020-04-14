@@ -1,20 +1,21 @@
 from typing import Text, Set
 from collections import defaultdict
 from ravel.util.loggers import console
-from ravel.util.misc_functions import get_class_name, flatten_sequence
 from ravel.util import is_resource, is_batch
 from ravel.resolver.resolver import Resolver
 from ravel.batch import BatchResolverProperty
 
 
 class Relationship(Resolver):
-    def __init__(self, join, *args, **kwargs):
+    def __init__(self, join, order_by=None, *args, **kwargs):
+        self._cb_order_by = order_by
+        self._order_by = None
         if callable(join):
-            self.join_callback = join
-            self.joins = []
+            self._cb_joins = join
+            self._join_sequence = []
         else:
-            self.join_callback = None
-            self.joins = join
+            self._cb_joins = None
+            self._join_sequence = join
 
         super().__init__(*args, **kwargs)
 
@@ -30,16 +31,20 @@ class Relationship(Resolver):
         return dumper.dump(value)
 
     def on_bind(self):
-        if self.join_callback is not None:
-            self.app.inject(self.join_callback)
+        if self._cb_joins is not None:
+            self.app.inject(self._cb_joins)
+        if self._cb_order_by is not None:
+            self.app.inject(self._cb_order_by)
+            self._order_by = self._cb_order_by()
 
-        pairs = self.join_callback()
+        pairs = self._cb_joins()
         if not isinstance(pairs[0], (list, tuple)):
             pairs = [pairs]
 
-        self.joins = [Join(l, r) for l, r in pairs]
-        self.target = self.joins[-1].right_loader.owner
-        self.many = self.joins[-1].right_many
+        self._join_sequence = [Join(l, r) for l, r in pairs]
+
+        self.target = self._join_sequence[-1].right_loader.owner
+        self.many = self._join_sequence[-1].right_many
 
     def pre_resolve(self, resource, request):
         if self.app.is_simulation:
@@ -48,32 +53,30 @@ class Relationship(Resolver):
             return
 
         source = resource
-        final_join = self.joins[-1]
+        final_join = self._join_sequence[-1]
         results = []
 
-        for j1, j2 in zip(self.joins, self.joins[1:]):
+        # build sequence of "join queries" to execute, resolving
+        # the target Resource type in the final query.
+        for j1, j2 in zip(self._join_sequence, self._join_sequence[1:]):
             query = j1.build(source).select(j2.left_field.name)
             result = query.execute()
             results.append(result)
             source = result
 
+        # build final query and merge in query parameters
+        # passed in through the request
         query = final_join.build(source)
+        query.merge(request, in_place=True)
 
-        # set values passed in through request
-        if request.parameters.select:
-            query.select(request.parameters.select)
-        if request.parameters.where:
-            query.where(request.parameters.where)
-        if request.parameters.order_by:
-            query.order_by(request.parameters.order_by)
-        if request.parameters.limit:
-            query.order_by(request.parameters.limit)
-        if request.parameters.offset:
-            query.order_by(request.parameters.offset)
+        if self._order_by:
+            query.order_by(self._order_by)
 
         result = query.execute(first=not self.many)
         results.append(result)
 
+        # the resolver's returned result is the result from
+        # the final query in the "join query" sequence.
         request.result = results[-1]
 
     def pre_resolve_batch(self, batch, request):
@@ -85,22 +88,22 @@ class Relationship(Resolver):
         mappings = []
         source = batch
 
-        for j1, j2 in zip(self.joins, self.joins[1:] + [None]):
+        for j1, j2 in zip(
+            self._join_sequence,
+            self._join_sequence[1:] + [None]
+        ):
             query = j1.build(source)
+
             if j2 is not None:
-                query = query.select(j2.left_field.name)
+                # we come here for each Join object except the last
+                # in the sequence.
+                query.select(j2.left_field.name)
             else:
-                # set values passed in through request
-                if request.parameters.select:
-                    query.select(request.parameters.select)
-                if request.parameters.where:
-                    query.where(request.parameters.where)
-                if request.parameters.order_by:
-                    query.order_by(request.parameters.order_by)
-                if request.parameters.limit:
-                    query.order_by(request.parameters.limit)
-                if request.parameters.offset:
-                    query.order_by(request.parameters.offset)
+                # for the final query, merge in query parameters
+                # passed in through the request.
+                query.merge(request)
+                if self._order_by:
+                    query.order_by(self._order_by)
 
             value_2_queried_resource = defaultdict(set)
             queried_resources = query.execute()
@@ -145,8 +148,8 @@ class Relationship(Resolver):
 
     def on_simulate(self, resource, request):
         query = request.to_query()
-        if len(self.joins) == 1:
-            join = self.joins[0]
+        if len(self._join_sequence) == 1:
+            join = self._join_sequence[0]
             joined_value = getattr(resource, join.left_field.name)
             query.where(join.right_loader_property == joined_value)
         entity = query.execute(first=not self.many)

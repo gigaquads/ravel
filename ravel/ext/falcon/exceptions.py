@@ -1,8 +1,10 @@
 from __future__ import absolute_import
 
-import ujson
+from ravel.util.json_encoder import JsonEncoder
 
 from falcon import HTTPError, status_codes
+
+json = JsonEncoder()
 
 
 class RavelFalconError(HTTPError):
@@ -21,14 +23,13 @@ class RavelFalconError(HTTPError):
 
     def to_dict(self):
         return {
-            'code': self.app_status,
             'status': self.http_status,
             'message': self.message,
             'data': self.data,
             }
 
     def to_json(self):
-        return ujson.dumps(self.to_dict())
+        return json.encode(self.to_dict())
 
 
 class NotFound(RavelFalconError):

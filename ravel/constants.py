@@ -5,7 +5,7 @@ from appyratus.enum import Enum
 ENV = Environment()
 
 # logging:
-CONSOLE_LOG_LEVEL = ENV.get('RAVEL_CONSOLE_LOG_LEVEL', 'DEBUG')
+CONSOLE_LOG_LEVEL = ENV.get('RAVEL_CONSOLE_LOG_LEVEL', 'INFO')
 
 
 # field name constants:

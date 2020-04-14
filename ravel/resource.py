@@ -17,13 +17,8 @@ from ravel.util import (
     is_resource_type,
     is_sequence,
     get_class_name,
-    flatten_sequence,
-    union,
 )
-from ravel.schema import (
-    Field, Schema, String, Int, Id,
-    UuidString, Bool, Float
-)
+from ravel.schema import Field, Schema, String, Id, UuidString
 from ravel.dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
 from ravel.batch import Batch
 from ravel.constants import (
@@ -33,7 +28,6 @@ from ravel.constants import (
 )
 
 from ravel.query.query import Query
-from ravel.query.order_by import OrderBy
 from ravel.resolver.resolver import Resolver
 from ravel.resolver.resolver_decorator import ResolverDecorator
 from ravel.resolver.resolver_property import ResolverProperty
@@ -122,14 +116,19 @@ class ResourceMeta(type):
         for k, field in fields.items():
             if k in inherited_fields:
                 resolver_property = Loader.build_property(kwargs=dict(
-                    owner=resource_type, field=field, name=k, target=resource_type,
+                    owner=resource_type,
+                    field=field,
+                    name=k,
+                    target=resource_type,
                 ))
-                resource_type.ravel.resolvers.register(resolver_property.resolver)
+                resource_type.ravel.resolvers.register(
+                    resolver_property.resolver
+                )
                 setattr(resource_type, k, resolver_property)
             if field.source is None:
                 field.source = field.name
             if isinstance(field, Id) and field.name != ID:
-                    resource_type.ravel.foreign_keys[field.name] = field
+                resource_type.ravel.foreign_keys[field.name] = field
 
         # these are universally required
         assert ID in fields
@@ -142,7 +141,9 @@ class ResourceMeta(type):
         resource_type.Schema = type(class_name, (Schema, ), fields)
 
         resource_type.ravel.schema = schema = resource_type.Schema()
-        resource_type.ravel.defaults = resource_type._extract_field_defaults(schema)
+        resource_type.ravel.defaults = (
+            resource_type._extract_field_defaults(schema)
+        )
 
     def _copy_fields_from_mixin(resource_type, class_obj):
         fields = {}
@@ -213,7 +214,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             id_str = '?'
         elif isinstance(id_value, str):
             id_str = id_value[:7]
-        elif isinstance(id_value, UUID):
+        elif isinstance(id_value, uuid.UUID):
             id_str = id_value.hex[:7]
         else:
             id_str = repr(id_value)
@@ -289,7 +290,11 @@ class Resource(Entity, metaclass=ResourceMeta):
         }
 
     @classmethod
-    def generate(cls, resolvers: Set[Text] = None, values: Dict = None) -> 'Resource':
+    def generate(
+        cls,
+        resolvers: Set[Text] = None,
+        values: Dict = None
+    ) -> 'Resource':
         instance = cls()
         values = values or {}
         keys = resolvers or set(cls.ravel.schema.fields.keys())
@@ -347,7 +352,11 @@ class Resource(Entity, metaclass=ResourceMeta):
         self.internal.state.mark(keys)
         return self
 
-    def dump(self, resolvers: Set[Text] = None, style: DumpStyle = None) -> Dict:
+    def dump(
+        self,
+        resolvers: Set[Text] = None,
+        style: DumpStyle = None
+    ) -> Dict:
         """
         Dump the fields of this business object along with its related objects
         (declared as relationships) to a plain ol' dict.
@@ -374,8 +383,8 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     def resolve(self, resolvers: Union[Text, Set[Text]] = None) -> 'Resource':
         """
-        Execute each of the resolvers, specified by name, storing the results in
-        `self.internal.state`.
+        Execute each of the resolvers, specified by name, storing the results
+        in `self.internal.state`.
         """
         if self._id is None:
             return self
@@ -451,7 +460,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         # extract only those elements of state data that correspond to
         # Fields declared on this Resource class.
         if ID not in self.internal.state:
-            self._id = self.ravel.store.create_id(record)
+            self._id = self.ravel.store.create_id(self.internal.state)
 
         # when inserting or updating, we don't want to write the _rev value on
         # accident. The DAL is solely responsible for modifying this value.
@@ -506,8 +515,14 @@ class Resource(Entity, metaclass=ResourceMeta):
     # CRUD Methods
 
     @classmethod
-    def select(cls, *resolvers: Tuple[Text], parent: 'Query' = None) -> 'Query':
-        return Query(target=cls, parent=parent).select(resolvers)
+    def select(
+        cls,
+        *resolvers: Tuple[Text],
+        parent: 'Query' = None,
+        request: 'Request' = None,
+    ) -> 'Query':
+        query = Query(target=cls, request=request, parent=parent)
+        return query.select(resolvers)
 
     def create(self, data: Dict = None, **more_data) -> 'Resource':
         data = dict(data or {}, **more_data)
@@ -517,7 +532,9 @@ class Resource(Entity, metaclass=ResourceMeta):
         prepared_record = self._prepare_record_for_create()
         prepared_record.pop(REV, None)
 
-        created_record = self.ravel.store.dispatch('create', (prepared_record, ))
+        created_record = self.ravel.store.dispatch(
+            'create', (prepared_record, )
+        )
 
         self.internal.state.update(created_record)
         return self.clean()
@@ -528,7 +545,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             return None
 
         if is_sequence(_id):
-            return self.get_many(_ids=_id, select=select)
+            return cls.get_many(_ids=_id, select=select)
 
         if not select:
             select = set(cls.ravel.schema.fields.keys())
@@ -588,7 +605,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         """
         return cls.query(
             select=select,
-            where=cls._id != None,
+            where=cls._id is not None,
             order_by=cls._id.asc,
             offset=offset,
             limit=limit,
@@ -596,8 +613,8 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     def delete(self) -> 'Resource':
         """
-        Call delete on this object's store and therefore mark all fields as dirty
-        and delete its _id so that save now triggers Store.create.
+        Call delete on this object's store and therefore mark all fields as
+        dirty and delete its _id so that save now triggers Store.create.
         """
         self.ravel.store.dispatch('delete', (self._id, ))
         self.mark(self.internal.state.keys())
@@ -645,7 +662,6 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         return store.dispatch('exists', args=args)
 
-
     @classmethod
     def exists_many(cls, entity: 'Entity') -> bool:
         """
@@ -671,22 +687,6 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     def save(self, depth=0):
         return self.save_many([self], depth=depth)[0]
-
-    def create(self, data: Dict = None) -> 'Resource':
-        if data:
-            self.merge(data)
-
-        prepared_record = self._prepare_record_for_create()
-
-        # pop REV because it's owned and managed by the store.
-        prepared_record.pop(REV, None)
-
-        created_record = self.ravel.store.dispatch(
-            'create', (prepared_record, )
-        )
-
-        self.internal.state.update(created_record)
-        return self.clean()
 
     def update(self, data: Dict = None, **more_data) -> 'Resource':
         data = dict(data or {}, **more_data)
@@ -754,10 +754,10 @@ class Resource(Entity, metaclass=ResourceMeta):
         cls, resources: List['Resource'], data: Dict = None, **more_data
     ) -> 'Batch':
         """
-        Call the Store's update_many method on the list of Resources. Multiple
-        Store calls may be made. As a preprocessing step, the input resource list
-        is partitioned into groups, according to which subset of fields are
-        dirty.
+        Call the Store's update_many method on the list of Resources.
+        Multiple Store calls may be made. As a preprocessing step, the input
+        resource list is partitioned into groups, according to which subset
+        of fields are dirty.
 
         For example, consider this list of resources,
 
@@ -844,9 +844,9 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         # perform bulk create and update
         if to_create:
-            created = cls.create_many(to_create)
+            cls.create_many(to_create)
         if to_update:
-            updated = cls.update_many(to_update)
+            cls.update_many(to_update)
 
         retval = cls.Batch(to_update + to_create)
 
@@ -862,7 +862,9 @@ class Resource(Entity, metaclass=ResourceMeta):
             for resource in resources:
                 if resolver.name in resource.internal.state:
                     value = resource.internal.state[resolver.name]
-                    entity_to_save = resolver.on_save(resolver, resource, value)
+                    entity_to_save = resolver.on_save(
+                        resolver, resource, value
+                    )
                     if entity_to_save:
                         if is_resource(entity_to_save):
                             class_2_objects[resolver.owner].add(

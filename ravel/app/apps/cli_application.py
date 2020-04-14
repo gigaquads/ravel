@@ -63,11 +63,16 @@ class CliApplication(Application):
             subparsers=subparsers, cli_args=self._cli_args, **self._cli_program_kwargs
         )
 
-    def on_start(self):
+    def on_start(self, debug=True):
         """
         Run the CliProgram.
         """
-        SysUtils.safe_main(self._cli_program.run, debug_level=self._debug_level)
+        if debug:
+            return SysUtils.safe_main(
+                self._cli_program.run, debug_level=self._debug_level
+            )
+        else:
+            return self._cli_program.run()
 
     def on_request(self, action, *args, **kwargs):
         """
@@ -153,8 +158,7 @@ class CliCommand(Action):
     def _build_cli_args(self, func, custom_args: List = None):
         if custom_args is None:
             custom_args = []
-        required_args = []
-        optional_args = []
+
         args = []
         custom_args_by_name = {a.name: a for a in custom_args}
         for k, param in self.signature.parameters.items():

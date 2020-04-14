@@ -1,5 +1,4 @@
-from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
-from collections import defaultdict
+from typing import Text, List, Dict, Type, Union, Callable
 from copy import deepcopy
 
 from appyratus.utils import DictObject
@@ -13,7 +12,7 @@ from ravel.util.misc_functions import (
 
 from ravel.util import is_resource, is_resource_type
 from ravel.resolver.resolver_property import ResolverProperty
-from ravel.resolver.resolvers.loader import LoaderProperty, Loader
+from ravel.resolver.resolvers.loader import LoaderProperty
 
 from .order_by import OrderBy
 from .request import Request
@@ -27,7 +26,7 @@ class Query(object):
         target: Union[Type['Resource'], Callable] = None,
         sources: List['Resource'] = None,
         parent: 'Query' = None,
-        request: 'Reqeust' = None
+        request: 'Request' = None
     ):
         self.sources = sources or []
         self.target = target
@@ -46,20 +45,7 @@ class Query(object):
         )
 
         if request:
-            if request.resolver and request.resolver.target:
-                self.target = request.resolver.target
-            if request.parameters:
-                params = request.parameters
-                if 'select' in params:
-                    self.select(params.select)
-                if 'where' in params:
-                    self.where(params.where)
-                if 'order_by' in params:
-                    self.order_by(params.order_by)
-                if 'limit' in params:
-                    self.limit(params.limit)
-                if 'offset' in params:
-                    self.offset(params.offset)
+            self.merge(request)
 
         if self.target is not None:
             self.select(self.target.ravel.schema.required_fields.keys())
@@ -92,12 +78,19 @@ class Query(object):
             f'])'
         )
 
-    def merge(self, other: 'Query', in_place=False) -> 'Query':
+    def merge(
+        self,
+        other: Union['Query', 'Request'],
+        in_place: bool = False
+    ) -> 'Query':
         if in_place:
-            self.parameters.update(deepcopy(other.parameters))
-            self.options.update(deepcopy(other.options))
-            for k, v in other.requests.items():
-                self.requests[k].update(v)
+            if isinstance(other, Query):
+                self.parameters.update(deepcopy(other.parameters))
+                self.options.update(deepcopy(other.options))
+                self.select(other.requests.values())
+            else:
+                assert isinstance(other, Request)
+                self._merge_request(other)
             return self
         else:
             merged_query = type(self)(
@@ -105,8 +98,36 @@ class Query(object):
                 parent=other.parent or self.parent,
             )
             merged_query.merge(self, in_place=True)
-            merged_query.merge(other, in_place=True)
+            if isinstance(other, Query):
+                merged_query.merge(other, in_place=True)
+            else:
+                assert isinstance(other, Request)
+                merged_query._merge_request(other)
             return merged_query
+
+    def _merge_request(self, request: 'Request'):
+        # set the target type or ensure that the request's resolver
+        # target type is the same as this query's, or bail.
+        if request.resolver and request.resolver.target:
+            if self.target is None:
+                self.target = request.resolver.target
+            elif self.target is not request.resolver.target:
+                raise Exception(
+                    'cannot merge two queries with different target types'
+                )
+        # marshal in raw query parameters from the request
+        if request.parameters:
+            params = request.parameters
+            if 'select' in params:
+                self.select(params.select)
+            if 'where' in params:
+                self.where(params.where)
+            if 'order_by' in params:
+                self.order_by(params.order_by)
+            if 'limit' in params:
+                self.limit(params.limit)
+            if 'offset' in params:
+                self.offset(params.offset)
 
     def configure(
         self,
@@ -131,6 +152,9 @@ class Query(object):
             return batch[0] if batch else None
         else:
             return batch
+
+    def exists(self):
+        return bool(self.execute(first=True))
 
     def deselect(self, *args):
         """

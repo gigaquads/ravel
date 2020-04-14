@@ -21,7 +21,7 @@ const {GrpcApplicationClient} = require('./app_grpc_web_pb.js');
 
 
 export const jsonSchemas = {
-    {% for name, resource_class in resource_types.items() %}
+    {% for name, resource_class in app.res.items() %}
     "{{ name }}": {{ json_schema_generator.from_resource(resource_class, encode=True) | safe }},
     {% endfor %}
 
@@ -91,18 +91,20 @@ export class Schema {
         const message = new context.messageTypes[this.name]();
         for (const k in object) {
             let field = this.fields[k];
-            if (field !== undefined) {
-                const value = object[field.name];
-                if (value != null) {
-                    field.dumpTo(value, message, context);
-                }
-            } else if (k === 'id' || k === 'rev') {
+            if (k === 'id' || k === 'rev') {
                 field = this.fields['_' + k];
                 const value = object.id;
                 if (value != null) {
                     field.dumpTo(value, message, context);
                 }
-            } else{
+            }
+            else if (field) {
+                const value = object[field.name];
+                if (value !== null && value !== undefined) {
+                    field.dumpTo(value, message, context);
+                }
+            }
+            else{
                 // field not in schema
                 console.warn(
                     `not dumping unrecognized field: ${k}`
@@ -268,36 +270,16 @@ export class SchemaField extends Field {
 }
 
 
-class GrpcService {
-    constructor(serviceUrl, schemas, messageTypes, grpcClient) {
-        this.serviceUrl = serviceUrl;
-        this.schemas = schemas;
-        this.messageTypes = messageTypes;
-        this.grpcClient = grpcClient;
-    }
-
-    static newInstance(scheme = 'http', host = 'localhost', port = 8080) {
+export class GrpcService {
+    constructor(scheme = 'http', host = 'localhost', port = 8080) {
         const serviceUrl = `${scheme}://${host}:${port}`;
         const grpcClient = new GrpcApplicationClient(serviceUrl);
 
         console.log(
-            `{{ app_name }} gRPC service using server address: ${serviceUrl}`
+            `{{ app.name }} gRPC service using server address: ${serviceUrl}`
         );
 
-        // create a new GrpcService subclass, specializing it
-        // for the grpc client provided.
-        class GrpcServiceSubclass extends GrpcService {}
-
-        // bless the new subclass with public methods for client RPC methods.
-        // note that we ignore "private" methods, which we define as ending or
-        // starting with an underscore.
-        for (let funcName in grpcClient) {
-            if (!(funcName.startsWith('_') || funcName.endsWith('_'))) {
-                GrpcServiceSubclass._buildServiceMethod(funcName);
-            }
-        }
-
-        // build and collect schemas and proto message classes
+        // initialize aschemas and protobuf message types
         const schemas = {};
         const messageTypes = {};
         for (const schemaName in jsonSchemas) {
@@ -310,47 +292,63 @@ class GrpcService {
             }
         }
 
-        // return a singleton instance of the new class.
-        return new GrpcServiceSubclass(
-            serviceUrl, schemas, messageTypes, grpcClient
-        );
+        this.serviceUrl = serviceUrl;
+        this.schemas = schemas;
+        this.messageTypes = messageTypes;
+        this.grpcClient = grpcClient;
     }
 
-    static _buildServiceMethod(clientFuncName) {
-        const methodName = Utils.camel(clientFuncName, false);
-        const requestSchemaName = `${Utils.camel(clientFuncName)}Request`;
-        const responseSchemaName = `${Utils.camel(clientFuncName)}Response`;
-
-        console.log(
-            `{{ app_name }} gRPC service registering RPC method: ${methodName}`
-        );
-
-        this.prototype[methodName] = function(
-            data = {}, callback = null, metaData = null
-        ) {
-            const context = {
-                schemas: this.schemas,
-                messageTypes: this.messageTypes
-            }
-            const requestSchema = this.schemas[requestSchemaName];
-            const request = requestSchema.dump(data, context);
-            const sendRequest = this.grpcClient[clientFuncName].bind(this.grpcClient);
-
-            sendRequest(request, metaData, (err, response) => {
-                if (err == null) {
-                    const responseSchema = this.schemas[responseSchemaName];
-                    const data = responseSchema.load(response, context);
-                    if (callback != null) {
-                        callback(err, data);
-                    }
-                } else {
-                    console.error(err);
-                }
-            });
-
+    _performRequest(
+        clientMethod,
+        requestSchema,
+        responseSchema,
+        payload,
+        meta,
+        callback
+    ) {
+        var context = {
+            schemas: this.schemas,
+            messageTypes: this.messageTypes
         };
+        const request = requestSchema.dump(payload, context);
+        clientMethod.bind(this.grpcClient)(
+            request, meta, (err, response) => {
+                if (err) {
+                    console.error(err);
+                } else {
+                    const responseData = responseSchema.load(response, context);
+                    callback(err, responseData);
+                }
+            }
+        );
     }
+
+    {% for action in app.actions.values() %}
+        /**
+         {% if len(action.signature.parameters) > 1 %}
+         * Data Fields:
+         {% for param in list(action.signature.parameters.values())[1:] -%}
+         *  - {{ param.name }}: {{ class_name(param.annotation if param.annotation != None and param.annotation != inspect._empty else 'any') | safe }}
+         {% endfor %}
+         *
+         {% endif %}
+         * @summary Calls the remote {{ action.name }} method
+         * @param {!Object} request The plain old payload object
+         * @param {!Function} callback Callback that resolves to response data
+         * @param {?Object} meta Metadata for the RPC call
+         */
+        {{ action.name|camel_lower }}(
+            data,
+            callback,
+            meta
+        ) {
+            this._performRequest(
+                this.grpcClient.{{ action.name }},
+                this.schemas.{{ action.name|camel }}Request,
+                this.schemas.{{ action.name|camel }}Response,
+                data, meta, callback
+            );
+        }
+
+    {% endfor %}
 }
-
-
-export const service = GrpcService.newInstance();

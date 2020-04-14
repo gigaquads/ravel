@@ -1,5 +1,6 @@
 import typing
-from .schema import *
+from ravel.schema import fields
+from ravel.schema import *
 from ravel.app.apps import *
 from ravel.manifest import Manifest
 from ravel.resource import Resource, ResourceMeta
