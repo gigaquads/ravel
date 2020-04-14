@@ -21,7 +21,7 @@ class GraphqlQuery(Resource):
         cls._interpreter = GraphqlInterpreter(cls)
 
     @classmethod
-    def parse(cls, query: Text) -> 'Query':
+    def interpret(cls, query: Text) -> 'Query':
         """
         Transform the GraphQL query string into a Ravel query.
         """

@@ -265,7 +265,7 @@ class Resolver(object):
         pass
 
     def on_simulate(self, resource, request):
-        query = request.to_query()
+        query = request.resolver.target.select(request=request)
         if self.many:
             return query.execute(simulate=True)
         else:

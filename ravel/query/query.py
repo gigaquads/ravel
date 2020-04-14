@@ -85,8 +85,8 @@ class Query(object):
     ) -> 'Query':
         if in_place:
             if isinstance(other, Query):
-                self.parameters.update(deepcopy(other.parameters))
-                self.options.update(deepcopy(other.options))
+                self.parameters.update(deepcopy(other.parameters.to_dict()))
+                self.options.update(deepcopy(other.options.to_dict()))
                 self.select(other.requests.values())
             else:
                 assert isinstance(other, Request)
@@ -94,8 +94,8 @@ class Query(object):
             return self
         else:
             merged_query = type(self)(
-                target=other.target or self.target,
-                parent=other.parent or self.parent,
+                target=self.target,
+                parent=self.parent,
             )
             merged_query.merge(self, in_place=True)
             if isinstance(other, Query):

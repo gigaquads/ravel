@@ -8,6 +8,7 @@ from typing import Dict
 
 from appyratus.env import Environment
 
+from ravel.app.middleware import Middleware
 from ravel.app.apps.web import AbstractWsgiService
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
@@ -60,7 +61,7 @@ class FalconService(AbstractWsgiService):
             if isinstance(m, Middleware):
                 m.bind(self)
 
-        falcon_app = falcon.API(
+        falcon_app = falcon.App(
             middleware=middleware,
             request_type=self.request_type,
             response_type=self.response_type,
