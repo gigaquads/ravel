@@ -3,83 +3,35 @@
     {
       "embryo": {
         "action": "hatch",
-        "destination": "/Users/jeffdoss/jump-ship/code/pybiz",
         "name": "project/base",
-        "timestamp": 1556809625
+        "timestamp": 1582392343
       },
       "project": {
-        "name": "pybiz"
+        "name": "ravel"
       }
     }
   ],
-  "python-project/base": [
+  "python_project/base": [
     {
-      "description": null,
       "embryo": {
         "action": "hatch",
-        "destination": "/Users/jeffdoss/jump-ship/code/pybiz",
-        "name": "python-project/base",
-        "timestamp": 1556809636
+        "name": "python_project/base",
+        "timestamp": 1582395804
       },
-      "project": null,
-      "tagline": null,
-      "version": null
+      "project": {}
     }
   ],
-  "python-project/setup": [
+  "python_project/setup": [
     {
-      "author": null,
-      "author_email": null,
-      "classifiers": null,
-      "dependency_links": null,
-      "description": null,
+      "config": {},
       "embryo": {
         "action": "hatch",
-        "destination": "/Users/jeffdoss/jump-ship/code/pybiz",
-        "name": "python-project/setup",
-        "timestamp": 1556809823
+        "name": "python_project/setup",
+        "timestamp": 1582397716
       },
-      "find_packages": null,
-      "install_requires": null,
-      "keywords": null,
-      "license": null,
-      "long_description": null,
-      "name": null,
-      "packages": null,
-      "project": null,
-      "refresh_scripts": true,
-      "scripts": null,
-      "tagline": null,
-      "url": null,
-      "version": null,
-      "zip_safe": null
-    },
-    {
-      "author": null,
-      "author_email": null,
-      "classifiers": null,
-      "dependency_links": null,
-      "description": null,
-      "embryo": {
-        "action": "hatch",
-        "destination": "/Users/jeffdoss/jump-ship/code/pybiz",
-        "name": "python-project/setup",
-        "timestamp": 1556809867
-      },
-      "find_packages": null,
-      "install_requires": null,
-      "keywords": null,
-      "license": null,
-      "long_description": null,
-      "name": null,
-      "packages": null,
-      "project": null,
-      "refresh_scripts": true,
-      "scripts": null,
-      "tagline": null,
-      "url": null,
-      "version": null,
-      "zip_safe": null
+      "metadata": {},
+      "options": {},
+      "project": null
     }
   ]
 }

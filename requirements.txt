@@ -13,6 +13,14 @@ grpcio_tools
 btrees
 falcon
 websockets
-
+faker
+sqlalchemy
+redis
+sqlparse
 pytest
 mock
+base36
+pygame
+celery
+prompt-toolkit>=3.0.4
+jsbeautifier
