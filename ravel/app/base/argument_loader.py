@@ -146,6 +146,7 @@ class ArgumentLoader(object):
                     preloaded[ID] = preloaded.pop('id')
                 if 'rev' in preloaded:
                     preloaded[REV] = preloaded.pop('rev')
+                self.preload_resolver_state(resource_type, preloaded)
                 return resource_type(state=preloaded)
             else:
                 return resource_type.get(_id=preloaded)
@@ -156,8 +157,36 @@ class ArgumentLoader(object):
                 return resource_type.Batch(resources=preloaded)
             elif isinstance(preloaded[0], dict):
                 return resource_type.Batch(
-                    resource_type(state=record).merge(_id=None, _rev=None)
+                    resource_type(
+                        state=self.preload_resolver_state(resource_type, record)
+                    ).merge(_id=None, _rev=None)
                     for record in preloaded
                 )
             else:
                 return resource_type.get_many(_ids=preloaded)
+
+    def preload_resolver_state(
+        self, resource_type: Type['Resource'], preloaded: Dict
+    ):
+        for resolver in resource_type.ravel.resolvers.values():
+            if resolver.name in resource_type.ravel.resolvers.fields:
+                continue
+
+            preloaded_obj = preloaded.get(resolver.name)
+            if preloaded_obj:
+                target_resource_class = resolver.target
+                target_batch_class = target_resource_class.Batch
+                if resolver.many:
+                    dict_list = preloaded_obj
+                    print(dict_list)
+                    preloaded[resolver.name] = target_batch_class(
+                        target_resource_class(
+                            state=self.preload_resolver_state(resolver.target, x)
+                        ) for x in dict_list
+                    )
+                else:
+                    state_dict = preloaded_obj
+                    preloaded[resolver.name] = target_resource_class(
+                        state=self.preload_resolver_state(resolver.target, state_dict)
+                    )
+        return preloaded
