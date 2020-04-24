@@ -136,7 +136,7 @@ class ArgumentLoader(object):
         - If it is a list of IDs, return a Batch.
         - If it is a dict, replace it with a corresponding Resource instance.
         """
-        if not (preloaded and resource_type):
+        if not resource_type:
             return preloaded
         elif not many:
             if is_resource(preloaded):
