@@ -2,7 +2,7 @@ from typing import Tuple, Text
 
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name
-from ravel.util import is_resource, is_batch
+from ravel.util import is_resource, is_batch, is_sequence
 from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
 
@@ -110,6 +110,9 @@ class ResolverProperty(property):
         """
         resolver = self.resolver
         old_value = resource.internal.state.get(resolver.name)
+        if self.resolver.many and not is_batch(new_value):
+            assert is_sequence(new_value)
+            new_value = self.resolver.target.Batch(new_value)
         resource.internal.state[resolver.name] = new_value
         resolver.on_set(resource, old_value, new_value)
 

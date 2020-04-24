@@ -147,12 +147,15 @@ class Relationship(Resolver):
         return request.result
 
     def on_simulate(self, resource, request):
-        query = request.to_query()
+        from ravel import Query
+
+        query = Query(request=request)
         if len(self._join_sequence) == 1:
             join = self._join_sequence[0]
             joined_value = getattr(resource, join.left_field.name)
             query.where(join.right_loader_property == joined_value)
         entity = query.execute(first=not self.many)
+
         return entity
 
 
