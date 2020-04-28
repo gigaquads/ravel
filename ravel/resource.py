@@ -400,7 +400,14 @@ class Resource(Entity, metaclass=ResourceMeta):
         for k in resolvers:
             resolver = self.ravel.resolvers.get(k)
             if resolver is not None:
-                setattr(self, k, resolver.resolve(self))
+                if k in self.ravel.resolvers.fields:
+                    # field loader resolvers are treated specially to overcome
+                    # the limitation of Resolver.target always expecte to be a
+                    # Resource class.
+                    obj = resolver.resolve(self)
+                    setattr(self, k, getattr(obj, k))
+                else:
+                    setattr(self, k, resolver.resolve(self))
 
         # clean the resolved values so they arent't accidently saved on
         # update/create, as we just fetched them from the store.

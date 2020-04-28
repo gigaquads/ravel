@@ -53,18 +53,30 @@ class Loader(Resolver):
         if not exists_resource:
             return None
 
-        unloaded_field_names = list(
+        # load from store
+        unloaded_field_names = set(
             resource.Schema.fields.keys() - resource.internal.state.keys()
         )
-        state = resource.ravel.store.dispatch('fetch',
-            args=(resource._id, ),
-            kwargs={'fields': unloaded_field_names}
-        )
-        if state is not None:
-            resource.merge(state)
-        else:
-            state = {}
+        # container for resolved resource instance state
+        new_resource_state = {}
 
+        # if the field has a on_resolve function, put there by the
+        # @field decorator, use it instead of fetching from store.
+        field_on_resolve = self._field.meta.get('ravel_on_resolve')
+        if field_on_resolve is not None:
+            unloaded_field_names.discard(self._field.name)
+            value = field_on_resolve(resource, request)
+            new_resource_state[self._field.name] = value
+
+        new_resource_state.update(
+            resource.ravel.store.dispatch(
+                'fetch',
+                args=(resource._id, ),
+                kwargs={'fields': unloaded_field_names}
+            ) or {}
+        )
+
+        resource.merge(new_resource_state)
         return resource
 
     def on_resolve_batch(self, batch, request):
