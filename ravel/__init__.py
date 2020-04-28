@@ -9,6 +9,7 @@ from ravel.store.base.store import Store
 from ravel.store.base.store_history import StoreEvent, StoreHistory
 from ravel.api import Api
 from ravel.app.base import Application, ActionDecorator, Action
+from ravel.app.middleware import Middleware
 from ravel.resource import Resource
 from ravel.entity import Entity
 from ravel.batch import Batch

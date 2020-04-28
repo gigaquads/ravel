@@ -107,13 +107,23 @@ class Request(object):
         self.__dict__['context'] = DictObject()
 
     def __repr__(self):
-        return (
-            f'Request(action="{self.internal.action.name}")'
-        )
+        return f'Request(action="{self.internal.action.name}")'
+
+    @property
+    def raw_args(self):
+        return self.internal.raw_args
+
+    @property
+    def raw_kwargs(self):
+        return self.internal.raw_kwargs
 
     @property
     def session(self) -> 'Session':
         return self.context.session
+
+    @session.setter
+    def session(self, session: 'Session'):
+        self.context.session = session
 
     @property
     def app(self) -> 'Application':
