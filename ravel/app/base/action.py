@@ -171,7 +171,7 @@ class Action(object):
 
         if state.errors:
             console.error(
-                message=f'error/s occured in {self}',
+                message=f'error/s occured in action: {self.name}',
                 data={
                     'errors': [
                         error.to_dict() for error in state.errors
