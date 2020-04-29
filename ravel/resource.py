@@ -385,7 +385,9 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     def validate(self, resolvers: Set[Text] = None, strict=False) -> Dict:
         """
-        Validate
+        Validate an object's loaded state data. If you need to check if some
+        state data is loaded or not and raise an exception in case absent,
+        use self.require.
         """
         errors = {}
         resolver_names_to_validate = (
@@ -418,6 +420,11 @@ class Resource(Entity, metaclass=ResourceMeta):
         return errors
 
     def require(self, resolvers: Set[Text] = None, strict=False) -> Set[Text]:
+        """"
+        Checks if all specified resolvers are present. If they are required
+        but not present, an exception will be raised for `strict` mode;
+        otherwise, a set of the missing resolver names is returned.
+        """"
         required_resolver_names = (
             resolvers or set(
                 k for k in self.ravel.resolvers.keys()
