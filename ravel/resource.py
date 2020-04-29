@@ -420,11 +420,11 @@ class Resource(Entity, metaclass=ResourceMeta):
         return errors
 
     def require(self, resolvers: Set[Text] = None, strict=False) -> Set[Text]:
-        """"
+        """
         Checks if all specified resolvers are present. If they are required
         but not present, an exception will be raised for `strict` mode;
         otherwise, a set of the missing resolver names is returned.
-        """"
+        """
         required_resolver_names = (
             resolvers or set(
                 k for k in self.ravel.resolvers.keys()
