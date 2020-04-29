@@ -9,6 +9,7 @@ from collections import deque, OrderedDict, namedtuple
 
 from appyratus.utils import DictObject, DictUtils
 from appyratus.enum import EnumValueStr
+from appyratus.env import Environment
 
 from ravel.manifest import Manifest
 from ravel.util.json_encoder import JsonEncoder
@@ -43,6 +44,7 @@ class Application(object):
         mode: Mode = Mode.normal,
     ):
         self.manifest = Manifest.from_object(manifest)
+        self.env = Environment()
         self.local = local()
 
         self._mode = mode
