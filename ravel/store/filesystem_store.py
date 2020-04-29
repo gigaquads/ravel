@@ -227,7 +227,6 @@ class FilesystemStore(Store):
 
     def update(self, _id, data: Dict) -> Dict:
         fpath = self.mkpath(_id)
-        j
         with self._row_locks[_id]:
             base_record = self.ftype.read(fpath)
 
