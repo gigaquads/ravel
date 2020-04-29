@@ -383,6 +383,62 @@ class Resource(Entity, metaclass=ResourceMeta):
         clone = type(self)(state=deepcopy(self.internal.state))
         return clone.clean()
 
+    def validate(self, resolvers: Set[Text] = None, strict=False) -> Dict:
+        """
+        Validate
+        """
+        errors = {}
+        resolver_names_to_validate = (
+            resolvers or set(self.ravel.resolvers.keys())
+        )
+        for name in resolver_names_to_validate:
+            resolver = self.ravel.resolvers[name]
+            if name not in self.internal.state:
+                console.warning(
+                    message=f'skipping {name} validation',
+                    data={'reason': 'not loaded'}
+                )
+            else:
+                value = self.internal.state.get(name)
+                if value is None and not resolver.nullable:
+                    errors[name] = 'not nullable'
+                if name in self.ravel.schema.fields:
+                    field = self.ravel.schema.fields[name]
+                    _value, error = field.process(value)
+                    if error is not None:
+                        errors[name] = error
+
+        if strict and errors:
+            console.error(
+                message='validation error',
+                data={'errors': errors}
+            )
+            raise ValidationError('see error log for details')
+
+        return errors
+
+    def require(self, resolvers: Set[Text] = None, strict=False) -> Set[Text]:
+        required_resolver_names = (
+            resolvers or set(
+                k for k in self.ravel.resolvers.keys()
+                if self.ravel.resolvers[k].required
+            )
+        )
+        missing_resolver_names = set()
+        for name in required_resolver_names:
+            resolver = self.ravel.resolvers[name]
+            if name not in self.internal.state and resolver.required:
+                missing_resolver_names.add(name)
+
+        if strict and missing_resolver_names:
+            console.error(
+                message=f'{get_class_name(self)} missing required data',
+                data={'missing': missing_resolver_names}
+            )
+            raise ValidationError('see error log for details')
+
+        return missing_resolver_names
+
     def resolve(self, resolvers: Union[Text, Set[Text]] = None) -> 'Resource':
         """
         Execute each of the resolvers, specified by name, storing the results
@@ -871,19 +927,18 @@ class Resource(Entity, metaclass=ResourceMeta):
             for resource in resources:
                 if resolver.name in resource.internal.state:
                     value = resource.internal.state[resolver.name]
-                    entity_to_save = resolver.on_save(
-                        resolver, resource, value
-                    )
-                    if entity_to_save:
-                        if is_resource(entity_to_save):
-                            class_2_objects[resolver.owner].add(
-                                entity_to_save
-                            )
+                    resolver.on_save(resolver, resource, value)
+                    if value:
+                        if is_resource(value):
+                            class_2_objects[resolver.owner].add(value)
                         else:
-                            assert is_sequence(entity_to_save)
-                            class_2_objects[resolver.owner].update(
-                                entity_to_save
-                            )
+                            assert is_sequence(value)
+                            class_2_objects[resolver.owner].update(value)
+                    elif value is None and not resolver.nullable:
+                        raise ValidationError(
+                            f'{get_class_name(cls)}.{resolver.name} '
+                            f'is required by save'
+                        )
 
         # recursively call save_many for each type of Resource
         for resource_type, resources in class_2_objects.items():
