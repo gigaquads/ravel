@@ -1,6 +1,9 @@
-appyratus
+ipython
+jsbeautifier
+BTrees 
 graphql-py
 sqlparse
 pytest
 base36
 prompt-toolkit>=3.0.4
+appyratus

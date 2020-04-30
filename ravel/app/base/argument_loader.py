@@ -159,7 +159,9 @@ class ArgumentLoader(object):
                 return resource_type.Batch(
                     resource_type(
                         state=self.preload_resolver_state(resource_type, record)
-                    ).merge(_id=None, _rev=None)
+                    ).merge(
+                        _id=None, _rev=None
+                    )
                     for record in preloaded
                 )
             else:
@@ -171,14 +173,12 @@ class ArgumentLoader(object):
         for resolver in resource_type.ravel.resolvers.values():
             if resolver.name in resource_type.ravel.resolvers.fields:
                 continue
-
             preloaded_obj = preloaded.get(resolver.name)
             if preloaded_obj:
                 target_resource_class = resolver.target
                 target_batch_class = target_resource_class.Batch
                 if resolver.many:
                     dict_list = preloaded_obj
-                    print(dict_list)
                     preloaded[resolver.name] = target_batch_class(
                         target_resource_class(
                             state=self.preload_resolver_state(resolver.target, x)
