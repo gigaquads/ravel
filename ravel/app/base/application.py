@@ -15,7 +15,7 @@ from ravel.manifest import Manifest
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name, inject, is_sequence
-from ravel.schema import Field, UuidString
+from ravel.schema import Field
 from ravel.constants import ID
 from ravel.app.exceptions import ApplicationError
 
