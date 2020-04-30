@@ -95,6 +95,7 @@ class ExecutionState(object):
         self.processed_kwargs = None
         self.raw_result = None
         self.result = None
+        self.is_complete = False
 
     @property
     def app(self) -> 'Application':
@@ -108,6 +109,14 @@ class Request(object):
 
     def __repr__(self):
         return f'Request(action="{self.internal.action.name}")'
+
+    @property
+    def is_complete(self) -> bool:
+        return self.internal.is_complete
+
+    @is_complete.setter
+    def is_complete(self, is_complete: bool):
+        self.internal.is_complete = is_complete
 
     @property
     def raw_args(self):
@@ -161,7 +170,7 @@ class Action(object):
             self._apply_app_on_response,
         ):
             error = func(request)
-            if error is not None:
+            if (error is not None) or request.is_complete:
                 break
 
         if state.target_error is None:
@@ -240,6 +249,13 @@ class Action(object):
                     error = ActionError(exc, mware)
                     state.errors.append(error)
                     break
+
+            # if is_complete, we abort further mware processing as well as all
+            # subsequent steps in processing the action. instead, we skip
+            # directly to post_request middleware execution.
+            if request.is_complete:
+                break
+
         return error
 
     def _apply_middleware_on_request(self, request):
