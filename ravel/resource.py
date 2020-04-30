@@ -111,7 +111,7 @@ class ResourceMeta(type):
                 base_fields = resource_type._copy_fields_from_mixin(base_type)
                 inherited_fields.update(base_fields)
 
-        fields.update(inherited_fields)
+        fields = dict(inherited_fields, **fields)
 
         # perform final processing now that we have all direct and
         # inherited fields in one dict.
