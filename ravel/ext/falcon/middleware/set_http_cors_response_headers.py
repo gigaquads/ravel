@@ -4,6 +4,8 @@ from typing import Dict, Tuple, Type, Text, List
 from inspect import Parameter
 
 from ravel.app.middleware import Middleware
+from ravel.app.apps.web import Endpoint
+from ravel.app.base import ActionDecorator
 from ravel.ext.falcon.service import FalconService
 from ravel.ext.falcon.constants import HTTP_METHODS, HTTP_OPTIONS
 
@@ -51,6 +53,21 @@ class SetHttpCorsResponseHeaders(Middleware):
     @property
     def app_types(self) -> Tuple[Type['Application']]:
         return (FalconService, )
+
+    def on_bootstrap(self):
+        """
+        Ensure that every registered route has at least a dummy endpoint
+        registered for the OPTIONS HTTP method, adding endpoints as needed.
+        """
+        for res in self.app.falcon_resources.values():
+            if not res.is_method_supported(HTTP_OPTIONS):
+                endpoint = Endpoint.from_function(
+                    app=self.app,
+                    func=lambda: None,
+                    method=HTTP_OPTIONS,
+                    route=res.route,
+                )
+                res.add_endpoint(endpoint)
 
     def pre_request(
         self,

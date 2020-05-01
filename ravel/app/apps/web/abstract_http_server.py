@@ -110,6 +110,9 @@ class Endpoint(Action):
             ])
         )
 
+    @classmethod
+    def from_function(cls, app, func, method: str, route: str) -> 'Endpoint':
+        return cls(func, EndpointDecorator(app, method=method, route=route))
 
 
 class HttpClient(object):

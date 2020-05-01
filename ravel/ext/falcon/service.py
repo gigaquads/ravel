@@ -32,6 +32,10 @@ class FalconService(AbstractWsgiService):
         return []
 
     @property
+    def falcon_resources(self):
+        return self._route_2_resource
+
+    @property
     def request_type(self):
         return Request
 

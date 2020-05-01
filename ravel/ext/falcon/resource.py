@@ -24,14 +24,13 @@ class FalconResource(object):
 
         raise AttributeError(key)
 
-    def __repr__(self):
-        name_str = get_class_name(self)
-        path_str = '(path=' + self.endpoint + ')' if self.endpoint else ''
-        return '{}{}'.format(name_str, path_str)
-
     @property
     def endpoint(self):
         return self._endpoint
+
+    @property
+    def route(self) -> str:
+        return self._route
 
     def add_endpoint(self, endpoint):
         # TODO: Raise exception regarding already registered to http method
