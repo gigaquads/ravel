@@ -82,6 +82,8 @@ class SetHttpCorsResponseHeaders(Middleware):
         method, going right to post-request middleware instead.
         """
         falcon_request, falcon_response = raw_args[:2]
-        if falcon_request.method == HTTP_OPTIONS:
-            falcon_response.set_headers(self._cors_headers)
-            falcon_request.complete = request.is_complete = True
+        falcon_response.set_headers(self._cors_headers)
+
+        # setting is_complete aborts further request processing
+        falcon_request.complete = True
+        request.is_complete = True
