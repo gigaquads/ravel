@@ -63,7 +63,7 @@ class SetHttpCorsResponseHeaders(Middleware):
             if not res.is_method_supported(HTTP_OPTIONS):
                 endpoint = Endpoint.from_function(
                     app=self.app,
-                    func=lambda: None,
+                    func=lambda *args, **kwargs: None,
                     method=HTTP_OPTIONS,
                     route=res.route,
                 )
@@ -83,7 +83,3 @@ class SetHttpCorsResponseHeaders(Middleware):
         """
         falcon_request, falcon_response = raw_args[:2]
         falcon_response.set_headers(self._cors_headers)
-
-        # setting is_complete aborts further request processing
-        falcon_request.complete = True
-        request.is_complete = True
