@@ -643,6 +643,7 @@ class SqlalchemyStore(Store):
     def rollback(cls):
         tx = getattr(cls.ravel.app.local, 'sqla_tx', None)
         if tx is not None:
+            cls.ravel.app.local.sqla_tx = None
             tx.rollback()
 
     @classmethod

@@ -64,7 +64,7 @@ class ManageSqlalchemyTransaction(Middleware):
         request: 'Request',
         exc: Exception,
     ):
-        console.warning(f'rolling back sqlalchemy transaction')
+        console.info(f'rolling back sqlalchemy transaction')
         try:
             self.store_type.rollback()
         finally:
