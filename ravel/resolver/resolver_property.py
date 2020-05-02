@@ -6,6 +6,8 @@ from ravel.util import is_resource, is_batch, is_sequence
 from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
 
+DNE = {}
+
 
 class ResolverProperty(property):
     """
@@ -84,7 +86,15 @@ class ResolverProperty(property):
             # if resolver is for a field, we know that the resolved
             # field has been loaded ON the returned resource (value)
             if resolver.name in resource.ravel.resolvers.fields:
-                value = resource.internal.state.get(resolver.name)
+                value = resource.internal.state.get(resolver.name, DNE)
+                if value is DNE:
+                    console.debug(
+                        message=(
+                            f'no value resolved for '
+                            f'{get_class_name(self.resolver.owner)}.{resolver.name}'
+                        )
+                    )
+                    return
 
             if (value is not None) or resolver.nullable:
                 resource.internal.state[resolver.name] = value

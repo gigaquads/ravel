@@ -9,6 +9,7 @@ from abc import ABCMeta, abstractmethod
 
 from appyratus.env import Environment
 from appyratus.schema.fields import UuidString
+from appyratus.utils import DictObject
 
 from ravel.util.loggers import console
 from ravel.exceptions import RavelError
@@ -26,13 +27,14 @@ class StoreMeta(ABCMeta):
     _local.is_bootstrapped = defaultdict(bool)
 
     def __init__(cls, name, bases, dict_):
+        setattr(cls, 'ravel', DictObject())
         ABCMeta.__init__(cls, name, bases, dict_)
 
 
 class Store(object, metaclass=StoreMeta):
 
     env = Environment()
-    _app = None
+    ravel = None
 
     def __init__(self, *args, **kwargs):
         self._history = StoreHistory(store=self)
@@ -99,7 +101,7 @@ class Store(object, metaclass=StoreMeta):
 
     @property
     def app(self) -> 'Application':
-        return self._app
+        return self.ravel.app
 
     @property
     def history(self) -> 'StoreHistory':
@@ -148,7 +150,7 @@ class Store(object, metaclass=StoreMeta):
         Perform class-level initialization, like getting
         a connectio pool, for example.
         """
-        cls._app = app
+        cls.ravel.app = app
         cls.on_bootstrap(**kwargs)
 
         # TODO: put this into a method

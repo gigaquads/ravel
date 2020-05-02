@@ -57,6 +57,8 @@ class Loader(Resolver):
         unloaded_field_names = set(
             resource.Schema.fields.keys() - resource.internal.state.keys()
         )
+        unloaded_field_names.add(self._field.name)
+        
         # container for resolved resource instance state
         new_resource_state = {}
 

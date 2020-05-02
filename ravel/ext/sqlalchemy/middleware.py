@@ -19,7 +19,8 @@ class ManageSqlalchemyTransaction(Middleware):
         self.store_class_name = store_class_name or 'SqlalchemyStore'
 
     def on_bootstrap(self):
-        self.store_type = self.app.store_types.get(self.store_class_name)
+        store_types = self.app.storage.store_types
+        self.store_type = store_types.get(self.store_class_name)
         if self.store_type is None:
             raise MiddlewareError(
                 self, f'{self.store_class_name} class not found'

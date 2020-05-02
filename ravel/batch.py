@@ -158,8 +158,7 @@ class Batch(Entity):
         ravel.indexed_field_types = (String, Int, Id, Bool, Float)
         ravel.properties = {}
 
-        # create a batch resolver property for each indexed field type
-        for k, resolver in owner.ravel.resolvers.fields.items():
+        for k, resolver in owner.ravel.resolvers.items():
             ravel.properties[k] = BatchResolverProperty(resolver)
 
         derived_batch_type = type(type_name, (cls, ), dict(
@@ -334,12 +333,46 @@ class Batch(Entity):
         })
         return self
 
-    def save(self, depth=0):
+    def save(self, resolvers: Union[Text, Set[Text]] = None):
         """
         Save all resources in the batch, effectively creating some and updating
         others.
         """
-        self.ravel.owner.save_many(self.internal.resources, depth=depth)
+        # batch save resource resolver targets
+        if resolvers is not None:
+            owner_resource_type = self.ravel.owner
+            fields_to_save = set()
+
+            if isinstance(resolvers, str):
+                resolvers = {resolvers}
+            elif not isinstance(resolvers, set):
+                resolvers = set(resolvers)
+
+            for name in resolvers:
+                resolver = owner_resource_type.ravel.resolvers[name]
+                if name not in owner_resource_type.ravel.schema.fields:
+                    visited_ids = set()
+                    unique_targets = resolver.target.Batch()
+                    if resolver.many:
+                        for batch in getattr(self, name):
+                            if batch:
+                                unique_targets.extend(batch)
+                    else:
+                        for resource in getattr(self, name):
+                            if resource:
+                                unique_targets.append(resource)
+                    if unique_targets:
+                        unique_targets.save()
+                else:
+                    fields_to_save.add(name)
+        else:
+            fields_to_save = None
+
+        # now save fields
+        self.ravel.owner.save_many(
+            self.internal.resources,
+            resolvers=fields_to_save,
+        )
         return self
 
     def clean(self, resolvers: Set[Text] = None):

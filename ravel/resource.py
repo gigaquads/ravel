@@ -525,7 +525,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         return True
 
-    def _prepare_record_for_create(self):
+    def _prepare_record_for_create(self, keys_to_save: Set[Text] = None):
         """
         Prepares a a Resource state dict for insertion via DAL.
         """
@@ -540,8 +540,11 @@ class Resource(Entity, metaclass=ResourceMeta):
             del self.internal.state[REV]
 
         record = {}
+        keys_to_save = keys_to_save or self.ravel.schema.fields.keys()
 
-        for key in self.ravel.schema.fields:
+        for key in keys_to_save:
+            if key not in self.ravel.schema.fields:
+                continue
             resolver = self.ravel.resolvers[key]
             default = self.ravel.defaults.get(key)
             if key not in self.internal.state:
@@ -757,8 +760,8 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         return store.dispatch('exists_many', args=args)
 
-    def save(self, depth=0):
-        return self.save_many([self], depth=depth)[0]
+    def save(self, resolvers: Union[Text, Set[Text]] = None, depth=0) -> 'Resource':
+        return self.save_many([self], resolvers=resolvers, depth=depth)[0]
 
     def update(self, data: Dict = None, **more_data) -> 'Resource':
         data = dict(data or {}, **more_data)
@@ -795,7 +798,11 @@ class Resource(Entity, metaclass=ResourceMeta):
         return self.clean()
 
     @classmethod
-    def create_many(cls, resources: List['Resource']) -> 'Batch':
+    def create_many(
+        cls,
+        resources: List['Resource'],
+        fields: Set[Text] = None
+    ) -> 'Batch':
         """
         Call `store.create_method` on input `Resource` list and return them in
         the form of a Batch.
@@ -809,7 +816,7 @@ class Resource(Entity, metaclass=ResourceMeta):
                 state_dict = resource
                 resource = cls(state=state_dict)
 
-            record = resource._prepare_record_for_create()
+            record = resource._prepare_record_for_create(fields)
             records.append(record)
 
         store = cls.ravel.store
@@ -823,7 +830,11 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     @classmethod
     def update_many(
-        cls, resources: List['Resource'], data: Dict = None, **more_data
+        cls,
+        resources: List['Resource'],
+        fields: Set[Text] = None,
+        data: Dict = None,
+        **more_data
     ) -> 'Batch':
         """
         Call the Store's update_many method on the list of Resources.
@@ -858,6 +869,8 @@ class Resource(Entity, metaclass=ResourceMeta):
         # we issue an update_many datament for each partition in the DAL.
         partitions = defaultdict(list)
 
+        fields_to_update = fields
+
         for resource in resources:
             if resource is None:
                 continue
@@ -867,6 +880,10 @@ class Resource(Entity, metaclass=ResourceMeta):
             partition_key = tuple(resource.dirty.keys())
             partitions[partition_key].append(resource)
 
+        # id_2_copies used to synchronize updated state across all
+        # instances that share the same ID.
+        id_2_copies = defaultdict(list)
+
         for resource_partition in partitions.values():
             records, _ids = [], []
 
@@ -874,6 +891,10 @@ class Resource(Entity, metaclass=ResourceMeta):
                 record = resource.dirty.copy()
                 record.pop(REV, None)
                 record.pop(ID, None)
+                if fields_to_update:
+                    record = {
+                        k: v for k, v in record.items() if k in fields_to_update
+                    }
                 records.append(record)
                 _ids.append(resource._id)
 
@@ -886,12 +907,20 @@ class Resource(Entity, metaclass=ResourceMeta):
                     resource.internal.state.update(record)
                     resource.clean()
 
+                    # sync updated state across previously encoutered
+                    # instances of this resource (according to ID)
+                    if resource._id in id_2_copies:
+                        for res_copy in id_2_copies[resource._id]:
+                            res_copy.merge(record)
+                    id_2_copies[resource._id].append(resource)
+
         return cls.Batch(resources)
 
     @classmethod
     def save_many(
         cls,
         resources: List['Resource'],
+        resolvers: Union[Text, Set[Text]] = None,
         depth: int = 0
     ) -> 'Batch':
         """
@@ -902,6 +931,22 @@ class Resource(Entity, metaclass=ResourceMeta):
                 (ID in resource.internal.state) and
                 (ID not in resource.internal.state.dirty)
             )
+
+        if resolvers is not None:
+            if isinstance(resolvers, str):
+                resolvers = {resolvers}
+            elif not isinstance(resolvers, set):
+                resolvers = set(resolvers)
+            fields_to_save = set()
+            resolvers_to_save = set()
+            for k in resolvers:
+                if k in cls.ravel.schema.fields:
+                    fields_to_save.add(k)
+                else:
+                    resolvers_to_save.add(k)
+        else:
+            fields_to_save = None
+            resolvers_to_save = set()
 
         # partition resources into those that are "uncreated" and those which
         # simply need to be updated.
@@ -916,9 +961,9 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         # perform bulk create and update
         if to_create:
-            cls.create_many(to_create)
+            cls.create_many(to_create, fields=fields_to_save)
         if to_update:
-            cls.update_many(to_update)
+            cls.update_many(to_update, fields=fields_to_save)
 
         retval = cls.Batch(to_update + to_create)
 
@@ -931,6 +976,8 @@ class Resource(Entity, metaclass=ResourceMeta):
         class_2_objects = defaultdict(set)
         resolvers = cls.ravel.resolvers.by_tag('fields', invert=True)
         for resolver in resolvers.values():
+            if resolver.name not in resolvers_to_save:
+                continue
             for resource in resources:
                 if resolver.name in resource.internal.state:
                     value = resource.internal.state[resolver.name]

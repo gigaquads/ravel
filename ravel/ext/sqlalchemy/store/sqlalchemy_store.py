@@ -49,9 +49,6 @@ class SqlalchemyStore(Store):
         SQLALCHEMY_STORE_NAME=fields.String(),
     )
 
-    # sqlalchemy Metadata, shared by all threads
-    metadata = None
-
     # id_column_names is a mapping from table name to its _id column name
     _id_column_names = {}
 
@@ -65,8 +62,8 @@ class SqlalchemyStore(Store):
         adapters = [
             fields.Field.adapt(
                 on_adapt=lambda field: sa.Text,
-                on_encode=lambda x: cls.app.json.encode(x),
-                on_decode=lambda x: cls.app.json.decode(x),
+                on_encode=lambda x: cls.ravel.app.json.encode(x),
+                on_decode=lambda x: cls.ravel.app.json.decode(x),
             ),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
             fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
@@ -80,15 +77,15 @@ class SqlalchemyStore(Store):
             ),
         ]
         adapters.extend(
-            field_type.adapt(on_adapt=lambda field: sa.Text)
-            for field_type in {
+            field_class.adapt(on_adapt=lambda field: sa.Text)
+            for field_class in {
                 fields.String, fields.FormatString,
                 fields.UuidString, fields.DateTimeString
             }
         )
         adapters.extend(
-            field_type.adapt(on_adapt=lambda field: sa.BigInteger)
-            for field_type in {
+            field_class.adapt(on_adapt=lambda field: sa.BigInteger)
+            for field_class in {
                 fields.Int, fields.Uint32, fields.Uint64,
                 fields.Sint32, fields.Sint64
             }
@@ -149,28 +146,28 @@ class SqlalchemyStore(Store):
             fields.List.adapt(on_adapt=lambda field: sa.JSON),
             fields.Set.adapt(
                 on_adapt=lambda field: sa.JSON,
-                on_encode=lambda x: cls.app.json.encode(x),
-                on_decode=lambda x: set(cls.app.json.decode(x))
+                on_encode=lambda x: cls.ravel.app.json.encode(x),
+                on_decode=lambda x: set(cls.ravel.app.json.decode(x))
             ),
         ]
 
     @classmethod
     def get_sqlite_default_adapters(cls) -> List[Field.Adapter]:
         adapters = [
-            field_type.adapt(
+            field_class.adapt(
                 on_adapt=lambda field: sa.Text,
-                on_encode=lambda x: cls.app.json.encode(x),
-                on_decode=lambda x: cls.app.json.decode(x),
+                on_encode=lambda x: cls.ravel.app.json.encode(x),
+                on_decode=lambda x: cls.ravel.app.json.decode(x),
             )
-            for field_type in {
+            for field_class in {
                 fields.Dict, fields.List, fields.Nested
             }
         ]
         adapters.append(
             fields.Set.adapt(
                 on_adapt=lambda field: sa.Text,
-                on_encode=lambda x: cls.app.json.encode(x),
-                on_decode=lambda x: set(cls.app.json.decode(x))
+                on_encode=lambda x: cls.ravel.app.json.encode(x),
+                on_decode=lambda x: set(cls.ravel.app.json.decode(x))
             )
         )
         return adapters
@@ -225,20 +222,30 @@ class SqlalchemyStore(Store):
         """
         Initialize the SQLAlchemy connection pool (AKA Engine).
         """
-        with self._bootstrap_lock:
-            if self.is_bootstrapped:
+        with cls._bootstrap_lock:
+            if cls.is_bootstrapped():
                 return
 
             # construct the URL to the DB server
-            cls.app.local.sqla_url = url or (
-                '{protocol}://{user}@{host}:{port}/{db}'.format(
+            # url can be a string or a dict
+            if isinstance(url, dict):
+                url_parts = url
+                cls.ravel.app.local.sqla_url = (
+                    '{protocol}://{user}@{host}:{port}/{db}'.format(**url_parts)
+                )
+            elif isinstance(url, str):
+                cls.ravel.app.local.sqla_url = url
+            else:
+                url_parts = dict(
                     protocol=cls.env.SQLALCHEMY_STORE_PROTOCOL,
                     user=cls.env.SQLALCHEMY_STORE_USER,
                     host=cls.env.SQLALCHEMY_STORE_HOST,
                     port=cls.env.SQLALCHEMY_STORE_PORT,
                     db=cls.env.SQLALCHEMY_STORE_NAME,
                 )
-            )
+                cls.ravel.app.local.sqla_url = url or (
+                    '{protocol}://{user}@{host}:{port}/{db}'.format(**url_parts)
+                )
 
             cls.dialect = dialect or cls.env.SQLALCHEMY_STORE_DIALECT
 
@@ -251,9 +258,9 @@ class SqlalchemyStore(Store):
                 }
             )
 
-            cls.app.local.sqla_metadata = sa.MetaData()
-            cls.app.local.sqla_metadata.bind = sa.create_engine(
-                name_or_url=cls.app.local.sqla_url,
+            cls.ravel.app.local.sqla_metadata = sa.MetaData()
+            cls.ravel.app.local.sqla_metadata.bind = sa.create_engine(
+                name_or_url=cls.ravel.app.local.sqla_url,
                 echo=bool(echo or cls.env.SQLALCHEMY_STORE_ECHO),
             )
 
@@ -271,7 +278,7 @@ class SqlalchemyStore(Store):
         # map each of the resource's schema fields to a corresponding adapter,
         # which is used to prepare values upon insert and update.
         field_class_2_adapter = {
-            adapter.field_type: adapter for adapter in
+            adapter.field_class: adapter for adapter in
             self.get_default_adapters(self.dialect) + self._custom_adapters
         }
         self._adapters = {
@@ -546,16 +553,18 @@ class SqlalchemyStore(Store):
 
     @property
     def conn(self):
-        if self.app.local.sqla_conn is None:
+        sqla_conn = getattr(self.ravel.app.local, 'sqla_conn', None)
+        if sqla_conn is None:
             # lazily initialize a connection for this thread
             self.connect()
-        return self.app.local.sqla_conn
+        return self.ravel.app.local.sqla_conn
 
     @property
     def supports_returning(self):
         if not self.is_bootstrapped():
             return False
-        return self.app.metadata.bind.dialect.implicit_returning
+        metadata = self.get_metadata()
+        return metadata.bind.dialect.implicit_returning
 
     @classmethod
     def create_tables(cls, recreate=False):
@@ -582,14 +591,13 @@ class SqlalchemyStore(Store):
     def connect(cls):
         """
         """
-        if cls.app.local.sqla_conn is not None:
+        sqla_conn = getattr(cls.ravel.app.local, 'sqla_conn', None)
+        if sqla_conn is not None:
             console.warning(
                 message=f'sqlalchemy store already has connection',
-                data={
-                    'store': str(self)
-                }
             )
-        cls.app.local.sqla_conn = cls.metadata.bind.connect()
+        metadata = cls.ravel.app.local.sqla_metadata
+        cls.ravel.app.local.sqla_conn = metadata.bind.connect()
 
     @classmethod
     def close(cls):
@@ -597,8 +605,9 @@ class SqlalchemyStore(Store):
         Return the thread-local database connection to the sqlalchemy
         connection pool (AKA the "engine").
         """
-        if cls.app.local.sqla_conn is not None:
-            cls.app.local.sqla_conn.close()
+        sqla_conn = getattr(cls.ravel.app.local, 'sqla_conn', None)
+        if sqla_conn is not None:
+            sqla_conn.close()
         else:
             console.warning(
                 message=f'sqlalchemy has no connection to close',
@@ -613,9 +622,10 @@ class SqlalchemyStore(Store):
         Initialize a thread-local transaction. An exception is raised if
         there's already a pending transaction.
         """
-        if cls.app.local.sqla_tx is not None:
+        tx = getattr(cls.ravel.app.local, 'sqla_tx', None)
+        if tx is not None:
             raise Exception('there is already an open transaction')
-        cls.app.local.sqla_tx = cls.app.local.sqla_conn.begin()
+        cls.ravel.app.local.sqla_tx = cls.ravel.app.local.sqla_conn.begin()
 
     @classmethod
     def commit(cls):
@@ -624,17 +634,20 @@ class SqlalchemyStore(Store):
         called to start a new transaction at this point, if a new transaction
         is desired.
         """
-        if cls.app.local.sqla_tx is not None:
-            cls.app.local.sqla_tx.commit()
-            cls.app.local.sqla_tx = None
+        tx = getattr(cls.ravel.app.local, 'sqla_tx', None)
+        if tx is not None:
+            cls.ravel.app.local.sqla_tx.commit()
+            cls.ravel.app.local.sqla_tx = None
 
     @classmethod
     def rollback(cls):
-        cls.app.local.sqla_conn.rollback()
+        tx = getattr(cls.ravel.app.local, 'sqla_tx', None)
+        if tx is not None:
+            tx.rollback()
 
     @classmethod
     def get_metadata(cls):
-        return cls.metadata
+        return cls.ravel.app.local.sqla_metadata
 
     @classmethod
     def get_engine(cls):
