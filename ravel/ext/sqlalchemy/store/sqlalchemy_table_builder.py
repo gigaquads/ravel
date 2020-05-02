@@ -4,11 +4,18 @@ import sqlalchemy as sa
 
 from appyratus.utils import StringUtils
 
-from ravel.constants import REV
+from ravel.constants import REV, ID
 from ravel.util.loggers import console
 
 
 class SqlalchemyTableBuilder(object):
+    """
+    The role of SqlalchemyTableBuilder is to derive and instantiate a
+    Sqlalchemy Table object from a Resource object's schema. This process
+    occurs in the Sqlalchemy's on_bootstrap method and assumes that the
+    column names in the table map onto each schema's field.source attribute.
+    """
+
     def __init__(self, store: 'SqlalchemyStore'):
         self._dialect = store.dialect
         self._resource_type = store.resource_type
@@ -24,27 +31,45 @@ class SqlalchemyTableBuilder(object):
         return self._dialect
 
     def build_table(self, name=None, schema=None) -> sa.Table:
-        columns = [
-            self.build_column(field)
-            for field in self._resource_type.Schema.fields.values()
-        ]
+        """
+        Derive a Sqlalchemy Table from a Resource Schema.
+        """
+        # build the column objects
+        is_primary_key_set = False
+        id_col = None
+        columns = []
+        for field in self._resource_type.Schema.fields.values():
+            col = self.build_column(field)
+            columns.append(col)
+            if field.name == ID:
+                id_col = col
+            if col.primary_key:
+                is_primary_key_set = True
+
+        # default _id to primary key if not explicitly set
+        if not is_primary_key_set:
+            id_col.primary_key = True
+
+        # set the table name
         if name is not None:
             table_name = name
         else:
             table_name = StringUtils.snake(self._resource_type.__name__)
 
-        console.debug(
-            message=(
-                f'building Sqlalchemy Table "{table_name}" '
-                f'from "{self._resource_type.Schema.__name__}" schema'
-            )
-        )
+        # set database schema, like schema in postgres
         if schema is not None:
             self._metadata.schema = schema
+
+        # finally build and return the SQLAlchemy table object
+        console.debug(f'building Sqlalchemy Table: {table_name}')
         table = sa.Table(table_name, self._metadata, *columns)
         return table
 
     def build_column(self, field: 'Field') -> sa.Column:
+        """
+        Derive a Sqlalchemy column from a Field object. It looks for
+        Sqlalchemy-related column kwargs in the field's meta dict.
+        """
         name = field.source
 
         try:
@@ -54,8 +79,7 @@ class SqlalchemyTableBuilder(object):
             raise
 
         primary_key = field.meta.get('primary_key', False)
-        meta = field.meta.get('sa', {})
-        unique = meta.get('unique', False)
+        unique = field.meta.get('unique', False)
 
         if field.source == REV:
             indexed = True
