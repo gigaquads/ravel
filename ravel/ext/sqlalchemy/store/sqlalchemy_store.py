@@ -23,6 +23,7 @@ from ravel.query.predicate import (
 )
 from ravel.schema import fields, Field
 from ravel.util.loggers import console
+from ravel.util import get_class_name
 from ravel.store.base import Store
 from ravel.constants import REV, ID
 
