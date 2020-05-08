@@ -21,7 +21,18 @@ class BizBinding(object):
             f'bound={self.is_bound})'
         )
 
-    def bind(self, binder=None):
+    def bind(self, binder=None, force=False):
+        if self._is_bound:
+            if not force:
+                console.warning(
+                    message=(
+                        'resource store binding already set. '
+                        'skipping repeated bind call'
+                    ),
+                    data={'resource_type': get_class_name(self.resource_type)}
+                )
+                return
+
         binder = binder or self.binder
 
         # associate a singleton Store instance with the res class.

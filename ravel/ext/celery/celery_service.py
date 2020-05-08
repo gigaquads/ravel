@@ -20,21 +20,23 @@ DEFAULT_BROKER = 'amqp://'
 
 
 class CeleryService(Application):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, uses_client=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._client = CeleryClient(self) if uses_client else None
         self._celery = None
-        self._client = CeleryClient(self)
 
     @property
     def action_type(self) -> Type['CeleryTask']:
         return CeleryTask
 
     @property
-    def options(self) -> Dict:
+    def celery_config(self) -> Dict:
         return self.manifest.get('celery', {})
 
     @property
     def client(self) -> 'CeleryClient':
+        if self._client is None:
+            self._client = CeleryClient(self)
         return self._client
 
     @property
@@ -42,17 +44,22 @@ class CeleryService(Application):
         return self._celery
 
     def on_bootstrap(self, *args, **kwargs):
-        self._init_celery_app()
-        self._init_celery_json_serializer()
+        self.initialize_celery()
 
-    def on_start(self):
+    def on_start(self) -> Celery:
         return self.celery
 
+    def initialize_celery(self):
+        self._init_celery_app()
+        self._init_celery_json_serializer()
+        for action in self.actions.values():
+            action.register_with_celery()
+
     def _init_celery_app(self):
-        broker = self.options.setdefault('broker', DEFAULT_BROKER)
         name = self.manifest.get('package')
+        broker = self.celery_config.setdefault('broker', DEFAULT_BROKER)
         self._celery = Celery(name, broker=broker)
-        self._celery.conf.update(self.options)
+        self._celery.conf.update(self.celery_config)
 
     def _init_celery_json_serializer(self):
         serializer_name = 'json'
@@ -71,7 +78,6 @@ class CeleryService(Application):
         )
 
 
-
 class CeleryClient(object):
     def __init__(self, app):
         self.app = app
@@ -82,7 +88,7 @@ class CeleryClient(object):
         method = self.methods.get(method)
         if method is None:
             console.error(
-                message=f'requested unrecognized Celery task',
+                message=f'celery client does not recognize task name',
                 data={'task': method}
             )
             raise ValueError(method)
@@ -90,12 +96,13 @@ class CeleryClient(object):
 
     def bootstrap(self, manifest: 'Manifest', mocked=False) -> 'CeleryClient':
         # discover actions registered with app via decorator
+        manifest = Manifest.from_object(manifest)
         self.scanner.scan(manifest.package)
 
         if not mocked:
             # trigger creation of the native Celery task objects
             self.app.manifest = manifest
-            self.app.on_bootstrap()
+            self.app.initialize_celery()
             console.info(
                 message=f'initializing Celery client',
                 data={

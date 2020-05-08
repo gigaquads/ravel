@@ -43,7 +43,7 @@ class Application(object):
         manifest: Manifest = None,
         mode: Mode = Mode.normal,
     ):
-        self.manifest = Manifest.from_object(manifest)
+        self.manifest = manifest
         self.env = Environment()
         self.local = local()
 
@@ -104,6 +104,14 @@ class Application(object):
     @property
     def action_type(self) -> Type[Action]:
         return Action
+
+    @property
+    def manifest(self):
+        return self._manifest
+
+    @manifest.setter
+    def manifest(self, obj):
+        self._manifest = Manifest.from_object(obj)
 
     @property
     def mode(self) -> Mode:
