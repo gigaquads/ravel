@@ -211,6 +211,13 @@ class Batch(Entity):
         )
         return self
 
+    def set(
+        self,
+        other: Union[Dict, 'Resource'] = None,
+        **values
+    ) -> 'Batch':
+        return self.merge(other=other, **values)
+
     def merge(
         self,
         other: Union[Dict, 'Resource'] = None,
@@ -328,9 +335,7 @@ class Batch(Entity):
         """
         Delete all resources in the batch fro mthe store.
         """
-        self.ravel.owner.delete_many({
-            resource._id for resource in self.internal.resources
-        })
+        self.ravel.owner.delete_many(self.internal.resources)
         return self
 
     def save(self, resolvers: Union[Text, Set[Text]] = None):

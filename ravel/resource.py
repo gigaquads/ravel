@@ -316,6 +316,9 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         return instance
 
+    def set(self, other=None, **values) -> 'Resource':
+        return self.merge(other=other, **values)
+
     def merge(self, other=None, **values) -> 'Resource':
         if isinstance(other, dict):
             for k, v in other.items():
