@@ -121,11 +121,26 @@ class ResolverProperty(property):
         Set resource state data, calling the resolver's on_set callbak.
         """
         resolver = self.resolver
+        target_class = self.resolver.target
+        target_schema = target_class.ravel.schema
         old_value = resource.internal.state.get(resolver.name)
-        if self.resolver.many and not is_batch(new_value):
-            assert is_sequence(new_value)
-            new_value = self.resolver.target.Batch(new_value)
+
+        # cast plain lists and dicts to target Resource or Batch objects
+        if self.resolver.many:
+            if not is_batch(new_value):
+                assert is_sequence(new_value)
+                new_value = self.resolver.target.Batch(
+                    target_class(x) if isinstance(x, dict) else x
+                    for x in new_value
+                )
+        elif isinstance(new_value, dict) \
+                and resolver.name not in target_schema.fields:
+            new_value = self.resolver.target(new_value)
+
+        # write new value to instance state
         resource.internal.state[resolver.name] = new_value
+
+        # trigger on_set callback
         resolver.on_set(resource, old_value, new_value)
 
     def fdel(self, resource: 'Resource'):
