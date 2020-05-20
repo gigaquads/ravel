@@ -167,16 +167,33 @@ class Application(object):
     def action(self, *args, **kwargs):
         return self.decorator_type(self, *args, **kwargs)
 
-    def register(self, action: 'Action', overwrite=False) -> 'Application':
+    def register(
+        self,
+        action: Union['Action', 'Application'],
+        overwrite=False
+    ) -> 'Application':
         """
         Add a Action to this app.
         """
-        if action.name not in self._actions or overwrite:
+        if isinstance(action, Application):
+            app = action
+            for act in app.actions.values():
+                decorator = self.action()
+                decorator(act.target)
+        elif action.name not in self._actions or overwrite:
             console.debug(
                 f'registering {action.name} action with '
                 f'{get_class_name(self)}...'
             )
-            self._actions[action.name] = action
+            if isinstance(action, Action):
+                if action.app is not self:
+                    decorator(action.target)
+                else:
+                    self._actions[action.name] = action
+            else:
+                assert callable(action)
+                decorator = self.action()
+                decorator(action)
         else:
             raise ApplicationError(
                 message=f'action already registered: {action.name}',
