@@ -36,7 +36,7 @@ class AbstractHttpServer(Application):
         )
         for route in endpoint.routes:
             if route in self.route_2_endpoint:
-                self.app.route_2_endpoint[route][endpoint.method] = endpoint
+                self.route_2_endpoint[route][endpoint.method] = endpoint
 
     def on_bootstrap(self, host: Text = None, port: int = None):
         self.host = host or DEFAULT_HOST
