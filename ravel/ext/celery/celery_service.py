@@ -1,4 +1,5 @@
 from typing import Dict, Tuple, Text, Type, Callable
+from celery.signals import worker_process_init
 
 import kombu.serialization
 
@@ -58,8 +59,14 @@ class CeleryService(Application):
     def _init_celery_app(self):
         name = self.manifest.get('package')
         broker = self.celery_config.setdefault('broker', DEFAULT_BROKER)
-        self._celery = Celery(name, broker=broker)
+        backend = self.celery_config.get('result_backend')
+        self._celery = Celery(name, broker=broker, backend=backend)
         self._celery.conf.update(self.celery_config)
+
+        @worker_process_init.connect
+        def bootstrap_celery_worker_process(*args, **kwargs):
+            console.info('bootstrapping celery worker process')
+            self.bootstrap(self.manifest)
 
     def _init_celery_json_serializer(self):
         serializer_name = 'json'
@@ -76,7 +83,6 @@ class CeleryService(Application):
             accept_content=[serializer_name],
             result_serializer=serializer_name,
         )
-
 
 class CeleryClient(object):
     def __init__(self, app):
@@ -112,7 +118,7 @@ class CeleryClient(object):
             )
             for action in self.app.actions.values():
                 action.bootstrap()
-                self.methods[action.name] = action.delay
+                self.methods[action.name] = action
         else:
             # if "mocked", do not bother doing anything but
             # creating mock client methods
