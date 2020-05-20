@@ -66,6 +66,7 @@ class SqlalchemyStore(Store):
                 on_encode=lambda x: cls.ravel.app.json.encode(x),
                 on_decode=lambda x: cls.ravel.app.json.decode(x),
             ),
+            fields.Email.adapt(on_adapt=lambda field: sa.Text),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
             fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
             fields.DateTime.adapt(on_adapt=lambda field: sa.DateTime),
@@ -111,6 +112,7 @@ class SqlalchemyStore(Store):
                 )
             return pg_types.ARRAY({
                 fields.String: sa.Text,
+                fields.Email: sa.Text,
                 fields.Uuid: pg_types.UUID,
                 fields.Int: sa.Integer,
                 fields.Bool: sa.Boolean,
@@ -609,6 +611,7 @@ class SqlalchemyStore(Store):
         sqla_conn = getattr(cls.ravel.app.local, 'sqla_conn', None)
         if sqla_conn is not None:
             sqla_conn.close()
+            cls.ravel.app.local.sqla_conn = None
         else:
             console.warning(
                 message=f'sqlalchemy has no connection to close',
