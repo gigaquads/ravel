@@ -308,11 +308,15 @@ class Action(object):
         state = request.internal
         try:
             error = None
-            state.raw_result = self._target(
-                request,
-                *state.processed_args,
-                **state.processed_kwargs
-            )
+            takes_arguments = len(self.signature.parameters) > 1
+            if takes_arguments:
+                state.raw_result = self._target(
+                    request,
+                    *state.processed_args,
+                    **state.processed_kwargs
+                )
+            else:
+                state.raw_result = self._target(request)
         except Exception as exc:
             error = Action.Error(exc)
             state.target_error = error
