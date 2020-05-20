@@ -39,8 +39,15 @@ class SqlalchemyTableBuilder(object):
         id_col = None
         columns = []
         for field in self._resource_type.Schema.fields.values():
+            if field.meta.get('ravel_on_resolve'):
+                # if ravel_on_resolve is defined, it means that a custom
+                # resolver is used to resolve this field's data, so don't
+                # create a columns for it
+                continue
+
             col = self.build_column(field)
             columns.append(col)
+
             if field.name == ID:
                 id_col = col
             if col.primary_key:
