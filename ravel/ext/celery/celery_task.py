@@ -16,6 +16,13 @@ class CeleryTask(Action):
         super().__init__(*args, **kwargs)
         self._celery_task = None  # <- set in CeleryTaskManager.on_bootstrap
 
+    @property
+    def celery_task(self):
+        return self._celery_task
+
+    def s(self, *args, **kwargs):
+        return self._celery_task.s(*args, **kwargs)
+
     def register_with_celery(self):
         # we must define a new function as the task target because
         # celery expects a __name__ attribute, which an Action object
