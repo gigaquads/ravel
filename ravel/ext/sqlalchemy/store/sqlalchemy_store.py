@@ -499,12 +499,13 @@ class SqlalchemyStore(Store):
     def update(self, _id, data: Dict) -> Dict:
         prepared_id = self.adapt_id(_id)
         prepared_data = self.prepare(data, serialize=True)
-        update_stmt = (
-            self.table
-                .update()
-                .values(**prepared_data)
-                .where(self._id_column == prepared_id)
-            )
+        if prepared_data:
+            update_stmt = (
+                self.table
+                    .update()
+                    .values(**prepared_records)
+                    .where(self._id_column == prepared_id)
+                )
         if self.supports_returning:
             update_stmt = update_stmt.return_defaults()
             result = self.conn.execute(update_stmt)
@@ -513,30 +514,36 @@ class SqlalchemyStore(Store):
             self.conn.execute(update_stmt)
             return self.fetch(_id)
 
-    def update_many(self, _ids: List, data: Dict = None) -> None:
+    def update_many(self, _ids: List, data: List[Dict] = None) -> None:
         assert data
 
-        prepared_ids = [self.adapt_id(_id) for _id in _ids]
-        prepared_data = [
-            self.prepare(record, serialize=True)
-            for record in data
-        ]
-        values = {
-            k: bindparam(k) for k in prepared_data[0].keys()
-        }
-        update_stmt = (
-            self.table
-                .update()
-                .where(self._id_column == bindparam(self.id_column_name))
-                .values(**values)
-        )
-        self.conn.execute(update_stmt, prepared_data)
+        prepared_ids = []
+        prepared_records = []
+
+        for _id, record in zip(_ids, data):
+            prepared_id = self.adapt_id(_id)
+            prepared_record = self.prepare(record, serialize=True)
+            if prepared_record:
+                prepared_ids.append(prepared_id)
+                prepared_records.append(prepared_record)
+
+        if prepared_records:
+            values = {
+                k: bindparam(k) for k in prepared_records[0].keys()
+            }
+            update_stmt = (
+                self.table
+                    .update()
+                    .where(self._id_column == bindparam(self.id_column_name))
+                    .values(**values)
+            )
+            self.conn.execute(update_stmt, prepared_records)
 
         if self.supports_returning:
             # TODO: use implicit returning if possible
-            return self.fetch_many(_ids, as_list=True)
+            return self.fetch_many(_ids)
         else:
-            return self.fetch_many(_ids, as_list=True)
+            return self.fetch_many(_ids)
 
     def delete(self, _id) -> None:
         prepared_id = self.adapt_id(_id)
