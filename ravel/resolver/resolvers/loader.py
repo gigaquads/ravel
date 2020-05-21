@@ -54,8 +54,12 @@ class Loader(Resolver):
             return None
 
         # load from store
+        all_field_names = {
+            f.name for f in resource.ravel.schema.fields.values()
+            if not f.meta.get('ravel_on_resolve')
+        }
         unloaded_field_names = set(
-            resource.Schema.fields.keys() - resource.internal.state.keys()
+            all_field_names - resource.internal.state.keys()
         )
         unloaded_field_names.add(self._field.name)
         

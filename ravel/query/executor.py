@@ -32,8 +32,9 @@ class Executor(object):
         requests_to_execute = set()
         schema = query.target.ravel.schema
         for request in query.requests.values():
-            if request.resolver.name in schema.fields:
-                fields_to_fetch.add(request.resolver.name)
+            field = schema.fields.get(request.resolver.name)
+            if field and not field.meta.get('ravel_on_resolve'):
+                fields_to_fetch.add(field.name)
             else:
                 requests_to_execute.add(request)
         return {

@@ -80,6 +80,12 @@ class ResolverProperty(property):
 
         # if value not loaded, lazily resolve it
         if resolver.name not in resource.internal.state:
+            console.debug(
+                message=(
+                    f'lazy loading '
+                    f'{get_class_name(self.resolver.owner)}.{resolver.name}'
+                )
+            )
             request = Request(resolver)
             value = resolver.resolve(resource, request)
 

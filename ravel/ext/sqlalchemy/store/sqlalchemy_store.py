@@ -287,7 +287,10 @@ class SqlalchemyStore(Store):
         self._adapters = {
             field_name: field_class_2_adapter[type(field)]
             for field_name, field in self.resource_type.Schema.fields.items()
-            if type(field) in field_class_2_adapter
+            if (
+                type(field) in field_class_2_adapter and
+                field.meta.get('ravel_on_resolve') is None
+            )
         }
 
         # build the Sqlalchemy Table object for the bound resource type.
@@ -307,7 +310,9 @@ class SqlalchemyStore(Store):
         order_by: Tuple = None,
         **kwargs,
     ):
-        fields = fields or {k: None for k in self.resource_type.Schema.fields}
+        fields = fields or {
+            k: None for k in self._adapters
+        }
         fields.update({
             self.id_column_name: None,
             self.resource_type.Schema.fields[REV].source: None,
@@ -426,6 +431,7 @@ class SqlalchemyStore(Store):
         else:
             fields = {
                 f.source for f in self.resource_type.Schema.fields.values()
+                if f.name in self._adapters
             }
         fields.update({
             self.id_column_name,
