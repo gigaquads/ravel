@@ -9,6 +9,7 @@ from collections import defaultdict
 from logging import getLogger
 
 from appyratus.utils import SysUtils
+from appyratus.utils import DictObject
 from appyratus.enum import Enum
 
 import pygame as pg
@@ -59,7 +60,7 @@ GAME_STOPPED = pg.USEREVENT + 3
 
 PYGAME_2_RAVEL_EVENT_TYPE = {
     pg.QUIT: EVENT_TYPE.QUIT,
-    pg.KEYUP : EVENT_TYPE.KEY_UP,
+    pg.KEYUP: EVENT_TYPE.KEY_UP,
     pg.KEYDOWN: EVENT_TYPE.KEY_DOWN,
     GAME_STARTED: EVENT_TYPE.STARTED,
     GAME_PAUSED: EVENT_TYPE.PAUSED,
@@ -67,42 +68,73 @@ PYGAME_2_RAVEL_EVENT_TYPE = {
     GAME_STOPPED: EVENT_TYPE.STOPPED,
 }
 
-PYGAME_WINDOW_EVENT_TYPES = {pg.QUIT}  # TODO
-PYGAME_MOUSE_EVENT_TYPES = {}  # TODO
+PYGAME_WINDOW_EVENT_TYPES = {pg.QUIT}    # TODO
+PYGAME_MOUSE_EVENT_TYPES = {}    # TODO
 PYGAME_KEY_EVENT_TYPES = {pg.KEYUP, pg.KEYDOWN}
 
 
+def get_pygame_events():
+    events = {}
+    for e in dir(pg):
+        value = getattr(pg, e)
+        if isinstance(value, int):
+            events[value] = e
+    return events
+
+
+PYGAME_EVENT_ID_2_NAME = get_pygame_events()
+
+
 def pygame_2_ravel_event(pygame_event):
-    event_type = PYGAME_2_RAVEL_EVENT.get(pygame_event.type)
+    event_type = PYGAME_2_RAVEL_EVENT_TYPE.get(pygame_event.type)
     if event_type is not None:
         ravel_event = GameEvent(event_type)
-        if pygame_event.type in PYGAME_KEY_EVENT_TYPES:
-            event.key = pygame_event.key
-    return event
+        #if pygame_event.type in PYGAME_KEY_EVENT_TYPES:
+        #    ravel_event.key = pygame_event.key
+    else:
+        ravel_event = GameEvent(pygame_event.type, **pygame_event.dict)
+    return ravel_event
+
 
 # ------
 
+
 class PygameGame(Application):
+    """
+    key_event_handlers, events defined in action `key` attribute
+    any_key_evnet_handlers, 
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.key_event_handlers = defaultdict(lambda: defaultdict(list))
-        self.any_key_event_handlers = defaultdict(lambda: defaultdict(list))
-        self.mouse_event_handlers = defaultdict(list)
-        self.window_event_handlers = defaultdict(list, {
-            EVENT_TYPE.QUIT: [lambda event: {'is_running': False}]
-        })
+        self.any_key_event_handlers = defaultdict(lambda: list)
+        self.mouse_event_handlers = defaultdict(lambda: list)
+        self.window_event_handlers = defaultdict(
+            list, {EVENT_TYPE.QUIT: [lambda event: {
+                'is_running': False
+            }]}
+        )
+        self.local.pygame_state = DictObject()
+
+    @property
+    def state(self):
+        return self.local.pygame_state
 
     def on_decorate(self, handler: 'Action'):
         event_type = handler.decorator.kwargs['event']
+        print('KEY EVENT TYPES', KEY_EVENT_TYPES)
         if event_type in KEY_EVENT_TYPES:
+            # look for action `key` attribute and add to "key" event handlers.
+            # otherwise add to "any key" event handlers.
             key_obj = handler.decorator.kwargs.get('key')
             if key_obj is not None:
                 for key in set(flatten_sequence(key_obj)):
-                    self.key_event_handlers[key][event_type].append(handler)
+                    self.key_event_handlers[event_type][key].append(handler)
             else:
                 self.any_key_event_handlers[event_type].append(handler)
             return
+
     #
     # def on_request(
     #     self,
@@ -163,8 +195,8 @@ class PygameGame(Application):
                     if fresh_state:
                         self.state.update(fresh_state)
                 elif event.event_type in self.key_event_handlers:
-                    key_2_handlers = self.key_event_handlers[event.key]
-                    handlers = key_2_handlers[event.event_type]
+                    key_2_handlers = self.key_event_handlers[event.event_type]
+                    handlers = key_2_handlers[event.text]
                     for handler in handlers:
                         fresh_state = handler(event)
                         if fresh_state:
@@ -181,6 +213,8 @@ class PygameGame(Application):
                         fresh_state = handler(event)
                         if fresh_state:
                             self.state.update(fresh_state)
+                elif event.event_type == pg.QUIT:
+                    pg.quit()
 
             dirty_rects = self.on_update(self.state.tick)
             self.on_draw(self.state.tick)
