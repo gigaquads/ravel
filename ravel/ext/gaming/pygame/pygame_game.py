@@ -17,6 +17,7 @@ import pygame as pg
 from pygame.time import Clock
 
 from ravel.util.misc_functions import flatten_sequence
+from ravel.util.loggers import console
 from ravel.app.base import Application, ActionDecorator, Action
 
 pygame_logger = getLogger('pygame')
@@ -33,23 +34,7 @@ EVENT_TYPE = Enum(
     QUIT=6,
 )
 
-KEY_EVENT_TYPES = {
-    EVENT_TYPE.KEY_UP,
-    EVENT_TYPE.KEY_DOWN,
-}
-
-
-class GameEvent(object):
-    def __init__(self, event_type, **kwargs):
-        self.event_type = event_type
-        self.kwargs = kwargs
-
-    def __getattr__(self, name):
-        return self.kwargs.get(name)
-
-    def __setattr__(self, name, value):
-        self.kwargs[name] = value
-
+KEY_EVENT_TYPES = {EVENT_TYPE.KEY_UP, EVENT_TYPE.KEY_DOWN, pg.TEXTINPUT}
 
 # Pygame-specific constants:
 # TODO: move into constants.py file
@@ -71,6 +56,27 @@ PYGAME_2_RAVEL_EVENT_TYPE = {
 PYGAME_WINDOW_EVENT_TYPES = {pg.QUIT}    # TODO
 PYGAME_MOUSE_EVENT_TYPES = {}    # TODO
 PYGAME_KEY_EVENT_TYPES = {pg.KEYUP, pg.KEYDOWN}
+
+GAME_DEFAULTS = Enum(
+    FPS=34,
+    WINDOW_SIZE=(800, 600),
+)
+
+
+class GameEvent(object):
+
+    def __init__(self, event_type, **kwargs):
+        console.debug(
+            f'Event {event_type} {PYGAME_EVENT_ID_2_NAME[event_type]}', data=kwargs
+        )
+        self.__dict__['kwargs'] = kwargs or {}
+        self.event_type = event_type
+
+    def __getattr__(self, name):
+        return self.__dict__['kwargs'].get(name)
+
+    def __setattr__(self, name, value):
+        self.kwargs[name] = value
 
 
 def get_pygame_events():
@@ -123,7 +129,6 @@ class PygameGame(Application):
 
     def on_decorate(self, handler: 'Action'):
         event_type = handler.decorator.kwargs['event']
-        print('KEY EVENT TYPES', KEY_EVENT_TYPES)
         if event_type in KEY_EVENT_TYPES:
             # look for action `key` attribute and add to "key" event handlers.
             # otherwise add to "any key" event handlers.
@@ -143,18 +148,17 @@ class PygameGame(Application):
     #     **raw_kwargs
     # ) -> Tuple[Tuple, Dict]:
 
-    def on_bootstrap(self, window_size=None, display_mode_flags=None, fps=34):
+    def on_bootstrap(self, window_size=None, display_mode_flags=None, fps=None):
         self.state.clock = Clock()
-        self.state.window_size = tuple(window_size or (800, 600))
         self.state.is_running = False
-        self.state.fps = fps
+        self.state.window_size = tuple(window_size or GAME_DEFAULTS.WINDOW_SIZE)
+        self.state.fps = fps or GAME_DEFAULTS.FPS
         self.state.delta_t = None
         self.state.display_mode_flags = (
             reduce(lambda x, y: x | y, display_mode_flags)
             if display_mode_flags and len(display_mode_flags) > 1
             else (display_mode_flags or pg.DOUBLEBUF)
         )
-
         pg.init()
 
     def on_extract(self, action, index, parameter, raw_args, raw_kwargs):
@@ -182,7 +186,9 @@ class PygameGame(Application):
             self.state.delta_t = self.state.clock.tick(self.state.fps)
             self.state.tick += 1
 
+            # iterate over each pygame event
             for pygame_event in pg.event.get():
+
                 # convert native pygame event to generic Ravel game event
                 event = pygame_2_ravel_event(pygame_event)
                 if not event:
@@ -190,10 +196,11 @@ class PygameGame(Application):
 
                 # route ravel event to appropriate handler/s
                 if event.event_type in self.window_event_handlers:
-                    handler = self.window_event_handlers[event.event_type]
-                    fresh_state = handler(event)
-                    if fresh_state:
-                        self.state.update(fresh_state)
+                    handlers = self.window_event_handlers[event.event_type]
+                    for handler in handlers:
+                        fresh_state = handler(event)
+                        if fresh_state:
+                            self.state.update(fresh_state)
                 elif event.event_type in self.key_event_handlers:
                     key_2_handlers = self.key_event_handlers[event.event_type]
                     handlers = key_2_handlers[event.text]
@@ -226,4 +233,4 @@ class PygameGame(Application):
         pass
 
     def on_draw(self, tick):
-        pass
+        console.debug(f'Tick {self.state.tick}')
