@@ -60,10 +60,39 @@ PYGAME_KEY_EVENT_TYPES = {pg.KEYUP, pg.KEYDOWN}
 GAME_DEFAULTS = Enum(
     FPS=34,
     WINDOW_SIZE=(800, 600),
+    TITLE="My Game",
 )
 
 
 class GameEvent(object):
+    """
+    Init process
+
+    Event 4352 AUDIODEVICEADDED {}      
+    Event 4352 AUDIODEVICEADDED {}      
+    Event 32770 VIDEOEXPOSE {}          
+    Event 32768 ACTIVEEVENT {'gain': 1, 'state': 1, 'window': None}
+    Event 32770 VIDEOEXPOSE {}          
+    Event 32770 VIDEOEXPOSE {}          
+    Event 1 SCRAP_SELECTION {}          
+    Tick 1
+    Event 32770 VIDEOEXPOSE {}
+
+
+    Pressing keys
+    Arrow keys only produce
+    Event 5 KSCAN_B {}
+
+    Pressing Alphanumeric keys
+    Event 5 KSCAN_B {}
+    Event 771 TEXTINPUT {'text': 'd', 'window': None}
+
+    Upon release of key in any event (After 3 ticks) it produces (again)
+    Event 5 KSCAN_B {}
+
+    # Moving the mouse will produce an event
+    Event 1024 MOUSEMOTION {'pos': (699, 0), 'rel': (10, -6), 'buttons': (0, 0, 0), 'window': None}
+    """
 
     def __init__(self, event_type, **kwargs):
         console.debug(
@@ -148,11 +177,18 @@ class PygameGame(Application):
     #     **raw_kwargs
     # ) -> Tuple[Tuple, Dict]:
 
-    def on_bootstrap(self, window_size=None, display_mode_flags=None, fps=None):
+    def on_bootstrap(
+        self,
+        window_size=None,
+        display_mode_flags=None,
+        fps=None,
+        title=None,
+    ):
         self.state.clock = Clock()
         self.state.is_running = False
         self.state.window_size = tuple(window_size or GAME_DEFAULTS.WINDOW_SIZE)
         self.state.fps = fps or GAME_DEFAULTS.FPS
+        self.state.title = title or GAME_DEFAULTS.TITLE
         self.state.delta_t = None
         self.state.display_mode_flags = (
             reduce(lambda x, y: x | y, display_mode_flags)
@@ -178,6 +214,7 @@ class PygameGame(Application):
         self.state.screen = pg.display.set_mode(
             self.state.window_size, self.state.display_mode_flags
         )
+        pg.display.set_caption(self.state.title)
 
         start_event = pg.event.Event(EVENT_TYPE.STARTED)
         pg.event.post(start_event)
