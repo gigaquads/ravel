@@ -35,11 +35,11 @@
             have different terms for what is essentailly the same thing. Web
             frameworks call them actions or routes; command-line applications call them
             commands; and frontend frameworks call them callbacks. As a
-            meta-framework, Pybiz abstracts these differences out.
+            meta-framework, Ravel abstracts these differences out.
           </p>
           <p>
-            In Pybiz, each action an arbitrary python function, consisting entirely of business logic, making no reference to things like requests and
-            responses. The Pybiz application layer takes care of transforming native
+            In Ravel, each action an arbitrary python function, consisting entirely of business logic, making no reference to things like requests and
+            responses. The Ravel application layer takes care of transforming native
             inputs into the arguments expected by the action and the return
             value into the native response.
             Here is an example of an action that is simultaneously reachable as a <a href="">gRPC</a> method, an HTTP route, and a REPL function:
@@ -66,7 +66,7 @@ def get_account_settings(account: Account) -> AccountSettings:
       <div class="card">
         <div>
           <h2>Action Execution</h2>
-          <p>When running actions, Pybiz executes a series of callbacks that apply
+          <p>When running actions, Ravel executes a series of callbacks that apply
           middleware and transform native application inputs and outputs into and out
           of the action. In the following documentation (as well as in code),
           the Python callable registered as an action is called the <i>target</i>.
@@ -127,7 +127,7 @@ def add_task(owner_id: str, project_id: str, task_data: dict):
           </ul>
 
           <p>
-          With these considerations, Pybiz implements a form of <a href="">argument
+          With these considerations, Ravel implements a form of <a href="">argument
           polymorphism</a>, in which IDs or dicts are accepted as valid
           arguments but resolved and normalized to corresponding
           <code>Resource</code> objects, either by loading them through the
@@ -157,7 +157,7 @@ def add_task(owner: User, project: Project, task: Task) -> Task:
           this approach becomes apparent when you try to reuse actions
           in different contexts. In web apps, for instance, you might want to
           call an action using IDs in the URL, but in a REPL, you might want
-          to pass the objects directly. In Pybiz, all of the following call patterns work:
+          to pass the objects directly. In Ravel, all of the following call patterns work:
           </p>
 
           <h4>Passing IDs as Arguments</h4>
@@ -185,7 +185,7 @@ add_item_to_todo_list(owner, todo_list, item)
           <p>
             According to <a href="https://en.wikipedia.org/wiki/Guard_(computer_science)">Wikipedia</a>,
             a <i>guard</i> is a boolean expression that must evaluate to true if the
-            program execution is to continue. In Pybiz, you can use guards to
+            program execution is to continue. In Ravel, you can use guards to
             check if preconditions are met before executing a requested action.
           </p>
 

@@ -1,13 +1,13 @@
-# Pybiz
-Pybiz is a general-purpose Python application framework that lets you focus on what's important from the get-go, without burning out or getting sidetracked by databases, user interface libraries or network communication protocols. It builds upon tried and true patterns for scaling, extending and maintaining applications without sacrificing efficiency or simplicity.
+# Ravel
+Ravel is a general-purpose Python application framework that lets you focus on what's important from the get-go, without burning out or getting sidetracked by databases, user interface libraries or network communication protocols. It builds upon tried and true patterns for scaling, extending and maintaining applications without sacrificing efficiency or simplicity.
 
-The development process in Pybiz is designed to mirror the natural evolution of ideas, from notes scrawled on a piece of paper to a full-fledged microservice architecture, offering a handful of nifty tools to facilitate debugging and testing.
+The development process in Ravel is designed to mirror the natural evolution of ideas, from notes scrawled on a piece of paper to a full-fledged microservice architecture, offering a handful of nifty tools to facilitate debugging and testing.
 
 ## A Quick Example
-Let's begin by taking a quick look at what it takes to spin up a new, minimal Pybiz app in two steps: defining a domain model and a high-level application interface.
+Let's begin by taking a quick look at what it takes to spin up a new, minimal Ravel app in two steps: defining a domain model and a high-level application interface.
 
 ### The Domain Model
-Our example domain model consists of _users_ and _accounts_. Each account is _owned_ by a single user but associated with many _member_ users. For more information on domain modeling with Pybiz, see [Business Objects](./business-layer/index.md).
+Our example domain model consists of _users_ and _accounts_. Each account is _owned_ by a single user but associated with many _member_ users. For more information on domain modeling with Ravel, see [Business Objects](./business-layer/index.md).
 
 ```python
 # file: example.py
@@ -30,7 +30,7 @@ class User(Resource):
 ```
 
 ### The Application Interface
-In Pybiz, an application interface is simply a collection of functions, registered with a user interface library or web framework
+In Ravel, an application interface is simply a collection of functions, registered with a user interface library or web framework
 via decorator. See [Application Interface Layer](./interface-layer/index.md) for details.
 
 In our example, we will register the same two functions `signup` and `login` functions for use in both a JSON web server and interactive IPython shell, or REPL.
