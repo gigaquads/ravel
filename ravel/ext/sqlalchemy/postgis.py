@@ -13,6 +13,7 @@ SUPPORTED_GEOMETRY_TYPES = Enum(
 POSTGIS_OP_CODE = Enum(
     CONTAINS='contains',
     CONTAINED_BY='contained-by',
+    WITHIN_RADIUS='within-radius',
 )
 
 
@@ -25,9 +26,19 @@ class GeometryObject:
 
 
 class PointGeometry(GeometryObject):
-    def __init__(self, vertex):
+    def __init__(self, obj):
+        if isinstance(obj, PointGeometry):
+            vertex = obj.vertex
+        elif isinstance(obj, dict):
+            vertex = obj['vertex']
+        else:
+            vertex = obj
+
         super().__init__(SUPPORTED_GEOMETRY_TYPES.POINT)
         self.vertex = vertex
+
+    def __getitem__(self, idx):
+        return self.vertex[idx]
 
     def to_EWKT_string(self) -> str:
         x, y = self.vertex
@@ -35,7 +46,14 @@ class PointGeometry(GeometryObject):
 
 
 class PolygonGeometry(GeometryObject):
-    def __init__(self, vertices):
+    def __init__(self, obj):
+        if isinstance(obj, PolygonGeometry):
+            vertices = obj.vertices
+        elif isinstance(obj, dict):
+            vertices = obj['vertices']
+        else:
+            vertices = obj
+
         super().__init__(SUPPORTED_GEOMETRY_TYPES.POLYGON)
         self.vertices = vertices
 
@@ -47,6 +65,13 @@ class PolygonGeometry(GeometryObject):
 class PostgisGeometryLoaderProperty(LoaderProperty):
     def contains(self, geometry: 'GeometryObject') -> Predicate:
         return ConditionalPredicate(POSTGIS_OP_CODE.CONTAINS, self, geometry)
+
+    def is_within_radius_of(self, point, radius):
+        value = {'center': PointGeometry(point).vertex, 'radius': radius}
+        return ConditionalPredicate(
+            POSTGIS_OP_CODE.WITHIN_RADIUS, self, value,
+            ignore_field_adapter=True
+        )
 
     def is_contained_by(self, polygon: 'PolygonGeometry') -> Predicate:
         return ConditionalPredicate(

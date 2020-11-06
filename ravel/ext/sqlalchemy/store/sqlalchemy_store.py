@@ -382,9 +382,10 @@ class SqlalchemyStore(Store):
 
     def _prepare_predicate(self, pred, empty=set()):
         if isinstance(pred, ConditionalPredicate):
-            adapter = self._adapters.get(pred.field.source)
-            if adapter and adapter.on_encode:
-                pred.value = adapter.on_encode(pred.value)
+            if not pred.ignore_field_adapter:
+                adapter = self._adapters.get(pred.field.source)
+                if adapter and adapter.on_encode:
+                    pred.value = adapter.on_encode(pred.value)
             col = getattr(self.table.c, pred.field.source)
             if pred.op == OP_CODE.EQ:
                 return col == pred.value
@@ -417,6 +418,12 @@ class SqlalchemyStore(Store):
                     EWKT_str = pred.value
                 return sa.func.ST_Contains(
                     sa.func.ST_GeomFromEWKT(EWKT_str), col
+                )
+            elif pred.op == POSTGIS_OP_CODE.WITHIN_RADIUS:
+                center = pred.value['center']
+                radius = pred.value['radius']
+                return sa.func.ST_PointInsideCircle(
+                    col, center[0], center[1], radius
                 )
             else:
                 raise Exception('unrecognized conditional predicate')

@@ -21,6 +21,10 @@ from ravel.schema import fields
 
 
 class Loader(Resolver):
+    """
+    The Loader resolver is responsible for fetching Resource fields.
+    """
+
     def __init__(self, field, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.field = field

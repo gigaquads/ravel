@@ -19,7 +19,7 @@ from ravel.util import (
     get_class_name,
 )
 from ravel.schema import Field, Schema, String, Id, UuidString
-from ravel.dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
+from ravel.dumper import Dumper, SideLoadedDumper, DumpStyle
 from ravel.batch import Batch
 from ravel.constants import (
     IS_RESOURCE,
@@ -33,7 +33,7 @@ from ravel.resolver.resolver import Resolver
 from ravel.resolver.resolver_decorator import ResolverDecorator
 from ravel.resolver.resolver_property import ResolverProperty
 from ravel.resolver.resolver_manager import ResolverManager
-from ravel.resolver.resolvers.loader import Loader, LoaderProperty
+from ravel.resolver.resolvers.loader import Loader
 from ravel.entity import Entity
 
 
@@ -84,7 +84,8 @@ class ResourceMeta(type):
                 field = v
                 field.name = k
                 fields[k] = field
-                resolver_property = Loader.build_property(
+                resolver_type = field.meta.get('resolver_type') or Loader
+                resolver_property = resolver_type.build_property(
                     kwargs=dict(owner=cls, field=field, name=k, target=cls),
                 )
                 cls.ravel.resolvers.register(resolver_property.resolver)
@@ -117,7 +118,8 @@ class ResourceMeta(type):
         # inherited fields in one dict.
         for k, field in fields.items():
             if k in inherited_fields:
-                resolver_property = Loader.build_property(kwargs=dict(
+                resolver_type = field.meta.get('resolver_type') or Loader
+                resolver_property = resolver_type.build_property(kwargs=dict(
                     owner=resource_type,
                     field=field,
                     name=k,
@@ -896,7 +898,8 @@ class Resource(Entity, metaclass=ResourceMeta):
                 record.pop(ID, None)
                 if fields_to_update:
                     record = {
-                        k: v for k, v in record.items() if k in fields_to_update
+                        k: v for k, v in record.items()
+                        if k in fields_to_update
                     }
                 records.append(record)
                 _ids.append(resource._id)

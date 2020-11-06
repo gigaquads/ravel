@@ -210,13 +210,20 @@ class ConditionalPredicate(Predicate):
     objects that instantiated the predicate.
     """
 
-    def __init__(self, op: Text, prop: 'FieldProperty', value):
+    def __init__(
+        self,
+        op: Text,
+        prop: 'FieldProperty',
+        value,
+        ignore_field_adapter=False
+    ):
         super().__init__(code=PREDICATE_TYPE.CONDITIONAL)
         self.op = op
         self.prop = prop
         self.value = value
         self.targets.add(self.prop.resolver.owner)
         self.is_scalar = op not in NON_SCALAR_OP_CODES
+        self.ignore_field_adapter = ignore_field_adapter
 
     def __repr__(self):
         return f'{get_class_name(self)}({str(self)[1:-1]})'

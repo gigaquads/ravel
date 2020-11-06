@@ -1,18 +1,10 @@
-import importlib
 import os
 import re
-import sys
 import traceback
 import pkg_resources
 
-import yaml
-
-import ravel
-
 from typing import Text, Dict, Type
-from collections import defaultdict
 
-from appyratus.memoize import memoized_property
 from appyratus.utils import DictUtils, DictObject
 from appyratus.files import Yaml, Json
 from appyratus.env import Environment
@@ -134,7 +126,6 @@ class Manifest(object):
             3. self.bootstraps
         """
         file_data = {}
-        base_data = self.data
         if not (self.data or self.path):
             return self
 
@@ -142,12 +133,12 @@ class Manifest(object):
         if self.path is not None:
             if not os.path.isfile(self.path):
                 console.error(
-                    message=f'cannot find manifest file. expect problems!',
+                    message='cannot find manifest file. expect problems!',
                     data={'path': self.path}
                 )
             else:
                 console.debug(
-                    message=f'reading manifest file',
+                    message='reading manifest file',
                     data={'path': self.path}
                 )
                 ext = os.path.splitext(self.path)[1].lstrip('.').lower()
@@ -170,7 +161,7 @@ class Manifest(object):
         self.package = self.data.get('package')
 
         if not self.data.get('bindings'):
-            console.warning(f'no "bindings" section detected in manifest!')
+            console.warning('no "bindings" section detected in manifest!')
 
         for binding_data in (self.data.get('bindings') or []):
             res = binding_data['resource']
@@ -207,9 +198,9 @@ class Manifest(object):
         return self
 
     def bootstrap(self):
-        # visited_store_types is used to keep track of which store classes we've
-        # already bootstrapped in the process of bootstrapping the store classes
-        # bound to Resource classes.
+        # visited_store_types is used to keep track of which store classes
+        # we've already bootstrapped in the process of bootstrapping the store
+        # classes bound to Resource classes.
         visited_store_types = set()
 
         for resource_type in self.types.res.values():
@@ -219,7 +210,9 @@ class Manifest(object):
                     f'bootstrapping {get_class_name(resource_type)}'
                 )
                 resource_class_name = get_class_name(resource_type)
-                store_class_name = self._res_2_store_name.get(resource_class_name)
+                store_class_name = self._res_2_store_name.get(
+                    resource_class_name
+                )
                 if store_class_name is None:
                     store_type = resource_type.__store__()
                     store_class_name = get_class_name(store_type)
@@ -233,9 +226,14 @@ class Manifest(object):
                     self.types.stores[store_class_name] = store_type
 
                 if resource_class_name not in self._res_2_store_name:
-                    self._res_2_store_name[resource_class_name] = store_class_name
+                    self._res_2_store_name[resource_class_name] = (
+                        store_class_name
+                    )
                     self.bindings.append(
-                        ManifestBinding(res=resource_class_name, store=store_class_name)
+                        ManifestBinding(
+                            res=resource_class_name,
+                            store=store_class_name
+                        )
                     )
                     self.app.binder.register(
                         resource_type=resource_type, store_type=store_type
@@ -249,7 +247,9 @@ class Manifest(object):
 
                 console.debug(f'bootstrapping {store_class_name}')
                 bootstrap_object = self.bootstraps.get(store_class_name)
-                bootstrap_kwargs = bootstrap_object.params if bootstrap_object else {}
+                bootstrap_kwargs = (
+                    bootstrap_object.params if bootstrap_object else {}
+                )
                 store_type.bootstrap(app=self.app, **bootstrap_kwargs)
 
         # inject the following into each action target's lexical scope:
@@ -292,7 +292,7 @@ class Manifest(object):
         """
         Associate each Resource class with a corresponding Store class.
         """
-        # register each binding declared in the manifest with the ResourceBinder
+        # register each binding declared in manifest with ResourceBinder
         for info in self.bindings:
             resource_type = self.types.res.get(info.res)
             if resource_type is None:
@@ -314,18 +314,22 @@ class Manifest(object):
         for type_name, store_type in self.types.stores.items():
             if not self.app.binder.get_store_type(type_name):
                 self.app.binder.register(None, store_type)
-                registered_store_type = self.app.binder.get_store_type(type_name)
-                self.types.stores[type_name] = registered_store_type
+                registered_type = self.app.binder.get_store_type(type_name)
+                self.types.stores[type_name] = registered_type
 
     def _scan_dotted_paths(self):
         # gather Store and Resource types in "bindings" section
         # into self.types.stores and self.types.res
         for binding in self.bindings:
             if binding.res_module and binding.res not in self.types.res:
-                resourceresource_type = import_object(f'{binding.res_module}.{binding.res}')
+                resource_type = import_object(
+                    f'{binding.res_module}.{binding.res}'
+                )
                 self.types.res[binding.res] = resource_type
             if binding.store_module and binding.store not in self.types.stores:
-                store_type = import_object(f'{binding.store_module}.{binding.store}')
+                store_type = import_object(
+                    f'{binding.store_module}.{binding.store}'
+                )
                 self.types.stores[binding.store] = store_type
 
         # gather Store types in "bootstraps" section into self.types.stores
@@ -366,13 +370,11 @@ class Manifest(object):
         Use venusian simply to scan the action packages/modules, causing the
         action callables to register themselves with the Application instance.
         """
-        import ravel.store
-        import ravel.ext
-
-        console.debug('scanning for resource and store types')
-
         # scan base ravel store and resource classes
+        console.debug('scanning ravel.store store types')
         self.scanner.scan('ravel.store')
+
+        console.debug('scanning ravel.resource for resource types')
         self.scanner.scan('ravel.resource')
 
         # scan extension directories if the package installation requirements
@@ -395,8 +397,8 @@ class Manifest(object):
     @staticmethod
     def _expand_environment_vars(env, data):
         """
-        Replace all environment variables used as keys or values in the manifest
-        data dict. These are string like `$my_env_var`.
+        Replace all environment variables used as keys or values in the
+        manifest data dict. These are string like `$my_env_var`.
         """
         re_env_var = re.compile(r'^\$([\w\-]+)$')
 
