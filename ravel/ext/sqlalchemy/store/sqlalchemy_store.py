@@ -1,21 +1,11 @@
-import re
-import threading
-import uuid
-import pickle
-
-from threading import RLock
-
 import sqlalchemy as sa
 
 from typing import List, Dict, Text, Type, Set, Tuple
+from threading import RLock
 
-from sqlalchemy import TypeDecorator
-from sqlalchemy.dialects.postgresql import ARRAY
-
-from appyratus.enum import EnumValueStr
-from appyratus.env import Environment
+from geoalchemy2 import Geometry as GeoalchemyGeometry
 from sqlalchemy.sql import bindparam
-from sqlalchemy.dialects.postgresql import ARRAY
+from appyratus.env import Environment
 
 from ravel.query.predicate import (
     Predicate, ConditionalPredicate, BooleanPredicate,
@@ -30,6 +20,11 @@ from ravel.constants import REV, ID
 from .dialect import Dialect
 from .sqlalchemy_table_builder import SqlalchemyTableBuilder
 from ..types import ArrayOfEnum
+from ..postgis import (
+    POSTGIS_OP_CODE,
+    GeometryObject, PointGeometry, PolygonGeometry,
+    Geometry, Point, Polygon,
+)
 
 
 class SqlalchemyStore(Store):
@@ -42,7 +37,9 @@ class SqlalchemyStore(Store):
 
     env = Environment(
         SQLALCHEMY_STORE_ECHO=fields.Bool(default=False),
-        SQLALCHEMY_STORE_DIALECT=fields.Enum(fields.String(), Dialect.values(), default=Dialect.sqlite),
+        SQLALCHEMY_STORE_DIALECT=fields.Enum(
+            fields.String(), Dialect.values(), default=Dialect.sqlite
+        ),
         SQLALCHEMY_STORE_PROTOCOL=fields.String(default='sqlite'),
         SQLALCHEMY_STORE_USER=fields.String(default='admin'),
         SQLALCHEMY_STORE_HOST=fields.String(default='0.0.0.0'),
@@ -125,6 +122,16 @@ class SqlalchemyStore(Store):
             }.get(type(field.nested), sa.Text))
 
         return [
+            Point.adapt(
+                on_adapt=lambda field: GeoalchemyGeometry(field.geo_type),
+                on_encode=lambda x: x.to_EWKT_string(),
+                on_decode=lambda x: PointGeometry(x['geometry']['coordinates'])  # TODO: extracvt vertices from GeoJSON
+            ),
+            Polygon.adapt(
+                on_adapt=lambda field: GeoalchemyGeometry(field.geo_type),
+                on_encode=lambda x: x.to_EWKT_string(),
+                on_decode=lambda x: PolygonGeometry(x['geometry']['coordinates'])  # TODO: extracvt vertices from GeoJSON
+            ),
             fields.Field.adapt(on_adapt=lambda field: pg_types.JSONB),
             fields.Uuid.adapt(on_adapt=lambda field: pg_types.UUID),
             fields.Dict.adapt(on_adapt=lambda field: pg_types.JSONB),
@@ -234,7 +241,9 @@ class SqlalchemyStore(Store):
             if isinstance(url, dict):
                 url_parts = url
                 cls.ravel.app.local.sqla_url = (
-                    '{protocol}://{user}@{host}:{port}/{db}'.format(**url_parts)
+                    '{protocol}://{user}@{host}:{port}/{db}'.format(
+                        **url_parts
+                    )
                 )
             elif isinstance(url, str):
                 cls.ravel.app.local.sqla_url = url
@@ -247,17 +256,19 @@ class SqlalchemyStore(Store):
                     db=cls.env.SQLALCHEMY_STORE_NAME,
                 )
                 cls.ravel.app.local.sqla_url = url or (
-                    '{protocol}://{user}@{host}:{port}/{db}'.format(**url_parts)
+                    '{protocol}://{user}@{host}:{port}/{db}'.format(
+                        **url_parts
+                    )
                 )
 
             cls.dialect = dialect or cls.env.SQLALCHEMY_STORE_DIALECT
 
             console.info(
-                message=f'creating Sqlalchemy engine',
+                message='creating Sqlalchemy engine',
                 data={
                     'echo': cls.env.SQLALCHEMY_STORE_ECHO,
                     'dialect': cls.dialect,
-                    'url': url,
+                    'url': cls.ravel.app.local.sqla_url,
                 }
             )
 
@@ -318,7 +329,14 @@ class SqlalchemyStore(Store):
             self.resource_type.Schema.fields[REV].source: None,
         })
 
-        columns = [getattr(self.table.c, k) for k in fields]
+        columns = []
+        for k in fields:
+            col = getattr(self.table.c, k)
+            if isinstance(col.type, GeoalchemyGeometry):
+                columns.append(sa.func.ST_AsGeoJSON(col))
+            else:
+                columns.append(col)
+
         predicate = Predicate.deserialize(predicate)
         filters = self._prepare_predicate(predicate)
 
@@ -338,6 +356,14 @@ class SqlalchemyStore(Store):
         if offset is not None:
             query = query.offset(max(0, limit))
 
+        console.debug(
+            message='executing SQL query',
+            data={
+                'query': str(query.compile(
+                    compile_kwargs={'literal_binds': True}
+                )).split('\n')
+            }
+        )
         # execute query, aggregating resulting records
         cursor = self.conn.execute(query)
         records = []
@@ -376,6 +402,22 @@ class SqlalchemyStore(Store):
                 return col.in_(pred.value)
             elif pred.op == OP_CODE.EXCLUDING:
                 return ~col.in_(pred.value)
+            elif pred.op == POSTGIS_OP_CODE.CONTAINS:
+                if isinstance(pred.value, GeometryObject):
+                    EWKT_str = pred.value.to_EWKT_string()
+                else:
+                    EWKT_str = pred.value
+                return sa.func.ST_Contains(
+                    col, sa.func.ST_GeomFromEWKT(EWKT_str),
+                )
+            elif pred.op == POSTGIS_OP_CODE.CONTAINED_BY:
+                if isinstance(pred.value, GeometryObject):
+                    EWKT_str = pred.value.to_EWKT_string()
+                else:
+                    EWKT_str = pred.value
+                return sa.func.ST_Contains(
+                    sa.func.ST_GeomFromEWKT(EWKT_str), col
+                )
             else:
                 raise Exception('unrecognized conditional predicate')
         elif isinstance(pred, BooleanPredicate):
@@ -395,8 +437,9 @@ class SqlalchemyStore(Store):
     def exists(self, _id) -> bool:
         columns = [sa.func.count(self._id_column)]
         query = (
-            sa.select(columns)
-                .where(self._id_column == self.adapt_id(_id))
+            sa.select(columns).where(
+                self._id_column == self.adapt_id(_id)
+            )
         )
         result = self.conn.execute(query)
         return bool(result.scalar())
@@ -404,10 +447,11 @@ class SqlalchemyStore(Store):
     def exists_many(self, _ids: Set) -> Dict[object, bool]:
         columns = [self._id_column, sa.func.count(self._id_column)]
         query = (
-            sa.select(columns)
-                .where(self._id_column.in_(
+            sa.select(columns).where(
+                self._id_column.in_(
                     [self.adapt_id(_id) for _id in _ids]
-                ))
+                )
+            )
         )
         return {
             row[0]: row[1] for row in self.conn.execute(query)
@@ -438,7 +482,14 @@ class SqlalchemyStore(Store):
             self.resource_type.Schema.fields[REV].source,
         })
 
-        columns = [getattr(self.table.c, k) for k in fields]
+        columns = []
+        for k in fields:
+            col = getattr(self.table.c, k)
+            if isinstance(col.type, GeoalchemyGeometry):
+                columns.append(sa.func.ST_AsGeoJSON(col))
+            else:
+                columns.append(col)
+
         select_stmt = sa.select(columns)
 
         id_col = getattr(self.table.c, self.id_column_name)
@@ -503,7 +554,7 @@ class SqlalchemyStore(Store):
             update_stmt = (
                 self.table
                     .update()
-                    .values(**prepared_records)
+                    .values(**prepared_data)
                     .where(self._id_column == prepared_id)
                 )
         if self.supports_returning:
@@ -610,7 +661,7 @@ class SqlalchemyStore(Store):
         sqla_conn = getattr(cls.ravel.app.local, 'sqla_conn', None)
         if sqla_conn is not None:
             console.warning(
-                message=f'sqlalchemy store already has connection',
+                message='sqlalchemy store already has connection',
             )
         metadata = cls.ravel.app.local.sqla_metadata
         cls.ravel.app.local.sqla_conn = metadata.bind.connect()
@@ -627,9 +678,9 @@ class SqlalchemyStore(Store):
             cls.ravel.app.local.sqla_conn = None
         else:
             console.warning(
-                message=f'sqlalchemy has no connection to close',
+                message='sqlalchemy has no connection to close',
                 data={
-                    'store': str(self)
+                    'store': get_class_name(cls)
                 }
             )
 
