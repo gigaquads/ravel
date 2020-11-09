@@ -66,7 +66,7 @@ class ResourceMeta(type):
         resource_type.ravel.is_bound = False
         resource_type.ravel.schema = None
         resource_type.ravel.defaults = {}
-        resource_type.ravel.readonly_field_names = set()
+        resource_type.ravel.protected_field_names = set()
         resource_type.ravel.predicate_parser = PredicateParser(resource_type)
 
         return resource_type._process_fields()
@@ -118,8 +118,8 @@ class ResourceMeta(type):
         # perform final processing now that we have all direct and
         # inherited fields in one dict.
         for k, field in fields.items():
-            if field.meta.get('readonly', False) or k in {ID, REV}:
-                resource_type.ravel.readonly_field_names.add(k)
+            if field.meta.get('protected', False) or k in {REV}:
+                resource_type.ravel.protected_field_names.add(k)
             if k in inherited_fields:
                 resolver_type = field.meta.get('resolver_type') or Loader
                 resolver_property = resolver_type.build_property(kwargs=dict(

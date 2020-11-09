@@ -115,9 +115,6 @@ class ArgumentLoader(object):
             # so that it can still be accessed inside the app.
             if loaded_entity is not None:
                 loaded_entity.internal.arg = raw_arg_value
-                loaded_entity.unload(
-                    spec.resource_type.ravel.readonly_field_names
-                )
 
             loaded_entity = self._on_load(
                 spec, raw_arg_value, loaded_entity
@@ -173,6 +170,12 @@ class ArgumentLoader(object):
     def preload_resolver_state(
         self, resource_type: Type['Resource'], preloaded: Dict
     ):
+        # remove any items in the preloaded dict if the corresponding field is
+        # designated "protected".
+        for k in resource_type.ravel.protected_field_names:
+            if k in preloaded:
+                del preloaded[k]
+
         for resolver in resource_type.ravel.resolvers.values():
             if resolver.name in resource_type.ravel.resolvers.fields:
                 continue
@@ -192,4 +195,5 @@ class ArgumentLoader(object):
                     preloaded[resolver.name] = target_resource_class(
                         state=self.preload_resolver_state(resolver.target, state_dict)
                     )
+
         return preloaded
