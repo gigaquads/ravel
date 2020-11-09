@@ -84,8 +84,9 @@ class SqlalchemyTableBuilder(object):
         adapter = self.adapters.get(field.name)
 
         if adapter is None:
-            console.error(
-                f'no sqlalchemy field adapter registered for {field}'
+            console.warning(
+                'no sqlalchemy field adapter registered '
+                f'for {field}. using default adapter.'
             )
 
         try:

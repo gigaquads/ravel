@@ -67,6 +67,8 @@ class SqlalchemyStore(Store):
                 on_decode=lambda x: cls.ravel.app.json.decode(x),
             ),
             fields.Email.adapt(on_adapt=lambda field: sa.Text),
+            fields.Bytes.adapt(on_adapt=lambda field: sa.LargeBinary),
+            fields.BcryptString.adapt(on_adapt=lambda field: sa.Text),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
             fields.DateTime.adapt(on_adapt=lambda field: sa.DateTime),
             fields.Timestamp.adapt(on_adapt=lambda field: sa.DateTime),
@@ -596,6 +598,7 @@ class SqlalchemyStore(Store):
             if prepared_record:
                 prepared_ids.append(prepared_id)
                 prepared_records.append(prepared_record)
+                prepared_record[ID] = prepared_id
 
         if prepared_records:
             values = {
