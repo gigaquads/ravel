@@ -66,6 +66,7 @@ class ResourceMeta(type):
         resource_type.ravel.is_bound = False
         resource_type.ravel.schema = None
         resource_type.ravel.defaults = {}
+        resource_type.ravel.readonly_field_names = set()
         resource_type.ravel.predicate_parser = PredicateParser(resource_type)
 
         return resource_type._process_fields()
@@ -117,6 +118,8 @@ class ResourceMeta(type):
         # perform final processing now that we have all direct and
         # inherited fields in one dict.
         for k, field in fields.items():
+            if field.meta.get('readonly', False) or k in {ID, REV}:
+                resource_type.ravel.readonly_field_names.add(k)
             if k in inherited_fields:
                 resolver_type = field.meta.get('resolver_type') or Loader
                 resolver_property = resolver_type.build_property(kwargs=dict(
@@ -159,14 +162,25 @@ class ResourceMeta(type):
         return fields
 
     def _extract_field_defaults(resource_type, schema):
+
+        def make_callable_default(field):
+            value = field.default
+
+            def default_callable():
+                return deepcopy(value)
+
+            default_callable.__name__ = f'{field.name}_default'
+            return default_callable
+
         defaults = resource_type.ravel.defaults
+
         for field in schema.fields.values():
-            if field.default:
+            if field.default is not None:
                 # move field default into "defaults" dict
                 if callable(field.default):
                     defaults[field.name] = field.default
                 else:
-                    defaults[field.name] = lambda: deepcopy(field.default)
+                    defaults[field.name] = make_callable_default(field)
                 # clear it from the schema object once "defaults" dict
                 field.default = None
         return defaults
@@ -296,12 +310,13 @@ class Resource(Entity, metaclass=ResourceMeta):
     @classmethod
     def generate(
         cls,
-        resolvers: Set[Text] = None,
-        values: Dict = None
+        keys: Set[Text] = None,
+        values: Dict = None,
+        use_defaults=True,
     ) -> 'Resource':
         instance = cls()
         values = values or {}
-        keys = resolvers or set(cls.ravel.schema.fields.keys())
+        keys = keys or set(cls.ravel.schema.fields.keys())
         resolver_objs = Resolver.sort(
             cls.ravel.resolvers[k] for k in keys
             if k not in {REV}
@@ -312,8 +327,12 @@ class Resource(Entity, metaclass=ResourceMeta):
         for resolver in resolver_objs:
             if resolver.name in values:
                 value = values[resolver.name]
+            elif use_defaults and resolver.name in cls.ravel.defaults:
+                func = cls.ravel.defaults[resolver.name]
+                value = func()
             else:
                 value = resolver.generate(instance)
+
             instance.internal.state[resolver.name] = value
 
         return instance
@@ -489,14 +508,14 @@ class Resource(Entity, metaclass=ResourceMeta):
         loading_resolvers = {k for k in resolvers if self.is_loaded(k)}
         return self.load(loading_resolvers)
 
-    def unload(self, resolvers: Set[Text] = None) -> 'Resource':
+    def unload(self, keys: Set[Text] = None) -> 'Resource':
         """
         Remove the given keys from field data and/or relationship data.
         """
-        if resolvers:
-            if isinstance(resolvers, str):
-                resolvers = {resolvers}
-                keys = self._normalize_selectors(resolvers)
+        if keys:
+            if isinstance(keys, str):
+                keys = {keys}
+                keys = self._normalize_selectors(keys)
         else:
             keys = set(
                 self.internal.state.keys() |
@@ -505,8 +524,6 @@ class Resource(Entity, metaclass=ResourceMeta):
         for k in keys:
             if k in self.internal.state:
                 del self.internal.state[k]
-            elif k in self.ravel.resolvers:
-                del self.ravel.resolvers[k]
 
     def is_loaded(self, resolvers: Union[Text, Set[Text]]) -> bool:
         """
@@ -545,9 +562,11 @@ class Resource(Entity, metaclass=ResourceMeta):
             del self.internal.state[REV]
 
         record = {}
-        keys_to_save = keys_to_save or self.ravel.schema.fields.keys()
+        keys_to_save = keys_to_save or self.internal.state.keys()
 
         for key in keys_to_save:
+            if key not in self.internal.state:
+                continue
             if key not in self.ravel.schema.fields:
                 continue
             resolver = self.ravel.resolvers[key]
@@ -618,6 +637,13 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         self.internal.state.update(created_record)
         return self.clean()
+
+    def setdefault(self, key, value):
+      if key in self.internal.state:
+        return self[key]
+      else:
+        self[key] = value
+        return value
 
     @classmethod
     def get(cls, _id, select=None) -> Union['Resource', 'Batch']:

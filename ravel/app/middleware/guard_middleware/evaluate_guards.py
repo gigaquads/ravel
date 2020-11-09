@@ -27,13 +27,16 @@ class EvaluateGuards(Middleware):
         """
         guard = self._resolve_guard(action)
         if guard is not None:
-            #
+            context = {
+              'action': action,
+              'request': request,
+             }
             arguments = self._extract_args(
                 action, processed_args, processed_kwargs
             )
             # recursively execute the guard
-            guard_passed = guard(context={}, arguments=arguments)
-            if not guard_passed:
+            guard_passed = guard(context=context, arguments=arguments)
+            if guard_passed is False:
                 raise GuardFailure(guard, "guard failure")
 
     def _resolve_guard(self, action):

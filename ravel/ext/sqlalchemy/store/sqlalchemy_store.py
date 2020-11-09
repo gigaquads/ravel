@@ -13,6 +13,7 @@ from ravel.query.predicate import (
 )
 from ravel.schema import fields, Field
 from ravel.util.loggers import console
+from ravel.util.json_encoder import JsonEncoder
 from ravel.util import get_class_name
 from ravel.store.base import Store
 from ravel.constants import REV, ID
@@ -23,8 +24,10 @@ from ..types import ArrayOfEnum
 from ..postgis import (
     POSTGIS_OP_CODE,
     GeometryObject, PointGeometry, PolygonGeometry,
-    Geometry, Point, Polygon,
+    Point, Polygon,
 )
+
+json_encoder = JsonEncoder()
 
 
 class SqlalchemyStore(Store):
@@ -65,10 +68,11 @@ class SqlalchemyStore(Store):
             ),
             fields.Email.adapt(on_adapt=lambda field: sa.Text),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
-            fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
             fields.DateTime.adapt(on_adapt=lambda field: sa.DateTime),
             fields.Timestamp.adapt(on_adapt=lambda field: sa.DateTime),
-            fields.Enum.adapt(on_adapt=lambda field: {
+            fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
+            fields.Enum.adapt(
+                on_adapt=lambda field: {
                     fields.String: sa.Text,
                     fields.Int: sa.Integer,
                     fields.Float: sa.Float,
@@ -125,17 +129,25 @@ class SqlalchemyStore(Store):
             Point.adapt(
                 on_adapt=lambda field: GeoalchemyGeometry(field.geo_type),
                 on_encode=lambda x: x.to_EWKT_string(),
-                on_decode=lambda x: PointGeometry(x['geometry']['coordinates'])  # TODO: extracvt vertices from GeoJSON
+                on_decode=lambda x: (
+                    PointGeometry(x['geometry']['coordinates']) if x
+                    else None
+                )
             ),
             Polygon.adapt(
                 on_adapt=lambda field: GeoalchemyGeometry(field.geo_type),
                 on_encode=lambda x: x.to_EWKT_string(),
-                on_decode=lambda x: PolygonGeometry(x['geometry']['coordinates'])  # TODO: extracvt vertices from GeoJSON
+                on_decode=lambda x: PolygonGeometry(
+                    x['geometry']['coordinates'] if x
+                    else None
+                )
             ),
             fields.Field.adapt(on_adapt=lambda field: pg_types.JSONB),
             fields.Uuid.adapt(on_adapt=lambda field: pg_types.UUID),
             fields.Dict.adapt(on_adapt=lambda field: pg_types.JSONB),
-            fields.Nested.adapt(on_adapt=lambda field: pg_types.JSONB),
+            fields.Nested.adapt(
+                on_adapt=lambda field: pg_types.JSONB,
+            ),
             fields.Set.adapt(
                 on_adapt=lambda field: pg_types.JSONB,
                 on_encode=lambda x: list(x),
@@ -333,7 +345,7 @@ class SqlalchemyStore(Store):
         for k in fields:
             col = getattr(self.table.c, k)
             if isinstance(col.type, GeoalchemyGeometry):
-                columns.append(sa.func.ST_AsGeoJSON(col))
+                columns.append(sa.func.ST_AsGeoJSON(col).label(k))
             else:
                 columns.append(col)
 
@@ -493,7 +505,7 @@ class SqlalchemyStore(Store):
         for k in fields:
             col = getattr(self.table.c, k)
             if isinstance(col.type, GeoalchemyGeometry):
-                columns.append(sa.func.ST_AsGeoJSON(col))
+                columns.append(sa.func.ST_AsGeoJSON(col).label(k))
             else:
                 columns.append(col)
 

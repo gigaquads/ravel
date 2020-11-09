@@ -53,7 +53,7 @@ class Loader(Resolver):
         self.private = field.meta.get('private', False)
 
     def on_resolve(self, resource, request):
-        exists_resource = resource._id is not None
+        exists_resource = ID in resource.internal.state
         if not exists_resource:
             return None
 

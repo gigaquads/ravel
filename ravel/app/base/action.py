@@ -277,7 +277,7 @@ class Action(object):
     def _apply_middleware_post_request(self, request):
         state = request.internal
         error = None
-        for mware in state.middleware:
+        for mware in reversed(state.middleware):
             try:
                 mware.post_request(
                     self,
@@ -292,7 +292,7 @@ class Action(object):
     def _apply_middleware_post_bad_request(self, request):
         state = request.internal
         error = None
-        for mware in state.middleware:
+        for mware in reversed(state.middleware):
             try:
                 mware.post_bad_request(
                     self,

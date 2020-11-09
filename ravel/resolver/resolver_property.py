@@ -155,5 +155,6 @@ class ResolverProperty(property):
         on_delete callback.
         """
         resolver = self.resolver
-        old_value = resource.internal.state.pop(resolver.name)
-        resolver.on_delete(resource, value)
+        if resolver.name in resource.internal.state:
+            old_value = resource.internal.state.pop(resolver.name)
+            resolver.on_delete(resource, old_value)

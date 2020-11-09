@@ -115,6 +115,9 @@ class ArgumentLoader(object):
             # so that it can still be accessed inside the app.
             if loaded_entity is not None:
                 loaded_entity.internal.arg = raw_arg_value
+                loaded_entity.unload(
+                    spec.resource_type.ravel.readonly_field_names
+                )
 
             loaded_entity = self._on_load(
                 spec, raw_arg_value, loaded_entity

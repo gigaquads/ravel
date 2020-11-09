@@ -1,11 +1,14 @@
-from copy import deepcopy
-
 import sqlalchemy as sa
 
+from sqlalchemy import ForeignKey
 from appyratus.utils import StringUtils
 
 from ravel.constants import REV, ID
 from ravel.util.loggers import console
+from ravel.util.json_encoder import JsonEncoder
+from ravel.schema import fields, Id
+
+json_encoder = JsonEncoder()
 
 
 class SqlalchemyTableBuilder(object):
@@ -78,10 +81,16 @@ class SqlalchemyTableBuilder(object):
         Sqlalchemy-related column kwargs in the field's meta dict.
         """
         name = field.source
+        adapter = self.adapters.get(field.name)
+
+        if adapter is None:
+            console.error(
+                f'no sqlalchemy field adapter registered for {field}'
+            )
 
         try:
-            dtype = self.adapters.get(field.name).on_adapt(field)
-        except:
+            dtype = adapter.on_adapt(field)
+        except Exception:
             console.error(f'could not adapt field {field}')
             raise
 
@@ -94,13 +103,40 @@ class SqlalchemyTableBuilder(object):
         else:
             indexed = field.meta.get('index', False)
             server_default = None
+            if 'server_default' in field.meta:
+                server_default = field.meta['server_default']
+            elif field.has_constant_default:
+                defaults = self._resource_type.ravel.defaults
+                server_default = defaults[field.name]()
+            if server_default is not None:
+                if isinstance(field, fields.Bool):
+                    server_default = 'true' if server_default else 'false'
+                elif isinstance(field, (fields.Int, fields.Float)):
+                    server_default = str(server_default)
+                elif isinstance(field, (fields.Dict, fields.Nested)):
+                    server_default = json_encoder.encode(server_default)
 
-        return sa.Column(
+        # prepare positional arguments for Column ctor
+        args = [
             name,
             dtype() if isinstance(dtype, type) else dtype,
+        ]
+        # foreign key string path, like 'user._id'
+        foreign_key_dotted_path = field.meta.get('foreign_key')
+        if foreign_key_dotted_path:
+            args.append(ForeignKey(foreign_key_dotted_path))
+
+        # prepare keyword arguments for Column ctor
+        kwargs = dict(
             index=indexed,
             primary_key=primary_key,
-            nullable=field.nullable,
             unique=unique,
             server_default=server_default
         )
+
+        column = sa.Column(*args, **kwargs)
+
+        if field.nullable is not None:
+            column.nullable = field.nullable
+
+        return column
