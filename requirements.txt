@@ -7,3 +7,4 @@ pytest
 base36
 prompt-toolkit>=3.0.4
 appyratus
+pycryptodome
