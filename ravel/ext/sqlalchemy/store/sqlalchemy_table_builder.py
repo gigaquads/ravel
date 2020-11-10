@@ -1,3 +1,5 @@
+from typing import Text, Type
+
 import sqlalchemy as sa
 
 from sqlalchemy import ForeignKey
@@ -6,6 +8,7 @@ from appyratus.utils import StringUtils
 from ravel.constants import REV, ID
 from ravel.util.loggers import console
 from ravel.util.json_encoder import JsonEncoder
+from ravel.util.misc_functions import get_class_name
 from ravel.schema import fields, Id
 
 json_encoder = JsonEncoder()
@@ -64,7 +67,7 @@ class SqlalchemyTableBuilder(object):
         if name is not None:
             table_name = name
         else:
-            table_name = StringUtils.snake(self._resource_type.__name__)
+            table_name = self.derive_table_name(self._resource_type)
 
         # set database schema, like schema in postgres
         if schema is not None:
@@ -74,6 +77,11 @@ class SqlalchemyTableBuilder(object):
         console.debug(f'building Sqlalchemy Table: {table_name}')
         table = sa.Table(table_name, self._metadata, *columns)
         return table
+
+
+    @staticmethod
+    def derive_table_name(resource_type: Type['Resource']) -> Text:
+        return StringUtils.snake(get_class_name(resource_type))
 
     def build_column(self, field: 'Field') -> sa.Column:
         """

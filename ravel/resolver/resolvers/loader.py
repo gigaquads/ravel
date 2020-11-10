@@ -87,6 +87,7 @@ class Loader(Resolver):
         )
 
         resource.merge(new_resource_state)
+        resource.clean(unloaded_field_names)
         return resource
 
     def on_resolve_batch(self, batch, request):

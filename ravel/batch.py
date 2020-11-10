@@ -1,5 +1,5 @@
 from random import randint
-from typing import Text, Tuple, List, Set, Dict, Type, Union
+from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
 from collections import defaultdict, deque
 from itertools import islice
 
@@ -204,6 +204,11 @@ class Batch(Entity):
             owner.generate(resolvers=resolvers, values=values)
             for _ in range(count)
         )
+
+    def foreach(self, callback: Callable) -> 'Batch':
+        for i, x in enumerate(self.internal.resources):
+            callback(i, x)
+        return self
 
     def sort(self, order_by) -> 'Batch':
         self.internal.resources = OrderBy.sort(

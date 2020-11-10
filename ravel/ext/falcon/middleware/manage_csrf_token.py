@@ -18,12 +18,15 @@ class ManageCsrfToken(Middleware):
     This middleware expects request.session to be set with a csrf_token
     attribute, e.g. session.csrf_token.
     """
-    def __init__(self, signing_key=None, ttl_minutes=24 * 60):
+    def __init__(self, signing_key=None, ttl_minutes=None):
         super().__init__()
         if not signing_key:
             signing_key = uuid4().hex
             console.warning(
-                message=f'no csrf signing key provided. using random default',
+                message=(
+                    'no csrf signing key provided. '
+                    'using random default'
+                ),
                 data={'random_key': signing_key}
             )
 
@@ -44,6 +47,8 @@ class ManageCsrfToken(Middleware):
         raw_args: Tuple,
         raw_kwargs: Dict
     ):
+        # NOTE: set csrf_protected=False in your Action decorators
+        # in order to skip this middleware...
         if not action.decorator.kwargs.get('csrf_protected', True):
             return
 
@@ -51,17 +56,26 @@ class ManageCsrfToken(Middleware):
         token = http_request.headers.get('CSRF-TOKEN')
         session = request.session
 
+        # bail if token missing or mismatching
         if (not (token and session)) or (session.csrf_token != token):
             raise Exception('CSRF token missing or unrecognized')
 
         now = datetime.now()
-        iv = session.csrf_aes_cbc_iv
+        iv = session.csrf_aes_cbc_iv   # cipher mode initialization vector
 
+        # decode & decrypt the AES encrypted CSRF token
         try:
             aes_cipher = AES.new(self.signing_key, AES.MODE_CBC, iv)
             json_str = unpad(aes_cipher.decrypt(b64decode(token)), AES.block_size)
             token_components = self.app.json.decode(json_str)
-            expires_at = datetime.fromisoformat(token_components[0])
+            expires_at_isoformat = token_components[0]
+
+            # convert expiration date string to a datetime object
+            if expires_at_isoformat is not None:
+                expires_at = datetime.fromisoformat(expires_at_isoformat)
+            else:
+                expires_at = None
+
         except Exception:
             console.error(
                 message='failed to decode CSRF token',
@@ -69,22 +83,34 @@ class ManageCsrfToken(Middleware):
             )
             raise
 
+        # save crsf data to request for use in post_request
         request.context.csrf = {
-            'session_id': token_components[2],
+            'session_id': token_components[1],
             'expires_at': token_components[0],
-            'is_expired': False,
+            'csrf_token': token,
         }
 
-        if now >= expires_at:
-            request.context.csrf['is_expired'] = True
-            console.info(
-                message='received an expired CSRF token',
+        # abort request if token is expired (provided it has an expiry)
+        if (expires_at is not None) and (now >= expires_at):
+            console.error(
+                message='received expired CSRF token',
                 data={
                     'csrf_token': token,
                     'expires_at': expires_at,
                     'session_id': session._id,
                 }
             )
+            raise Exception('invalid CSRF token')
+
+        if request.context.csrf['session_id'] != session._id:
+            console.error(
+                message='CSRF token session ID mismatch',
+                data={
+                    'csrf_session_id': request.context.csrf['session_id'],
+                    'request_session_id': session._id,
+                }
+            )
+            raise Exception('invalid CSRF token')
         
     def post_request(
         self,
@@ -92,10 +118,15 @@ class ManageCsrfToken(Middleware):
         request: 'Request',
         result,
     ):
+        """
+        Create and set a new token if the current one is expired or
+        non-existent.
+        """
         http_request, http_response = request.raw_args[:2]
         csrf_data = request.context.get('csrf')
         session = request.session
-        if (not csrf_data) or csrf_data['is_expired']:
+
+        if not csrf_data:
             self.create_and_set_token(http_request, http_response, session)
 
     def create_and_set_token(self, http_request, http_response, session):
@@ -103,23 +134,34 @@ class ManageCsrfToken(Middleware):
         Generate a new CSRF token, using a mix of random values and
         client-specific data.
         """
-        ip_addr = http_request.access_route[0].lower()
-        cannonical_str = self.app.json.encode([
-            (datetime.now() + timedelta(self.ttl_minutes)).isoformat(),
-            uuid4().hex,
+
+        # if there is an expiration date for the token, create the
+        # datetime ISO format string for it...
+        expires_at = None
+        if self.ttl_minutes is not None:
+            expires_at = (
+                datetime.now() + timedelta(minutes=self.ttl_minutes)
+            ).isoformat()
+
+        # create the JSON array that we encrypt as the token
+        json_token = self.app.json.encode([
+            expires_at,
             session._id,
+            # sources of entropy:
             http_request.user_agent,
-            ip_addr,
+            http_request.access_route[0].lower(),  # client IP
         ]).encode('utf-8')
 
-        iv = get_random_bytes(16)
+        # encrypt and B64 encode the token
+        iv = get_random_bytes(16)  # AKA "initialization vector"
         aes_cipher = AES.new(self.signing_key, AES.MODE_CBC, iv)
-
-        new_token = b64encode(
-            aes_cipher.encrypt(pad(cannonical_str, AES.block_size))
+        encypted_token = b64encode(
+            aes_cipher.encrypt(pad(json_token, AES.block_size))
         ).decode('utf-8')
 
-        session.csrf_token = new_token
+        # update the user session's CSRF fields
+        session.csrf_token = encypted_token
         session.csrf_aes_cbc_iv = iv
 
-        http_response.set_header('CSRF-TOKEN', new_token)
+        # send CSRF token back to client
+        http_response.set_header('CSRF-TOKEN', encypted_token)

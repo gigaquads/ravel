@@ -117,8 +117,9 @@ class ResourceMeta(type):
 
         # perform final processing now that we have all direct and
         # inherited fields in one dict.
+        default_protected = resource_type.__protected__()
         for k, field in fields.items():
-            if field.meta.get('protected', False) or k in {REV}:
+            if field.meta.get('protected', default_protected) or k in {REV}:
                 resource_type.ravel.protected_field_names.add(k)
             if k in inherited_fields:
                 resolver_type = field.meta.get('resolver_type') or Loader
@@ -242,6 +243,10 @@ class Resource(Entity, metaclass=ResourceMeta):
     @classmethod
     def __abstract__(cls) -> bool:
         return True
+
+    @classmethod
+    def __protected__(cls) -> bool:
+        return False
 
     @classmethod
     def __store__(cls) -> Type[Store]:
@@ -502,11 +507,19 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         return self
 
-    def reload(self, resolvers: Union[Text, Set[Text]] = None) -> 'Resource':
-        if isinstance(resolvers, str):
-            resolvers = {resolvers}
-        loading_resolvers = {k for k in resolvers if self.is_loaded(k)}
-        return self.load(loading_resolvers)
+    def reload(self, keys: Union[Text, Set[Text]] = None) -> 'Resource':
+        if isinstance(keys, str):
+            keys = {keys}
+        return self.load({
+            k for k in keys if self.is_loaded(k)
+        })
+
+    def require(self, keys: Union[Text, Set[Text]]):
+        if isinstance(keys, str):
+            keys = {keys}
+        for k in keys:
+            if k not in self.internal.state:
+                raise ValidationError(f'{k} required')
 
     def unload(self, keys: Set[Text] = None) -> 'Resource':
         """
@@ -562,7 +575,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             del self.internal.state[REV]
 
         record = {}
-        keys_to_save = keys_to_save or self.internal.state.keys()
+        keys_to_save = keys_to_save or set(self.internal.state.keys())
 
         for key in keys_to_save:
             if key not in self.internal.state:
@@ -587,8 +600,8 @@ class Resource(Entity, metaclass=ResourceMeta):
                     if self.internal.state[key] is None:
                         console.warning(
                             message=(
-                                'trying to save None while not nullable. '
-                                ' removing key from resource state',
+                                'you tried to save None to {key} but not '
+                                'nullable. clearing field value.'
                             ),
                             data={
                                 'resource': get_class_name(self),

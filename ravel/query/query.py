@@ -154,6 +154,8 @@ class Query(object):
             return batch
 
     def exists(self):
+        self.requests.clear()
+        self.select(self.target._id)
         return bool(self.execute(first=True))
 
     def deselect(self, *args):

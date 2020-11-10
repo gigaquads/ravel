@@ -58,7 +58,7 @@ class SqlalchemyStore(Store):
     _bootstrap_lock = RLock()
 
     @classmethod
-    def get_default_adapters(cls, dialect: Dialect) -> List[Field.Adapter]:
+    def get_default_adapters(cls, dialect: Dialect, table_name) -> List[Field.Adapter]:
         # TODO: Move this into the adapters file
         adapters = [
             fields.Field.adapt(
@@ -96,22 +96,23 @@ class SqlalchemyStore(Store):
             }
         )
         if dialect == Dialect.postgresql:
-            adapters.extend(cls.get_postgresql_default_adapters())
+            adapters.extend(cls.get_postgresql_default_adapters(table_name))
         elif dialect == Dialect.mysql:
-            adapters.extend(cls.get_mysql_default_adapters())
+            adapters.extend(cls.get_mysql_default_adapters(table_name))
         elif dialect == Dialect.sqlite:
-            adapters.extend(cls.get_sqlite_default_adapters())
+            adapters.extend(cls.get_sqlite_default_adapters(table_name))
 
         return adapters
 
     @classmethod
-    def get_postgresql_default_adapters(cls) -> List[Field.Adapter]:
+    def get_postgresql_default_adapters(cls, table_name) -> List[Field.Adapter]:
         pg_types = sa.dialects.postgresql
 
         def on_adapt_list(field):
             if isinstance(field.nested, fields.Enum):
+                name = f'{table_name}__{field.name}'
                 return ArrayOfEnum(
-                    pg_types.ENUM(*field.nested.values)
+                    pg_types.ENUM(*field.nested.values, name=name)
                 )
             return pg_types.ARRAY({
                 fields.String: sa.Text,
@@ -163,7 +164,7 @@ class SqlalchemyStore(Store):
         ]
 
     @classmethod
-    def get_mysql_default_adapters(cls) -> List[Field.Adapter]:
+    def get_mysql_default_adapters(cls, table_name) -> List[Field.Adapter]:
         return [
             fields.Dict.adapt(on_adapt=lambda field: sa.JSON),
             fields.Nested.adapt(on_adapt=lambda field: sa.JSON),
@@ -176,7 +177,7 @@ class SqlalchemyStore(Store):
         ]
 
     @classmethod
-    def get_sqlite_default_adapters(cls) -> List[Field.Adapter]:
+    def get_sqlite_default_adapters(cls, table_name) -> List[Field.Adapter]:
         adapters = [
             field_class.adapt(
                 on_adapt=lambda field: sa.Text,
@@ -305,9 +306,12 @@ class SqlalchemyStore(Store):
         """
         # map each of the resource's schema fields to a corresponding adapter,
         # which is used to prepare values upon insert and update.
+        table = (
+            table or SqlalchemyTableBuilder.derive_table_name(resource_type)
+        )
         field_class_2_adapter = {
             adapter.field_class: adapter for adapter in
-            self.get_default_adapters(self.dialect) + self._custom_adapters
+            self.get_default_adapters(self.dialect, table) + self._custom_adapters
         }
         self._adapters = {
             field_name: field_class_2_adapter[type(field)]
@@ -344,23 +348,26 @@ class SqlalchemyStore(Store):
         })
 
         columns = []
+        table_alias = self.table.alias(
+            ''.join(s.strip('_')[0] for s in self.table.name.split('_'))
+        )
         for k in fields:
-            col = getattr(self.table.c, k)
+            col = getattr(table_alias.c, k)
             if isinstance(col.type, GeoalchemyGeometry):
                 columns.append(sa.func.ST_AsGeoJSON(col).label(k))
             else:
                 columns.append(col)
 
         predicate = Predicate.deserialize(predicate)
-        filters = self._prepare_predicate(predicate)
+        filters = self._prepare_predicate(table_alias, predicate)
 
         # build the query object
         query = sa.select(columns).where(filters)
 
         if order_by:
             sa_order_by = [
-                sa.desc(getattr(self.table.c, x.key)) if x.desc else
-                sa.asc(getattr(self.table.c, x.key))
+                sa.desc(getattr(table_alias.c, x.key)) if x.desc else
+                sa.asc(getattr(table_alias.c, x.key))
                 for x in order_by
             ]
             query = query.order_by(*sa_order_by)
@@ -394,13 +401,13 @@ class SqlalchemyStore(Store):
 
         return records
 
-    def _prepare_predicate(self, pred, empty=set()):
+    def _prepare_predicate(self, table, pred, empty=set()):
         if isinstance(pred, ConditionalPredicate):
             if not pred.ignore_field_adapter:
                 adapter = self._adapters.get(pred.field.source)
                 if adapter and adapter.on_encode:
                     pred.value = adapter.on_encode(pred.value)
-            col = getattr(self.table.c, pred.field.source)
+            col = getattr(table.c, pred.field.source)
             if pred.op == OP_CODE.EQ:
                 return col == pred.value
             elif pred.op == OP_CODE.NEQ:
@@ -443,12 +450,12 @@ class SqlalchemyStore(Store):
                 raise Exception('unrecognized conditional predicate')
         elif isinstance(pred, BooleanPredicate):
             if pred.op == OP_CODE.AND:
-                lhs_result = self._prepare_predicate(pred.lhs)
-                rhs_result = self._prepare_predicate(pred.rhs)
+                lhs_result = self._prepare_predicate(table, pred.lhs)
+                rhs_result = self._prepare_predicate(table, pred.rhs)
                 return sa.and_(lhs_result, rhs_result)
             elif pred.op == OP_CODE.OR:
-                lhs_result = self._prepare_predicate(pred.lhs)
-                rhs_result = self._prepare_predicate(pred.rhs)
+                lhs_result = self._prepare_predicate(table, pred.lhs)
+                rhs_result = self._prepare_predicate(table, pred.rhs)
                 return sa.or_(lhs_result, rhs_result)
             else:
                 raise Exception('unrecognized boolean predicate')
