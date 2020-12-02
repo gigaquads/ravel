@@ -190,10 +190,12 @@ class CliCommand(Action):
                     arg_type = PositionalArg
                 else:
                     arg_type = OptionalArg
+                    arg_params['default'] = param.default
             elif param.kind == inspect.Parameter.POSITIONAL_ONLY:
                 arg_type = PositionalArg
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
                 arg_type = OptionalArg
+                arg_params['default'] = param.default
             if 'List' in str(dtype):
                 arg_type = ListArg
             elif 'bool' in str(dtype):
@@ -203,7 +205,11 @@ class CliCommand(Action):
 
             if arg_type:
                 arg = arg_type(**arg_params)
+                # flag args are processed in the same way as everything else,
+                # which means that their null value for arg.default throws things
+                # off, so we hackily set it here on the arg object.
+                if arg_params.get('default'):
+                    arg.default = True
             if arg is not None:
                 args.append(arg)
-
         return args
