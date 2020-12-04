@@ -98,7 +98,10 @@ class Application(object):
                 pass
         ```
         """
-        return self.decorator_type(self, *args, **kwargs)
+        if not self.is_bootstrapped:
+            return self.decorator_type(self, *args, **kwargs)
+        else:
+            return self.start(*args, **kwargs)
 
     @property
     def decorator_type(self) -> Type[ActionDecorator]:

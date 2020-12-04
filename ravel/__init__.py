@@ -2,6 +2,7 @@ import typing
 from ravel.schema import fields
 from ravel.schema import *
 from ravel.app.apps import *
+from ravel.app.template import TemplateRenderer, JinjaTemplateRenderer
 from ravel.manifest import Manifest
 from ravel.resource import Resource, ResourceMeta
 from ravel.logging import ConsoleLoggerInterface

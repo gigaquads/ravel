@@ -77,6 +77,7 @@ class FalconService(AbstractWsgiService):
     def on_decorate(self, endpoint):
         super().on_decorate(endpoint)
         for route in endpoint.routes:
+            print(route)
             resource = self._route_2_resource.get(route)
             if resource is None:
                 resource = FalconResource(route)
@@ -97,7 +98,7 @@ class FalconService(AbstractWsgiService):
         route = request.path.strip('/').split('/')
         route_template = request.uri_template.strip('/').split('/')
         for k, v in zip(route_template, route):
-            if k[0] == '{' and k[-1] == '}':
+            if k and (k[0] == '{' and k[-1] == '}'):
                 app_kwargs[k[1:-1]] = v
 
         return (tuple(), app_kwargs)

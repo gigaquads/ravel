@@ -66,13 +66,19 @@ class EndpointDecorator(ActionDecorator):
         method: Text,
         route: Text = None,
         routes: List[Text] = None,
+        path: Text = None,
+        paths: List[Text] = None,
         *args, **kwargs
     ):
         super().__init__(app, *args, **kwargs)
         self.method = method.lower()
-        self.routes = self._build_routes_list(route, routes)
 
-    def _build_routes_list(self, route, routes):
+        routes = set(self._build_routes_list(route, routes))
+        routes |= set(self._build_routes_list(path, paths))
+        self.routes = list(routes)
+
+    @staticmethod
+    def _build_routes_list(route, routes):
         """
         Combine `route` and `routes` constructor kwargs.
         """
