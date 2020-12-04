@@ -74,7 +74,6 @@ class SqlalchemyTableBuilder(object):
             self._metadata.schema = schema
 
         # finally build and return the SQLAlchemy table object
-        console.debug(f'building Sqlalchemy Table: {table_name}')
         table = sa.Table(table_name, self._metadata, *columns)
         return table
 

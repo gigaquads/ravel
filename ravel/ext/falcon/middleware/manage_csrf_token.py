@@ -1,4 +1,3 @@
-from hashlib import sha256
 from base64 import b64decode, b64encode
 from uuid import uuid4
 from datetime import datetime, timedelta
@@ -49,7 +48,11 @@ class ManageCsrfToken(Middleware):
     ):
         # NOTE: set csrf_protected=False in your Action decorators
         # in order to skip this middleware...
-        if not action.decorator.kwargs.get('csrf_protected', True):
+        csrf_protected = action.decorator.kwargs.get('csrf_protected')
+        if csrf_protected is None:
+            csrf_protected = True
+
+        if not csrf_protected:
             return
 
         http_request = raw_args[0]
@@ -125,8 +128,11 @@ class ManageCsrfToken(Middleware):
         http_request, http_response = request.raw_args[:2]
         csrf_data = request.context.get('csrf')
         session = request.session
-
-        if not csrf_data:
+        regenerate_token = action.decorator.kwargs.get(
+            'refresh_csrf_token', False
+        )
+        if (not csrf_data) or regenerate_token:
+            console.debug(f'generating CSRF token for session {session._id}')
             self.create_and_set_token(http_request, http_response, session)
 
     def create_and_set_token(self, http_request, http_response, session):

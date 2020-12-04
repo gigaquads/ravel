@@ -7,6 +7,8 @@ from ravel.util.loggers import console
 
 from .store import SqlalchemyStore
 
+ADD_POST_COMMIT_HOOK_METHOD = 'add_post_commit_hook'
+POST_COMMIT_HOOKS = 'ManageSqlalchemyTransaction_post_commit_hooks'
 
 class ManageSqlalchemyTransaction(Middleware):
     """
@@ -37,6 +39,18 @@ class ManageSqlalchemyTransaction(Middleware):
         Get a connection from Sqlalchemy's connection pool and begin a
         transaction.
         """
+        # re-init post-commit hooks list
+        hooks = []
+        request.context[POST_COMMIT_HOOKS] = hooks
+        request.context[ADD_POST_COMMIT_HOOK_METHOD] = func = (
+            lambda hook, args=(), kwargs={}: hooks.append(
+                [hook, args, kwargs]
+            )
+        )
+
+        setattr(self.app.local, POST_COMMIT_HOOKS, hooks)
+        setattr(self.app.local, ADD_POST_COMMIT_HOOK_METHOD, func)
+
         self.store_type.connect()
         self.store_type.begin()
 
@@ -52,7 +66,11 @@ class ManageSqlalchemyTransaction(Middleware):
         console.debug(f'committing sqlalchemy transaction')
         try:
             self.store_type.commit()
-        except:
+
+            # execute post-commit hooks
+            for hook, args, kwargs in request.context[POST_COMMIT_HOOKS]:
+                hook(*args, **kwargs)
+        except Exception:
             console.exception(f'rolling back sqlalchemy transaction')
             self.store_type.rollback()
         finally:

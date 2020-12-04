@@ -75,8 +75,10 @@ class Manifest(object):
         self.app = None
         self.package = None
         self.bindings = []
+        self.values = {}
         self._res_2_store_name = {}
         self.bootstraps = {}
+        self.default_store_type_name = 'SimulationStore'
         self.env = env or Environment()
         self.types = DictObject({'stores': {}, 'res': {}, 'api': {}})
         self.scanner = TypeScanner(context=self.types)
@@ -110,7 +112,7 @@ class Manifest(object):
     def get(self, key, default=None):
         return self.data.get(key, default)
 
-    def load(self):
+    def load(self, values_schema: 'Schema' = None):
         """
         Load and merge manifest data from all supplied sources into a single
         dict, and then create internal Manifest data structures that hold this
@@ -132,20 +134,10 @@ class Manifest(object):
         # try to load manifest file from a YAML or JSON file
         if self.path is not None:
             if not os.path.isfile(self.path):
-                console.error(
-                    message='cannot find manifest file. expect problems!',
-                    data={'path': self.path}
-                )
+                raise OSError(f'manifest {self.path} does not exist')
             else:
-                console.debug(
-                    message='reading manifest file',
-                    data={'path': self.path}
-                )
-                ext = os.path.splitext(self.path)[1].lstrip('.').lower()
-                if ext in Yaml.extensions():
-                    file_data = Yaml.read(self.path)
-                elif ext in Json.extensions():
-                    file_data = Json.read(self.path)
+                console.debug(f'loading manifest {self.path}...')
+                file_data = self.read_file_data(self.path)
 
             # merge contents of file with data dict arg
             self.data = DictUtils.merge(file_data, self.data)
@@ -153,8 +145,18 @@ class Manifest(object):
         if not self.data:
             self.data = {}
 
+        self._inherit_base_manifest()
+
         # replace env $var names with values from env
         self._expand_environment_vars(self.env, self.data)
+
+        if values_schema is not None:
+            values = self.data.get('values') or {}
+            self.values, errors = values_schema.process(values)
+            if errors:
+                raise ValueError(f'values validation error: {errors}')
+        else:
+            self.values = self.data.get('values') or {}
 
         console.debug(message='loaded manifest', data={'manifest': self.data})
 
@@ -163,13 +165,22 @@ class Manifest(object):
         if not self.data.get('bindings'):
             console.warning('no "bindings" section detected in manifest!')
 
+        for v in self.data.get('bootstraps', []):
+            if v.get('default', False):
+                self.default_store_type_name = v['store']
+                break
+
         for binding_data in (self.data.get('bindings') or []):
             res = binding_data['resource']
-            store = binding_data.get('store', 'SimulationStore')
+            store_name = binding_data.get(
+                'store', self.default_store_type_name
+            )
             params = binding_data.get('params', {})
-            binding = ManifestBinding(res=res, store=store, params=params)
+            binding = ManifestBinding(
+                res=res, store=store_name, params=params
+            )
             self.bindings.append(binding)
-            self._res_2_store_name[res] = store
+            self._res_2_store_name[res] = store_name
 
         # create self.bootstraps
         self.bootstraps = {}
@@ -183,6 +194,41 @@ class Manifest(object):
             )
 
         return self
+
+
+    @staticmethod
+    def read_file_data(path) -> Dict:
+        ext = os.path.splitext(path)[1].lstrip('.').lower()
+        if ext in Yaml.extensions():
+            return Yaml.read(path)
+        elif ext in Json.extensions():
+            return Json.read(path)
+        else:
+            raise Exception('unknown manifest file format')
+
+    def _inherit_base_manifest(self, base_file_path = None, visited = None):
+        """
+        If there is a base manifest file specified by the loaded manifest
+        data, then load it here and merge the current manifest into the base
+        manifest, recusively back to the root base.
+        """
+        visited = set() if visited is None else visited
+        if self.path is not None:
+            base_manifest_path = base_file_path or self.data.get('base')
+            if base_manifest_path:
+                base_manifest_path = os.path.realpath(base_manifest_path)
+                if base_file_path in visited:
+                    # avoid infinite loop if there is a bad inheritence cycle
+                    raise ValueError('manifest inheritance loop detected')
+                console.debug(f'inheriting manifest {base_manifest_path}...')
+                visited.add(base_file_path)
+                if os.path.exists(base_manifest_path):
+                    base_data = self.read_file_data(base_manifest_path)
+                    if base_data:
+                        # merge and recurse up the tree...
+                        self.data = DictUtils.merge(base_data.copy(), self.data)
+                        if base_data.get('base'):
+                            self._inherit_base_manifest(base_data['base'])
 
     def process(self, app: 'Application', namespace: Dict = None):
         """
@@ -204,15 +250,19 @@ class Manifest(object):
         visited_store_types = set()
 
         for resource_type in self.types.res.values():
-            if not (resource_type.ravel.is_abstract
-                    or resource_type.ravel.is_bootstrapped):
+            if not (
+                resource_type.ravel.is_abstract
+                or resource_type.ravel.is_bootstrapped
+            ):
                 console.debug(
-                    f'bootstrapping {get_class_name(resource_type)}'
+                    f'bootstrapping {get_class_name(resource_type)} class'
                 )
+
                 resource_class_name = get_class_name(resource_type)
                 store_class_name = self._res_2_store_name.get(
                     resource_class_name
                 )
+
                 if store_class_name is None:
                     store_type = resource_type.__store__()
                     store_class_name = get_class_name(store_type)
@@ -245,11 +295,13 @@ class Manifest(object):
                 else:
                     visited_store_types.add(store_type)
 
-                console.debug(f'bootstrapping {store_class_name}')
+                console.debug(f'bootstrapping {store_class_name} class')
+
                 bootstrap_object = self.bootstraps.get(store_class_name)
                 bootstrap_kwargs = (
                     bootstrap_object.params if bootstrap_object else {}
                 )
+
                 store_type.bootstrap(app=self.app, **bootstrap_kwargs)
 
         # inject the following into each action target's lexical scope:

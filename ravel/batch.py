@@ -326,21 +326,24 @@ class Batch(Entity):
         """
         Insert all resources into the store.
         """
-        self.ravel.owner.create_many(self.internal.resources)
+        if self:
+            self.ravel.owner.create_many(self.internal.resources)
         return self
 
     def update(self, state: Dict = None, **more_state):
         """
         Apply an update to all resources in the batch, writing it to the store.
         """
-        self.ravel.owner.update_many(self, data=state, **more_state)
+        if self:
+            self.ravel.owner.update_many(self, data=state, **more_state)
         return self
 
     def delete(self):
         """
         Delete all resources in the batch fro mthe store.
         """
-        self.ravel.owner.delete_many(self.internal.resources)
+        if self:
+            self.ravel.owner.delete_many(self.internal.resources)
         return self
 
     def save(self, resolvers: Union[Text, Set[Text]] = None):
@@ -348,6 +351,9 @@ class Batch(Entity):
         Save all resources in the batch, effectively creating some and updating
         others.
         """
+        if not self:
+            return self
+
         # batch save resource resolver targets
         if resolvers is not None:
             owner_resource_type = self.ravel.owner

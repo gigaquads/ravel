@@ -21,8 +21,8 @@ class ArgumentSpecification(object):
         self.kwarg_keys = set()
         self.arg_keys = []
         self.arg_key_set = set()
-        for k, param in self.signature.parameters.items():
-            if k == 'context':
+        for idx, (k, param) in enumerate(self.signature.parameters.items()):
+            if k == 'request' and (not idx):
                 continue
             if param.kind != Parameter.POSITIONAL_OR_KEYWORD:
                 break

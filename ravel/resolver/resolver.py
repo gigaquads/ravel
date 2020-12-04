@@ -149,11 +149,13 @@ class Resolver(object):
         """
         return sorted(resolvers, key=lambda resolver: resolver.priority())
 
-    def copy(self) -> 'Resolver':
+    def copy(self, new_owner: Type['Resource'] = None) -> 'Resolver':
         clone = deepcopy(self)
         clone.app = None
         clone._is_bootstrapped = False
         clone._is_bound = False
+        if new_owner:
+            clone.owner = new_owner
         return clone
 
     def bootstrap(cls, app: 'Application'):
@@ -174,7 +176,8 @@ class Resolver(object):
             else:
                 raise Exception('unrecognized target type')
 
-        self.on_bind()
+        if not self.owner.ravel.is_abstract:
+            self.on_bind()
 
         if self.target is not None:
             self.schema = self.target.Schema(name=self.name)

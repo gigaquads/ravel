@@ -1,15 +1,19 @@
+import inspect
+
 from typing import Text, Set
 from collections import defaultdict
+
 from ravel.util.loggers import console
-from ravel.util import is_resource, is_batch
+from ravel.util import is_resource, is_batch, get_class_name
 from ravel.resolver.resolver import Resolver
 from ravel.batch import BatchResolverProperty
 
 
 class Relationship(Resolver):
-    def __init__(self, join, order_by=None, *args, **kwargs):
+    def __init__(self, join, eager=True, order_by=None, *args, **kwargs):
         self._cb_order_by = order_by
         self._order_by = None
+        self._eager = eager
         if callable(join):
             self._cb_joins = join
             self._join_sequence = []
@@ -31,17 +35,27 @@ class Relationship(Resolver):
         return dumper.dump(value)
 
     def on_bind(self):
+        def arg_count(func):
+            return len(inspect.signature(func).parameters)
+
         if self._cb_joins is not None:
             self.app.inject(self._cb_joins)
         if self._cb_order_by is not None:
             self.app.inject(self._cb_order_by)
-            self._order_by = self._cb_order_by()
+            if arg_count(self._cb_order_by) > 0:
+                self._order_by = self._cb_order_by(self.owner)
+            else:
+                self._order_by = self._cb_order_by()
 
-        pairs = self._cb_joins()
+        if arg_count(self._cb_joins) > 0:
+            pairs = self._cb_joins(self.owner)
+        else:
+            pairs = self._cb_joins()
+
         if not isinstance(pairs[0], (list, tuple)):
             pairs = [pairs]
 
-        self._join_sequence = [Join(l, r) for l, r in pairs]
+        self._join_sequence = [Join(self, l, r) for l, r in pairs]
 
         self.target = self._join_sequence[-1].right_loader.owner
         self.many = self._join_sequence[-1].right_many
@@ -60,6 +74,11 @@ class Relationship(Resolver):
         # the target Resource type in the final query.
         for j1, j2 in zip(self._join_sequence, self._join_sequence[1:]):
             query = j1.build(source).select(j2.left_field.name)
+
+            if query is None:
+                request.result = None
+                return
+
             result = query.execute()
             results.append(result)
             source = result
@@ -67,6 +86,13 @@ class Relationship(Resolver):
         # build final query and merge in query parameters
         # passed in through the request
         query = final_join.build(source)
+        if query is None:
+            request.result = None
+            return
+
+        if self._eager:
+            query.select(self.target.ravel.resolvers.fields.keys())
+
         query.merge(request, in_place=True)
 
         if self._order_by:
@@ -93,6 +119,10 @@ class Relationship(Resolver):
             self._join_sequence[1:] + [None]
         ):
             query = j1.build(source)
+
+            if query is None:
+                request.result = {}
+                return
 
             if j2 is not None:
                 # we come here for each Join object except the last
@@ -160,7 +190,8 @@ class Relationship(Resolver):
 
 
 class Join(object):
-    def __init__(self, left, right):
+    def __init__(self, relationship, left, right):
+        self.relationship = relationship
         self.left_loader_property = left
         self.left_loader = left.resolver
         self.left_field = left.resolver.field
@@ -180,16 +211,57 @@ class Join(object):
         self.right_loader = right.resolver
         self.right_field = right.resolver.field
 
+    def __repr__(self):
+        lhs = (
+            f'{get_class_name(self.left_loader.owner)}.'
+            f'{self.left_loader.name}'
+        )
+        rhs = (
+            f'{get_class_name(self.right_loader.owner)}.'
+            f'{self.right_loader.name}'
+        )
+        return (
+            f'{get_class_name(self)}(from={lhs}, to={rhs})'
+        )
+
     def build(self, source) -> 'Query':
         query = self.right_loader_property.resolver.owner.select()
 
         if is_resource(source):
             source_value = getattr(source, self.left_field.name)
+            if not source_value:
+                console.debug(
+                    message=(
+                        f'relationship {get_class_name(source)}.'
+                        f'{self.relationship.name} aborting execution'
+                        f'because {self.left_field.name} is None'
+                    ),
+                    data={
+                        'resource': source._id,
+                    }
+                )
+                # NOTE: ^ if you don't want this, then clear the field from
+                # source using source.clean(field_name)
+                return None
             query.where(self.right_loader_property == source_value)
         else:
             assert is_batch(source)
             left_field_name = self.left_field.name
             source_values = {getattr(res, left_field_name) for res in source}
+            if not source_values:
+                console.warning(
+                    message=(
+                        f'relationship {get_class_name(source)}.'
+                        f'{self.relationship.name} aborting query '
+                        f'because {self.left_field.name} is empty'
+                    ),
+                    data={
+                        'resources': source._id,
+                    }
+                )
+                # NOTE: ^ if you don't want this, then clear the field from
+                # source using source.clean(field_name)
+                return None
             query.where(self.right_loader_property.including(source_values))
 
         return query

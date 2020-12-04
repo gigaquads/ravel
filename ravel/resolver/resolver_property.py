@@ -82,8 +82,8 @@ class ResolverProperty(property):
         if resolver.name not in resource.internal.state:
             console.debug(
                 message=(
-                    f'lazy loading '
-                    f'{get_class_name(self.resolver.owner)}.{resolver.name}'
+                    f'lazy load '
+                    f'{resource}.{resolver.name}'
                 )
             )
             request = Request(resolver)
@@ -96,8 +96,8 @@ class ResolverProperty(property):
                 if value is DNE:
                     console.debug(
                         message=(
-                            f'no value resolved for '
-                            f'{get_class_name(self.resolver.owner)}.{resolver.name}'
+                            f'no value returned for '
+                            f'{resource}.{resolver.name}'
                         )
                     )
                     return

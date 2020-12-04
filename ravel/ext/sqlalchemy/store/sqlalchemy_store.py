@@ -1,3 +1,5 @@
+import traceback
+
 import sqlalchemy as sa
 
 from typing import List, Dict, Text, Type, Set, Tuple
@@ -40,6 +42,7 @@ class SqlalchemyStore(Store):
 
     env = Environment(
         SQLALCHEMY_STORE_ECHO=fields.Bool(default=False),
+        SQLALCHEMY_STORE_SHOW_QUERIES=fields.Bool(default=False),
         SQLALCHEMY_STORE_DIALECT=fields.Enum(
             fields.String(), Dialect.values(), default=Dialect.sqlite
         ),
@@ -71,6 +74,7 @@ class SqlalchemyStore(Store):
             fields.BcryptString.adapt(on_adapt=lambda field: sa.Text),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
             fields.DateTime.adapt(on_adapt=lambda field: sa.DateTime),
+            fields.TimeDelta.adapt(on_adapt=lambda field: sa.Interval),
             fields.Timestamp.adapt(on_adapt=lambda field: sa.DateTime),
             fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
             fields.Enum.adapt(
@@ -91,7 +95,7 @@ class SqlalchemyStore(Store):
         adapters.extend(
             field_class.adapt(on_adapt=lambda field: sa.BigInteger)
             for field_class in {
-                fields.Int, fields.Uint32, fields.Uint64,
+                fields.Int, fields.Uint32, fields.Uint64, fields.Uint,
                 fields.Sint32, fields.Sint64
             }
         )
@@ -204,6 +208,7 @@ class SqlalchemyStore(Store):
         self._builder = None
         self._adapters = None
         self._id_column = None
+        self._options = {}
 
     @property
     def adapters(self):
@@ -243,13 +248,15 @@ class SqlalchemyStore(Store):
         return _id
 
     @classmethod
-    def on_bootstrap(cls, url=None, dialect=None, echo=False):
+    def on_bootstrap(cls, url=None, dialect=None, echo=False, **kwargs):
         """
         Initialize the SQLAlchemy connection pool (AKA Engine).
         """
         with cls._bootstrap_lock:
             if cls.is_bootstrapped():
                 return
+
+            cls.ravel.kwargs = kwargs
 
             # construct the URL to the DB server
             # url can be a string or a dict
@@ -277,6 +284,16 @@ class SqlalchemyStore(Store):
                 )
 
             cls.dialect = dialect or cls.env.SQLALCHEMY_STORE_DIALECT
+
+            from sqlalchemy.dialects import postgresql, sqlite, mysql
+
+            cls.sa_dialect = None
+            if cls.dialect == Dialect.postgresql:
+                cls.sa_dialect = postgresql
+            elif cls.dialect == Dialect.sqlite:
+                cls.sa_dialect = sqlite
+            elif cls.dialect == Dialect.mysql:
+                cls.sa_dialect = mysql
 
             console.info(
                 message='creating Sqlalchemy engine',
@@ -330,6 +347,10 @@ class SqlalchemyStore(Store):
         # remember which column is the _id column
         self._id_column_names[self._table.name] = self.id_column_name
 
+        # set SqlalchemyStore options here, using bootstrap-level
+        # options as base/default options.
+        self._options = dict(self.ravel.kwargs, **kwargs)
+
     def query(
         self,
         predicate: 'Predicate',
@@ -378,12 +399,21 @@ class SqlalchemyStore(Store):
             query = query.offset(max(0, limit))
 
         console.debug(
-            message='executing SQL query',
+            message=(
+                f'SQL: SELECT FROM {self.table}'
+                + (f' OFFSET {offset}' if offset is not None else '')
+                + (f' LIMIT {limit}' if limit else '')
+                + (f' ORDER BY {", ".join(x.to_sql() for x in order_by)}'
+                    if order_by else '')
+            ),
             data={
-                'query': str(query.compile(
+                'stack': traceback.format_stack(),
+                'statement': str(query.compile(
                     compile_kwargs={'literal_binds': True}
                 )).split('\n')
             }
+            if self.env.SQLALCHEMY_STORE_SHOW_QUERIES
+            else None
         )
         # execute query, aggregating resulting records
         cursor = self.conn.execute(query)
@@ -552,6 +582,11 @@ class SqlalchemyStore(Store):
         record[self.id_column_name] = self.create_id(record)
         prepared_record = self.prepare(record, serialize=True)
         insert_stmt = self.table.insert().values(**prepared_record)
+        _id = prepared_record.get('_id', '')
+        console.debug(
+            f'SQL: INSERT {str(_id)[:7] + " " if _id else ""}'
+            f'INTO {self.table}'
+        )
         if self.supports_returning:
             insert_stmt = insert_stmt.return_defaults()
             result = self.conn.execute(insert_stmt)
@@ -568,6 +603,17 @@ class SqlalchemyStore(Store):
             prepared_records.append(prepared_record)
 
         self.conn.execute(self.table.insert(), prepared_records)
+
+        n = len(prepared_records)
+        id_list_str = (
+            ', '.join(str(x['_id'])[:7]
+            for x in prepared_records if x.get('_id'))
+        )
+        console.debug(
+            f'SQL: INSERT {id_list_str} INTO {self.table} '
+            + (f'(count: {n})' if n > 1 else '')
+        )
+
         if self.supports_returning:
             # TODO: use implicit returning if possible
             pass
@@ -587,11 +633,14 @@ class SqlalchemyStore(Store):
                 )
         if self.supports_returning:
             update_stmt = update_stmt.return_defaults()
+            console.debug(f'SQL: UPDATE {self.table}')
             result = self.conn.execute(update_stmt)
             return dict(data, **(result.returned_defaults or {}))
         else:
             self.conn.execute(update_stmt)
-            return self.fetch(_id)
+            if self._options.get('fetch_on_update', True):
+                return self.fetch(_id)
+            return data
 
     def update_many(self, _ids: List, data: List[Dict] = None) -> None:
         assert data
@@ -608,6 +657,11 @@ class SqlalchemyStore(Store):
                 prepared_record[ID] = prepared_id
 
         if prepared_records:
+            n = len(prepared_records)
+            console.debug(
+                f'SQL: UPDATE {self.table} '
+                + (f'({n}x)' if n > 1else '')
+            )
             values = {
                 k: bindparam(k) for k in prepared_records[0].keys()
             }
@@ -619,11 +673,13 @@ class SqlalchemyStore(Store):
             )
             self.conn.execute(update_stmt, prepared_records)
 
-        if self.supports_returning:
-            # TODO: use implicit returning if possible
-            return self.fetch_many(_ids)
-        else:
-            return self.fetch_many(_ids)
+        if self._options.get('fetch_on_update', True):
+            if self.supports_returning:
+                # TODO: use implicit returning if possible
+                return self.fetch_many(_ids)
+            else:
+                return self.fetch_many(_ids)
+        return
 
     def delete(self, _id) -> None:
         prepared_id = self.adapt_id(_id)
@@ -678,9 +734,11 @@ class SqlalchemyStore(Store):
         engine = cls.get_engine()
 
         if recreate:
+            console.info('dropping Resource SQL tables...')
             meta.drop_all(engine)
 
         # create all tables
+        console.info('creating Resource SQL tables...')
         meta.create_all(engine)
 
     @classmethod

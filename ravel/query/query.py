@@ -34,6 +34,7 @@ class Query(object):
         self.options = DictObject()
         self.from_request = request
         self.requests = {}
+        self.callbacks = []
         self.parameters = DictObject(
             data={
                 'where': None,
@@ -56,6 +57,9 @@ class Query(object):
 
     def __getitem__(self, resolver: Text):
         return self.requests.get(resolver)
+
+    def __call__(self, *args, **kwargs):
+        return self.execute(*args, **kwargs)
 
     def __len__(self) -> int:
         return len(self.requests)
@@ -148,10 +152,17 @@ class Query(object):
         """
         executor = Executor(simulate=simulate)
         batch = executor.execute(self, sources=self.sources)
+
         if first:
-            return batch[0] if batch else None
+            result = batch[0] if batch else None
         else:
-            return batch
+            result = batch
+
+        if self.callbacks:
+            for func in self.callbacks:
+                func(self, result)
+
+        return result
 
     def exists(self):
         self.requests.clear()
@@ -227,10 +238,13 @@ class Query(object):
             elif isinstance(obj, Request):
                 request = obj
 
+            # finally set the request if one was generated
             if request:
-                if self.from_request is not None:
-                    request.parent = self.from_request
-                self.requests[request.resolver.name] = request
+                resolver_name = request.resolver.name
+                if resolver_name not in self.target.ravel.virtual_fields:
+                    if self.from_request is not None:
+                        request.parent = self.from_request
+                    self.requests[request.resolver.name] = request
 
         return self
 
