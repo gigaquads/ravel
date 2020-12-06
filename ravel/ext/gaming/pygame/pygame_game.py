@@ -10,6 +10,8 @@ from logging import getLogger
 
 from appyratus.utils import SysUtils
 from appyratus.utils import DictObject
+from appyratus.utils import TimeUtils
+
 from appyratus.enum import Enum
 
 import pygame as pg
@@ -34,7 +36,7 @@ EVENT_TYPE = Enum(
     QUIT=6,
 )
 
-KEY_EVENT_TYPES = {EVENT_TYPE.KEY_UP, EVENT_TYPE.KEY_DOWN, pg.TEXTINPUT}
+KEY_EVENT_TYPES = {pg.KEYUP, pg.TEXTINPUT, pg.KMOD_ALT}
 
 # Pygame-specific constants:
 # TODO: move into constants.py file
@@ -66,8 +68,7 @@ GAME_DEFAULTS = Enum(
 
 class GameEvent(object):
     """
-    Init process
-
+    # Init process
     Event 4352 AUDIODEVICEADDED {}      
     Event 4352 AUDIODEVICEADDED {}      
     Event 32770 VIDEOEXPOSE {}          
@@ -75,23 +76,24 @@ class GameEvent(object):
     Event 32770 VIDEOEXPOSE {}          
     Event 32770 VIDEOEXPOSE {}          
     Event 1 SCRAP_SELECTION {}          
-    Tick 1
     Event 32770 VIDEOEXPOSE {}
 
+    # Arrow keys
+    Event 768 KMOD_ALT { "key": 1073741903, "mod": 0, "scancode": 79, "unicode": "", "window": null } 
+    Event 769 KEYUP { "key": 1073741903, "mod": 0, "scancode": 79, "window": null }
 
-    Pressing keys
-    Arrow keys only produce
-    Event 5 KSCAN_B {}
+    # Alphanumeric keys
+    Event 768 KMOD_ALT { "key": 97, "mod": 0, "scancode": 4, "unicode": "a", "window": null }           
+    Event 771 TEXTINPUT { "text": "a", "window": null }
+    Event 769 KEYUP { "key": 97, "mod": 0, "scancode": 4, "window": null }
 
-    Pressing Alphanumeric keys
-    Event 5 KSCAN_B {}
-    Event 771 TEXTINPUT {'text': 'd', 'window': None}
-
-    Upon release of key in any event (After 3 ticks) it produces (again)
-    Event 5 KSCAN_B {}
-
-    # Moving the mouse will produce an event
+    # Moving the mouse
     Event 1024 MOUSEMOTION {'pos': (699, 0), 'rel': (10, -6), 'buttons': (0, 0, 0), 'window': None}
+
+	# Upon exit
+    Event 512 WINDOWEVENT { "event": 14, "window": null }
+    Event 256 QUIT
+
     """
 
     def __init__(self, event_type, **kwargs):
@@ -121,14 +123,7 @@ PYGAME_EVENT_ID_2_NAME = get_pygame_events()
 
 
 def pygame_2_ravel_event(pygame_event):
-    event_type = PYGAME_2_RAVEL_EVENT_TYPE.get(pygame_event.type)
-    if event_type is not None:
-        ravel_event = GameEvent(event_type)
-        #if pygame_event.type in PYGAME_KEY_EVENT_TYPES:
-        #    ravel_event.key = pygame_event.key
-    else:
-        ravel_event = GameEvent(pygame_event.type, **pygame_event.dict)
-    return ravel_event
+    return GameEvent(pygame_event.type, **pygame_event.dict)
 
 
 # ------
@@ -223,8 +218,12 @@ class PygameGame(Application):
             self.state.delta_t = self.state.clock.tick(self.state.fps)
             self.state.tick += 1
 
+            # tuple of all pressed keys by key index
+            pressed = pg.key.get_pressed()
+
             # iterate over each pygame event
-            for pygame_event in pg.event.get():
+            pgevents = pg.event.get()
+            for pygame_event in pgevents:
 
                 # convert native pygame event to generic Ravel game event
                 event = pygame_2_ravel_event(pygame_event)
@@ -240,7 +239,12 @@ class PygameGame(Application):
                             self.state.update(fresh_state)
                 elif event.event_type in self.key_event_handlers:
                     key_2_handlers = self.key_event_handlers[event.event_type]
-                    handlers = key_2_handlers[event.text]
+                    # not every event from pygame has a consistent "key" value,
+                    # so we will cascade through the known locations as they
+                    # are relatively exclusive to certain events. 
+                    # TODO this needs to be handled with better mapping of
+                    # pygame events to ravel events
+                    handlers = key_2_handlers[event.unicode or event.text or event.key]
                     for handler in handlers:
                         fresh_state = handler(event)
                         if fresh_state:
