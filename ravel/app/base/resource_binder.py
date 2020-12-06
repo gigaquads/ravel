@@ -103,10 +103,6 @@ class ResourceBinder(object):
             store_type = type(store_class_name, (store_type, ), {})
             self._named_store_types[store_class_name] = store_type
 
-            console.debug(
-                f'detected {store_class_name}'
-            )
-
         if store_instance is not None:
             assert isinstance(store_instance, store_type)
         else:
@@ -115,17 +111,12 @@ class ResourceBinder(object):
         if resource_type is not None:
             resource_type_name = get_class_name(resource_type)
             resource_type.binder = self
-
             self._named_resource_types[resource_type_name] = resource_type
             self._bindings[resource_type_name] = binding = BizBinding(
                 self,
                 resource_type=resource_type,
                 store_instance=store_instance,
                 store_bind_kwargs=store_bind_kwargs,
-            )
-
-            console.debug(
-                f'detected {resource_type_name}'
             )
             return binding
 
@@ -164,8 +155,8 @@ class ResourceBinder(object):
         if rebind or ((not binding.is_bound) and bind):
             console.debug(
                 message=(
-                    f'binding {get_class_name(binding.store_instance)} '
-                    f'with {get_class_name(binding.resource_type)}'
+                    f'setting {get_class_name(binding.resource_type)}.ravel.store '
+                    f'= {get_class_name(binding.store_instance)}()'
                 )
             )
             binding.bind(binder=self)

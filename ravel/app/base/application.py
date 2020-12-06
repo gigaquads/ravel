@@ -3,7 +3,7 @@ import logging
 import os
 import threading
 
-from threading import local
+from threading import local, get_ident
 from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
 from collections import deque, OrderedDict, namedtuple
 
@@ -64,6 +64,9 @@ class Application(object):
         self._is_bootstrapped = False
         self._is_started = False
 
+    def __getattr__(self, resource_type_name: Text) -> Type['Resource']:
+        return self.res[resource_type_name]
+
     def __contains__(self, action: Text):
         return action in self._actions
 
@@ -95,7 +98,10 @@ class Application(object):
                 pass
         ```
         """
-        return self.decorator_type(self, *args, **kwargs)
+        if not self.is_bootstrapped:
+            return self.decorator_type(self, *args, **kwargs)
+        else:
+            return self.start(*args, **kwargs)
 
     @property
     def decorator_type(self) -> Type[ActionDecorator]:
@@ -182,8 +188,8 @@ class Application(object):
                 decorator(act.target)
         elif action.name not in self._actions or overwrite:
             console.debug(
-                f'registering {action.name} action with '
-                f'{get_class_name(self)}...'
+                f'{get_class_name(self)}(thread_id={get_ident()}) '
+                f'registered action {action.name}'
             )
             if isinstance(action, Action):
                 if action.app is not self:
@@ -272,7 +278,7 @@ class Application(object):
             )
             return self
 
-        console.debug(f'bootstrapping {get_class_name(self)} application')
+        console.debug(f'bootstrapping {get_class_name(self)} application...')
 
         # override mode set in constructor
         if mode is not None:
@@ -305,11 +311,31 @@ class Application(object):
         self._arg_loader = ArgumentLoader(self)
 
         # bootstrap the middlware
-        for mware in self.middleware:
+        mware_names = []
+        for idx, mware in enumerate(self.middleware):
             mware.bootstrap(app=self)
+            mware_names.append(' ' + ('   ' * idx) + ' ↪ ' + get_class_name(mware))
 
         for action in self._actions.values():
             action.bootstrap()
+
+
+        console.debug(
+            message='middleware execution path diagram...\n\n' + '\n'.join(
+                ['➥ initialize Ravel request'] +
+                [
+                    name + '.pre_request' for name in mware_names
+                ] + 
+                ['   ' * len(self.middleware) + '  ➥ args, kwargs = resolve(program_inputs)'] +
+                [
+                    name + '.on_request' for name in mware_names
+                ] +
+                ['   ' * len(self.middleware) + '  ➥ response.result = action(*args, **kwargs)'] +
+                [
+                    name + '.post_[bad_]response' for name in mware_names[::-1]
+                ]
+            ) + '\n'
+        )
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
@@ -447,7 +473,7 @@ class StoreManager(object):
 
     def __init__(self, app: 'Application', store_types: DictObject):
         self._app = app
-        self._store_types = store_types
+        self._store_types = DictObject(store_types)
 
     @property
     def store_types(self) -> DictObject:

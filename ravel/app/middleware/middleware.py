@@ -25,7 +25,7 @@ class Middleware(object):
         self._app = app
 
         console.debug(
-            f'bootstrapping "{get_class_name(self)}" middleware'
+            f'bootstrapping {get_class_name(self)} middleware singleton'
         )
 
         self.on_bootstrap()

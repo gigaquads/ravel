@@ -1,5 +1,5 @@
 from random import randint
-from typing import Text, Tuple, List, Set, Dict, Type, Union
+from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
 from collections import defaultdict, deque
 from itertools import islice
 
@@ -205,6 +205,11 @@ class Batch(Entity):
             for _ in range(count)
         )
 
+    def foreach(self, callback: Callable) -> 'Batch':
+        for i, x in enumerate(self.internal.resources):
+            callback(i, x)
+        return self
+
     def sort(self, order_by) -> 'Batch':
         self.internal.resources = OrderBy.sort(
             self.internal.resources, order_by
@@ -321,21 +326,24 @@ class Batch(Entity):
         """
         Insert all resources into the store.
         """
-        self.ravel.owner.create_many(self.internal.resources)
+        if self:
+            self.ravel.owner.create_many(self.internal.resources)
         return self
 
     def update(self, state: Dict = None, **more_state):
         """
         Apply an update to all resources in the batch, writing it to the store.
         """
-        self.ravel.owner.update_many(self, data=state, **more_state)
+        if self:
+            self.ravel.owner.update_many(self, data=state, **more_state)
         return self
 
     def delete(self):
         """
         Delete all resources in the batch fro mthe store.
         """
-        self.ravel.owner.delete_many(self.internal.resources)
+        if self:
+            self.ravel.owner.delete_many(self.internal.resources)
         return self
 
     def save(self, resolvers: Union[Text, Set[Text]] = None):
@@ -343,6 +351,9 @@ class Batch(Entity):
         Save all resources in the batch, effectively creating some and updating
         others.
         """
+        if not self:
+            return self
+
         # batch save resource resolver targets
         if resolvers is not None:
             owner_resource_type = self.ravel.owner

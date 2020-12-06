@@ -20,6 +20,9 @@ class OrderBy(object):
             f')'
         )
 
+    def to_sql(self) -> Text:
+        return f'{self.key} {"DESC" if self.desc else "ASC"}'
+
     def dump(self):
         return {'key': self.key, 'desc': self.desc}
 

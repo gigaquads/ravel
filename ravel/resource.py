@@ -19,7 +19,7 @@ from ravel.util import (
     get_class_name,
 )
 from ravel.schema import Field, Schema, String, Id, UuidString
-from ravel.dumper import Dumper, NestedDumper, SideLoadedDumper, DumpStyle
+from ravel.dumper import Dumper, SideLoadedDumper, DumpStyle
 from ravel.batch import Batch
 from ravel.constants import (
     IS_RESOURCE,
@@ -30,10 +30,11 @@ from ravel.constants import (
 from ravel.query.query import Query
 from ravel.query.predicate import PredicateParser
 from ravel.resolver.resolver import Resolver
+from ravel.resolver.decorators import field as field_decorator
 from ravel.resolver.resolver_decorator import ResolverDecorator
 from ravel.resolver.resolver_property import ResolverProperty
 from ravel.resolver.resolver_manager import ResolverManager
-from ravel.resolver.resolvers.loader import Loader, LoaderProperty
+from ravel.resolver.resolvers.loader import Loader
 from ravel.entity import Entity
 
 
@@ -48,7 +49,7 @@ class ResourceMeta(type):
         for base_class in base_classes:
             if is_resource_type(base_class):
                 for key, resolver in base_class.ravel.resolvers.items():
-                    copied_resolver = resolver.copy()
+                    copied_resolver = resolver.copy(new_owner=cls)
                     resolver_property = ResolverProperty(copied_resolver)
                     cls.ravel.resolvers.register(copied_resolver)
                     setattr(cls, key, resolver_property)
@@ -66,7 +67,9 @@ class ResourceMeta(type):
         resource_type.ravel.is_bound = False
         resource_type.ravel.schema = None
         resource_type.ravel.defaults = {}
+        resource_type.ravel.protected_field_names = set()
         resource_type.ravel.predicate_parser = PredicateParser(resource_type)
+        resource_type.ravel.virtual_fields = {}
 
         return resource_type._process_fields()
 
@@ -84,7 +87,8 @@ class ResourceMeta(type):
                 field = v
                 field.name = k
                 fields[k] = field
-                resolver_property = Loader.build_property(
+                resolver_type = field.meta.get('resolver_type') or Loader
+                resolver_property = resolver_type.build_property(
                     kwargs=dict(owner=cls, field=field, name=k, target=cls),
                 )
                 cls.ravel.resolvers.register(resolver_property.resolver)
@@ -115,9 +119,15 @@ class ResourceMeta(type):
 
         # perform final processing now that we have all direct and
         # inherited fields in one dict.
+        default_protected = resource_type.__protected__()
         for k, field in fields.items():
+            if field.meta.get('ravel_on_resolve'):
+                resource_type.ravel.virtual_fields[k] = field
+            if field.meta.get('protected', default_protected) or k in {REV}:
+                resource_type.ravel.protected_field_names.add(k)
             if k in inherited_fields:
-                resolver_property = Loader.build_property(kwargs=dict(
+                resolver_type = field.meta.get('resolver_type') or Loader
+                resolver_property = resolver_type.build_property(kwargs=dict(
                     owner=resource_type,
                     field=field,
                     name=k,
@@ -157,14 +167,25 @@ class ResourceMeta(type):
         return fields
 
     def _extract_field_defaults(resource_type, schema):
+
+        def make_callable_default(field):
+            value = field.default
+
+            def default_callable():
+                return deepcopy(value)
+
+            default_callable.__name__ = f'{field.name}_default'
+            return default_callable
+
         defaults = resource_type.ravel.defaults
+
         for field in schema.fields.values():
-            if field.default:
+            if field.default is not None:
                 # move field default into "defaults" dict
                 if callable(field.default):
                     defaults[field.name] = field.default
                 else:
-                    defaults[field.name] = lambda: deepcopy(field.default)
+                    defaults[field.name] = make_callable_default(field)
                 # clear it from the schema object once "defaults" dict
                 field.default = None
         return defaults
@@ -228,6 +249,10 @@ class Resource(Entity, metaclass=ResourceMeta):
         return True
 
     @classmethod
+    def __protected__(cls) -> bool:
+        return False
+
+    @classmethod
     def __store__(cls) -> Type[Store]:
         return SimulationStore
 
@@ -273,6 +298,10 @@ class Resource(Entity, metaclass=ResourceMeta):
         return cls.ravel.is_bound
 
     @property
+    def app(self) -> 'Application':
+        return self.ravel.app
+
+    @property
     def store(self) -> 'Store':
         return self.ravel.store
 
@@ -294,12 +323,13 @@ class Resource(Entity, metaclass=ResourceMeta):
     @classmethod
     def generate(
         cls,
-        resolvers: Set[Text] = None,
-        values: Dict = None
+        keys: Set[Text] = None,
+        values: Dict = None,
+        use_defaults=True,
     ) -> 'Resource':
         instance = cls()
         values = values or {}
-        keys = resolvers or set(cls.ravel.schema.fields.keys())
+        keys = keys or set(cls.ravel.schema.fields.keys())
         resolver_objs = Resolver.sort(
             cls.ravel.resolvers[k] for k in keys
             if k not in {REV}
@@ -310,8 +340,12 @@ class Resource(Entity, metaclass=ResourceMeta):
         for resolver in resolver_objs:
             if resolver.name in values:
                 value = values[resolver.name]
+            elif use_defaults and resolver.name in cls.ravel.defaults:
+                func = cls.ravel.defaults[resolver.name]
+                value = func()
             else:
                 value = resolver.generate(instance)
+
             instance.internal.state[resolver.name] = value
 
         return instance
@@ -422,12 +456,20 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         return errors
 
-    def require(self, resolvers: Set[Text] = None, strict=False) -> Set[Text]:
+    def require(
+        self,
+        resolvers: Set[Text] = None,
+        use_defaults=True,
+        strict=False,
+        overwrite=False,
+    ) -> Set[Text]:
         """
         Checks if all specified resolvers are present. If they are required
         but not present, an exception will be raised for `strict` mode;
         otherwise, a set of the missing resolver names is returned.
         """
+        if isinstance(resolvers, str):
+            resolvers = {resolvers}
         required_resolver_names = (
             resolvers or set(
                 k for k in self.ravel.resolvers.keys()
@@ -435,10 +477,17 @@ class Resource(Entity, metaclass=ResourceMeta):
             )
         )
         missing_resolver_names = set()
+        defaults = self.ravel.defaults
         for name in required_resolver_names:
             resolver = self.ravel.resolvers[name]
-            if name not in self.internal.state and resolver.required:
-                missing_resolver_names.add(name)
+            if overwrite or name not in self.internal.state:
+                if use_defaults and name in defaults:
+                    value = defaults[name]()
+                    if value is None and not resolver.nullable:
+                        raise ValidationError(f'{name} not nullable')
+                    self[name] = value
+                else:
+                    missing_resolver_names.add(name)
 
         if strict and missing_resolver_names:
             console.error(
@@ -460,7 +509,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         if isinstance(resolvers, str):
             resolvers = {resolvers}
         elif not resolvers:
-            resolvers = self.ravel.resolvers.keys()
+            resolvers = set(self.ravel.resolvers.keys())
 
         # execute all requested resolvers
         for k in resolvers:
@@ -481,20 +530,26 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         return self
 
-    def reload(self, resolvers: Union[Text, Set[Text]] = None) -> 'Resource':
-        if isinstance(resolvers, str):
-            resolvers = {resolvers}
-        loading_resolvers = {k for k in resolvers if self.is_loaded(k)}
-        return self.load(loading_resolvers)
+    def refresh(self, keys: Union[Text, Set[Text]] = None) -> 'Resource':
+        """
+        For any field currently loaded in the resource, fetch a fresh copy
+        from the store.
+        """
+        if not keys:
+            keys = set(self.internal.state.keys())
+        elif isinstance(keys, str):
+            keys = {keys}
 
-    def unload(self, resolvers: Set[Text] = None) -> 'Resource':
+        return self.resolve(keys)
+
+    def unload(self, keys: Set[Text] = None) -> 'Resource':
         """
         Remove the given keys from field data and/or relationship data.
         """
-        if resolvers:
-            if isinstance(resolvers, str):
-                resolvers = {resolvers}
-                keys = self._normalize_selectors(resolvers)
+        if keys:
+            if isinstance(keys, str):
+                keys = {keys}
+                keys = self._normalize_selectors(keys)
         else:
             keys = set(
                 self.internal.state.keys() |
@@ -503,8 +558,6 @@ class Resource(Entity, metaclass=ResourceMeta):
         for k in keys:
             if k in self.internal.state:
                 del self.internal.state[k]
-            elif k in self.ravel.resolvers:
-                del self.ravel.resolvers[k]
 
     def is_loaded(self, resolvers: Union[Text, Set[Text]]) -> bool:
         """
@@ -543,11 +596,11 @@ class Resource(Entity, metaclass=ResourceMeta):
             del self.internal.state[REV]
 
         record = {}
-        keys_to_save = keys_to_save or self.ravel.schema.fields.keys()
+        keys_to_save = keys_to_save or set(self.internal.state.keys())
+        keys_to_save |= self.ravel.defaults.keys()
+        keys_to_save &= self.ravel.resolvers.fields.keys()
 
         for key in keys_to_save:
-            if key not in self.ravel.schema.fields:
-                continue
             resolver = self.ravel.resolvers[key]
             default = self.ravel.defaults.get(key)
             if key not in self.internal.state:
@@ -566,8 +619,8 @@ class Resource(Entity, metaclass=ResourceMeta):
                     if self.internal.state[key] is None:
                         console.warning(
                             message=(
-                                'trying to save None while not nullable. '
-                                ' removing key from resource state',
+                                'you tried to save None to {key} but not '
+                                'nullable. clearing field value.'
                             ),
                             data={
                                 'resource': get_class_name(self),
@@ -600,7 +653,10 @@ class Resource(Entity, metaclass=ResourceMeta):
         request: 'Request' = None,
     ) -> 'Query':
         query = Query(target=cls, request=request, parent=parent)
-        return query.select(resolvers)
+        query.select(resolvers)
+        cls.on_select(query)
+        query.callbacks.append(cls.post_select)
+        return query
 
     def create(self, data: Dict = None, **more_data) -> 'Resource':
         data = dict(data or {}, **more_data)
@@ -610,12 +666,24 @@ class Resource(Entity, metaclass=ResourceMeta):
         prepared_record = self._prepare_record_for_create()
         prepared_record.pop(REV, None)
 
+        self.on_create(prepared_record)
+
         created_record = self.ravel.store.dispatch(
             'create', (prepared_record, )
         )
 
         self.internal.state.update(created_record)
-        return self.clean()
+        self.clean()
+        self.post_create()
+
+        return self
+
+    def setdefault(self, key, value):
+      if key in self.internal.state:
+        return self[key]
+      else:
+        self[key] = value
+        return value
 
     @classmethod
     def get(cls, _id, select=None) -> Union['Resource', 'Batch']:
@@ -631,9 +699,19 @@ class Resource(Entity, metaclass=ResourceMeta):
             select = set(select)
 
         select |= {ID, REV}
+        select -= cls.ravel.virtual_fields.keys()
 
-        state = cls.ravel.store.fetch(_id, fields=select)
-        return cls(state=state).clean() if state else None
+        cls.on_get(_id, select)
+
+        state = cls.ravel.store.dispatch(
+            'fetch', (_id, ), {'fields': select}
+        )
+
+        resource = cls(state=state).clean() if state else None
+
+        cls.post_get(resource)
+
+        return resource
 
     @classmethod
     def get_many(
@@ -656,38 +734,58 @@ class Resource(Entity, metaclass=ResourceMeta):
             select = set(select)
 
         select |= {ID, REV}
+        select -= cls.ravel.virtual_fields.keys()
 
         if not (offset or limit or order_by):
             store = cls.ravel.store
             args = (_ids, )
             kwargs = {'fields': select}
             states = store.dispatch('fetch_many', args, kwargs).values()
-            return cls.Batch(
+            cls.on_get_many(_ids, select)
+            batch = cls.Batch(
                 cls(state=state).clean() for state in states
                 if state is not None
             )
+            cls.post_get_many(batch)
         else:
             query = cls.select(select).where(cls._id.including(_ids))
             query = query.order_by(order_by).offset(offset).limit(limit)
-            return query.execute()
+            cls.on_select(query)
+            batch = query.execute()
+            cls.post_select(query, batch)
+
+        return batch
 
     @classmethod
     def get_all(
         cls,
         select: Set[Text] = None,
+        order_by: List['OrderBy'] = None,
         offset: int = None,
         limit: int = None,
     ) -> 'Batch':
         """
         Return a list of all Resources in the store.
         """
-        return cls.query(
-            select=select,
-            where=cls._id is not None,
-            order_by=cls._id.asc,
-            offset=offset,
-            limit=limit,
-        )
+        # build the query
+        query = cls.select().where(cls._id != None)
+
+        if select:
+            query = query.select(select)
+        if order_by:
+            query = query.order_by(order_by)
+        if limit and limit > 0:
+            query = query.limit(limit)
+        if offset is not None and offset >= 0:
+            query = query.offset(offset)
+
+        cls.on_select(query)
+
+        batch = query.execute()
+
+        cls.post_select(query, batch)
+
+        return batch
 
     def delete(self) -> 'Resource':
         """
@@ -711,9 +809,11 @@ class Resource(Entity, metaclass=ResourceMeta):
             resource._id = None
             resource._rev = None
 
-        # delete the records in the DAL
-        store = cls.ravel.store
-        store.dispatch('delete_many', args=(resource_ids, ))
+        if resource_ids:
+            store = cls.ravel.store
+            cls.on_delete_many(resource_ids)
+            store.dispatch('delete_many', args=(resource_ids, ))
+            cls.post_delete_many(resource_ids)
 
     @classmethod
     def delete_all(cls) -> None:
@@ -780,9 +880,12 @@ class Resource(Entity, metaclass=ResourceMeta):
         for k, v in raw_record.items():
             field = self.Schema.fields.get(k)
             if field is not None:
-                prepared_record[k], error = field.process(v)
-                if error:
-                    errors[k] = error
+                if field.name not in self.ravel.virtual_fields:
+                    prepared_record[k], error = field.process(v)
+                    if error:
+                        errors[k] = error
+
+        self.on_update(prepared_record)
 
         if errors:
             raise ValidationError(
@@ -797,8 +900,14 @@ class Resource(Entity, metaclass=ResourceMeta):
             'update', (self._id, prepared_record)
         )
 
-        self.internal.state.update(updated_record)
-        return self.clean()
+        if updated_record:
+            self.internal.state.update(updated_record)
+
+        self.clean(prepared_record.keys())
+
+        self.post_update()
+
+        return self
 
     @classmethod
     def create_many(
@@ -822,6 +931,8 @@ class Resource(Entity, metaclass=ResourceMeta):
             record = resource._prepare_record_for_create(fields)
             records.append(record)
 
+        cls.on_create_many(records)
+
         store = cls.ravel.store
         created_records = store.dispatch('create_many', (records, ))
 
@@ -829,7 +940,11 @@ class Resource(Entity, metaclass=ResourceMeta):
             resource.internal.state.update(record)
             resource.clean()
 
-        return cls.Batch(resources)
+        batch = cls.Batch(resources)
+
+        cls.post_create_many(batch)
+
+        return batch
 
     @classmethod
     def update_many(
@@ -870,7 +985,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         # in the procedure below, we partition all incoming Resources
         # into groups, grouped by the set of fields being updated. In this way,
         # we issue an update_many datament for each partition in the DAL.
-        partitions = defaultdict(list)
+        partitions = defaultdict(cls.Batch)
 
         fields_to_update = fields
 
@@ -887,7 +1002,9 @@ class Resource(Entity, metaclass=ResourceMeta):
         # instances that share the same ID.
         id_2_copies = defaultdict(list)
 
-        for resource_partition in partitions.values():
+        cls.on_update_many(cls.Batch(resources))
+
+        for partition_key_tuple, resource_partition in partitions.items():
             records, _ids = [], []
 
             for resource in resource_partition:
@@ -896,13 +1013,21 @@ class Resource(Entity, metaclass=ResourceMeta):
                 record.pop(ID, None)
                 if fields_to_update:
                     record = {
-                        k: v for k, v in record.items() if k in fields_to_update
+                        k: v for k, v in record.items()
+                        if (
+                            (k in fields_to_update) and
+                            (k not in cls.ravel.virtual_fields)
+                        )
                     }
                 records.append(record)
                 _ids.append(resource._id)
 
             store = cls.ravel.store
             updated_records = store.dispatch('update_many', (_ids, records))
+
+            if not updated_records:
+                resource_partition.clean(partition_key_tuple)
+                continue
 
             for resource in resource_partition:
                 record = updated_records.get(resource._id)
@@ -917,7 +1042,11 @@ class Resource(Entity, metaclass=ResourceMeta):
                             res_copy.merge(record)
                     id_2_copies[resource._id].append(resource)
 
-        return cls.Batch(resources)
+        updated_resources = cls.Batch(resources)
+
+        cls.post_update_many(updated_resources)
+
+        return updated_resources
 
     @classmethod
     def save_many(
@@ -1002,3 +1131,73 @@ class Resource(Entity, metaclass=ResourceMeta):
             resource_type.save_many(resources, depth=depth-1)
 
         return retval
+
+    @classmethod
+    def on_select(cls, query: 'Query'):
+        pass
+
+    @classmethod
+    def post_select(cls, query: 'Query', result: 'Entity'):
+        pass
+
+    @classmethod
+    def on_get(cls, _id, fields):
+        pass
+
+    @classmethod
+    def on_get_many(cls, _ids, fields):
+        pass
+
+    @classmethod
+    def post_get_many(cls, resources):
+        pass
+
+    @classmethod
+    def post_get(cls, resource: 'Resource'):
+        pass
+
+    @classmethod
+    def on_update_many(cls, batch):
+        pass
+
+    @classmethod
+    def post_update_many(cls, batch):
+        pass
+
+    @classmethod
+    def on_create_many(cls, batch):
+        pass
+
+    @classmethod
+    def post_create_many(cls, batch):
+        pass
+
+    @classmethod
+    def on_delete_many(cls, _ids):
+        pass
+
+    @classmethod
+    def post_delete_many(cls, _ids):
+        pass
+
+    @classmethod
+    def post_get(cls, resource: 'Resource'):
+        pass
+
+    def on_update(self, values: Dict):
+        pass
+
+    def post_update(self):
+        pass
+
+    def on_create(self, values: Dict):
+        pass
+
+    def post_create(self):
+        pass
+
+    def on_delete(self):
+        pass
+
+    def post_delete(self):
+        pass

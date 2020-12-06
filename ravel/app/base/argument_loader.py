@@ -170,6 +170,12 @@ class ArgumentLoader(object):
     def preload_resolver_state(
         self, resource_type: Type['Resource'], preloaded: Dict
     ):
+        # remove any items in the preloaded dict if the corresponding field is
+        # designated "protected".
+        for k in resource_type.ravel.protected_field_names:
+            if k in preloaded:
+                del preloaded[k]
+
         for resolver in resource_type.ravel.resolvers.values():
             if resolver.name in resource_type.ravel.resolvers.fields:
                 continue
@@ -189,4 +195,5 @@ class ArgumentLoader(object):
                     preloaded[resolver.name] = target_resource_class(
                         state=self.preload_resolver_state(resolver.target, state_dict)
                     )
+
         return preloaded

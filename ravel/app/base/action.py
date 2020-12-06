@@ -87,7 +87,7 @@ class ExecutionState(object):
     def __init__(self, action, raw_args, raw_kwargs):
         self.action = action
         self.errors = []
-        self.target_error = None
+        self.exc = None
         self.middleware = []
         self.raw_args = raw_args
         self.raw_kwargs = raw_kwargs
@@ -109,6 +109,9 @@ class Request(object):
 
     def __repr__(self):
         return f'Request(action="{self.internal.action.name}")'
+
+    def __getattr__(self, key):
+        return self.context.get(key)
 
     @property
     def is_complete(self) -> bool:
@@ -173,7 +176,7 @@ class Action(object):
             if (error is not None) or request.is_complete:
                 break
 
-        if state.target_error is None:
+        if state.exc is None:
             self._apply_middleware_post_request(request)
         else:
             self._apply_middleware_post_bad_request(request)
@@ -277,7 +280,7 @@ class Action(object):
     def _apply_middleware_post_request(self, request):
         state = request.internal
         error = None
-        for mware in state.middleware:
+        for mware in reversed(state.middleware):
             try:
                 mware.post_request(
                     self,
@@ -292,12 +295,12 @@ class Action(object):
     def _apply_middleware_post_bad_request(self, request):
         state = request.internal
         error = None
-        for mware in state.middleware:
+        for mware in reversed(state.middleware):
             try:
                 mware.post_bad_request(
                     self,
                     request,
-                    state.target_error.exc
+                    state.exc.exc
                 )
             except Exception as exc:
                 error = Action.Error(exc, mware)
@@ -319,7 +322,7 @@ class Action(object):
                 state.raw_result = self._target(request)
         except Exception as exc:
             error = Action.Error(exc)
-            state.target_error = error
+            state.exc = error
             state.errors.append(error)
 
         return error

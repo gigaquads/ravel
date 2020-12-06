@@ -1,21 +1,13 @@
-import re
-import threading
-import uuid
-import pickle
-
-from threading import RLock
+import traceback
 
 import sqlalchemy as sa
 
 from typing import List, Dict, Text, Type, Set, Tuple
+from threading import RLock
 
-from sqlalchemy import TypeDecorator
-from sqlalchemy.dialects.postgresql import ARRAY
-
-from appyratus.enum import EnumValueStr
-from appyratus.env import Environment
+from geoalchemy2 import Geometry as GeoalchemyGeometry
 from sqlalchemy.sql import bindparam
-from sqlalchemy.dialects.postgresql import ARRAY
+from appyratus.env import Environment
 
 from ravel.query.predicate import (
     Predicate, ConditionalPredicate, BooleanPredicate,
@@ -23,6 +15,7 @@ from ravel.query.predicate import (
 )
 from ravel.schema import fields, Field
 from ravel.util.loggers import console
+from ravel.util.json_encoder import JsonEncoder
 from ravel.util import get_class_name
 from ravel.store.base import Store
 from ravel.constants import REV, ID
@@ -30,6 +23,13 @@ from ravel.constants import REV, ID
 from .dialect import Dialect
 from .sqlalchemy_table_builder import SqlalchemyTableBuilder
 from ..types import ArrayOfEnum
+from ..postgis import (
+    POSTGIS_OP_CODE,
+    GeometryObject, PointGeometry, PolygonGeometry,
+    Point, Polygon,
+)
+
+json_encoder = JsonEncoder()
 
 
 class SqlalchemyStore(Store):
@@ -42,7 +42,10 @@ class SqlalchemyStore(Store):
 
     env = Environment(
         SQLALCHEMY_STORE_ECHO=fields.Bool(default=False),
-        SQLALCHEMY_STORE_DIALECT=fields.Enum(fields.String(), Dialect.values(), default=Dialect.sqlite),
+        SQLALCHEMY_STORE_SHOW_QUERIES=fields.Bool(default=False),
+        SQLALCHEMY_STORE_DIALECT=fields.Enum(
+            fields.String(), Dialect.values(), default=Dialect.sqlite
+        ),
         SQLALCHEMY_STORE_PROTOCOL=fields.String(default='sqlite'),
         SQLALCHEMY_STORE_USER=fields.String(default='admin'),
         SQLALCHEMY_STORE_HOST=fields.String(default='0.0.0.0'),
@@ -58,7 +61,7 @@ class SqlalchemyStore(Store):
     _bootstrap_lock = RLock()
 
     @classmethod
-    def get_default_adapters(cls, dialect: Dialect) -> List[Field.Adapter]:
+    def get_default_adapters(cls, dialect: Dialect, table_name) -> List[Field.Adapter]:
         # TODO: Move this into the adapters file
         adapters = [
             fields.Field.adapt(
@@ -67,11 +70,15 @@ class SqlalchemyStore(Store):
                 on_decode=lambda x: cls.ravel.app.json.decode(x),
             ),
             fields.Email.adapt(on_adapt=lambda field: sa.Text),
+            fields.Bytes.adapt(on_adapt=lambda field: sa.LargeBinary),
+            fields.BcryptString.adapt(on_adapt=lambda field: sa.Text),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
-            fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
             fields.DateTime.adapt(on_adapt=lambda field: sa.DateTime),
+            fields.TimeDelta.adapt(on_adapt=lambda field: sa.Interval),
             fields.Timestamp.adapt(on_adapt=lambda field: sa.DateTime),
-            fields.Enum.adapt(on_adapt=lambda field: {
+            fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
+            fields.Enum.adapt(
+                on_adapt=lambda field: {
                     fields.String: sa.Text,
                     fields.Int: sa.Integer,
                     fields.Float: sa.Float,
@@ -88,27 +95,28 @@ class SqlalchemyStore(Store):
         adapters.extend(
             field_class.adapt(on_adapt=lambda field: sa.BigInteger)
             for field_class in {
-                fields.Int, fields.Uint32, fields.Uint64,
+                fields.Int, fields.Uint32, fields.Uint64, fields.Uint,
                 fields.Sint32, fields.Sint64
             }
         )
         if dialect == Dialect.postgresql:
-            adapters.extend(cls.get_postgresql_default_adapters())
+            adapters.extend(cls.get_postgresql_default_adapters(table_name))
         elif dialect == Dialect.mysql:
-            adapters.extend(cls.get_mysql_default_adapters())
+            adapters.extend(cls.get_mysql_default_adapters(table_name))
         elif dialect == Dialect.sqlite:
-            adapters.extend(cls.get_sqlite_default_adapters())
+            adapters.extend(cls.get_sqlite_default_adapters(table_name))
 
         return adapters
 
     @classmethod
-    def get_postgresql_default_adapters(cls) -> List[Field.Adapter]:
+    def get_postgresql_default_adapters(cls, table_name) -> List[Field.Adapter]:
         pg_types = sa.dialects.postgresql
 
         def on_adapt_list(field):
             if isinstance(field.nested, fields.Enum):
+                name = f'{table_name}__{field.name}'
                 return ArrayOfEnum(
-                    pg_types.ENUM(*field.nested.values)
+                    pg_types.ENUM(*field.nested.values, name=name)
                 )
             return pg_types.ARRAY({
                 fields.String: sa.Text,
@@ -125,10 +133,28 @@ class SqlalchemyStore(Store):
             }.get(type(field.nested), sa.Text))
 
         return [
+            Point.adapt(
+                on_adapt=lambda field: GeoalchemyGeometry(field.geo_type),
+                on_encode=lambda x: x.to_EWKT_string(),
+                on_decode=lambda x: (
+                    PointGeometry(x['geometry']['coordinates']) if x
+                    else None
+                )
+            ),
+            Polygon.adapt(
+                on_adapt=lambda field: GeoalchemyGeometry(field.geo_type),
+                on_encode=lambda x: x.to_EWKT_string(),
+                on_decode=lambda x: PolygonGeometry(
+                    x['geometry']['coordinates'] if x
+                    else None
+                )
+            ),
             fields.Field.adapt(on_adapt=lambda field: pg_types.JSONB),
             fields.Uuid.adapt(on_adapt=lambda field: pg_types.UUID),
             fields.Dict.adapt(on_adapt=lambda field: pg_types.JSONB),
-            fields.Nested.adapt(on_adapt=lambda field: pg_types.JSONB),
+            fields.Nested.adapt(
+                on_adapt=lambda field: pg_types.JSONB,
+            ),
             fields.Set.adapt(
                 on_adapt=lambda field: pg_types.JSONB,
                 on_encode=lambda x: list(x),
@@ -142,7 +168,7 @@ class SqlalchemyStore(Store):
         ]
 
     @classmethod
-    def get_mysql_default_adapters(cls) -> List[Field.Adapter]:
+    def get_mysql_default_adapters(cls, table_name) -> List[Field.Adapter]:
         return [
             fields.Dict.adapt(on_adapt=lambda field: sa.JSON),
             fields.Nested.adapt(on_adapt=lambda field: sa.JSON),
@@ -155,7 +181,7 @@ class SqlalchemyStore(Store):
         ]
 
     @classmethod
-    def get_sqlite_default_adapters(cls) -> List[Field.Adapter]:
+    def get_sqlite_default_adapters(cls, table_name) -> List[Field.Adapter]:
         adapters = [
             field_class.adapt(
                 on_adapt=lambda field: sa.Text,
@@ -182,6 +208,7 @@ class SqlalchemyStore(Store):
         self._builder = None
         self._adapters = None
         self._id_column = None
+        self._options = {}
 
     @property
     def adapters(self):
@@ -221,7 +248,7 @@ class SqlalchemyStore(Store):
         return _id
 
     @classmethod
-    def on_bootstrap(cls, url=None, dialect=None, echo=False):
+    def on_bootstrap(cls, url=None, dialect=None, echo=False, **kwargs):
         """
         Initialize the SQLAlchemy connection pool (AKA Engine).
         """
@@ -229,12 +256,16 @@ class SqlalchemyStore(Store):
             if cls.is_bootstrapped():
                 return
 
+            cls.ravel.kwargs = kwargs
+
             # construct the URL to the DB server
             # url can be a string or a dict
             if isinstance(url, dict):
                 url_parts = url
                 cls.ravel.app.local.sqla_url = (
-                    '{protocol}://{user}@{host}:{port}/{db}'.format(**url_parts)
+                    '{protocol}://{user}@{host}:{port}/{db}'.format(
+                        **url_parts
+                    )
                 )
             elif isinstance(url, str):
                 cls.ravel.app.local.sqla_url = url
@@ -247,17 +278,29 @@ class SqlalchemyStore(Store):
                     db=cls.env.SQLALCHEMY_STORE_NAME,
                 )
                 cls.ravel.app.local.sqla_url = url or (
-                    '{protocol}://{user}@{host}:{port}/{db}'.format(**url_parts)
+                    '{protocol}://{user}@{host}:{port}/{db}'.format(
+                        **url_parts
+                    )
                 )
 
             cls.dialect = dialect or cls.env.SQLALCHEMY_STORE_DIALECT
 
+            from sqlalchemy.dialects import postgresql, sqlite, mysql
+
+            cls.sa_dialect = None
+            if cls.dialect == Dialect.postgresql:
+                cls.sa_dialect = postgresql
+            elif cls.dialect == Dialect.sqlite:
+                cls.sa_dialect = sqlite
+            elif cls.dialect == Dialect.mysql:
+                cls.sa_dialect = mysql
+
             console.info(
-                message=f'creating Sqlalchemy engine',
+                message='creating Sqlalchemy engine',
                 data={
                     'echo': cls.env.SQLALCHEMY_STORE_ECHO,
                     'dialect': cls.dialect,
-                    'url': url,
+                    'url': cls.ravel.app.local.sqla_url,
                 }
             )
 
@@ -280,9 +323,12 @@ class SqlalchemyStore(Store):
         """
         # map each of the resource's schema fields to a corresponding adapter,
         # which is used to prepare values upon insert and update.
+        table = (
+            table or SqlalchemyTableBuilder.derive_table_name(resource_type)
+        )
         field_class_2_adapter = {
             adapter.field_class: adapter for adapter in
-            self.get_default_adapters(self.dialect) + self._custom_adapters
+            self.get_default_adapters(self.dialect, table) + self._custom_adapters
         }
         self._adapters = {
             field_name: field_class_2_adapter[type(field)]
@@ -301,6 +347,10 @@ class SqlalchemyStore(Store):
         # remember which column is the _id column
         self._id_column_names[self._table.name] = self.id_column_name
 
+        # set SqlalchemyStore options here, using bootstrap-level
+        # options as base/default options.
+        self._options = dict(self.ravel.kwargs, **kwargs)
+
     def query(
         self,
         predicate: 'Predicate',
@@ -318,17 +368,27 @@ class SqlalchemyStore(Store):
             self.resource_type.Schema.fields[REV].source: None,
         })
 
-        columns = [getattr(self.table.c, k) for k in fields]
+        columns = []
+        table_alias = self.table.alias(
+            ''.join(s.strip('_')[0] for s in self.table.name.split('_'))
+        )
+        for k in fields:
+            col = getattr(table_alias.c, k)
+            if isinstance(col.type, GeoalchemyGeometry):
+                columns.append(sa.func.ST_AsGeoJSON(col).label(k))
+            else:
+                columns.append(col)
+
         predicate = Predicate.deserialize(predicate)
-        filters = self._prepare_predicate(predicate)
+        filters = self._prepare_predicate(table_alias, predicate)
 
         # build the query object
         query = sa.select(columns).where(filters)
 
         if order_by:
             sa_order_by = [
-                sa.desc(getattr(self.table.c, x.key)) if x.desc else
-                sa.asc(getattr(self.table.c, x.key))
+                sa.desc(getattr(table_alias.c, x.key)) if x.desc else
+                sa.asc(getattr(table_alias.c, x.key))
                 for x in order_by
             ]
             query = query.order_by(*sa_order_by)
@@ -338,6 +398,23 @@ class SqlalchemyStore(Store):
         if offset is not None:
             query = query.offset(max(0, limit))
 
+        console.debug(
+            message=(
+                f'SQL: SELECT FROM {self.table}'
+                + (f' OFFSET {offset}' if offset is not None else '')
+                + (f' LIMIT {limit}' if limit else '')
+                + (f' ORDER BY {", ".join(x.to_sql() for x in order_by)}'
+                    if order_by else '')
+            ),
+            data={
+                'stack': traceback.format_stack(),
+                'statement': str(query.compile(
+                    compile_kwargs={'literal_binds': True}
+                )).split('\n')
+            }
+            if self.env.SQLALCHEMY_STORE_SHOW_QUERIES
+            else None
+        )
         # execute query, aggregating resulting records
         cursor = self.conn.execute(query)
         records = []
@@ -354,12 +431,13 @@ class SqlalchemyStore(Store):
 
         return records
 
-    def _prepare_predicate(self, pred, empty=set()):
+    def _prepare_predicate(self, table, pred, empty=set()):
         if isinstance(pred, ConditionalPredicate):
-            adapter = self._adapters.get(pred.field.source)
-            if adapter and adapter.on_encode:
-                pred.value = adapter.on_encode(pred.value)
-            col = getattr(self.table.c, pred.field.source)
+            if not pred.ignore_field_adapter:
+                adapter = self._adapters.get(pred.field.source)
+                if adapter and adapter.on_encode:
+                    pred.value = adapter.on_encode(pred.value)
+            col = getattr(table.c, pred.field.source)
             if pred.op == OP_CODE.EQ:
                 return col == pred.value
             elif pred.op == OP_CODE.NEQ:
@@ -376,16 +454,38 @@ class SqlalchemyStore(Store):
                 return col.in_(pred.value)
             elif pred.op == OP_CODE.EXCLUDING:
                 return ~col.in_(pred.value)
+            elif pred.op == POSTGIS_OP_CODE.CONTAINS:
+                if isinstance(pred.value, GeometryObject):
+                    EWKT_str = pred.value.to_EWKT_string()
+                else:
+                    EWKT_str = pred.value
+                return sa.func.ST_Contains(
+                    col, sa.func.ST_GeomFromEWKT(EWKT_str),
+                )
+            elif pred.op == POSTGIS_OP_CODE.CONTAINED_BY:
+                if isinstance(pred.value, GeometryObject):
+                    EWKT_str = pred.value.to_EWKT_string()
+                else:
+                    EWKT_str = pred.value
+                return sa.func.ST_Contains(
+                    sa.func.ST_GeomFromEWKT(EWKT_str), col
+                )
+            elif pred.op == POSTGIS_OP_CODE.WITHIN_RADIUS:
+                center = pred.value['center']
+                radius = pred.value['radius']
+                return sa.func.ST_PointInsideCircle(
+                    col, center[0], center[1], radius
+                )
             else:
                 raise Exception('unrecognized conditional predicate')
         elif isinstance(pred, BooleanPredicate):
             if pred.op == OP_CODE.AND:
-                lhs_result = self._prepare_predicate(pred.lhs)
-                rhs_result = self._prepare_predicate(pred.rhs)
+                lhs_result = self._prepare_predicate(table, pred.lhs)
+                rhs_result = self._prepare_predicate(table, pred.rhs)
                 return sa.and_(lhs_result, rhs_result)
             elif pred.op == OP_CODE.OR:
-                lhs_result = self._prepare_predicate(pred.lhs)
-                rhs_result = self._prepare_predicate(pred.rhs)
+                lhs_result = self._prepare_predicate(table, pred.lhs)
+                rhs_result = self._prepare_predicate(table, pred.rhs)
                 return sa.or_(lhs_result, rhs_result)
             else:
                 raise Exception('unrecognized boolean predicate')
@@ -395,8 +495,9 @@ class SqlalchemyStore(Store):
     def exists(self, _id) -> bool:
         columns = [sa.func.count(self._id_column)]
         query = (
-            sa.select(columns)
-                .where(self._id_column == self.adapt_id(_id))
+            sa.select(columns).where(
+                self._id_column == self.adapt_id(_id)
+            )
         )
         result = self.conn.execute(query)
         return bool(result.scalar())
@@ -404,10 +505,11 @@ class SqlalchemyStore(Store):
     def exists_many(self, _ids: Set) -> Dict[object, bool]:
         columns = [self._id_column, sa.func.count(self._id_column)]
         query = (
-            sa.select(columns)
-                .where(self._id_column.in_(
+            sa.select(columns).where(
+                self._id_column.in_(
                     [self.adapt_id(_id) for _id in _ids]
-                ))
+                )
+            )
         )
         return {
             row[0]: row[1] for row in self.conn.execute(query)
@@ -438,7 +540,14 @@ class SqlalchemyStore(Store):
             self.resource_type.Schema.fields[REV].source,
         })
 
-        columns = [getattr(self.table.c, k) for k in fields]
+        columns = []
+        for k in fields:
+            col = getattr(self.table.c, k)
+            if isinstance(col.type, GeoalchemyGeometry):
+                columns.append(sa.func.ST_AsGeoJSON(col).label(k))
+            else:
+                columns.append(col)
+
         select_stmt = sa.select(columns)
 
         id_col = getattr(self.table.c, self.id_column_name)
@@ -473,6 +582,11 @@ class SqlalchemyStore(Store):
         record[self.id_column_name] = self.create_id(record)
         prepared_record = self.prepare(record, serialize=True)
         insert_stmt = self.table.insert().values(**prepared_record)
+        _id = prepared_record.get('_id', '')
+        console.debug(
+            f'SQL: INSERT {str(_id)[:7] + " " if _id else ""}'
+            f'INTO {self.table}'
+        )
         if self.supports_returning:
             insert_stmt = insert_stmt.return_defaults()
             result = self.conn.execute(insert_stmt)
@@ -489,6 +603,17 @@ class SqlalchemyStore(Store):
             prepared_records.append(prepared_record)
 
         self.conn.execute(self.table.insert(), prepared_records)
+
+        n = len(prepared_records)
+        id_list_str = (
+            ', '.join(str(x['_id'])[:7]
+            for x in prepared_records if x.get('_id'))
+        )
+        console.debug(
+            f'SQL: INSERT {id_list_str} INTO {self.table} '
+            + (f'(count: {n})' if n > 1 else '')
+        )
+
         if self.supports_returning:
             # TODO: use implicit returning if possible
             pass
@@ -503,16 +628,19 @@ class SqlalchemyStore(Store):
             update_stmt = (
                 self.table
                     .update()
-                    .values(**prepared_records)
+                    .values(**prepared_data)
                     .where(self._id_column == prepared_id)
                 )
         if self.supports_returning:
             update_stmt = update_stmt.return_defaults()
+            console.debug(f'SQL: UPDATE {self.table}')
             result = self.conn.execute(update_stmt)
             return dict(data, **(result.returned_defaults or {}))
         else:
             self.conn.execute(update_stmt)
-            return self.fetch(_id)
+            if self._options.get('fetch_on_update', True):
+                return self.fetch(_id)
+            return data
 
     def update_many(self, _ids: List, data: List[Dict] = None) -> None:
         assert data
@@ -526,8 +654,14 @@ class SqlalchemyStore(Store):
             if prepared_record:
                 prepared_ids.append(prepared_id)
                 prepared_records.append(prepared_record)
+                prepared_record[ID] = prepared_id
 
         if prepared_records:
+            n = len(prepared_records)
+            console.debug(
+                f'SQL: UPDATE {self.table} '
+                + (f'({n}x)' if n > 1else '')
+            )
             values = {
                 k: bindparam(k) for k in prepared_records[0].keys()
             }
@@ -539,11 +673,13 @@ class SqlalchemyStore(Store):
             )
             self.conn.execute(update_stmt, prepared_records)
 
-        if self.supports_returning:
-            # TODO: use implicit returning if possible
-            return self.fetch_many(_ids)
-        else:
-            return self.fetch_many(_ids)
+        if self._options.get('fetch_on_update', True):
+            if self.supports_returning:
+                # TODO: use implicit returning if possible
+                return self.fetch_many(_ids)
+            else:
+                return self.fetch_many(_ids)
+        return
 
     def delete(self, _id) -> None:
         prepared_id = self.adapt_id(_id)
@@ -598,9 +734,11 @@ class SqlalchemyStore(Store):
         engine = cls.get_engine()
 
         if recreate:
+            console.info('dropping Resource SQL tables...')
             meta.drop_all(engine)
 
         # create all tables
+        console.info('creating Resource SQL tables...')
         meta.create_all(engine)
 
     @classmethod
@@ -610,7 +748,7 @@ class SqlalchemyStore(Store):
         sqla_conn = getattr(cls.ravel.app.local, 'sqla_conn', None)
         if sqla_conn is not None:
             console.warning(
-                message=f'sqlalchemy store already has connection',
+                message='sqlalchemy store already has connection',
             )
         metadata = cls.ravel.app.local.sqla_metadata
         cls.ravel.app.local.sqla_conn = metadata.bind.connect()
@@ -627,9 +765,9 @@ class SqlalchemyStore(Store):
             cls.ravel.app.local.sqla_conn = None
         else:
             console.warning(
-                message=f'sqlalchemy has no connection to close',
+                message='sqlalchemy has no connection to close',
                 data={
-                    'store': str(self)
+                    'store': get_class_name(cls)
                 }
             )
 

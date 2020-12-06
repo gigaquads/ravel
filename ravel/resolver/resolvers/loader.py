@@ -21,6 +21,10 @@ from ravel.schema import fields
 
 
 class Loader(Resolver):
+    """
+    The Loader resolver is responsible for fetching Resource fields.
+    """
+
     def __init__(self, field, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.field = field
@@ -41,6 +45,10 @@ class Loader(Resolver):
     def field(self) -> 'Field':
         return self._field
 
+    @property
+    def is_virtual(self) -> bool:
+        return bool(self.field.meta.get('ravel_on_resolve'))
+
     @field.setter
     def field(self, field: 'Field'):
         self._field = field
@@ -49,16 +57,19 @@ class Loader(Resolver):
         self.private = field.meta.get('private', False)
 
     def on_resolve(self, resource, request):
-        exists_resource = resource._id is not None
+        exists_resource = ID in resource.internal.state
         if not exists_resource:
             return None
 
-        # load from store
+        # get all non-virtual field names in resource schema
         all_field_names = {
             f.name for f in resource.ravel.schema.fields.values()
             if not f.meta.get('ravel_on_resolve')
         }
-        unloaded_field_names = set(
+
+        # of those, take only thos which are not yet loaded from the store.
+        # these are the ones we are going to try to fetch.
+        unloaded_field_names = (
             all_field_names - resource.internal.state.keys()
         )
         unloaded_field_names.add(self._field.name)
@@ -74,15 +85,20 @@ class Loader(Resolver):
             value = field_on_resolve(resource, request)
             new_resource_state[self._field.name] = value
 
+        # merge new state into existing resoruce instance state
         new_resource_state.update(
             resource.ravel.store.dispatch(
                 'fetch',
                 args=(resource._id, ),
-                kwargs={'fields': unloaded_field_names}
+                kwargs={'fields': unloaded_field_names.copy()}
             ) or {}
         )
-
         resource.merge(new_resource_state)
+
+        # mark the loaded fields as "clean", meaning, we are telling the system
+        # that thse fields are new, not stale and in need of saving.
+        resource.clean(unloaded_field_names)
+
         return resource
 
     def on_resolve_batch(self, batch, request):

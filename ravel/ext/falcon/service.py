@@ -4,15 +4,12 @@ import traceback
 
 import falcon
 
-from typing import Dict
-
 from appyratus.env import Environment
 
 from ravel.app.middleware import Middleware
 from ravel.app.apps.web import AbstractWsgiService
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
-from ravel.util import get_class_name
 
 from .media import JsonHandler
 from .resource import FalconResource
@@ -50,10 +47,8 @@ class FalconService(AbstractWsgiService):
 
     def on_start(self, *args, **kwargs):
         console.info(
-            message=f'starting Falcon web service',
-            data={
-                'endpoints': sorted(self.actions.keys()),
-            }
+            message='starting Falcon web service',
+            data={'endpoints': sorted(self.actions.keys())}
         )
         return self.entrypoint(*args, **kwargs)
 
@@ -82,6 +77,7 @@ class FalconService(AbstractWsgiService):
     def on_decorate(self, endpoint):
         super().on_decorate(endpoint)
         for route in endpoint.routes:
+            print(route)
             resource = self._route_2_resource.get(route)
             if resource is None:
                 resource = FalconResource(route)
@@ -102,7 +98,7 @@ class FalconService(AbstractWsgiService):
         route = request.path.strip('/').split('/')
         route_template = request.uri_template.strip('/').split('/')
         for k, v in zip(route_template, route):
-            if k[0] == '{' and k[-1] == '}':
+            if k and (k[0] == '{' and k[-1] == '}'):
                 app_kwargs[k[1:-1]] = v
 
         return (tuple(), app_kwargs)
@@ -122,6 +118,10 @@ class FalconService(AbstractWsgiService):
 
 
 class Request(falcon.Request):
+    """
+    Specialized HTTP Request object (NOT a Ravel Request type)
+    """
+
     class Options(falcon.RequestOptions):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -146,4 +146,3 @@ class Response(falcon.Response):
     def ok(self):
         status_code = int(self.status[:3])
         return (200 <= status_code < 300)
-

@@ -1,5 +1,7 @@
 from typing import Dict, Tuple
 
+from appyratus.utils import DictObject
+
 from ravel.exceptions import NotAuthorized
 from ravel.util.misc_functions import is_sequence, normalize_to_tuple
 from ravel.app.middleware.middleware import Middleware
@@ -27,14 +29,14 @@ class EvaluateGuards(Middleware):
         """
         guard = self._resolve_guard(action)
         if guard is not None:
-            #
+            # merge all positional and keyword args into a single dict
             arguments = self._extract_args(
                 action, processed_args, processed_kwargs
             )
-            # recursively execute the guard
-            guard_passed = guard(context={}, arguments=arguments)
-            if not guard_passed:
-                raise GuardFailure(guard, "guard failure")
+            # execute the guard (and composite guards, recursively)
+            guard_passed = guard(request, arguments=arguments)
+            if guard_passed is False:
+                raise GuardFailure(guard, "guard failed")
 
     def _resolve_guard(self, action):
         """

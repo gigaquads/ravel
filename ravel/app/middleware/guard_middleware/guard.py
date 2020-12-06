@@ -29,9 +29,9 @@ class Guard(object):
 
     Positional and keyword argument names declared in the guard
     method are plucked from the incoming arguments dynamically (following the
-    required `context` dict argument).
+    required `request` dict argument).
 
-    The context dict is shared by all Guards composed in a
+    The request dict is shared by all Guards composed in a
     CompositeGuard boolean expression.
     """
 
@@ -52,9 +52,9 @@ class Guard(object):
     def __repr__(self):
         return f'{get_class_name(self)}(description=\'{self.description}\')'
 
-    def __call__(self, context: Dict, arguments: Dict) -> bool:
+    def __call__(self, request: Dict, arguments: Dict) -> bool:
         args, kwargs = self.spec.extract(arguments)
-        return self.execute(context, *args, **kwargs)
+        return self.execute(request, *args, **kwargs)
 
     def __and__(self, other) -> 'CompositeGuard':
         composite_guard = CompositeGuard(OP_CODE.AND, self, other)
@@ -90,7 +90,7 @@ class Guard(object):
             else:
                 child = child.parent
 
-    def execute(self, context: Dict, *args, **kwargs) -> bool:
+    def execute(self, request: 'Request', *args, **kwargs) -> bool:
         """
         Determine whether Action request is authorized by performing any
         necessary authorization check here. Each subclass must explicitly
@@ -98,7 +98,7 @@ class Guard(object):
 
         ```python
         class UserOwnsPost(Guard):
-            def execute(context, user, post):
+            def execute(request, user, post):
                 return user.owns(post)
         ```
 
@@ -122,7 +122,7 @@ class Guard(object):
         """
         if self.callback is None:
             raise NotImplemented('override in subclass')
-        return self.callback(context, *args, **kwargs)
+        return self.callback(request, *args, **kwargs)
 
 
 class CompositeGuard(Guard):
@@ -139,8 +139,8 @@ class CompositeGuard(Guard):
         self._lhs = lhs
         self._rhs = rhs
 
-    def __call__(self, context: Dict, arguments: Dict) -> bool:
-        return self.execute(context, arguments)
+    def __call__(self, request: 'Request', arguments: Dict) -> bool:
+        return self.execute(request, arguments)
 
     @property
     def op_code(self):
@@ -164,24 +164,24 @@ class CompositeGuard(Guard):
         if self._op == OP_CODE.OR:
             return f'({self._lhs.description} {opc} {self._rhs.description})'
 
-    def execute(self, context: Dict, arguments: Dict):
+    def execute(self, request: 'Request', arguments: Dict):
         """
         Compute the boolean value of one or more nested Guard in a
         depth-first manner.
         """
         # compute LHS for both & and |.
-        lhs_is_ok = self._lhs(context, arguments)
+        lhs_is_ok = self._lhs(request, arguments)
 
         if self._op == OP_CODE.AND:
             # We only need to check RHS if LHS isn't already False.
             if lhs_is_ok is False:
                 raise GuardFailure(self._lhs)
-            rhs_is_ok = self._rhs(context, arguments)
+            rhs_is_ok = self._rhs(request, arguments)
             if rhs_is_ok is False:
                 raise GuardFailure(self._rhs)
         elif self._op == OP_CODE.OR:
             if lhs_is_ok is not False:
-                rhs_is_ok = self._rhs(context, arguments)
+                rhs_is_ok = self._rhs(request, arguments)
                 if rhs_is_ok is False:
                     raise GuardFailure(self)
         elif self._op == OP_CODE.NOT:
