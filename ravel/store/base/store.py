@@ -188,7 +188,7 @@ class Store(object, metaclass=StoreMeta):
         time_ms = int(1000000 * time.time())
 
         if rev:
-            rev_no = int(rev.split('-')[1]) + 1
+            rev_no = int(rev.split('-')[1], 36) + 1
         else:
             rev_no = 1
 
