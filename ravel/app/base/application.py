@@ -6,8 +6,11 @@ import threading
 from threading import local, get_ident
 from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
 from collections import deque, OrderedDict, namedtuple
+from random import choice
+from string import ascii_letters
 
-from appyratus.utils import DictObject, DictUtils
+from appyratus.utils import DictObject, DictUtils, StringUtils
+from appyratus.logging import ConsoleLoggerInterface
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
 
@@ -55,6 +58,7 @@ class Application(object):
         self._json = JsonEncoder()
         self._arg_loader = None
         self._binder = ResourceBinder()
+        self._logger = None
 
         self._middleware = deque([
             m for m in (middleware or [])
@@ -169,6 +173,10 @@ class Application(object):
     @property
     def storage(self) -> 'StoreManager':
         return self._storage
+
+    @property
+    def log(self):
+        return self._logger
 
     def action(self, *args, **kwargs):
         return self.decorator_type(self, *args, **kwargs)
@@ -300,6 +308,15 @@ class Application(object):
 
         self.manifest.process(app=self, namespace=self._namespace)
 
+        # setup logger before bootstrapping components
+        logger_suffix = ''.join(choice(ascii_letters) for i in range(4))
+        logger_name = (
+            self.manifest.package + '-' + logger_suffix if self.manifest.package
+            else StringUtils.snake(get_class_name(self)) + '-' + logger_suffix
+        )
+        self._logger = ConsoleLoggerInterface(logger_name)
+
+        # populate convenience data structures
         self._storage = StoreManager(self, self.manifest.types.stores)
         self._res.update(self.manifest.types.res)
 
@@ -321,7 +338,7 @@ class Application(object):
 
 
         console.debug(
-            message='middleware execution path diagram...\n\n' + '\n'.join(
+            message='action execution diagram...\n\n' + '\n'.join(
                 ['➥ initialize Ravel request'] +
                 [
                     name + '.pre_request' for name in mware_names
