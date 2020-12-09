@@ -68,7 +68,7 @@ class Query(object):
         return resolver in self.requests
 
     def __iter__(self):
-        return iter(self.requests)
+        return iter(self.execute())
 
     def __repr__(self):
         offset = self.parameters.offest
