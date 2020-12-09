@@ -7,6 +7,8 @@ from appyratus.schema.fields import *
 
 from ravel.util.misc_functions import get_class_name
 
+# TODO: in Resource meta class, recurse through nested schemas for Id fields
+#       for resolving them latar
 
 class Id(fields.Field):
     """

@@ -195,13 +195,14 @@ class Batch(Entity):
             # this batch isn't associated with any Resource type
             # and therefore we don't know what to generate.
             raise Exception('unbound Batch type')
-
         if not resolvers:
             resolvers = set(owner.ravel.resolvers.fields.keys())
+        else:
+            resolvers = set(resolvers)
 
         # create and return the new batch
         return cls(
-            owner.generate(resolvers=resolvers, values=values)
+            owner.generate(resolvers, values=values)
             for _ in range(count)
         )
 

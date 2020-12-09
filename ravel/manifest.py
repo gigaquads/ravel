@@ -103,7 +103,7 @@ class Manifest(object):
             manifest = obj
         elif isinstance(obj, str):
             manifest = Manifest(path=obj)
-        elif isinstance(manifest, dict):
+        elif isinstance(obj, dict):
             manifest = Manifest(data=obj)
         else:
             manifest = manifest

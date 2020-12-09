@@ -80,10 +80,16 @@ class CliApplication(Application):
         by the registered function's signature.
         """
         args, kwargs = [], {}
+
+        # Python's ArgumentParser Arguments object, with the addition of a
+        # `unknown` attribute, containing all raw keyword CLI arguments not
+        # explicitly defined in the parser:
+        cli_args = self._cli_program.cli_args
+
         for idx, (k, param) in enumerate(action.signature.parameters.items()):
             if not idx:
                 continue
-            value = getattr(self._cli_program.cli_args, k, None)
+            value = getattr(cli_args, k, None)
             if param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD:
                 if param.default is inspect._empty:
                     args.append(value)
@@ -93,6 +99,10 @@ class CliApplication(Application):
                 args.append(value)
             elif param.kind == inspect.Parameter.KEYWORD_ONLY:
                 kwargs[k] = value
+
+        unknown = getattr(cli_args, 'unknown', {})
+        kwargs.update(unknown)
+
         return (args, kwargs)
 
     def on_response(self, action, result, *args, **kwargs):
@@ -208,7 +218,7 @@ class CliCommand(Action):
                 # flag args are processed in the same way as everything else,
                 # which means that their null value for arg.default throws things
                 # off, so we hackily set it here on the arg object.
-                if arg_params.get('default'):
+                if arg_params.get('default') and (not arg.default):
                     arg.default = True
             if arg is not None:
                 args.append(arg)
