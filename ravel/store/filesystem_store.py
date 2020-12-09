@@ -79,11 +79,14 @@ class FilesystemStore(Store):
         return self._ftype
 
     @classmethod
-    def on_bootstrap(cls, ftype: Text = None, root: Text = None):
+    def on_bootstrap(
+        cls, ftype: Text = None, root: Text = None, use_recursive_merge=True
+    ):
         cls.ftype = import_object(ftype) if ftype else Yaml
         cls.root = root or cls.root
+        cls.use_recursive_merge = use_recursive_merge
         if not cls.root:
-            raise MissingBootstrapParameterError(data={'parameter': 'root'})
+            raise MissingBootstrapParameterError('missing parameter: root')
 
     def on_bind(self, resource_type, root: Text = None, ftype: BaseFile = None):
         """
@@ -235,7 +238,10 @@ class FilesystemStore(Store):
 
         if base_record:
             # this is an upsert
-            record = DictUtils.merge(base_record, data)
+            if self.use_recursive_merge:
+                record = DictUtils.merge(base_record, data)
+            else:
+                record = dict(base_record, **data)
         else:
             record = data
 
