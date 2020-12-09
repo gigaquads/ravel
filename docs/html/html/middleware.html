@@ -30,8 +30,8 @@
           for performing custom logic upon receiving a request and sending a response.
           Despite its ubiquity, there is little to no standardization of the
           middleware interface and therefore little to no reusability of
-          components across different frameworks. In contrast, Pybiz
-          middleware is reusable across any type of Pybiz application, whether an
+          components across different frameworks. In contrast, Ravel
+          middleware is reusable across any type of Ravel application, whether an
           RPC service a or REST API.
           </p>
           <p>
@@ -46,7 +46,7 @@
           </p>
 
           <p>
-          This is exactly the problem Pybiz middleware solves. Pybiz middleware is
+          This is exactly the problem Ravel middleware solves. Ravel middleware is
           actually "meta-middleware" in the sense that it can be reused with absolutely no
           code change across different types of applications, like web apps,
           command-line apps, REPL sessions, or RPC services.
@@ -79,7 +79,7 @@
           """
           In `pre_request`, `raw_args` and `raw_kwargs` contain the raw args and
           kwargs made available to us by the host Application. For example, in a a
-          Pybiz application backed by a web framework, the cards of `raw_args`
+          Ravel application backed by a web framework, the cards of `raw_args`
           could be the request and response objects.
           """
 
@@ -133,7 +133,7 @@
         <div>
           <h2><a name="registering">Registering Middleware With Applications</a></h2>
           <p>
-            Using middleware in Pybiz applications is simple. You simply pass a
+            Using middleware in Ravel applications is simple. You simply pass a
             list of middleware objects to the constructor or bootstrap method of
             an Application, as seen below. There is no functional difference
             between the two methods. It's up to you to determine which approach
@@ -158,7 +158,7 @@
           <p>
             In some case, you might want to share middleware between multiple
             Application types. For example, you may want to execute an action
-            both within a Pybiz REPL for internal development purposes as well as
+            both within a Ravel REPL for internal development purposes as well as
             in a web app through an HTTP server. When it comes to defining
             middleware for use in these applications, you have a couple options.
             The most explicit approach would consist of defining two separate
@@ -186,7 +186,7 @@
             </pre>
 
             <p>This is useful for defining a single list of middleware that is
-            shared across your Pybiz applications. For example, if you create
+            shared across your Ravel applications. For example, if you create
             Middleware that inspects HTTP headers upon each request, then outside
             the context of web apps, this middleware would break; therefore, you
             would want to disable it when running your application as, say, a
