@@ -382,10 +382,7 @@ class Application(object):
         """
 
         if action.name not in self._actions or overwrite:
-            console.debug(
-                f'{get_class_name(self)}(thread_id={get_ident()}) '
-                f'registered action {action.name}'
-            )
+            console.debug(f'registered action {action.name}')
             if isinstance(action, Action):
                 if action.app is not self:
                     decorator(action.target)
