@@ -94,8 +94,8 @@ class GrpcMethod(Action):
                 self.signature.return_annotation
             )
             self._returns_stream = many
-            if resource_type_name in self.app.res:
-                base_schema_type = self.app.res[resource_type_name].Schema
+            if resource_type_name in self.app.manifest.resource_classes:
+                base_schema_type = self.app[resource_type_name].Schema
                 response_schema_type = type(type_name, (base_schema_type, ), {})
                 schema = response_schema_type()
             else:
@@ -148,11 +148,11 @@ class GrpcMethod(Action):
         many, type_name = extract_res_info_from_annotation(annotation)
         field = None
 
-        if type_name in self.app.res:
+        if type_name in self.app.manifest.resource_classes:
             if many:
-                field = field_types.List(self.app.res[type_name].Schema())
+                field = field_types.List(self.app[type_name].Schema())
             else:
-                field = field_types.Nested(self.app.res[type_name].Schema())
+                field = field_types.Nested(self.app[type_name].Schema())
         elif annotation is not None:
             field_type = self._py_type_2_field_type.get(annotation)
             if field_type:

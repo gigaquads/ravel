@@ -8,24 +8,21 @@ from ravel.util.scanner import Scanner
 
 class ManifestScanner(Scanner):
     """
-    The manifest's type scanner is used to detect Store and Resource classes
-    along with Action objects present in a target Python package or module.
+    The manifest's type scanner is used to detect Store and Resource classes.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, manifest: 'Manifest', *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         from ravel.store.base.store import Store
         from ravel.resource import Resource
-        from ravel.app.base.action import Action
 
+        self.manifest = manifest
         self.base_store_class = Store
         self.base_resource_class = Resource
-        self.base_action_class = Action
 
-        self.context.actions = {}
         self.context.store_classes = {}
-        self.context.resource_classes= {}
+        self.context.resource_classes = {}
 
     def predicate(self, value) -> bool:
         """
@@ -40,18 +37,13 @@ class ManifestScanner(Scanner):
                     self.base_store_class
                 ))
             )
-            or (
-                isinstance(value, self.base_action_class)
-            )
         )
 
     def on_match(self, name: Text, value, context):
         """
         Add the class object to the appripriate container.
         """
-        if isinstance(value, self.base_action_class):
-            context.actions[name] = value
-        elif issubclass(value, self.base_resource_class):
+        if issubclass(value, self.base_resource_class):
             if not value.ravel.is_abstract:
                 context.resource_classes[name] = value
         elif issubclass(value, self.base_store_class):

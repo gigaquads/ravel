@@ -72,6 +72,7 @@ class Application(object):
         self._arg_loader = None
         self._logger = None
         self._root_pid = os.getpid()
+        self._actions = DictObject()
 
         self._middleware = deque([
             m for m in (middleware or [])
@@ -103,8 +104,11 @@ class Application(object):
                 class_obj = self.manifest.store_classes.get(class_name)
         return class_obj
 
-    def __contains__(self, action: Text):
-        return action in self.manifest.actions
+    def __getitem__(
+        self,
+        class_name: Text
+    ) -> Union[Type['Resource'], Type['Store']]:
+        return getattr(self, class_name, None)
 
     def __repr__(self):
         return (
@@ -192,7 +196,7 @@ class Application(object):
 
     @property
     def actions(self) -> DictObject:
-        return self.manifest.actions
+        return self._actions
 
     @property
     def log(self) -> ConsoleLoggerInterface:
@@ -282,11 +286,6 @@ class Application(object):
         self._logger = create_logger()
         self._arg_loader = ArgumentLoader(self)
 
-        # execute custom lifecycle hook provided by this subclass
-        self.on_bootstrap(*args, **kwargs)
-
-        self.local.is_bootstrapped = True
-
         # if we're in a new process, unset the executors so that
         # the spawn method lazily triggers the instantiation of
         # new ones at runtime.
@@ -295,6 +294,10 @@ class Application(object):
             self.local.process_executor = None
 
         self.local.thread_id = get_ident()
+
+        # execute custom lifecycle hook provided by this subclass
+        self.on_bootstrap(*args, **kwargs)
+        self.local.is_bootstrapped = True
 
         console.debug(f'finished bootstrapping {get_class_name(self)} app')
         return self
@@ -323,7 +326,7 @@ class Application(object):
         if include_store_classes:
             inject(func, self.manifest.store_classes)
         if include_actions:
-            inject(func, self.manifest.actions)
+            inject(func, self._actions)
 
         return func
 
@@ -372,6 +375,31 @@ class Application(object):
 
         # submit and return the future
         return executor.submit(target, *args, **kwargs)
+
+    def add_action(self, action: 'Action', overwrite=False):
+        """
+        Add an action to this app.
+        """
+
+        if action.name not in self._actions or overwrite:
+            console.debug(
+                f'{get_class_name(self)}(thread_id={get_ident()}) '
+                f'registered action {action.name}'
+            )
+            if isinstance(action, Action):
+                if action.app is not self:
+                    decorator(action.target)
+                else:
+                    self._actions[action.name] = action
+            else:
+                assert callable(action)
+                decorator = self.action()
+                decorator(action)
+        else:
+            raise ApplicationError(
+                message=f'action already registered: {action.name}',
+                data={'action': action}
+            )
 
     def on_extract(self, action, index, parameter, raw_args, raw_kwargs):
         """

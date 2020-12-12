@@ -386,7 +386,7 @@ class Action(object):
                 else (state.raw_args, state.raw_kwargs)
             )
             state.processed_args, state.processed_kwargs = (
-                self.marshal()
+                self.marshal(args, kwargs)
             )
         except Exception as exc:
             error = Action.Error(exc)

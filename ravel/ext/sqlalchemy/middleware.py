@@ -25,7 +25,7 @@ class ManageSqlalchemyTransaction(Middleware):
         """
         Aqcuire the Store subclass object from self.store_class_name.
         """
-        store_types = self.app.storage.store_types
+        store_types = self.app.manifest.store_classes
         self.store_type = store_types.get(self.store_class_name)
         if self.store_type is None:
             raise MiddlewareError(

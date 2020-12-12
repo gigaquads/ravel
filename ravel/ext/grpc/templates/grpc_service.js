@@ -21,7 +21,7 @@ const {GrpcApplicationClient} = require('./app_grpc_web_pb.js');
 
 
 export const jsonSchemas = {
-    {% for name, resource_class in app.res.items() %}
+    {% for name, resource_class in app.manifest.resource_classes.items() %}
     "{{ name }}": {{ json_schema_generator.from_resource(resource_class, encode=True) | safe }},
     {% endfor %}
 

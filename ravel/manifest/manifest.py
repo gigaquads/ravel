@@ -66,7 +66,7 @@ class Manifest:
         self._bind_resources()
         self._bootstrap_resource_classes()
         self._inject_classes_to_actions()
-        self._bootstrap_actions()
+        self._bootstrap_app_actions()
 
     def register(
         self,
@@ -180,12 +180,6 @@ class Manifest:
             return self.scanner.context.store_classes
         return DictObject()
 
-    @property
-    def actions(self) -> Dict[Text, 'Action']:
-        if self.scanner is not None:
-            return self.scanner.context.actions
-        return DictObject()
-
     def _bind_resources(self):
         def load(binding):
             b = binding
@@ -221,11 +215,12 @@ class Manifest:
             binding.resource_class.bootstrap(app)
 
     def _inject_classes_to_actions(self):
-        for action in self.actions:
-            self.app.inject(app.target)
+        print(self.app.actions)
+        for action in self.app.actions.values():
+            self.app.inject(action.target)
 
-    def _bootstrap_actions(self):
-        for action in self.actions.values():
+    def _bootstrap_app_actions(self):
+        for action in self.app.actions.values():
             action.bootstrap()
 
         on_parts = []
@@ -309,7 +304,7 @@ class Manifest:
                 console.debug(
                     f'bootstrapping {bootstrap.store_class_name}'
                 )
-                store_class.bootstrap(app)
+                store_class.bootstrap(app, **bootstrap.bootstrap_params)
 
     def _initialize_bootstraps(self):
         return [
@@ -474,12 +469,15 @@ class Manifest:
                 f'ManifestWorker (pid: {pid})'.strip()
             )
         )
-        scanner = ManifestScanner()
+        scanner = ManifestScanner(self)
         futures = []
 
         def scan(package):
             console.debug(f'manifest scanning {package}')
-            scanner.scan(package)
+            try:
+                scanner.scan(package)
+            except:
+                console.exception('scan failed')
 
         def async_scan(package):
             future = executor.submit(scan, package)

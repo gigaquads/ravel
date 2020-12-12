@@ -7,3 +7,6 @@ from .web import (
     AbstractWsgiService,
     WebsocketServer,
  )
+
+# more modern alias for the class
+Cli = CliApplication

@@ -121,8 +121,8 @@ class MessageGenerator(object):
         force=False,
     ) -> Text:
         """
-        Recursively generate a protocol buffer message type declaration string
-        from a given Schema class.
+        Recursively generate a protocol buffer message type declaration
+        string from a given Schema class.
         """
         if isinstance(schema_type, (type, Schema)):
             type_name = get_stripped_schema_name(
@@ -135,7 +135,7 @@ class MessageGenerator(object):
 
         # we don't want to create needless copies of to Resource schemas
         # while recursively generating nested message types.
-        if (not force) and (type_name in app.res):
+        if (not force) and (type_name in app.manifest.resource_classes):
             return None
 
         prepared_data = []

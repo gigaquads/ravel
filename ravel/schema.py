@@ -36,7 +36,7 @@ class Id(fields.Field):
                 app.inject(self.target_resource_type_callback)
                 self.target_resource_type = self.target_resource_type_callback()
             else:
-                self.target_resource_type = app.res[self.target_resource_type_name]
+                self.target_resource_type = app[self.target_resource_type_name]
         return self.target_resource_type
 
     # TODO: rename replace_self_in_resource_type
