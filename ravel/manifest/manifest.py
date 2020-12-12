@@ -215,7 +215,6 @@ class Manifest:
             binding.resource_class.bootstrap(app)
 
     def _inject_classes_to_actions(self):
-        print(self.app.actions)
         for action in self.app.actions.values():
             self.app.inject(action.target)
 
