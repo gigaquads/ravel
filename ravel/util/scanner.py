@@ -3,22 +3,32 @@ import os
 import inspect
 import importlib
 
+from typing import Dict
 from os.path import splitext
 
 from appyratus.files.json import Json
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.util.loggers import console
 
 
 class Scanner:
-    def __init__(self, context=None):
-        self.context = context or {}
+    """
+    The Scanner recursively walks the filesystem, rooted at a Python package
+    or module filepath, and matches each object contained in each Python
+    source file against a logical predicate. If the predicate matches, the
+    object is passed into the overriden on_match instance method.
+    """
+
+    def __init__(self, context: Dict = None):
+        self.context = DictObject(context or {})
 
     def scan(self, package_name, context=None):
         # TODO: allow package_name to refer to a module rather than a package
         context = context if context is not None else self.context
         root_module = importlib.import_module(package_name)
         root_filename = os.path.basename(root_module.__file__)
+
         if root_filename != '__init__.py':
             self.scan_module(root_module, context)
         else:
@@ -31,16 +41,20 @@ class Scanner:
             package_parent_dir = '/' + '/'.join(
                 package_dir.strip('/').split('/')[:-package_path_len]
             )
+
             for dir_name, sub_dirs, file_names in os.walk(package_dir):
                 file_names = set(file_names)
+
                 if '.ravel' in file_names:
                     dot_file_path = os.path.join(dir_name, '.ravel')
                     dot_data = Json.read(dot_file_path) or {}
                     ignore = dot_data.get('scanner', {}).get('ignore', False)
+
                     if ignore:
                         console.debug(f'scanner ignoring {dir_name}')
                         sub_dirs.clear()
                         continue
+
                 if '__init__.py' in file_names:
                     dir_name_offset = len(package_parent_dir)
                     pkg_path = dir_name[dir_name_offset + 1:].replace("/", ".")

@@ -5,7 +5,7 @@ import grpc
 
 from typing import Text
 
-from appyratus.utils import StringUtils
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.util.loggers import console
 from ravel.schema import fields, Schema, Field

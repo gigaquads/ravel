@@ -112,7 +112,7 @@ class Loader(Resolver):
 
         # field names to fetch (fetch all eagerly)
         field_names = set(self.target.ravel.schema.fields.keys())
-        state_dicts = resource.ravel.store.dispatch('fetch_many',
+        state_dicts = resource.ravel.store.local.dispatch('fetch_many',
             args=(batch_ids, ),
             kwargs={'fields': field_names}
         )

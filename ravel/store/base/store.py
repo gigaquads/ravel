@@ -2,16 +2,17 @@ import time
 
 import base36
 
-from threading import local
 from collections import defaultdict
 from typing import Dict, List, Type, Set, Text, Tuple
+from threading import local
 from abc import ABCMeta, abstractmethod
 
 from appyratus.env import Environment
 from appyratus.schema.fields import UuidString
-from appyratus.utils import DictObject
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.util.loggers import console
+from ravel.util.misc_functions import get_class_name
 from ravel.exceptions import RavelError
 from ravel.constants import ID
 
@@ -23,12 +24,11 @@ class StoreError(RavelError):
 
 
 class StoreMeta(ABCMeta):
-    _local = local()
-    _local.is_bootstrapped = defaultdict(bool)
-
     def __init__(cls, name, bases, dict_):
-        setattr(cls, 'ravel', DictObject())
         ABCMeta.__init__(cls, name, bases, dict_)
+        cls.ravel = DictObject()
+        cls.ravel.local = local()
+        cls.ravel.local.is_bootstrapped = False
 
 
 class Store(object, metaclass=StoreMeta):
@@ -44,11 +44,11 @@ class Store(object, metaclass=StoreMeta):
     def __repr__(self):
         if self.is_bound:
             return (
-                f'<{self.__class__.__name__}'
-                f'(resource_type={self.resource_type.__name__})>'
+                f'<{get_class_name(self)}'
+                f'(resource_type={get_class_name(self.resource_type)})>'
             )
         else:
-            return (f'<{self.__class__.__name__}>')
+            return (f'<{get_class_name(self)}>')
 
     def dispatch(
         self,
@@ -153,11 +153,7 @@ class Store(object, metaclass=StoreMeta):
         cls.ravel.app = app
         cls.on_bootstrap(**kwargs)
 
-        # TODO: put this into a method
-        if not hasattr(StoreMeta._local, 'is_bootstrapped'):
-            StoreMeta._local.is_bootstrapped = defaultdict(bool)
-
-        StoreMeta._local.is_bootstrapped[cls.__name__] = True
+        cls.ravel.local.is_bootstrapped = True
         return cls
 
     @classmethod
@@ -169,19 +165,17 @@ class Store(object, metaclass=StoreMeta):
 
     @classmethod
     def is_bootstrapped(cls):
-        return cls._local.is_bootstrapped[cls.__name__]
+        return getattr(cls.ravel.local, 'is_bootstrapped', False)
 
     def create_id(self, record: Dict) -> object:
         """
-        Generate and return a new ID for the given not-yet-created record.
+        Generate and return a new ID for the given not-yet-created record. If
+        this method returns None, the backend database/storage technology
+        must create and return it instead.
         """
         new_id = record.get(ID)
         if new_id is None:
             new_id = self.resource_type.ravel.defaults[ID]()
-
-        # NOTE: if new_id is still None at this point, it's assumed that
-        # the persistence technology will generate and return it instead.
-
         return new_id
 
     def increment_rev(self, rev: Text = None) -> Text:

@@ -6,7 +6,7 @@ import kombu.serialization
 from mock import MagicMock
 from celery import Celery
 
-from appyratus.utils import StringUtils
+from appyratus.utils.string_utils import StringUtils
 from appyratus.memoize import memoized_property
 
 from ravel.util import get_class_name, is_resource, is_batch

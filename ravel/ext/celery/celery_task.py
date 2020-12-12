@@ -2,7 +2,7 @@ from typing import Dict, Tuple, Text, Type
 
 from celery import Celery
 
-from appyratus.utils import StringUtils
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.util import get_class_name, is_resource, is_batch
 from ravel.app.base import Application, Action

@@ -3,7 +3,7 @@ import traceback
 from typing import Dict, List, Type, Text, Tuple
 from collections import deque
 
-from appyratus.utils import TimeUtils
+from appyratus.utils.time_utils import TimeUtils
 
 from ravel.constants import ID
 

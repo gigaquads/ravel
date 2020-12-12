@@ -10,7 +10,7 @@ import yaml
 from logging import Formatter, StreamHandler, INFO
 from typing import Text, Dict
 
-from appyratus.utils import TimeUtils
+from appyratus.utils.time_utils import TimeUtils
 
 from ravel.util.json_encoder import JsonEncoder
 

@@ -1,6 +1,6 @@
 from typing import Dict, Union
 
-from ravel.schema import Schema, Nested
+from ravel.schema import Schema, fields
 from ravel.util.misc_functions import get_callable_name
 from ravel.resolver.resolver import Resolver
 from ravel.resolver.resolvers.loader import Loader, View
@@ -32,4 +32,4 @@ class field:
 
 class nested(view):
     def __init__(self, schema: Union[Dict, Schema], *args, **kwargs):
-        super().__init__(field=Nested(schema), *args, **kwargs)
+        super().__init__(field=fields.Nested(schema), *args, **kwargs)

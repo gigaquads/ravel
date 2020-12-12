@@ -4,7 +4,7 @@ from threading import local
 from types import GeneratorType
 
 from redis import StrictRedis
-from appyratus.utils import TimeUtils
+from appyratus.utils.time_utils import TimeUtils
 
 
 class RedisClient(StrictRedis):

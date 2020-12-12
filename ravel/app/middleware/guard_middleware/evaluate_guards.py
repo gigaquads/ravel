@@ -1,6 +1,6 @@
 from typing import Dict, Tuple
 
-from appyratus.utils import DictObject
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.exceptions import NotAuthorized
 from ravel.util.misc_functions import is_sequence, normalize_to_tuple
@@ -15,6 +15,9 @@ class EvaluateGuards(Middleware):
     ActionDecorator keyword argument, e.g., repl(auth=IsFoo()).
     NotAuthorized is raised if not authorized.
     """
+    def pre_request(self, *args, **kwargs):pass
+    def post_bad_request(self, *args, **kwargs):pass
+    def post_request(self, *args, **kwargs):pass
 
     def on_request(
         self,

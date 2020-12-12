@@ -6,6 +6,16 @@ from ravel.util.misc_functions import get_class_name
 from ravel.util.loggers import console
 
 
+def virtual(func):
+    """
+    This decorator is used to mark methods as "virtual" on the base
+    Middleware class. This flag is picked up at runtime, and these methods
+    are skipped during ravel requrest processing (via Actions).
+    """
+    func.is_virtual = True
+    return func
+
+
 class MiddlewareError(Exception):
     def __init__(self, middleware, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -57,6 +67,7 @@ class Middleware(object):
         Developer-defined custom logic triggered while bootstrapping.
         """
 
+    @virtual
     def pre_request(
         self,
         action: 'Action',
@@ -71,6 +82,7 @@ class Middleware(object):
         could be the request and response objects.
         """
 
+    @virtual
     def on_request(
         self,
         action: 'Action',
@@ -85,6 +97,7 @@ class Middleware(object):
         callable.
         """
 
+    @virtual
     def post_request(
         self,
         action: 'Action',
@@ -95,6 +108,7 @@ class Middleware(object):
         If no exception was raised in the action callable, we come here.
         """
 
+    @virtual
     def post_bad_request(
         self,
         action: 'Action',

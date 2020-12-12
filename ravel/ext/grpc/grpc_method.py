@@ -3,7 +3,8 @@ import inspect
 from typing import Text, List, Set, Dict, ByteString
 
 from appyratus.schema import Schema, fields as field_types
-from appyratus.utils import DictObject, StringUtils
+from appyratus.utils.dict_utils import DictObject
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.app import Action
 from ravel.util.misc_functions import extract_res_info_from_annotation

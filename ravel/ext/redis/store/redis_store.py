@@ -3,7 +3,7 @@ from collections import defaultdict
 from copy import deepcopy
 
 from redis import StrictRedis
-from appyratus.utils import StringUtils
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.store import Store
 from ravel.schema import fields

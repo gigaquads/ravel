@@ -1,6 +1,6 @@
 from typing import Type
 
-from appyratus.utils import TimeUtils
+from appyratus.utils.time_utils import TimeUtils
 
 from ravel import Resource, Id, relationship, fields
 from ravel.query.predicate import Predicate

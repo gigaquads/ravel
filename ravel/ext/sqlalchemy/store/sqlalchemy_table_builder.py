@@ -3,7 +3,7 @@ from typing import Text, Type
 import sqlalchemy as sa
 
 from sqlalchemy import ForeignKey
-from appyratus.utils import StringUtils
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.constants import REV, ID
 from ravel.util.loggers import console
@@ -142,7 +142,11 @@ class SqlalchemyTableBuilder(object):
             server_default=server_default
         )
 
-        column = sa.Column(*args, **kwargs)
+        try:
+            column = sa.Column(*args, **kwargs)
+        except Exception:
+            console.error(f'failed to build sa.Column: {name}')
+            raise
 
         if field.nullable is not None:
             column.nullable = field.nullable

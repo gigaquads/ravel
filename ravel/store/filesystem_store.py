@@ -9,11 +9,8 @@ from threading import RLock
 from appyratus.env import Environment
 from appyratus.files import BaseFile, Yaml
 from appyratus.schema.fields import UuidString
-from appyratus.utils import (
-    DictObject,
-    DictUtils,
-    StringUtils,
-)
+from appyratus.utils.dict_utils import DictObject, DictUtils
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.util.misc_functions import import_object
 from ravel.util.loggers import console

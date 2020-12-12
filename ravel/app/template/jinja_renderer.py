@@ -1,5 +1,5 @@
 from typing import Text, List, Dict
-from appyratus.utils import JinjaTemplateEnvironment
+from appyratus.utils.template_utils import JinjaTemplateEnvironment
 
 from .renderer import TemplateRenderer
 

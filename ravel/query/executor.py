@@ -58,7 +58,7 @@ class Executor(object):
         kwargs = query.parameters.to_dict()
 
         if mode == 'normal' and (not self.simulate):
-            store = resource_type.ravel.store
+            store = resource_type.ravel.local.store
             records = store.query(predicate, fields=fields, **kwargs)
             batch = resource_type.Batch(
                 resource_type(state=record).clean()

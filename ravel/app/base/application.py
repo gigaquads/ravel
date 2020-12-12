@@ -5,16 +5,17 @@ import threading
 
 from threading import local, get_ident
 from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
-from collections import deque, OrderedDict, namedtuple
+from collections import deque, OrderedDict, namedtuple, defaultdict
 from random import choice
 from string import ascii_letters
 
-from appyratus.utils import DictObject, DictUtils, StringUtils
+from appyratus.utils.dict_utils import DictObject, DictUtils
+from appyratus.utils.string_utils import StringUtils
 from appyratus.logging import ConsoleLoggerInterface
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
 
-from ravel.manifest import Manifest
+from ravel.manifest.manifest import Manifest
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name, inject, is_sequence
@@ -46,13 +47,18 @@ class Application(object):
         manifest: Manifest = None,
         mode: Mode = Mode.normal,
     ):
-        self.manifest = manifest
-        self.env = Environment()
+        # thread-local storage
         self.local = local()
+        self.local.is_bootstrapped = False
+        self.local.is_started = False
+
+        self.shared = DictObject()  # shared storage (WRT to threads)
+        if manifest is not None:
+            self.shared.manifest = Manifest(manifest)
+
+        self.env = Environment()
 
         self._mode = mode
-        self._res = DictObject()
-        self._storage = None
         self._actions = DictObject()
         self._namespace = {}
         self._json = JsonEncoder()
@@ -65,20 +71,18 @@ class Application(object):
             if isinstance(self, m.app_types)
         ])
 
-        self._is_bootstrapped = False
-        self._is_started = False
 
-    def __getattr__(self, resource_type_name: Text) -> Type['Resource']:
-        return self.res[resource_type_name]
+    def __getattr__(self, resource_class_name: Text) -> Type['Resource']:
+        return self.res[resource_class_name]
 
     def __contains__(self, action: Text):
-        return action in self._actions
+        return action in self.manifest.actions
 
     def __repr__(self):
         return (
             f'{get_class_name(self)}('
-            f'bootstrapped={self._is_bootstrapped}, '
-            f'started={self._is_started}, '
+            f'bootstrapped={self.local.is_bootstrapped}, '
+            f'started={self.local.is_started}, '
             f'size={len(self._actions)}'
             f')'
         )
@@ -117,7 +121,7 @@ class Application(object):
 
     @property
     def manifest(self):
-        return self._manifest
+        return self.local.manifest
 
     @manifest.setter
     def manifest(self, obj):
@@ -133,7 +137,7 @@ class Application(object):
 
     @property
     def is_bootstrapped(self) -> bool:
-        return self._is_bootstrapped
+        return self.local.is_bootstrapped
 
     @property
     def is_simulation(self) -> bool:
@@ -163,16 +167,8 @@ class Application(object):
         return self._binder
 
     @property
-    def res(self) -> DictObject:
-        return self._res
-
-    @property
     def actions(self) -> DictObject:
         return self._actions
-
-    @property
-    def storage(self) -> 'StoreManager':
-        return self._storage
 
     @property
     def log(self):
@@ -216,48 +212,45 @@ class Application(object):
 
     def bind(
         self,
-        resource_types: List[Type['Resource']],
-        store_type: Type['Store'] = None
+        resource_classes: List[Type['Resource']],
+        store_class: Type['Store'] = None
     ) -> 'Application':
         """
         Dynamically register one or more Resource classes with this
-        bootstrapped Application. If a store_type is specified, it will be used
-        for all classes in resource_types. Otherwise, the Store class will come from
+        bootstrapped Application. If a store_class is specified, it will be used
+        for all classes in resource_classes. Otherwise, the Store class will come from
         calling the __store__ method on each BizClass.
         """
         assert self.is_bootstrapped
 
-        def bind_one(resource_type, store_type):
+        def bind_one(resource_class, store_class):
             store_instance = None
-            if store_type is None:
-                store_obj = resource_type.__store__()
+            if store_class is None:
+                store_obj = resource_class.__store__()
                 if not isinstance(store_obj, type):
-                    store_type = type(store_obj)
+                    store_class = type(store_obj)
                     store_instance = store_obj
                 else:
-                    store_type = store_obj
+                    store_class = store_obj
 
-            self._storage.store_types[get_class_name(store_type)] = store_type
-            self._res[get_class_name(resource_type)] = resource_type
-
-            if not resource_type.is_bootstrapped():
-                resource_type.bootstrap(self)
-            if not store_type.is_bootstrapped():
-                kwargs = self.manifest.get_bootstrap_params(store_type)
-                store_type.bootstrap(self, **kwargs)
+            if not resource_class.is_bootstrapped():
+                resource_class.bootstrap(self)
+            if not store_class.is_bootstrapped():
+                kwargs = self.manifest.get_bootstrap_params(store_class)
+                store_class.bootstrap(self, **kwargs)
 
             binding = self.binder.register(
-                resource_type=resource_type,
-                store_type=store_type,
+                resource_class=resource_class,
+                store_class=store_class,
                 store_instance=store_instance,
             )
             binding.bind(self.binder)
 
-        if not is_sequence(resource_types):
-            resource_types = [resource_types]
+        if not is_sequence(resource_classes):
+            resource_classes = [resource_classes]
 
-        for resource_type in resource_types:
-            bind_one(resource_type, store_type)
+        for resource_class in resource_classes:
+            bind_one(resource_class, store_class)
 
         self._arg_loader.bind()
 
@@ -269,14 +262,13 @@ class Application(object):
         namespace: Dict = None,
         middleware: List = None,
         mode: Mode = Mode.normal,
-        force=False,
         *args,
         **kwargs
     ) -> 'Application':
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
-        if self.is_bootstrapped and (not force):
+        if self.is_bootstrapped:
             console.warning(
                 message=f'{get_class_name(self)} already bootstrapped.',
                 data={
@@ -286,13 +278,13 @@ class Application(object):
             )
             return self
 
-        console.debug(f'bootstrapping {get_class_name(self)} application...')
+        console.debug(f'bootstrapping {get_class_name(self)} app')
 
-        # override mode set in constructor
+        # override the application mode set in constructor
         if mode is not None:
             self._mode = Application.Mode(mode)
 
-        # merge additional namespace data into namespace accumulator
+        # merge additional namespace data into namespace dict
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
         if middleware:
@@ -300,13 +292,19 @@ class Application(object):
                 m for m in middleware if isinstance(self, m.app_types)
             )
 
-        if manifest is not None:
-            self.manifest = Manifest.from_object(manifest)
-        else:
-            # manifest expected to have been passed into ctor
-            assert self.manifest is not None
+        if manifest is None and self.shared.manifest is not None:
+            self.local.manifest = Manifest(self.shared.manifest)
+        elif manifest is not None:
+            self.local.manifest = Manifest(manifest)
 
-        self.manifest.process(app=self, namespace=self._namespace)
+        # manifest expected to have been passed into ctor
+        assert self.local.manifest is not None
+
+        # if this is the main process, use it's manifest as the shared copy.
+        # this comes into play when bootstrap is re-called within the
+        # initializer logic of a new thread.
+        if not self.shared.manifest:
+            self.shared.manifest = self.local.manifest
 
         # setup logger before bootstrapping components
         logger_suffix = ''.join(choice(ascii_letters) for i in range(4))
@@ -316,47 +314,16 @@ class Application(object):
         )
         self._logger = ConsoleLoggerInterface(logger_name)
 
-        # populate convenience data structures
-        self._storage = StoreManager(self, self.manifest.types.stores)
-        self._res.update(self.manifest.types.res)
-
-        self.manifest.bootstrap()
-        self.manifest.bind(rebind=True)
+        self.manifest.bootstrap(self)
+        # self.manifest.bind(rebind=True)
 
         # init the arg loader, which is responsible for replacing arguments
         # passed in as ID's with their respective Resources
         self._arg_loader = ArgumentLoader(self)
 
-        # bootstrap the middlware
-        mware_names = []
-        for idx, mware in enumerate(self.middleware):
-            mware.bootstrap(app=self)
-            mware_names.append(' ' + ('   ' * idx) + ' ↪ ' + get_class_name(mware))
-
-        for action in self._actions.values():
-            action.bootstrap()
-
-
-        console.debug(
-            message='action execution diagram...\n\n' + '\n'.join(
-                ['➥ initialize Ravel request'] +
-                [
-                    name + '.pre_request' for name in mware_names
-                ] + 
-                ['   ' * len(self.middleware) + '  ➥ args, kwargs = resolve(program_inputs)'] +
-                [
-                    name + '.on_request' for name in mware_names
-                ] +
-                ['   ' * len(self.middleware) + '  ➥ response.result = action(*args, **kwargs)'] +
-                [
-                    name + '.post_[bad_]response' for name in mware_names[::-1]
-                ]
-            ) + '\n'
-        )
-
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
-        self._is_bootstrapped = True
+        self.local.is_bootstrapped = True
 
         console.debug(f'finished bootstrapping {get_class_name(self)}')
         return self
@@ -366,26 +333,26 @@ class Application(object):
         Enter the main loop in whatever program context your Application is
         being used, like in a web framework or a REPL.
         """
-        self._is_started = True
+        self.local.is_started = True
         return self.on_start(*args, **kwargs)
 
     def inject(
         self,
         func: Callable,
-        include_resource_types=True,
-        include_store_types=True,
-        include_actions=False
+        include_resource_classes=True,
+        include_store_classes=True,
+        include_actions=False,
     ) -> Callable:
         """
         Inject Resource, Store, and/or Action classes into the lexical scope of
         the given function.
         """
-        if include_resource_types:
-            inject(func, self.res)
-        if include_store_types:
-            inject(func, self.storage.store_types)
+        if include_resource_classes:
+            inject(func, self.manifest.resource_classes)
+        if include_store_classes:
+            inject(func, self.manifest.store_classes)
         if include_actions:
-            inject(func, self.actions)
+            inject(func, self.manifest.actions)
 
         return func
 
@@ -488,22 +455,22 @@ class StoreManager(object):
     lifecycle of store instances utilized in a bootstrapped app.
     """
 
-    def __init__(self, app: 'Application', store_types: DictObject):
+    def __init__(self, app: 'Application', store_classes: DictObject):
         self._app = app
-        self._store_types = DictObject(store_types)
+        self._store_classes = DictObject(store_classes)
 
     @property
-    def store_types(self) -> DictObject:
-        return self._store_types
+    def store_classes(self) -> DictObject:
+        return self._store_classes
 
     @property
-    def utilized_store_types(self) -> Dict[Text, Type['Store']]:
+    def utilized_store_classes(self) -> Dict[Text, Type['Store']]:
         return {
-            get_class_name(res_type.ravel.store): type(res_type.ravel.store)
+            get_class_name(res_type.ravel.local.store): type(res_type.ravel.local.store)
             for res_type in self._app.res.values()
         }
 
     def bootstrap(self):
-        for store_type in self.utilized_store_types.values():
-            kwargs = self._app.manifest.get_bootstrap_params(store_type)
-            store_type.bootstrap(self._app, **kwargs)
+        for store_class in self.utilized_store_classes.values():
+            kwargs = self._app.manifest.get_bootstrap_params(store_class)
+            store_class.bootstrap(self._app, **kwargs)

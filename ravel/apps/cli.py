@@ -13,7 +13,8 @@ from appyratus.cli import (
     Subparser,
 )
 from appyratus.files import Yaml
-from appyratus.utils import StringUtils, SysUtils
+from appyratus.utils.string_utils import StringUtils
+from appyratus.utils.sys_utils import SysUtils
 
 from ravel.util import is_batch, is_resource
 from ravel.app.base import Application, ActionDecorator, Action

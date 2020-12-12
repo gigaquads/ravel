@@ -3,7 +3,7 @@ from typing import Dict, Set, Text, List, Type, Tuple
 import graphql.ast
 import graphql.parser
 
-from appyratus.utils import DictObject
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.util.loggers import console
 from ravel.resource import Resource

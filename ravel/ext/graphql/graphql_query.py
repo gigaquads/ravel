@@ -1,6 +1,6 @@
 from typing import Text
 
-from appyratus.utils import TimeUtils
+from appyratus.utils.time_utils import TimeUtils
 
 from ravel.resource import Resource
 from ravel.schema import DateTime, String
