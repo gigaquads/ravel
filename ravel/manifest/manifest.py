@@ -22,87 +22,21 @@ from ravel.util.scanner import Scanner
 from ravel.schema import Schema, fields
 
 from .scanner import ManifestScanner
-
-
-class ManifestFileNotFound(ManifestError):
-    pass
-
-
-class UnrecognizedManifestFileFormat(ManifestError):
-    pass
-
-
-class ManifestValidationError(ManifestError):
-    pass
-
-
-class ManifestInheritanceError(ManifestError):
-    pass
-
-
-class StoreClassNotFound(ManifestError):
-    pass
-
-
-class ResourceClassNotFound(ManifestError):
-    pass
-
-
-class DuplicateResourceClass(ManifestError):
-    pass
-
-
-class DuplicateStoreClass(ManifestError):
-    pass
-
-
-class ManifestSchema(Schema):
-
-    class BindingSchema(Schema):
-        resource = fields.String()
-        store = fields.String()
-        params = fields.Dict(default={})
-
-    class BootstrapSchema(Schema):
-        store = fields.String()
-        default = fields.Bool(default=False)
-        params = fields.Dict(default={})
-
-    base = fields.FilePath()
-    package = fields.String()
-    bindings = fields.List(BindingSchema(), default=[])
-    bootstraps = fields.List(BootstrapSchema(), default=[])
-    values = fields.Dict(default={})
-
-
-class Bootstrap:
-    def __init__(
-        self,
-        store_class_name: Text,
-        bootstrap_params: Dict = None,
-        is_default: bool = False,
-    ):
-        self.store_class_name = store_class_name
-        self.bootstrap_params = bootstrap_params or {}
-        self.is_default = is_default
-
-
-class Binding:
-    def __init__(
-        self,
-        resource_class_name: Text,
-        store_class_name: Text,
-        bind_params: Dict = None
-    ):
-        self.resource_class_name = resource_class_name
-        self.store_class_name = store_class_name
-        self.bind_params = bind_params or {}
-        self.resource_class = None
-        self.store_class = None
+from .bootstrap import Bootstrap
+from .binding import Binding
+from .exceptions import *
 
 
 
 class Manifest:
+
+    class Schema(Schema):
+        base = fields.FilePath()
+        package = fields.String()
+        bindings = fields.List(Binding.Schema(), default=[])
+        bootstraps = fields.List(Bootstrap.Schema(), default=[])
+        values = fields.Dict(default={})
+
     def __init__(self, source: Union['Manifest', Dict, Text]):
         filepath, data = self._load_manifest_data(source)
 
@@ -417,7 +351,7 @@ class Manifest:
 
     @classmethod
     def _load_manifest_data(cls, source):
-        schema = ManifestSchema(allow_additional=True)
+        schema = cls.Schema(allow_additional=True)
         filepath = None
         data = {}
 
