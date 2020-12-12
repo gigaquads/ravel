@@ -71,6 +71,12 @@ class ManageSqlalchemyTransaction(Middleware):
         """
         self.store_type.commit(rollback=True)
 
+        # execute post-commit hooks in background processes
+        for hook, args, kwargs in request.context[POST_COMMIT_HOOKS]:
+            self.app.spawn(
+                hook, args=args, kwargs=kwargs, multiprocessing=True
+            )
+
     def post_bad_request(
         self,
         action: 'Action',

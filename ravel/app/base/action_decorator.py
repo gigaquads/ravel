@@ -47,7 +47,7 @@ class ActionDecorator(object):
 
     def setup_action(self, func, overwrite):
         action = self.app.action_type(func, self)
-        self.app.register(action, overwrite=overwrite)
+        self.app.register_action(action, overwrite=overwrite)
         self.app.on_decorate(action)
         return action
 

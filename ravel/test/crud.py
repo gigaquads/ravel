@@ -29,7 +29,7 @@ def Thing(app):
     class Thing(BaseThing):
         pass
 
-    app.bind(Thing)
+    app.register_resource(Thing)
     return Thing
 
 

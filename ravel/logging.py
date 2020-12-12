@@ -19,7 +19,7 @@ class LoggerInterface(object):
     def __init__(self, name, level=None, handlers=None):
         self._name = name
         self._level = level or INFO
-        self._formatter = Formatter('%(message)s')
+        self._formatter = Formatter('[%(threadName)s] %(message)s')
 
         self._logger = logging.getLogger(self._name)
 

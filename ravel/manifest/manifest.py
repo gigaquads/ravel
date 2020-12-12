@@ -48,6 +48,14 @@ class ResourceClassNotFound(ManifestError):
     pass
 
 
+class DuplicateResourceClass(ManifestError):
+    pass
+
+
+class DuplicateStoreClass(ManifestError):
+    pass
+
+
 class ManifestSchema(Schema):
 
     class BindingSchema(Schema):
@@ -126,6 +134,102 @@ class Manifest:
         self._inject_classes_to_actions()
         self._bootstrap_actions()
 
+    def register(
+        self,
+        resource_classes: Union['Resource', List[Type['Resource']]],
+        store_class: Type['Store'] = None
+    ):
+        """
+        Dynamically register and bootstrap a resource with its associated
+        store class.
+        """
+        from ravel import Resource
+
+        def resolve_store_class(resource_class, store_class):
+            if not store_class:
+                if self.default_bootstrap:
+                    return self.default_bootstrap.store_class
+                else:
+                    return resource_class.__store__()
+            else:
+                return store_class
+
+        def validate_resource_class(resource_class):
+            if not isinstance(resource_class, Resource):
+                raise TypeError(
+                    f'{get_class_name(resource_class)} must '
+                    f'be a Resource subclass'
+                )
+            if resource_class in self.resource_classes:
+                raise DuplicateResourceClass(
+                    f'{get_class_name(resource_class)} is already registerd '
+                    f'with the application'
+                )
+            return resource_class
+
+        def create_and_add_binding(resource_class, store_class):
+            resource_class_name = get_class_name(resource_class)
+            store_class_name = get_class_name(store_class)
+            binding = Binding(resource_class_name, store_class_name)
+            binding.resource_class = resource_class
+            binding.store_class = store_class
+            self.bindings.append(binding)
+            return binding
+
+        def register_classes(resource_class, store_class):
+            # add the resource class to global register if it's new
+            resource_class_name = get_class_name(resource_class)
+            if resource_class_name not in self.resource_classes:
+                self.resource_classes[resource_class] = resource_class
+
+            # add the store class to global register if it's new
+            store_class_name = get_class_name(store_class)
+            if store_class_name not in self.store_classes:
+                self.store_classes[store_class_name] = store_class
+
+        def bootstrap_new_classes(self, resource_class, store_class):
+            resource_class_name = get_class_name(resource_class)
+            store_class_name = get_class_name(store_class)
+            bootstraps = {
+                x.store_class_name: x for x in self.bootstraps
+            }
+            if self.app.is_bootstrapped:
+                bootstrap = self.bootstraps.get(store_class_name)
+                params = bootstrap.params if bootstrap else {}
+                if not store_class.is_bootstrapped():
+                    store_class.bootstrap(self.app, **params)
+                if not resource_class.is_bootstraped():
+                    resource_class.bootstrap(self.app, **params)
+
+        # make sure we don't already have a store class registered
+        if store_class in self.store_classes:
+            raise DuplicateStoreClass(
+                f'{get_class_name(store_class)} is already registerd '
+                f'with the application'
+            )
+
+        # register new classes and bootstrap
+        for resource_class in resource_classes:
+            resource_class = validate_resource_class(resource_class)
+            store_class = resolve_store_class(resource_class, store_class)
+
+            register_classes(resource_class, store_class)
+
+            binding = create_and_add_binding(resource_class, store_class)
+
+            # bind new store singleton to resource_class
+            store = store_class()
+            resource_class.bind(store)
+            console.debug(
+                f'binding thread-local {binding.store_class_name}() '
+                f'to {binding.resource_class_name} class'
+            )
+            store.bind(resource_class)
+
+            # bootstrap the resource and store classes if they are
+            # not alredy but the host app is.
+            bootstrap_new_classes(resource_class, store_class)
+
     @property
     def package(self) -> Text:
         return self.data.get('package')
@@ -134,19 +238,19 @@ class Manifest:
     def resource_classes(self) -> Dict[Text, Type['Resource']]:
         if self.scanner is not None:
             return self.scanner.context.resource_classes
-        return {}
+        return DictObject()
 
     @property
     def store_classes(self) -> Dict[Text, Type['Store']]:
         if self.scanner is not None:
             return self.scanner.context.store_classes
-        return {}
+        return DictObject()
 
     @property
     def actions(self) -> Dict[Text, 'Action']:
         if self.scanner is not None:
             return self.scanner.context.actions
-        return {}
+        return DictObject()
 
     def _bind_resources(self):
         def load(binding):
@@ -237,9 +341,12 @@ class Manifest:
         )
         parts.extend(on_parts)
         parts.append(
-            '➥ result = action(*args, **kwargs)'
+            '➥ raw_result = action(*args, **kwargs)'
         )
         parts.extend(post_parts)
+        parts.append(
+            '➥ return app.on_response(action, raw_result)'
+        )
 
         diagram = '\n'.join(
             f'{"  " * (i+1)}{s}' for i, s in enumerate(parts)
@@ -425,7 +532,14 @@ class Manifest:
         action callables to register themselves with the Application instance.
         """
         package = self.package
-        executor = ThreadPoolExecutor(max_workers=6)
+        pid = os.getpid()
+        executor = ThreadPoolExecutor(
+            max_workers=6,
+            thread_name_prefix=(
+                f'{StringUtils.camel(self.package or "")} '
+                f'ManifestWorker (pid: {pid})'.strip()
+            )
+        )
         scanner = ManifestScanner()
         futures = []
 
@@ -458,7 +572,7 @@ class Manifest:
                 async_scan(scan_path)
 
         # scan the app project package
-        if package is not None:
+        if package:
             async_scan(package)
 
         concurrent.futures.wait(futures)

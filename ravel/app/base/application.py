@@ -3,7 +3,10 @@ import logging
 import os
 import threading
 
-from threading import local, get_ident
+from threading import local, get_ident, RLock, current_thread
+from concurrent.futures import (
+    ThreadPoolExecutor, ProcessPoolExecutor, Future
+)
 from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
 from collections import deque, OrderedDict, namedtuple, defaultdict
 from random import choice
@@ -51,29 +54,54 @@ class Application(object):
         self.local = local()
         self.local.is_bootstrapped = False
         self.local.is_started = False
+        self.local.manifest = Manifest(manifest) if manifest else None
+        self.local.bootstrapper_thread_id = None
+        self.local.thread_executor = None
+        self.local.process_executor = None
 
-        self.shared = DictObject()  # shared storage (WRT to threads)
-        if manifest is not None:
-            self.shared.manifest = Manifest(manifest)
+        self.shared = DictObject()  # storage shared by threads
+        self.shared.manifest_data = None
+        self.shared.app_counter = 1
 
         self.env = Environment()
-
         self._mode = mode
         self._actions = DictObject()
-        self._namespace = {}
         self._json = JsonEncoder()
-        self._arg_loader = None
         self._binder = ResourceBinder()
+        self._namespace = {}
+        self._arg_loader = None
         self._logger = None
+        self._root_pid = os.getpid()
 
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.app_types)
         ])
 
+        # set default main thread name
+        current_thread().name = (
+            f'{get_class_name(self)} MainThread (pid: {os.getpid()})'
+        )
 
-    def __getattr__(self, resource_class_name: Text) -> Type['Resource']:
-        return self.res[resource_class_name]
+
+    def __getattr__(
+        self,
+        class_name: Text
+    ) -> Union[Type['Resource'], Type['Store']]:
+        """
+        This makes it possible to do app.ResourceClass or app.StoreClass as a
+        convenient way of accessing registered store and resoruce classes at
+        runtime--as opposed to importing them and risking annoying cyclic
+        import errors.
+        """
+        class_obj = None
+        if self.local.manifest is not None:
+            # assume it's the name of resource class first
+            class_obj = self.manifest.resource_classes.get(class_name)
+            if not class_obj:
+                # fall back on assuming it's a store class
+                class_obj = self.manifest.store_classes.get(class_name)
+        return class_obj
 
     def __contains__(self, action: Text):
         return action in self.manifest.actions
@@ -120,12 +148,8 @@ class Application(object):
         return Action
 
     @property
-    def manifest(self):
-        return self.local.manifest
-
-    @manifest.setter
-    def manifest(self, obj):
-        self._manifest = Manifest.from_object(obj)
+    def manifest(self) -> 'Manifest':
+        return getattr(self.local, 'manifest', None)
 
     @property
     def mode(self) -> Mode:
@@ -137,7 +161,11 @@ class Application(object):
 
     @property
     def is_bootstrapped(self) -> bool:
-        return self.local.is_bootstrapped
+        return getattr(self.local, 'is_bootstrapped', False)
+
+    @property
+    def is_started(self) -> bool:
+        return getattr(self.local, 'is_started', False)
 
     @property
     def is_simulation(self) -> bool:
@@ -163,98 +191,15 @@ class Application(object):
         return self._arg_loader
 
     @property
-    def binder(self) -> 'ResourceBinder':
-        return self._binder
-
-    @property
     def actions(self) -> DictObject:
-        return self._actions
+        return self.manifest.actions
 
     @property
-    def log(self):
+    def log(self) -> ConsoleLoggerInterface:
         return self._logger
 
-    def action(self, *args, **kwargs):
+    def action(self, *args, **kwargs) -> 'ActionDecorator':
         return self.decorator_type(self, *args, **kwargs)
-
-    def register(
-        self,
-        action: Union['Action', 'Application'],
-        overwrite=False
-    ) -> 'Application':
-        """
-        Add a Action to this app.
-        """
-        if isinstance(action, Application):
-            app = action
-            for act in app.actions.values():
-                decorator = self.action()
-                decorator(act.target)
-        elif action.name not in self._actions or overwrite:
-            console.debug(
-                f'{get_class_name(self)}(thread_id={get_ident()}) '
-                f'registered action {action.name}'
-            )
-            if isinstance(action, Action):
-                if action.app is not self:
-                    decorator(action.target)
-                else:
-                    self._actions[action.name] = action
-            else:
-                assert callable(action)
-                decorator = self.action()
-                decorator(action)
-        else:
-            raise ApplicationError(
-                message=f'action already registered: {action.name}',
-                data={'action': action}
-            )
-
-    def bind(
-        self,
-        resource_classes: List[Type['Resource']],
-        store_class: Type['Store'] = None
-    ) -> 'Application':
-        """
-        Dynamically register one or more Resource classes with this
-        bootstrapped Application. If a store_class is specified, it will be used
-        for all classes in resource_classes. Otherwise, the Store class will come from
-        calling the __store__ method on each BizClass.
-        """
-        assert self.is_bootstrapped
-
-        def bind_one(resource_class, store_class):
-            store_instance = None
-            if store_class is None:
-                store_obj = resource_class.__store__()
-                if not isinstance(store_obj, type):
-                    store_class = type(store_obj)
-                    store_instance = store_obj
-                else:
-                    store_class = store_obj
-
-            if not resource_class.is_bootstrapped():
-                resource_class.bootstrap(self)
-            if not store_class.is_bootstrapped():
-                kwargs = self.manifest.get_bootstrap_params(store_class)
-                store_class.bootstrap(self, **kwargs)
-
-            binding = self.binder.register(
-                resource_class=resource_class,
-                store_class=store_class,
-                store_instance=store_instance,
-            )
-            binding.bind(self.binder)
-
-        if not is_sequence(resource_classes):
-            resource_classes = [resource_classes]
-
-        for resource_class in resource_classes:
-            bind_one(resource_class, store_class)
-
-        self._arg_loader.bind()
-
-        return self
 
     def bootstrap(
         self,
@@ -268,7 +213,27 @@ class Application(object):
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
-        if self.is_bootstrapped:
+        def create_logger():
+            """
+            Setup root application logger.
+            """
+            suffix = ''.join(choice(ascii_letters) for i in range(4))
+            count = self.shared.app_counter
+            self.shared.app_counter += 1
+
+            if self.manifest.package:
+                name = f'{self.manifest.package}-{count}'
+            else:
+                class_name = get_class_name(self)
+                name = f'{StringUtils.snake(class_name)}-{count}'
+
+            return ConsoleLoggerInterface(name)
+            
+        # warn about already being bootstrapped...
+        if (
+            self.is_bootstrapped and
+            self.local.thread_id != get_ident()
+        ):
             console.warning(
                 message=f'{get_class_name(self)} already bootstrapped.',
                 data={
@@ -281,51 +246,57 @@ class Application(object):
         console.debug(f'bootstrapping {get_class_name(self)} app')
 
         # override the application mode set in constructor
-        if mode is not None:
-            self._mode = Application.Mode(mode)
+        self._mode = Application.Mode(mode or self.mode or Mode.normal)
 
         # merge additional namespace data into namespace dict
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
+        # register additional middleware targing this app subclass
         if middleware:
             self._middleware.extend(
                 m for m in middleware if isinstance(self, m.app_types)
             )
 
-        if manifest is None and self.shared.manifest is not None:
-            self.local.manifest = Manifest(self.shared.manifest)
+        # build final manifest, used to bootstrap program components
+        if self.manifest is not None and manifest is None:
+            self.local.manifest = self.manifest
         elif manifest is not None:
             self.local.manifest = Manifest(manifest)
 
-        # manifest expected to have been passed into ctor
         assert self.local.manifest is not None
-
-        # if this is the main process, use it's manifest as the shared copy.
-        # this comes into play when bootstrap is re-called within the
-        # initializer logic of a new thread.
-        if not self.shared.manifest:
-            self.shared.manifest = self.local.manifest
-
-        # setup logger before bootstrapping components
-        logger_suffix = ''.join(choice(ascii_letters) for i in range(4))
-        logger_name = (
-            self.manifest.package + '-' + logger_suffix if self.manifest.package
-            else StringUtils.snake(get_class_name(self)) + '-' + logger_suffix
-        )
-        self._logger = ConsoleLoggerInterface(logger_name)
-
         self.manifest.bootstrap(self)
-        # self.manifest.bind(rebind=True)
 
-        # init the arg loader, which is responsible for replacing arguments
-        # passed in as ID's with their respective Resources
+        # set up main thread name
+        if self.manifest.package:
+            pid = os.getpid()
+            current_thread().name = (
+                f'{StringUtils.camel(self.manifest.package)} '
+                f'MainThread (pid: {pid})'
+            )
+        else:
+            # update default main thread name
+            current_thread().name = (
+                f'{get_class_name(self)} MainThread (pid: {os.getpid()})'
+            )
+
+        self._logger = create_logger()
         self._arg_loader = ArgumentLoader(self)
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
+
         self.local.is_bootstrapped = True
 
-        console.debug(f'finished bootstrapping {get_class_name(self)}')
+        # if we're in a new process, unset the executors so that
+        # the spawn method lazily triggers the instantiation of
+        # new ones at runtime.
+        if not self._root_pid != os.getpid():
+            self.local.thread_executor = None
+            self.local.process_executor = None
+
+        self.local.thread_id = get_ident()
+
+        console.debug(f'finished bootstrapping {get_class_name(self)} app')
         return self
 
     def start(self, *args, **kwargs):
@@ -355,6 +326,52 @@ class Application(object):
             inject(func, self.manifest.actions)
 
         return func
+
+    def spawn(
+        self,
+        target: Callable,
+        args: Tuple = None,
+        kwargs: Dict = None,
+        multiprocessing: bool = False
+    ) -> Future:
+        """
+        Perform a target callable in a worker thread or subprocess, creating
+        and returning a Future object. This is a convenience method;
+        otherwise, when you manually create a thread of process in which you
+        intend to access this app, you will need to call bootstrap on the app
+        again (within said thread or process context).
+        """
+        args = tuple(args or [])
+        kwargs = kwargs or {}
+
+        # select and lazily create the appropriate executor...
+        if not multiprocessing:
+            executor = getattr(self.local, 'thread_executor', None)
+            if executor is None:
+                thread_name_prefix = (
+                    f'{StringUtils.camel(self.manifest.package)} Worker'
+                    if self.manifest.package
+                    else f'{get_class_name(self)} Worker'
+                )
+                self.local.thread_executor = ThreadPoolExecutor(
+                    max_workers=os.cpu_count(),
+                    initializer=self.bootstrap,
+                    initargs=(self.manifest.data, ),
+                    thread_name_prefix=thread_name_prefix
+                )
+            executor = self.local.thread_executor
+        else:
+            executor = getattr(self.local, 'process_executor', None)
+            if executor is None:
+                self.local.process_executor = ProcessPoolExecutor(
+                    max_workers=os.cpu_count(),
+                    initializer=self.bootstrap,
+                    initargs=(self.manifest.data, ),
+                )
+            executor = self.local.process_executor
+
+        # submit and return the future
+        return executor.submit(target, *args, **kwargs)
 
     def on_extract(self, action, index, parameter, raw_args, raw_kwargs):
         """
@@ -446,31 +463,3 @@ class Application(object):
         executed.
         """
         return raw_result
-
-
-# TODO: move this class into ravel/app/base/store_manager.py
-class StoreManager(object):
-    """
-    StoreManager is a high-level interface to performing logic related to the
-    lifecycle of store instances utilized in a bootstrapped app.
-    """
-
-    def __init__(self, app: 'Application', store_classes: DictObject):
-        self._app = app
-        self._store_classes = DictObject(store_classes)
-
-    @property
-    def store_classes(self) -> DictObject:
-        return self._store_classes
-
-    @property
-    def utilized_store_classes(self) -> Dict[Text, Type['Store']]:
-        return {
-            get_class_name(res_type.ravel.local.store): type(res_type.ravel.local.store)
-            for res_type in self._app.res.values()
-        }
-
-    def bootstrap(self):
-        for store_class in self.utilized_store_classes.values():
-            kwargs = self._app.manifest.get_bootstrap_params(store_class)
-            store_class.bootstrap(self._app, **kwargs)

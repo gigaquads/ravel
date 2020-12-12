@@ -11,13 +11,11 @@ from .guard import Guard, GuardFailure
 
 class EvaluateGuards(Middleware):
     """
-    Apply the Guard(s) associated with a action, set via the `auth`
-    ActionDecorator keyword argument, e.g., repl(auth=IsFoo()).
-    NotAuthorized is raised if not authorized.
+    Evaluate the guard/guards provided through an action decorator's `guard`
+    or `guards` kwarg. If any guard returns False, raise an exception;
+    however, if a guard raises its own exception, this middleware allows it
+    to bubble up.
     """
-    def pre_request(self, *args, **kwargs):pass
-    def post_bad_request(self, *args, **kwargs):pass
-    def post_request(self, *args, **kwargs):pass
 
     def on_request(
         self,

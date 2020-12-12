@@ -99,15 +99,13 @@ class CacheStore(Store):
         if self.mode == CacheMode.writeback:
             self.executor = CacheStoreExecutor(self)
 
-    @property
-    def binder(self):
-        return self.app.binder if self.app is not None else None
-
     def _setup_inner_store(
         self, resource_type: Type['BizType'], store_class_name: Text, bind_params: Dict = None
     ):
         # fetch the store type from the ResourceBinder
-        store_type = self.binder.get_store_type(store_class_name.split('.')[-1])
+        store_type = resource_type.ravel.app.manifest.store_classes.get(
+            store_class_name.split('.')[-1]
+        )
         if store_type is None:
             raise Exception(f'{store_type} not registered')
 
