@@ -155,7 +155,7 @@ class Manifest:
             store = store_class()
             resource_class.bind(store)
             console.debug(
-                f'binding thread-local {binding.store_class_name}() '
+                f'binding {binding.store_class_name}() '
                 f'to {binding.resource_class_name} class'
             )
             store.bind(resource_class)
@@ -202,7 +202,7 @@ class Manifest:
         for binding in self.bindings:
             binding = load(binding)
             console.debug(
-                f'binding thread-local {binding.store_class_name}() '
+                f'binding {binding.store_class_name}() '
                 f'to {binding.resource_class_name} class'
             )
             store = binding.store_class()
@@ -460,12 +460,11 @@ class Manifest:
         action callables to register themselves with the Application instance.
         """
         package = self.package
-        pid = os.getpid()
         executor = ThreadPoolExecutor(
             max_workers=6,
             thread_name_prefix=(
-                f'{StringUtils.camel(self.package or "")} '
-                f'ManifestWorker (pid: {pid})'.strip()
+                f'{StringUtils.camel(self.package or "")}'
+                f'ManifestWorker'.strip()
             )
         )
         scanner = ManifestScanner(self)

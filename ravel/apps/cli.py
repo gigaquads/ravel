@@ -224,3 +224,6 @@ class CliCommand(Action):
             if arg is not None:
                 args.append(arg)
         return args
+
+
+Cli = CliApplication

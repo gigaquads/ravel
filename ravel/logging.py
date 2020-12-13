@@ -8,9 +8,11 @@ import os
 import yaml
 
 from logging import Formatter, StreamHandler, INFO
+from threading import current_thread
 from typing import Text, Dict
 
 from appyratus.utils.time_utils import TimeUtils
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.util.json_encoder import JsonEncoder
 
@@ -19,7 +21,7 @@ class LoggerInterface(object):
     def __init__(self, name, level=None, handlers=None):
         self._name = name
         self._level = level or INFO
-        self._formatter = Formatter('[%(threadName)s] %(message)s')
+        self._formatter = Formatter('%(message)s')
 
         self._logger = logging.getLogger(self._name)
 
@@ -94,7 +96,13 @@ class ConsoleLoggerInterface(LoggerInterface):
         else:
             dumped_data = None
 
-        display_string = f'{when} ({level}) {self._name} - {message}'
+        thread = StringUtils.dash(current_thread().name)
+        pid = os.getpid()
+
+        display_string = (
+            f'{when} ({level}) {self._name} [{thread} (pid:{pid})]'
+            f' - {message}'
+        )
         if dumped_data:
             display_string += f'\n\n{dumped_data}\n'
         return display_string

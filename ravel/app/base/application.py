@@ -81,7 +81,7 @@ class Application(object):
 
         # set default main thread name
         current_thread().name = (
-            f'{get_class_name(self)} MainThread (pid: {os.getpid()})'
+            f'{get_class_name(self)}MainThread'
         )
 
 
@@ -272,15 +272,14 @@ class Application(object):
 
         # set up main thread name
         if self.manifest.package:
-            pid = os.getpid()
             current_thread().name = (
-                f'{StringUtils.camel(self.manifest.package)} '
-                f'MainThread (pid: {pid})'
+                f'{StringUtils.camel(self.manifest.package)}'
+                f'MainThread'
             )
         else:
             # update default main thread name
             current_thread().name = (
-                f'{get_class_name(self)} MainThread (pid: {os.getpid()})'
+                f'{get_class_name(self)}MainThread'
             )
 
         self._logger = create_logger()
