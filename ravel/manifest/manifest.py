@@ -62,10 +62,11 @@ class Manifest:
         if namespace:
             self._scan_namespace_dict(namespace)
 
+        self._resolve_bindings()
         self._resolve_resource_id_fields()
         self._bootstrap_store_classes()
-        self._bind_resources()
         self._bootstrap_resource_classes()
+        self._bind_resources()
         self._inject_classes_to_actions()
         self._bootstrap_app_actions()
 
@@ -181,7 +182,7 @@ class Manifest:
             return self.scanner.context.store_classes
         return DictObject()
 
-    def _bind_resources(self):
+    def _resolve_bindings(self):
         def load(binding):
             b = binding
 
@@ -202,6 +203,9 @@ class Manifest:
 
         for binding in self.bindings:
             binding = load(binding)
+
+    def _bind_resources(self):
+        for binding in self.bindings:
             console.debug(
                 f'binding {binding.store_class_name}() '
                 f'to {binding.resource_class_name} class'
