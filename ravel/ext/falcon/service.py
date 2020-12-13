@@ -7,7 +7,7 @@ import falcon
 from appyratus.env import Environment
 
 from ravel.app.middleware import Middleware
-from ravel.app.apps.web import AbstractWsgiService
+from ravel.apps.web import AbstractWsgiService
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
 
