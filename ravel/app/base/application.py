@@ -14,11 +14,11 @@ from string import ascii_letters
 
 from appyratus.utils.dict_utils import DictObject, DictUtils
 from appyratus.utils.string_utils import StringUtils
-from appyratus.logging import ConsoleLoggerInterface
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
 
 from ravel.manifest.manifest import Manifest
+from ravel.logging import ConsoleLoggerInterface
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name, inject, is_sequence

@@ -269,11 +269,6 @@ class Resource(Entity, metaclass=ResourceMeta):
     def bootstrap(cls, app: 'Application', **kwargs):
         cls.ravel.app = app
 
-        # resolve the concrete Field class to use for each "foreign key"
-        # ID field referenced by this class.
-        for id_field in cls.ravel.foreign_keys.values():
-            id_field.replace_self_in_resource_type(app, cls)
-
         # bootstrap all resolvers owned by this class
         for resolver in cls.ravel.resolvers.values():
             resolver.bootstrap(app)

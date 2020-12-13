@@ -62,6 +62,7 @@ class Manifest:
         if namespace:
             self._scan_namespace_dict(namespace)
 
+        self._resolve_resource_id_fields()
         self._bootstrap_store_classes()
         self._bind_resources()
         self._bootstrap_resource_classes()
@@ -208,6 +209,19 @@ class Manifest:
             store = binding.store_class()
             store.bind(binding.resource_class, **binding.bind_params)
             binding.resource_class.bind(store, **binding.bind_params)
+
+    def _resolve_resource_id_fields(self):
+        """
+        Resolve the concrete Field class to use for each "foreign key"
+        Id field referenced declared in resource classes. This should happen
+        prior to bootstrapping Stores, as without this step, they won't know
+        what to make of the unresolved Id fields.
+        """
+        for resource_class in self.resource_classes.values():
+            for id_field in resource_class.ravel.foreign_keys.values():
+                id_field.replace_self_in_resource_type(
+                    self.app, resource_class
+                )
 
     def _bootstrap_resource_classes(self):
         app = self.app
