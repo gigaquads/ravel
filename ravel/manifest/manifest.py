@@ -249,7 +249,7 @@ class Manifest:
 
         # middleware bootstrapping...
         for idx, mware in enumerate(self.app.middleware):
-            mware.bootstrap(app=self)
+            mware.bootstrap(app=self.app)
 
             # everything below is for generating the log message
             # containing the "action execution diagram"
