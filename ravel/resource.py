@@ -271,7 +271,8 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         # bootstrap all resolvers owned by this class
         for resolver in cls.ravel.resolvers.values():
-            resolver.bootstrap(app)
+            if not resolver.is_bootstrapped():
+                resolver.bootstrap(cls.ravel.app)
 
         # lastly perform custom developer logic
         cls.on_bootstrap(app, **kwargs)

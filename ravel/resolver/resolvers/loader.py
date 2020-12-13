@@ -25,9 +25,11 @@ class Loader(Resolver):
     The Loader resolver is responsible for fetching Resource fields.
     """
 
-    def __init__(self, field, *args, **kwargs):
+    def __init__(self, field=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.field = field
+        self._field = None
+        if field:
+            self.field = field
 
     @classmethod
     def property_type(cls):
@@ -55,6 +57,9 @@ class Loader(Resolver):
         self.nullable = field.nullable
         self.required = field.required
         self.private = field.meta.get('private', False)
+
+    def on_copy(self, copy):
+        copy.field = self.field
 
     def on_resolve(self, resource, request):
         exists_resource = ID in resource.internal.state
