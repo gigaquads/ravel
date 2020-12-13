@@ -262,10 +262,13 @@ class Application(object):
             )
 
         # build final manifest, used to bootstrap program components
-        if self.manifest is not None and manifest is None:
-            self.local.manifest = self.manifest
-        elif manifest is not None:
+        if manifest is not None:
             self.local.manifest = Manifest(manifest)
+        elif self.shared.manifest_data:
+            self.local.manifest = Manifest(self.shared.manifest_data)
+
+        if not self.shared.manifest_data:
+            self.shared.manifest_data = self.local.manifest.data
 
         assert self.local.manifest is not None
         self.manifest.bootstrap(self)

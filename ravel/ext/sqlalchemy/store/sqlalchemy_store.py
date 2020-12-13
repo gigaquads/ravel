@@ -22,7 +22,7 @@ from ravel.constants import REV, ID
 
 from .dialect import Dialect
 from .sqlalchemy_table_builder import SqlalchemyTableBuilder
-from ..types import ArrayOfEnum
+from ..types import ArrayOfEnum, UtcDateTime
 from ..postgis import (
     POSTGIS_OP_CODE,
     GeometryObject, PointGeometry, PolygonGeometry,
@@ -63,6 +63,7 @@ class SqlalchemyStore(Store):
     @classmethod
     def get_default_adapters(cls, dialect: Dialect, table_name) -> List[Field.Adapter]:
         # TODO: Move this into the adapters file
+
         adapters = [
             fields.Field.adapt(
                 on_adapt=lambda field: sa.Text,
@@ -73,9 +74,9 @@ class SqlalchemyStore(Store):
             fields.Bytes.adapt(on_adapt=lambda field: sa.LargeBinary),
             fields.BcryptString.adapt(on_adapt=lambda field: sa.Text),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
-            fields.DateTime.adapt(on_adapt=lambda field: sa.DateTime),
+            fields.DateTime.adapt(on_adapt=lambda field: UtcDateTime),
             fields.TimeDelta.adapt(on_adapt=lambda field: sa.Interval),
-            fields.Timestamp.adapt(on_adapt=lambda field: sa.DateTime),
+            fields.Timestamp.adapt(on_adapt=lambda field: UtcDateTime),
             fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
             fields.Enum.adapt(
                 on_adapt=lambda field: {
@@ -125,8 +126,8 @@ class SqlalchemyStore(Store):
                 fields.Int: sa.Integer,
                 fields.Bool: sa.Boolean,
                 fields.Float: sa.Float,
-                fields.DateTime: sa.DateTime,
-                fields.Timestamp: sa.DateTime,
+                fields.DateTime: UtcDateTime,
+                fields.Timestamp: UtcDateTime,
                 fields.Dict: pg_types.JSONB,
                 fields.Field: pg_types.JSONB,
                 fields.Nested: pg_types.JSONB,
@@ -732,7 +733,7 @@ class SqlalchemyStore(Store):
         return metadata.bind.dialect.implicit_returning
 
     @classmethod
-    def create_tables(cls, recreate=False):
+    def create_tables(cls, overwrite=False):
         """
         Create all tables for all SqlalchemyStores used in the host app.
         """
@@ -746,7 +747,7 @@ class SqlalchemyStore(Store):
         meta = cls.get_metadata()
         engine = cls.get_engine()
 
-        if recreate:
+        if overwrite:
             console.info('dropping Resource SQL tables...')
             meta.drop_all(engine)
 

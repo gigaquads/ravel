@@ -1,5 +1,8 @@
 import re
 
+import sqlalchemy as sa
+import pytz
+
 from sqlalchemy import TypeDecorator
 from sqlalchemy.dialects.postgresql import ARRAY
 
@@ -34,3 +37,14 @@ class ArrayOfEnum(TypeDecorator):
             if inner:
                 processed_values = inner.split(',')
         return processed_values
+
+
+class UtcDateTime(sa.TypeDecorator):
+
+    impl = sa.DateTime
+
+    def process_result_value(self, value, dialect):
+        if value:
+            return value.replace(tzinfo=pytz.utc)
+        return value
+
