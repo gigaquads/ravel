@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Type, Text, List
 from inspect import Parameter
 
 from ravel.app.middleware import Middleware
-from ravel.app.apps.web import Endpoint
+from ravel.apps.web import Endpoint
 from ravel.app.base import ActionDecorator
 from ravel.ext.falcon.service import FalconService
 from ravel.ext.falcon.constants import HTTP_METHODS, HTTP_OPTIONS
