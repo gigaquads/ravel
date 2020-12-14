@@ -254,7 +254,7 @@ class Action(object):
         self._mware_post_bad_request_methods = deque()
 
         def is_virtual(func):
-            return getattr(func, 'is_virtual', True)
+            return getattr(func, 'is_virtual', False)
 
         for mware in self.app.middleware:
             if not isinstance(self.app, mware.app_types):
@@ -276,9 +276,9 @@ class Action(object):
         for func in self._mware_pre_request_methods:
             try:
                 func(self, request, state.raw_args, state.raw_kwargs)
-                state.middleware.append(mware)
+                state.middleware.append(func)
             except Exception as exc:
-                error = ActionError(exc, mware)
+                error = ActionError(exc, func)
                 state.errors.append(error)
                 break
 
