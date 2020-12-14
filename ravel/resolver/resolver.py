@@ -92,8 +92,6 @@ class Resolver(metaclass=ResolverMeta):
             assert callable(target)
             self.target_callback = target
 
-        self._is_bootstrapped = False
-
     def __repr__(self):
         return (
             f'{get_class_name(self)}('
@@ -182,7 +180,6 @@ class Resolver(metaclass=ResolverMeta):
         )
 
         clone.target_callback = self.target_callback
-        clone._is_bootstrapped = False
         clone._is_bound = False
 
         self.on_copy(clone)
@@ -194,12 +191,9 @@ class Resolver(metaclass=ResolverMeta):
         console.debug(f'bootstrapping {get_class_name(cls)} class')
         cls.app = app
         cls.on_bootstrap()
-        cls._is_bootstrapped = True
+        cls.ravel.local.is_bootstrapped = True
 
     def bind(self):
-        console.debug(
-            f'binding {get_class_name(self.owner)}.{self.name}'
-        )
         if self.target_callback:
             self.app.inject(self.target_callback)
             target = self.target_callback()

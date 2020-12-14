@@ -269,6 +269,8 @@ class Resource(Entity, metaclass=ResourceMeta):
     def bootstrap(cls, app: 'Application', **kwargs):
         cls.ravel.app = app
 
+        console.debug(f'bootstrapping {get_class_name(cls)} class')
+
         # bootstrap all resolvers owned by this class
         for resolver in cls.ravel.resolvers.values():
             if not resolver.is_bootstrapped():
@@ -276,7 +278,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         # lastly perform custom developer logic
         cls.on_bootstrap(app, **kwargs)
-        cls.ravel.is_bootstrapped = True
+        cls.ravel.local.is_bootstrapped = True
 
     @classmethod
     def bind(cls, store: 'Store', **kwargs):
@@ -290,7 +292,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     @classmethod
     def is_bootstrapped(cls) -> bool:
-        return cls.ravel.is_bootstrapped
+        return cls.ravel.local.is_bootstrapped
 
     @classmethod
     def is_bound(cls) -> bool:

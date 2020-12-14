@@ -234,6 +234,7 @@ class Action(object):
         return inspect.getsource(self.target)
 
     def bootstrap(self):
+        console.debug(f'bootstrapping {self.name} action')
         self._prepare_middleware()
         self.on_bootstrap()
         self._is_bootstrapped = True

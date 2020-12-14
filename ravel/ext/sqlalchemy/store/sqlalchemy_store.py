@@ -601,22 +601,38 @@ class SqlalchemyStore(Store):
             f'SQL: INSERT {str(_id)[:7] + " " if _id else ""}'
             f'INTO {self.table}'
         )
-        if self.supports_returning:
-            insert_stmt = insert_stmt.return_defaults()
-            result = self.conn.execute(insert_stmt)
-            return dict(record, **(result.returned_defaults or {}))
-        else:
-            result = self.conn.execute(insert_stmt)
-            return self.fetch(_id=record[self.id_column_name])
+        try:
+            if self.supports_returning:
+                insert_stmt = insert_stmt.return_defaults()
+                result = self.conn.execute(insert_stmt)
+                return dict(record, **(result.returned_defaults or {}))
+            else:
+                result = self.conn.execute(insert_stmt)
+                return self.fetch(_id=record[self.id_column_name])
+        except Exception:
+            console.error(
+                message=f'failed to insert record',
+                data={ 'record': record }
+            )
+            raise
 
     def create_many(self, records: List[Dict]) -> Dict:
         prepared_records = []
+        nullable_fields = self.resource_type.Schema.nullable_fields
         for record in records:
             record[self.id_column_name] = self.create_id(record)
             prepared_record = self.prepare(record, serialize=True)
             prepared_records.append(prepared_record)
+            for nullable_field in nullable_fields.values():
+                if nullable_field.name not in prepared_record:
+                    prepared_record[nullable_field.name] = None
 
-        self.conn.execute(self.table.insert(), prepared_records)
+
+        try:
+            self.conn.execute(self.table.insert(), prepared_records)
+        except Exception:
+            console.error(f'failed to insert records')
+            raise
 
         n = len(prepared_records)
         id_list_str = (

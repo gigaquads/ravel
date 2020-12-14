@@ -29,25 +29,29 @@ class ManifestScanner(Scanner):
         Predicate should evaluate True for any object we want this scanner to
         match and pass on to the self.on_match callback.
         """
-        return (
-            (
-                isinstance(value, type) and
-                issubclass(value, (
+        def is_resource_or_store_class(value) -> bool:
+            return (
+                isinstance(value, type)
+                and issubclass(value, (
                     self.base_resource_class,
                     self.base_store_class
                 ))
             )
+
+        return (
+            is_resource_or_store_class(value)
         )
 
     def on_match(self, name: Text, value, context):
         """
         Add the class object to the appripriate container.
         """
-        if issubclass(value, self.base_resource_class):
-            if not value.ravel.is_abstract:
-                context.resource_classes[name] = value
-        elif issubclass(value, self.base_store_class):
-            context.store_classes[name] = value
+        if isinstance(value, type):
+            if issubclass(value, self.base_resource_class):
+                if not value.ravel.is_abstract:
+                    context.resource_classes[name] = value
+            elif issubclass(value, self.base_store_class):
+                context.store_classes[name] = value
 
     def on_import_error(self, exc: Exception, module_name: Text, context):
         """

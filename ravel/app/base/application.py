@@ -65,7 +65,6 @@ class Application(object):
 
         self.env = Environment()
         self._mode = mode
-        self._actions = DictObject()
         self._json = JsonEncoder()
         self._binder = ResourceBinder()
         self._namespace = {}
@@ -382,7 +381,6 @@ class Application(object):
         """
         Add an action to this app.
         """
-
         if action.name not in self._actions or overwrite:
             console.debug(f'registered action {action.name}')
             if isinstance(action, Action):
