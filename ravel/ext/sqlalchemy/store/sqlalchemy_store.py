@@ -804,15 +804,11 @@ class SqlalchemyStore(Store):
         """
         sqla_conn = getattr(cls.ravel.local, 'sqla_conn', None)
         if sqla_conn is not None:
+            console.debug('closing sqlalchemy connection')
             sqla_conn.close()
             cls.ravel.local.sqla_conn = None
         else:
-            console.warning(
-                message='sqlalchemy has no connection to close',
-                data={
-                    'store': get_class_name(cls)
-                }
-            )
+            console.warning('sqlalchemy has no connection to close')
 
     @classmethod
     def begin(cls, auto_connect=True):

@@ -117,12 +117,15 @@ class SqlalchemyTableBuilder(object):
                 defaults = self._resource_type.ravel.defaults
                 server_default = defaults[field.name]()
             if server_default is not None:
-                if isinstance(field, fields.Bool):
-                    server_default = 'true' if server_default else 'false'
-                elif isinstance(field, (fields.Int, fields.Float)):
-                    server_default = str(server_default)
-                elif isinstance(field, (fields.Dict, fields.Nested)):
-                    server_default = json_encoder.encode(server_default)
+                if not isinstance(server_default, str):
+                    if adapter is not None:
+                        server_default = adapter.encode(server_default)
+                    if isinstance(field, fields.Bool):
+                        server_default = 'true' if server_default else 'false'
+                    elif isinstance(field, (fields.Int, fields.Float)):
+                        server_default = str(server_default)
+                    elif isinstance(field, (fields.Dict, fields.Nested)):
+                        server_default = json_encoder.encode(server_default)
 
         # prepare positional arguments for Column ctor
         args = [
@@ -145,7 +148,13 @@ class SqlalchemyTableBuilder(object):
         try:
             column = sa.Column(*args, **kwargs)
         except Exception:
-            console.error(f'failed to build sa.Column: {name}')
+            console.error(
+                message=f'failed to build sa.Column: {name}',
+                data={
+                    'args': args,
+                    'kwargs': kwargs
+                }
+            )
             raise
 
         if field.nullable is not None:
