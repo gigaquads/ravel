@@ -33,7 +33,7 @@ class Scanner:
         if callback:
             self.on_match = callback
 
-    def scan(self, package_name, context: Dict = None):
+    def scan(self, package_name, context: Dict = None, verbose=False):
         context = dict(self.context.to_dict(), **(context or {}))
         context = DictObject(context)
 
@@ -87,6 +87,11 @@ class Scanner:
             # XXX: why is this happenings?
             del module.__dict__[None]
         for k, v in inspect.getmembers(module, predicate=self.predicate):
+            # if verbose:
+            #     console.debug(
+            #         f'scanner matched "{k}" '
+            #         f'{str(v)[:40] + "..." if len(str(v)) > 40 else v}'
+            #     )
             try:
                 self.on_match(k, v, context)
             except Exception as exc:
