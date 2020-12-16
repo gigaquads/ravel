@@ -1,3 +1,5 @@
+from typing import Text, Dict
+
 from .constants import HTTP_METHODS, RE_HANDLER_METHOD
 
 
@@ -6,7 +8,7 @@ class FalconResource(object):
         self._route = route
         self._method_2_endpoint = {}
 
-    def __getattr__(self, key):
+    def __getattr__(self, key) -> 'Endpoint':
         """
         This simulates falcon resource methods, like on_get,
         on_post, etc, when called on the instance.
@@ -15,31 +17,30 @@ class FalconResource(object):
         if match is not None:
             method = match.groups()[0].upper()
             if not self.is_method_supported(method):
-                error_msg = 'HTTP {} unsupported'.format(method.upper())
-                error_msg += ' for URL path {}'.format(self.endpoint)
-                raise AttributeError(error_msg)
-
+                raise AttributeError(
+                    f'HTTP {method.upper()} unsupported '
+                    f'for URL path {self._route}'
+                )
             endpoint = self.get_endpoint(method)
             return endpoint
 
         raise AttributeError(key)
 
     @property
-    def endpoint(self):
-        return self._endpoint
-
-    @property
     def route(self) -> str:
         return self._route
 
-    def add_endpoint(self, endpoint):
+    def get_method_map(self) -> Dict[Text, 'Endpoint']:
+        return self._method_2_endpoint.copy()
+
+    def get_endpoint(self, method: Text) -> 'Endpoint':
+        return self._method_2_endpoint.get(method.upper())
+
+    def add_endpoint(self, endpoint: 'Endpoint'):
         # TODO: Raise exception regarding already registered to http method
         self._method_2_endpoint[endpoint.method.upper()] = endpoint
 
-    def get_endpoint(self, method):
-        return self._method_2_endpoint.get(method.upper())
-
-    def is_method_supported(self, method):
+    def is_method_supported(self, method: Text) -> bool:
         is_recognized = method.upper() in HTTP_METHODS
         is_registered = method.upper() in self._method_2_endpoint
         return (is_recognized and is_registered)

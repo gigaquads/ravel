@@ -19,10 +19,11 @@ class FalconService(AbstractWsgiService):
 
     env = Environment()
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, router=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._json_encoder = JsonEncoder()
         self._route_2_resource = {}
+        self._router = router
 
     @property
     def falcon_middleware(self):
@@ -64,6 +65,7 @@ class FalconService(AbstractWsgiService):
             middleware=middleware,
             request_type=self.request_type,
             response_type=self.response_type,
+            router=self._router
         )
         falcon_app.req_options = Request.Options()
         falcon_app.resp_options = Response.Options()
@@ -77,7 +79,6 @@ class FalconService(AbstractWsgiService):
     def on_decorate(self, endpoint):
         super().on_decorate(endpoint)
         for route in endpoint.routes:
-            print(route)
             resource = self._route_2_resource.get(route)
             if resource is None:
                 resource = FalconResource(route)
