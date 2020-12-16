@@ -92,7 +92,7 @@ class Loader(Resolver):
 
         # merge new state into existing resoruce instance state
         new_resource_state.update(
-            resource.ravel.store.dispatch(
+            resource.ravel.local.store.dispatch(
                 'fetch',
                 args=(resource._id, ),
                 kwargs={'fields': unloaded_field_names.copy()}
@@ -117,7 +117,7 @@ class Loader(Resolver):
 
         # field names to fetch (fetch all eagerly)
         field_names = set(self.target.ravel.schema.fields.keys())
-        state_dicts = resource.ravel.store.local.dispatch('fetch_many',
+        state_dicts = resource.ravel.local.store.dispatch('fetch_many',
             args=(batch_ids, ),
             kwargs={'fields': field_names}
         )

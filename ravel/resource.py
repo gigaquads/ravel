@@ -355,17 +355,31 @@ class Resource(Entity, metaclass=ResourceMeta):
         return self.merge(other=other, **values)
 
     def merge(self, other=None, **values) -> 'Resource':
-        if isinstance(other, dict):
-            for k, v in other.items():
-                setattr(self, k, v)
-        elif isinstance(other, Resource):
-            for k, v in other.internal.state.items():
-                setattr(self, k, v)
+        try:
+            if isinstance(other, dict):
+                for k, v in other.items():
+                    setattr(self, k, v)
+            elif isinstance(other, Resource):
+                for k, v in other.internal.state.items():
+                    setattr(self, k, v)
 
-        if values:
-            self.merge(values)
+            if values:
+                self.merge(values)
 
-        return self
+            return self
+        except Exception:
+            self.app.log.error(
+                message=(
+                    f'failed to merge object into '
+                    f'resource {str(self._id)[:7]}'
+                ),
+                data={
+                    'resource': self._id,
+                    'other': other,
+                    'values': values,
+                }
+            )
+            raise
 
     def clean(self, fields=None) -> 'Resource':
         if fields:
@@ -660,6 +674,8 @@ class Resource(Entity, metaclass=ResourceMeta):
         return query
 
     def create(self, data: Dict = None, **more_data) -> 'Resource':
+        self.pre_create()
+
         data = dict(data or {}, **more_data)
         if data:
             self.merge(data)
@@ -1189,6 +1205,9 @@ class Resource(Entity, metaclass=ResourceMeta):
         pass
 
     def post_update(self):
+        pass
+
+    def pre_create(self):
         pass
 
     def on_create(self, values: Dict):
