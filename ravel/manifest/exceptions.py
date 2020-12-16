@@ -31,3 +31,7 @@ class DuplicateResourceClass(ManifestError):
 
 class DuplicateStoreClass(ManifestError):
     pass
+
+
+class FilesystemScanTimeout(ManifestError):
+    pass

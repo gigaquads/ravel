@@ -488,15 +488,15 @@ class Manifest:
         scanner = ManifestScanner(self)
         futures = []
 
-        def scan(package):
+        def scan(package, verbose=False):
             console.debug(f'manifest scanning {package}')
             try:
                 scanner.scan(package)
             except:
                 console.exception('scan failed')
 
-        def async_scan(package):
-            future = executor.submit(scan, package)
+        def async_scan(package, verbose=False):
+            future = executor.submit(scan, package, verbose)
             futures.append(future)
 
         async_scan('ravel.resource')
@@ -521,9 +521,16 @@ class Manifest:
 
         # scan the app project package
         if package:
-            async_scan(package)
+            async_scan(package, verbose=True)
 
-        concurrent.futures.wait(futures)
+        completed_scans, incomplete_scans = (
+            concurrent.futures.wait(futures, timeout=5)
+        )
+        if incomplete_scans:
+            raise FilesystemScanTimeout(
+                message='filesystem scan timed out',
+                }
+            )
 
         return scanner
 
