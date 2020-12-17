@@ -528,7 +528,6 @@ class Manifest:
         if incomplete_scans:
             raise FilesystemScanTimeout(
                 message='filesystem scan timed out',
-                }
             )
 
         return scanner
