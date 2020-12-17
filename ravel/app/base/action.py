@@ -314,7 +314,7 @@ class Action(object):
             try:
                 func(self, request, state.result)
             except Exception as exc:
-                error = Action.Error(exc, mware)
+                error = Action.Error(exc, func)
                 state.errors.append(error)
 
         return error
