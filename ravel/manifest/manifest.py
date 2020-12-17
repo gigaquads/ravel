@@ -27,7 +27,6 @@ from .binding import Binding
 from .exceptions import *
 
 
-
 class Manifest:
 
     class Schema(Schema):
