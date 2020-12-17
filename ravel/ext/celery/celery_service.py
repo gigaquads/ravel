@@ -21,6 +21,7 @@ DEFAULT_BROKER = 'amqp://'
 
 
 class CeleryService(Application):
+
     def __init__(self, uses_client=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._client = CeleryClient(self) if uses_client else None
@@ -32,7 +33,7 @@ class CeleryService(Application):
 
     @property
     def celery_config(self) -> Dict:
-        return self.manifest.get('celery', {})
+        return self.local.manifest.data.get('celery', {})
 
     @property
     def client(self) -> 'CeleryClient':
@@ -57,7 +58,7 @@ class CeleryService(Application):
             action.register_with_celery()
 
     def _init_celery_app(self):
-        name = self.manifest.get('package')
+        name = self.local.manifest.package
         broker = self.celery_config.setdefault('broker', DEFAULT_BROKER)
         backend = self.celery_config.get('result_backend')
         self._celery = Celery(name, broker=broker, backend=backend)
@@ -66,7 +67,7 @@ class CeleryService(Application):
         @worker_process_init.connect
         def bootstrap_celery_worker_process(*args, **kwargs):
             console.info('bootstrapping celery worker process')
-            self.bootstrap(self.manifest)
+            self.bootstrap(self.local.manifest)
 
     def _init_celery_json_serializer(self):
         serializer_name = 'json'
@@ -84,7 +85,9 @@ class CeleryService(Application):
             result_serializer=serializer_name,
         )
 
+
 class CeleryClient(object):
+
     def __init__(self, app):
         self.app = app
         self.scanner = Scanner()
@@ -102,7 +105,7 @@ class CeleryClient(object):
 
     def bootstrap(self, manifest: 'Manifest', mocked=False) -> 'CeleryClient':
         # discover actions registered with app via decorator
-        manifest = Manifest.from_object(manifest)
+        manifest = Manifest(manifest)
         self.scanner.scan(manifest.package)
 
         if not mocked:

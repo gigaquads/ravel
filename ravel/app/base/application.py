@@ -154,6 +154,10 @@ class Application(object):
     def manifest(self) -> 'Manifest':
         return getattr(self.local, 'manifest', None)
 
+    @manifest.setter
+    def manifest(self, manifest):
+        self.local.manifest = Manifest(manifest)
+
     @property
     def mode(self) -> Mode:
         return self._mode
@@ -216,6 +220,7 @@ class Application(object):
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
+
         def create_logger():
             """
             Setup root application logger.
