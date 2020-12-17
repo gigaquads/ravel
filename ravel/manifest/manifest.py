@@ -54,6 +54,12 @@ class Manifest:
         app: 'Application',
         namespace: Dict = None
     ) -> 'Manifest':
+
+        console.debug(
+            message='computed manifest...',
+            data=self.data
+        )
+
         self.app = app
         self.bootstraps = self._initialize_bootstraps()
         self.bindings = self._initialize_bindings()
@@ -385,7 +391,7 @@ class Manifest:
                     f'yaml and json manifest file types are supported.'
                 )
         elif isinstance(source, dict):
-            data = cls._expand_vars(source)
+            data = source
             filepath = None
 
         # merge data dict into recursively inherited data dict
@@ -393,6 +399,8 @@ class Manifest:
         if base_filepath:
             inherited_data = inherit_base_manifest(base_filepath)
             data = DictUtils.merge(inherited_data, data)
+
+        data = cls._expand_vars(data)
 
         # validate final computed data dict
         validated_data, errors = schema.process(data)
@@ -461,11 +469,19 @@ class Manifest:
 
     @classmethod
     def _expand_vars(cls, data: Dict) -> Dict:
+        """
+        Recursively expand any environment variable (with the form $FOO or
+        ${FOO}) that appears in the data dict, either as a key or value, with
+        its corresponding value. Return a new dict.
+        """
         expanded = {}
-        re_env_ident = re.compile(r'^\$[a-z]\w*$')
+        re_env_ident = re.compile(r'^\$[a-zA-Z0-9_]+$')
         for k, v in data.items():
-            if isinstance(v, str) and re_env_ident.match(v, re.I):
-                expanded[k] = os.environ.get(v.lstrip('$'))
+            k = k.strip()
+            if isinstance(k, str) and k.startswith('$'):
+                k = os.path.expandvars(k) 
+            if isinstance(v, str):
+                expanded[k] = os.path.expandvars(v.strip())
             elif isinstance(v, dict):
                 expanded[k] = cls._expand_vars(v)
             else:
@@ -529,7 +545,6 @@ class Manifest:
         if incomplete_scans:
             raise FilesystemScanTimeout(
                 message='filesystem scan timed out',
-                }
             )
 
         return scanner
