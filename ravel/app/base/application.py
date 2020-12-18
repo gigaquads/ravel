@@ -42,7 +42,6 @@ class Mode(EnumValueStr):
 
 
 class Application(object):
-    Mode = Mode
 
     def __init__(
         self,
@@ -164,7 +163,7 @@ class Application(object):
 
     @mode.setter
     def mode(self, mode):
-        self._mode = Application.Mode(mode)
+        self._mode = Mode(mode)
 
     @property
     def is_bootstrapped(self) -> bool:
@@ -176,14 +175,14 @@ class Application(object):
 
     @property
     def is_simulation(self) -> bool:
-        return self._mode == Application.Mode.simulation
+        return self._mode == Mode.simulation
 
     @is_simulation.setter
     def is_simulation(self, is_simulation):
         if is_simulation:
-            self._mode = Application.Mode.simulation
+            self._mode = Mode.simulation
         else:
-            self._mode = Application.Mode.normal
+            self._mode = Mode.normal
 
     @property
     def json(self) -> JsonEncoder:
@@ -221,7 +220,7 @@ class Application(object):
         Bootstrap the data, business, and service layers, wiring them up.
         """
 
-        def create_logger():
+        def create_logger(level):
             """
             Setup root application logger.
             """
@@ -235,7 +234,7 @@ class Application(object):
                 class_name = get_class_name(self)
                 name = f'{StringUtils.snake(class_name)}-{count}'
 
-            return ConsoleLoggerInterface(name)
+            return ConsoleLoggerInterface(name, level)
             
         # warn about already being bootstrapped...
         if (
@@ -254,7 +253,7 @@ class Application(object):
         console.debug(f'bootstrapping {get_class_name(self)} app')
 
         # override the application mode set in constructor
-        self._mode = Application.Mode(mode or self.mode or Mode.normal)
+        self._mode = Mode(mode or self.mode or Mode.normal)
 
         # merge additional namespace data into namespace dict
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
@@ -289,7 +288,7 @@ class Application(object):
                 f'{get_class_name(self)}MainThread'
             )
 
-        self._logger = create_logger()
+        self._logger = create_logger(self.manifest.logging['level'])
         self._arg_loader = ArgumentLoader(self)
 
         # if we're in a new process, unset the executors so that

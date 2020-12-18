@@ -75,9 +75,9 @@ class SqlalchemyStore(Store):
             fields.BcryptString.adapt(on_adapt=lambda field: sa.Text),
             fields.Float.adapt(on_adapt=lambda field: sa.Float),
             fields.DateTime.adapt(on_adapt=lambda field: UtcDateTime),
-            fields.TimeDelta.adapt(on_adapt=lambda field: sa.Interval),
             fields.Timestamp.adapt(on_adapt=lambda field: UtcDateTime),
             fields.Bool.adapt(on_adapt=lambda field: sa.Boolean),
+            fields.TimeDelta.adapt(on_adapt=lambda field: sa.Interval),
             fields.Enum.adapt(
                 on_adapt=lambda field: {
                     fields.String: sa.Text,
@@ -233,6 +233,8 @@ class SqlalchemyStore(Store):
             adapter = self._adapters.get(k)
             if adapter:
                 callback = getattr(adapter, cb_name, None)
+                if k == 'cycle_period':
+                    import ipdb; ipdb.set_trace()
                 if callback:
                     prepared_record[k] = callback(v)
                     continue
@@ -317,6 +319,9 @@ class SqlalchemyStore(Store):
                 name_or_url=cls.ravel.app.shared.sqla_url,
                 echo=bool(echo or cls.env.SQLALCHEMY_STORE_ECHO),
             )
+
+            # set global thread-local sqlalchemy store method aliases
+            cls.ravel.app.local.create_tables = cls.create_tables
 
     def on_bind(
         self,
@@ -661,6 +666,8 @@ class SqlalchemyStore(Store):
                     .values(**prepared_data)
                     .where(self._id_column == prepared_id)
                 )
+        else:
+            return prepared_data
         if self.supports_returning:
             update_stmt = update_stmt.return_defaults()
             console.debug(f'SQL: UPDATE {self.table}')

@@ -205,8 +205,10 @@ class LoaderProperty(ResolverProperty):
                 message=f'cannot set {self}',
                 data={
                     'resolver': str(self.resolver),
-                    'value': str(value),
+                    'field': field,
+                    'schema': owner.ravel.schema,
                     'errors': errors,
+                    'value': value,
                 }
             )
             raise Exception(str(errors))

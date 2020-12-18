@@ -8,7 +8,7 @@ from threading import local
 
 from appyratus.utils.dict_utils import DictObject
 
-from ravel.exceptions import ValidationError
+from ravel.exceptions import NotBootstrapped, ValidationError
 from ravel.store import Store, SimulationStore
 from ravel.util.dirty import DirtyDict
 from ravel.util.loggers import console
@@ -300,7 +300,20 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     @property
     def app(self) -> 'Application':
+        if not self.ravel.app:
+            raise NotBootstrapped(
+                f'{get_class_name(self)} must be associated '
+                f'with a bootstrapped app'
+            )
         return self.ravel.app
+
+    @property
+    def log(self) -> 'ConsoleLoggerInterface':
+        return self.ravel.app.log if self.ravel.app else None
+
+    @property
+    def class_name(self) -> Text:
+        return get_class_name(self)
 
     @property
     def store(self) -> 'Store':
@@ -375,6 +388,7 @@ class Resource(Entity, metaclass=ResourceMeta):
                 ),
                 data={
                     'resource': self._id,
+                    'class': self.class_name,
                     'other': other,
                     'values': values,
                 }
@@ -506,7 +520,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         if strict and missing_resolver_names:
             console.error(
-                message=f'{get_class_name(self)} missing required data',
+                message=f'{self.class_name} missing required data',
                 data={'missing': missing_resolver_names}
             )
             raise ValidationError('see error log for details')
@@ -634,11 +648,12 @@ class Resource(Entity, metaclass=ResourceMeta):
                     if self.internal.state[key] is None:
                         console.warning(
                             message=(
-                                'you tried to save None to {key} but not '
-                                'nullable. clearing field value.'
+                                f'resolved None for {resolver} but not '
+                                f'nullable'
                             ),
                             data={
-                                'resource': get_class_name(self),
+                                'resource': self._id,
+                                'class': self.class_name,
                                 'field': key,
                             }
                         )
@@ -689,7 +704,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             'create', (prepared_record, )
         )
 
-        self.internal.state.update(created_record)
+        self.merge(created_record)
         self.clean()
         self.post_create()
 
@@ -898,17 +913,21 @@ class Resource(Entity, metaclass=ResourceMeta):
             field = self.Schema.fields.get(k)
             if field is not None:
                 if field.name not in self.ravel.virtual_fields:
-                    prepared_record[k], error = field.process(v)
-                    if error:
-                        errors[k] = error
+                    if v is None and field.nullable:
+                        prepared_record[k] = None
+                    else:
+                        prepared_record[k], error = field.process(v)
+                        if error:
+                            errors[k] = error
 
         self.on_update(prepared_record)
 
         if errors:
             raise ValidationError(
-                message=f'could not update {get_class_name(self)} object',
+                message=f'update failed for {self}',
                 data={
-                    ID: self._id,
+                    'resource': self._id,
+                    'class': self.class_name,
                     'errors': errors,
                 }
             )
@@ -954,7 +973,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         created_records = store.dispatch('create_many', (records, ))
 
         for resource, record in zip(resources, created_records):
-            resource.internal.state.update(record)
+            resource.merge(record)
             resource.clean()
 
         batch = cls.Batch(resources)
@@ -1049,7 +1068,7 @@ class Resource(Entity, metaclass=ResourceMeta):
             for resource in resource_partition:
                 record = updated_records.get(resource._id)
                 if record:
-                    resource.internal.state.update(record)
+                    resource.merge(record)
                     resource.clean()
 
                     # sync updated state across previously encoutered
