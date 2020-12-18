@@ -487,11 +487,13 @@ class Manifest:
         for k, v in data.items():
             k = k.strip()
             if isinstance(k, str) and k.startswith('$'):
-                k = os.path.expandvars(k) 
+                k = os.path.expandvars(k)
             if isinstance(v, str):
                 expanded[k] = os.path.expandvars(v.strip())
             elif isinstance(v, dict):
                 expanded[k] = cls._expand_vars(v)
+            elif isinstance(v, list):
+                expanded[k] = [cls._expand_vars(lv) for lv in v]
             else:
                 expanded[k] = v
         return expanded
