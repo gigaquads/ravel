@@ -314,6 +314,8 @@ class SqlalchemyStore(Store):
                 }
             )
 
+            cls.ravel.local.sqla_tx = None
+            cls.ravel.local.sqla_conn = None
             cls.ravel.local.sqla_metadata = sa.MetaData()
             cls.ravel.local.sqla_metadata.bind = sa.create_engine(
                 name_or_url=cls.ravel.app.shared.sqla_url,
@@ -780,7 +782,7 @@ class SqlalchemyStore(Store):
 
     @classmethod
     def get_active_connection(cls):
-        return cls.ravel.local.sqla_conn
+        return getattr(cls.ravel.local, 'sqla_conn', None)
 
     @classmethod
     def connect(cls, refresh=True):
@@ -818,7 +820,7 @@ class SqlalchemyStore(Store):
             console.warning('sqlalchemy has no connection to close')
 
     @classmethod
-    def begin(cls, auto_connect=True):
+    def begin(cls, auto_connect=True, **kwargs):
         """
         Initialize a thread-local transaction. An exception is raised if
         there's already a pending transaction.
@@ -838,7 +840,7 @@ class SqlalchemyStore(Store):
         cls.ravel.local.sqla_tx = new_tx
 
     @classmethod
-    def commit(cls, rollback=True):
+    def commit(cls, rollback=True, **kwargs):
         """
         Call commit on the thread-local database transaction. "Begin" must be
         called to start a new transaction at this point, if a new transaction
@@ -850,19 +852,14 @@ class SqlalchemyStore(Store):
                 cls.ravel.local.sqla_tx.commit()
                 cls.ravel.local.sqla_tx = None
 
-        def execute_post_commit_hooks():
-            for hook, args, kwargs in request.context[POST_COMMIT_HOOKS]:
-                hook(*args, **kwargs)
-
         # try to commit the transaction.
         console.debug(f'committing sqlalchemy transaction')
         try:
             perform_sqlalchemy_commit()
-            execute_post_commit_hooks()
         except Exception:
             if rollback:
                 # if the commit fails, rollback the transaction
-                console.exception(
+                console.critical(
                     f'rolling back sqlalchemy transaction'
                 )
                 cls.rollback()
@@ -875,11 +872,20 @@ class SqlalchemyStore(Store):
             cls.close()
 
     @classmethod
-    def rollback(cls):
+    def rollback(cls, **kwargs):
         tx = getattr(cls.ravel.local, 'sqla_tx', None)
         if tx is not None:
             cls.ravel.local.sqla_tx = None
-            tx.rollback()
+            try:
+                tx.rollback()
+            except:
+                console.exception(
+                    f'sqlalchemy transaction failed to rollback'
+                )
+
+    @classmethod
+    def has_transaction(cls) -> bool:
+        return cls.ravel.local.sqla_tx is not None
 
     @classmethod
     def get_metadata(cls):

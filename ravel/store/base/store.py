@@ -167,6 +167,22 @@ class Store(object, metaclass=StoreMeta):
     def is_bootstrapped(cls):
         return getattr(cls.ravel.local, 'is_bootstrapped', False)
 
+    @classmethod
+    def has_transaction(cls):
+        raise NotImplementedError()
+
+    @classmethod
+    def begin(cls, **kwargs):
+        raise NotImplementedError()
+
+    @classmethod
+    def commit(cls, **kwargs):
+        raise NotImplementedError()
+
+    @classmethod
+    def rollback(cls, **kwargs):
+        raise NotImplementedError()
+
     def create_id(self, record: Dict) -> object:
         """
         Generate and return a new ID for the given not-yet-created record. If

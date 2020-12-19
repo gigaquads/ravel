@@ -34,12 +34,12 @@ class Manifest:
         package = fields.String()
         bindings = fields.List(Binding.Schema(), default=[])
         bootstraps = fields.List(Bootstrap.Schema(), default=[])
+        values = fields.Dict(default={})
         logging = fields.Nested({
             'level': fields.Enum(fields.String(), {
                 'DEBUG', 'INFO', 'WARNING', 'CRITICAL', 'ERROR'
             }, default='DEBUG')
         })
-        values = fields.Dict(default={})
 
     def __init__(self, source: Union['Manifest', Dict, Text]):
         filepath, data = self._load_manifest_data(source)
@@ -182,7 +182,9 @@ class Manifest:
 
     @property
     def logging(self) -> Dict:
-        return self.data.get('logging', {}).copy()
+        return self.data.get('logging', {
+            'level': 'DEBUG'
+        }).copy()
 
     @property
     def resource_classes(self) -> Dict[Text, Type['Resource']]:

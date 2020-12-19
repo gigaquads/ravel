@@ -25,6 +25,7 @@ from ravel.util.misc_functions import get_class_name, inject, is_sequence
 from ravel.schema import Field
 from ravel.constants import ID
 from ravel.app.exceptions import ApplicationError
+from ravel.store.transaction_manager import TransactionManager
 
 from .action_decorator import ActionDecorator
 from .action import Action
@@ -57,6 +58,7 @@ class Application(object):
         self.local.bootstrapper_thread_id = None
         self.local.thread_executor = None
         self.local.process_executor = None
+        self.local.tx_manager = None
 
         self.shared = DictObject()  # storage shared by threads
         self.shared.manifest_data = None
@@ -299,6 +301,7 @@ class Application(object):
             self.local.process_executor = None
 
         self.local.thread_id = get_ident()
+        self.local.tx_manager = TransactionManager(self)
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
@@ -401,6 +404,15 @@ class Application(object):
                 message=f'action already registered: {action.name}',
                 data={'action': action}
             )
+
+    def transaction(self):
+        return self.local.tx_manager
+
+    def commit(self):
+        self.local.tx_manager.commit()
+
+    def rollback(self):
+        self.local.tx_manager.rollback()
 
     def on_extract(self, action, index, parameter, raw_args, raw_kwargs):
         """

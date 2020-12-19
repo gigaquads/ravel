@@ -924,7 +924,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         if errors:
             raise ValidationError(
-                message=f'update failed for {self}',
+                message=f'update failed for {self}: {errors}',
                 data={
                     'resource': self._id,
                     'class': self.class_name,
@@ -937,10 +937,9 @@ class Resource(Entity, metaclass=ResourceMeta):
         )
 
         if updated_record:
-            self.internal.state.update(updated_record)
+            self.merge(updated_record)
 
-        self.clean(prepared_record.keys())
-
+        self.clean(prepared_record.keys() | updated_record.keys())
         self.post_update()
 
         return self
@@ -1069,7 +1068,7 @@ class Resource(Entity, metaclass=ResourceMeta):
                 record = updated_records.get(resource._id)
                 if record:
                     resource.merge(record)
-                    resource.clean()
+                    resource.clean(record.keys())
 
                     # sync updated state across previously encoutered
                     # instances of this resource (according to ID)
