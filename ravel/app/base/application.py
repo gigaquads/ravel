@@ -384,7 +384,7 @@ class Application(object):
         # submit and return the future
         return executor.submit(target, *args, **kwargs)
 
-    def add_action(self, action: 'Action', overwrite=False):
+    def add_action(self, action: 'Action', overwrite=False, *args, **kwargs):
         """
         Add an action to this app.
         """
@@ -392,12 +392,20 @@ class Application(object):
             console.debug(f'registered action {action.name}')
             if isinstance(action, Action):
                 if action.app is not self:
+                    if args or kwargs:
+                        console.warning(
+                            '*args and **kwargs ignored by add_action'
+                        )
+                    decorator = self.action(
+                        *action.decorator.args,
+                        **action.decorator.kwargs
+                    )
                     decorator(action.target)
                 else:
                     self._actions[action.name] = action
             else:
                 assert callable(action)
-                decorator = self.action()
+                decorator = self.action(*args, **kwargs)
                 decorator(action)
         else:
             raise ApplicationError(
