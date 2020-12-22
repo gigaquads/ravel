@@ -918,19 +918,15 @@ class Resource(Entity, metaclass=ResourceMeta):
                     else:
                         prepared_record[k], error = field.process(v)
                         if error:
+                            console.error(
+                                f'{self} failed validation for {k}: {v}'
+                            )
                             errors[k] = error
 
         self.on_update(prepared_record)
 
         if errors:
-            raise ValidationError(
-                message=f'update failed for {self}: {errors}',
-                data={
-                    'resource': self._id,
-                    'class': self.class_name,
-                    'errors': errors,
-                }
-            )
+            raise ValidationError(f'update failed for {self}: {errors}')
 
         updated_record = self.ravel.local.store.dispatch(
             'update', (self._id, prepared_record)
