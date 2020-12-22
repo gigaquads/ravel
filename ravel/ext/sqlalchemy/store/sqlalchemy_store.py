@@ -619,7 +619,10 @@ class SqlalchemyStore(Store):
         except Exception:
             console.error(
                 message=f'failed to insert record',
-                data={ 'record': record }
+                data={
+                    'record': record,
+                    'resource': get_class_name(self.resource_type),
+                }
             )
             raise
 
