@@ -1,7 +1,7 @@
 import inspect
 import uuid
 
-from typing import Text, Tuple, List, Set, Dict, Type, Union
+from typing import Text, Tuple, List, Set, Dict, Type, Union, Optional
 from collections import defaultdict
 from copy import deepcopy
 from threading import local
@@ -194,6 +194,10 @@ class ResourceMeta(type):
 
 class Resource(Entity, metaclass=ResourceMeta):
 
+    # metaclass attribute stubs:
+    ravel = None
+
+    # base resource fields:
     _id = fields.UuidString(default=lambda: uuid.uuid4().hex, nullable=False)
     _rev = fields.String()
 
@@ -327,7 +331,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         )
 
     @property
-    def dirty(self) -> Set[Text]:
+    def dirty(self) -> Dict:
         return {
             k: self.internal.state[k]
             for k in self.internal.state.dirty
@@ -344,10 +348,10 @@ class Resource(Entity, metaclass=ResourceMeta):
         instance = cls()
         values = values or {}
         keys = keys or set(cls.ravel.schema.fields.keys())
-        resolver_objs = Resolver.sort(
+        resolver_objs = Resolver.sort([
             cls.ravel.resolvers[k] for k in keys
             if k not in {REV}
-        )
+        ])
 
         instance = cls()
 
@@ -422,8 +426,8 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     def dump(
         self,
-        resolvers: Set[Text] = None,
-        style: DumpStyle = None
+        resolvers: Optional[Set[Text]] = None,
+        style: Optional[DumpStyle] = None
     ) -> Dict:
         """
         Dump the fields of this business object along with its related objects
@@ -548,6 +552,9 @@ class Resource(Entity, metaclass=ResourceMeta):
                     # field loader resolvers are treated specially to overcome
                     # the limitation of Resolver.target always expecte to be a
                     # Resource class.
+                    # if resolvers == {'session_state'}:
+                    #     print(resolvers)
+                    #     import ipdb; ipdb.set_trace()
                     obj = resolver.resolve(self)
                     setattr(self, k, getattr(obj, k))
                 else:
@@ -588,6 +595,8 @@ class Resource(Entity, metaclass=ResourceMeta):
             if k in self.internal.state:
                 del self.internal.state[k]
 
+        return self
+
     def is_loaded(self, resolvers: Union[Text, Set[Text]]) -> bool:
         """
         Are all given field and/or relationship values loaded?
@@ -610,7 +619,7 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         return True
 
-    def _prepare_record_for_create(self, keys_to_save: Set[Text] = None):
+    def _prepare_record_for_create(self, keys_to_save: Optional[Set[Text]] = None):
         """
         Prepares a a Resource state dict for insertion via DAL.
         """
@@ -718,7 +727,7 @@ class Resource(Entity, metaclass=ResourceMeta):
         return value
 
     @classmethod
-    def get(cls, _id, select=None) -> Union['Resource', 'Batch']:
+    def get(cls, _id, select=None) -> Optional[Union['Resource', 'Batch']]:
         if _id is None:
             return None
 
@@ -950,29 +959,37 @@ class Resource(Entity, metaclass=ResourceMeta):
         Call `store.create_method` on input `Resource` list and return them in
         the form of a Batch.
         """
+        # normalize resources to a list of Resource objects
         records = []
-
+        prepared_resources = []
         for resource in resources:
             if resource is None:
                 continue
             if isinstance(resource, dict):
+                # convert raw dict into a proper Resource object
                 state_dict = resource
                 resource = cls(state=state_dict)
 
             record = resource._prepare_record_for_create(fields)
             records.append(record)
 
+            resource.internal.state.update(record)
+            prepared_resources.append(resource)
+
+        if not records:
+            return cls.Batch()
+
         cls.on_create_many(records)
 
         store = cls.ravel.local.store
         created_records = store.dispatch('create_many', (records, ))
 
-        for resource, record in zip(resources, created_records):
+        for resource, record in zip(prepared_resources, created_records):
             resource.merge(record)
             resource.clean()
 
-        batch = cls.Batch(resources)
-
+        # insert the batch to the store
+        batch = cls.Batch(prepared_resources)
         cls.post_create_many(batch)
 
         return batch

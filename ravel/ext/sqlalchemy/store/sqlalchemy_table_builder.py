@@ -124,8 +124,13 @@ class SqlalchemyTableBuilder(object):
                         server_default = 'true' if server_default else 'false'
                     elif isinstance(field, (fields.Int, fields.Float)):
                         server_default = str(server_default)
-                    elif isinstance(field, (fields.Dict, fields.Nested)):
-                        server_default = json_encoder.encode(server_default)
+                    else:
+                        try:
+                            server_default = json_encoder.encode(
+                                server_default
+                            )
+                        except:
+                            server_default = str(server_default)
 
         # prepare positional arguments for Column ctor
         args = [
@@ -144,7 +149,6 @@ class SqlalchemyTableBuilder(object):
             unique=unique,
             server_default=server_default
         )
-
         try:
             column = sa.Column(*args, **kwargs)
         except Exception:

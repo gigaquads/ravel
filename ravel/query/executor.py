@@ -57,6 +57,9 @@ class Executor(object):
         mode = query.target.ravel.app.mode
         kwargs = query.parameters.to_dict()
 
+        if predicate is None:
+            predicate = resource_type._id != None
+
         if mode == 'normal' and (not self.simulate):
             store = resource_type.ravel.local.store
             records = store.query(predicate, fields=fields, **kwargs)

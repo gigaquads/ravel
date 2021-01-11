@@ -98,11 +98,19 @@ class Loader(Resolver):
                 kwargs={'fields': unloaded_field_names.copy()}
             ) or {}
         )
-        resource.merge(new_resource_state)
+
+        # merge in new state to existing resource, not overwriting
+        # any fields that are dirty, i.e. have changes.
+        keys_to_clean = set()
+        for k, v in new_resource_state.items():
+            is_dirty = k in resource.internal.state.dirty
+            if not is_dirty or k in unloaded_field_names:
+                keys_to_clean.add(k)
+                resource[k] = v
 
         # mark the loaded fields as "clean", meaning, we are telling the system
         # that thse fields are new, not stale and in need of saving.
-        resource.clean(unloaded_field_names)
+        resource.clean(keys_to_clean)
 
         return resource
 
@@ -117,8 +125,8 @@ class Loader(Resolver):
 
         # field names to fetch (fetch all eagerly)
         field_names = set(self.target.ravel.schema.fields.keys())
-        state_dicts = resource.ravel.local.store.dispatch('fetch_many',
-            args=(batch_ids, ),
+        state_dicts = self.owner.ravel.local.store.dispatch('fetch_many',
+            args=(resource_ids, ),
             kwargs={'fields': field_names}
         )
 

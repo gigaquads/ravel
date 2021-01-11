@@ -1,24 +1,23 @@
 import os
 import re
-import traceback
+from threading import current_thread
 import pkg_resources
 import concurrent.futures
 
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from threading import local
-from typing import Text, Dict, Type, Union, Set, List
+from typing import Text, Dict, Type, Union, Set, List, Callable
 from copy import deepcopy
 
 from appyratus.utils.dict_utils import DictUtils, DictObject
 from appyratus.utils.string_utils import StringUtils
+from appyratus.utils.type_utils import TypeUtils
 from appyratus.files import Yaml, Json
 from appyratus.env import Environment
 
 from ravel.exceptions import ManifestError
-from ravel.util.misc_functions import import_object, get_class_name
+from ravel.util.misc_functions import get_class_name
 from ravel.util.loggers import console
-from ravel.util.scanner import Scanner
 from ravel.schema import Schema, fields
 
 from .scanner import ManifestScanner
@@ -41,7 +40,7 @@ class Manifest:
             }, default='DEBUG')
         })
 
-    def __init__(self, source: Union['Manifest', Dict, Text]):
+    def __init__(self, source: Union['Manifest', Dict, Text, Callable]):
         filepath, data = self._load_manifest_data(source)
 
         self.env = Environment()
@@ -50,6 +49,7 @@ class Manifest:
         self.bindings = []
         self.bootstraps = []
         self.default_bootstrap = None
+        self.values = None
         self.scanner = None
         self.app = None
 
@@ -72,6 +72,7 @@ class Manifest:
         if namespace:
             self._scan_namespace_dict(namespace)
 
+        self._post_process_values_dict()
         self._resolve_bindings()
         self._resolve_resource_id_fields()
         self._bootstrap_store_classes()
@@ -79,6 +80,8 @@ class Manifest:
         self._bind_resources()
         self._inject_classes_to_actions()
         self._bootstrap_app_actions()
+
+        return self
 
     def register(
         self,
@@ -89,7 +92,7 @@ class Manifest:
         Dynamically register and bootstrap a resource with its associated
         store class.
         """
-        from ravel import Resource
+        from ravel.resource import Resource
 
         def resolve_store_class(resource_class, store_class):
             if not store_class:
@@ -100,7 +103,7 @@ class Manifest:
             else:
                 return store_class
 
-        def validate_resource_class(resource_class):
+        def validate_resource_class(resource_class) -> Type['Resource']:
             if not isinstance(resource_class, Resource):
                 raise TypeError(
                     f'{get_class_name(resource_class)} must '
@@ -133,7 +136,7 @@ class Manifest:
             if store_class_name not in self.store_classes:
                 self.store_classes[store_class_name] = store_class
 
-        def bootstrap_new_classes(self, resource_class, store_class):
+        def bootstrap_new_classes(resource_class, store_class):
             resource_class_name = get_class_name(resource_class)
             store_class_name = get_class_name(store_class)
             bootstraps = {
@@ -365,7 +368,11 @@ class Manifest:
                 if default_bootstrap:
                     store_class_name = default_bootstrap.store_class_name
                 else:
-                    store_class_name = None
+                    store_class_name = 'SimulationStore'
+                    console.warning(
+                        f'defaulting {x["resource"]} store to '
+                        f'{store_class_name}'
+                    )
 
             params = x.get('params') or {}
             binding = Binding(x['resource'], store_class_name, params)
@@ -382,6 +389,11 @@ class Manifest:
         schema = cls.Schema(allow_additional=True)
         filepath = None
         data = {}
+
+        # if source is callable, it means that the manifest is being returned
+        # by a function, allowing for dynamic manifest properties
+        if callable(source):
+            source = source()
 
         # load the manifest data dict differently, depending
         # on its source -- e.g. from a file path, a dict, another manifest
@@ -407,7 +419,7 @@ class Manifest:
         # merge data dict into recursively inherited data dict
         base_filepath = data.get('base')
         if base_filepath:
-            inherited_data = inherit_base_manifest(base_filepath)
+            inherited_data = cls.inherit_base_manifest(base_filepath)
             data = DictUtils.merge(inherited_data, data)
 
         data = cls._expand_vars(data)
@@ -473,7 +485,7 @@ class Manifest:
             # recurse on base's base manifest...
             nested_base = base_data.get('base')
             if nested_base:
-                inherit_base_manifest(nested_base, visited, data)
+                cls.inherit_base_manifest(nested_base, visited, data)
 
         return data
 
@@ -485,7 +497,6 @@ class Manifest:
         its corresponding value. Return a new dict.
         """
         expanded = {}
-        re_env_ident = re.compile(r'^\$[a-zA-Z0-9_]+$')
         for k, v in data.items():
             k = k.strip()
             if isinstance(k, str) and k.startswith('$'):
@@ -568,112 +579,32 @@ class Manifest:
         app.
         """
         from ravel.store import Store
-        from ravel import Resource
+        from ravel.resource import Resource
 
         for k, v in (namespace or {}).items():
-            if isinstance(v, type):
-                if issubclass(v, Resource) and v is not Resource:
-                    if not v.ravel.is_abstract:
-                        self.resource_classes[k] = v
-                        console.debug(
-                            f'detected Resource class in '
-                            f'namespace dict: {get_class_name(v)}'
-                        )
-                elif issubclass(v, Store):
-                    self.store_classes[k] = v
+            if TypeUtils.is_proper_subclass(v, Resource):
+                if not v.ravel.is_abstract:
+                    self.resource_classes[k] = v
                     console.debug(
-                        f'detected Store class in namespace '
-                        f'dict: {get_class_name(v)}'
+                        f'detected Resource class in '
+                        f'namespace dict: {get_class_name(v)}'
                     )
-
-
-if __name__ == "__main__":
-    import tempfile
-    
-    from ravel.util.json_encoder import JsonEncoder
-    from ravel import Application
-
-    json = JsonEncoder()
-    data = {
-        'package': 'ravel',
-        'bootstraps': [
-            {
-                'store': 'SimulationStore',
-                'default': True,
-            }
-        ],
-        'values': {
-            'env_var': '$HOME',
-            'not_env_var': 'FOO $HOME',
-        }
-    }
-
-
-    def test_manifest_from_dict():
-        manifest = Manifest(data)
-        assert manifest.data['package'] == 'ravel'
-        assert manifest.filepath is None
-        assert manifest.data['values']['env_var'] == manifest.env.HOME
-        assert manifest.data['values']['not_env_var'] == 'FOO $HOME'
-
-
-    def test_manifest_from_manifest():
-        source_manifest = Manifest(data)
-        manifest = Manifest(source_manifest)
-
-        assert manifest.data['package'] == 'ravel'
-        assert manifest.filepath is None
-
-
-    def test_manifest_from_filepath():
-        with tempfile.NamedTemporaryFile(suffix='.json') as manifest_file:
-            manifest_file.write(json.encode(data).encode())
-            manifest_file.flush()
-
-            manifest = Manifest(manifest_file.name)
-
-            assert manifest.filepath == manifest_file.name
-            assert manifest.data is not None
-            assert manifest.data['package'] == 'ravel'
-
-    def test_manifest_from_filepath_with_base():
-        global data
-        data = data.copy()
-
-        with tempfile.NamedTemporaryFile(suffix='.json') as manifest_file:
-            with tempfile.NamedTemporaryFile(suffix='.json') as base_manifest_file:
-                data['base'] = base_manifest_file.name
-
-                base_manifest_file.write(
-                    json.encode({'values': {'base': True}}).encode()
+            elif TypeUtils.is_proper_subclass(v, Store):
+                self.store_classes[k] = v
+                console.debug(
+                    f'detected Store class in namespace '
+                    f'dict: {get_class_name(v)}'
                 )
-                base_manifest_file.flush()
 
-                manifest_file.write(json.encode(data).encode())
-                manifest_file.flush()
+    def _post_process_values_dict(self):
+        """
+        Recursively convert data['values'] into a tree of DictObjects
+        """
+        def objectify(data):
+            copy = data.copy()
+            for k, v in data.items():
+                if isinstance(v, dict):
+                    copy[k] = objectify(v)
+            return DictObject(copy)
 
-                manifest = Manifest(manifest_file.name)
-
-                assert manifest.filepath == manifest_file.name
-                assert manifest.data is not None
-                assert manifest.data['package'] == 'ravel'
-                assert manifest.data['values'].get('base') is True
-
-    def test_manifest_bootstrap_creates_bootstraps():
-        global data
-        data = data.copy()
-        del data['package']
-
-        app = Application()
-
-        manifest = Manifest(data)
-        manifest.bootstrap(app)
-
-        assert len(manifest.bootstraps) == len(data['bootstraps'])
-
-
-    #test_manifest_from_dict()
-    #test_manifest_from_manifest()
-    #test_manifest_from_filepath()
-    # test_manifest_from_filepath_with_base()
-    test_manifest_bootstrap_creates_bootstraps()
+        self.values = objectify(self.data['values'])

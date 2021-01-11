@@ -1,3 +1,5 @@
+import traceback
+
 from threading import current_thread
 
 from ravel.util.misc_functions import get_class_name
@@ -19,8 +21,15 @@ class TransactionManager:
         self.begin()
         return self
 
-    def __exit__(self, *args):
-        self.commit()
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        if exc_type is None:
+            self.commit()
+        else:
+            self.log.error(
+                message=f'aborting transaction due to {exc_value}',
+                data={'traceback': traceback.format_exc().split('\n')}
+            )
+            self.rollback()
 
     def begin(self, **kwargs):
         for store_class in self.store_classes:

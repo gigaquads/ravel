@@ -233,11 +233,19 @@ class SqlalchemyStore(Store):
             adapter = self._adapters.get(k)
             if adapter:
                 callback = getattr(adapter, cb_name, None)
-                if k == 'cycle_period':
-                    import ipdb; ipdb.set_trace()
                 if callback:
-                    prepared_record[k] = callback(v)
-                    continue
+                    try:
+                        prepared_record[k] = callback(v)
+                        continue
+                    except Exception:
+                        console.error(
+                            message=f'failed to adapt column value: {k}',
+                            data={
+                                'value': v,
+                                'field': adapter.field_class
+                            }
+                        )
+                        raise
             prepared_record[k] = v
         return prepared_record
 
@@ -251,12 +259,11 @@ class SqlalchemyStore(Store):
         return _id
 
     @classmethod
-    def on_bootstrap(cls, url=None, dialect=None, echo=False, **kwargs):
+    def on_bootstrap(cls, url=None, dialect=None, echo=False, db=None, **kwargs):
         """
         Initialize the SQLAlchemy connection pool (AKA Engine).
         """
         with cls._bootstrap_lock:
-
             cls.ravel.kwargs = kwargs
 
             # construct the URL to the DB server
@@ -283,8 +290,7 @@ class SqlalchemyStore(Store):
                         if cls.env.SQLALCHEMY_STORE_PORT else ''
                     ),
                     db=(
-                        '/' + cls.env.SQLALCHEMY_STORE_NAME
-                        if cls.env.SQLALCHEMY_STORE_NAME else ''
+                        '/' + (db or cls.env.SQLALCHEMY_STORE_NAME or '')
                     )
                 )
                 cls.ravel.app.shared.sqla_url = url or (
@@ -305,8 +311,8 @@ class SqlalchemyStore(Store):
             elif cls.dialect == Dialect.mysql:
                 cls.sa_dialect = mysql
 
-            console.info(
-                message='creating Sqlalchemy engine',
+            console.debug(
+                message='creating sqlalchemy engine',
                 data={
                     'echo': cls.env.SQLALCHEMY_STORE_ECHO,
                     'dialect': cls.dialect,
@@ -837,10 +843,10 @@ class SqlalchemyStore(Store):
 
         existing_tx = getattr(cls.ravel.local, 'sqla_tx', None)
         if existing_tx is not None:
-            raise Exception('there is already an open transaction')
-
-        new_tx = cls.ravel.local.sqla_conn.begin()
-        cls.ravel.local.sqla_tx = new_tx
+            console.debug('there is already an open transaction')
+        else:
+            new_tx = cls.ravel.local.sqla_conn.begin()
+            cls.ravel.local.sqla_tx = new_tx
 
     @classmethod
     def commit(cls, rollback=True, **kwargs):

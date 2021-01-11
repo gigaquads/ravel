@@ -113,8 +113,8 @@ class Application(object):
     def __repr__(self):
         return (
             f'{get_class_name(self)}('
-            f'bootstrapped={self.local.is_bootstrapped}, '
-            f'started={self.local.is_started}, '
+            f'bootstrapped={self.is_bootstrapped}, '
+            f'started={self.is_started}, '
             f'size={len(self._actions)}'
             f')'
         )
@@ -158,6 +158,10 @@ class Application(object):
     @manifest.setter
     def manifest(self, manifest):
         self.local.manifest = Manifest(manifest)
+
+    @property
+    def values(self) -> Dict:
+        return self.manifest.values
 
     @property
     def mode(self) -> Mode:
@@ -213,6 +217,7 @@ class Application(object):
         self,
         manifest: Manifest = None,
         namespace: Dict = None,
+        values: Dict = None,
         middleware: List = None,
         mode: Mode = Mode.normal,
         *args,
@@ -272,11 +277,14 @@ class Application(object):
         elif self.shared.manifest_data:
             self.local.manifest = Manifest(self.shared.manifest_data)
 
-        if not self.shared.manifest_data:
-            self.shared.manifest_data = self.local.manifest.data
-
         assert self.local.manifest is not None
         self.manifest.bootstrap(self)
+
+        if values:
+            self.manifest.values.update(values)
+            
+        if not self.shared.manifest_data:
+            self.shared.manifest_data = self.local.manifest.data
 
         # set up main thread name
         if self.manifest.package:
