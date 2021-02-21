@@ -326,6 +326,7 @@ class SqlalchemyStore(Store):
             cls.ravel.local.sqla_metadata.bind = sa.create_engine(
                 name_or_url=cls.ravel.app.shared.sqla_url,
                 echo=bool(echo or cls.env.SQLALCHEMY_STORE_ECHO),
+                strategy='threadlocal'
             )
 
             # set global thread-local sqlalchemy store method aliases
@@ -903,3 +904,13 @@ class SqlalchemyStore(Store):
     @classmethod
     def get_engine(cls):
         return cls.get_metadata().bind
+
+    @classmethod
+    def dispose(cls):
+        meta = cls.get_metadata()
+        if not meta:
+            cls.ravel.local.sqla_metadata = None
+            return
+
+        engine = meta.bind
+        engine.dispose()

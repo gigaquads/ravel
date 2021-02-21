@@ -2,6 +2,7 @@ import time
 
 import base36
 
+from datetime import datetime
 from collections import defaultdict
 from typing import Dict, List, Type, Set, Text, Tuple
 from threading import local
@@ -10,6 +11,7 @@ from abc import ABCMeta, abstractmethod
 from appyratus.env import Environment
 from appyratus.schema.fields import UuidString
 from appyratus.utils.dict_utils import DictObject
+from appyratus.utils.type_utils import TypeUtils
 
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name
@@ -140,8 +142,18 @@ class Store(object, metaclass=StoreMeta):
         return results
 
     def bind(self, resource_type: Type['Resource'], **kwargs):
+        t1 = datetime.now()
         self._resource_type = resource_type
         self.on_bind(resource_type, **kwargs)
+
+        t2 = datetime.now()
+        secs = (t2 - t1).total_seconds()
+        console.debug(
+            f'bound {TypeUtils.get_class_name(resource_type)} to '
+            f'{TypeUtils.get_class_name(self)} '
+            f'in {secs:.2f}s'
+        )
+
         self._is_bound = True
 
     @classmethod
@@ -150,10 +162,20 @@ class Store(object, metaclass=StoreMeta):
         Perform class-level initialization, like getting
         a connectio pool, for example.
         """
+        t1 = datetime.now()
+
         cls.ravel.app = app
         cls.on_bootstrap(**kwargs)
 
         cls.ravel.local.is_bootstrapped = True
+
+        t2 = datetime.now()
+        secs = (t2 - t1).total_seconds()
+        console.debug(
+            f'bootstrapped {TypeUtils.get_class_name(cls)} '
+            f'in {secs:.2f}s'
+        )
+
         return cls
 
     @classmethod

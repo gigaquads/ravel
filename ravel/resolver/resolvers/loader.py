@@ -193,8 +193,19 @@ class LoaderProperty(ResolverProperty):
 
     def including(self, *others) -> Predicate:
         others = flatten_sequence(others)
-        others = {obj._id if is_resource(obj) else obj for obj in others}
-        return ConditionalPredicate(OP_CODE.INCLUDING, self, others)
+        visited = set()
+        deduplicated = []
+        for obj in others:
+            if is_resource(obj):
+                if obj._id not in visited:
+                    visited.add(obj._id)
+                    deduplicated.append(obj._id)
+            else:
+                if obj not in visited:
+                    visited.add(obj)
+                    deduplicated.append(obj)
+                
+        return ConditionalPredicate(OP_CODE.INCLUDING, self, deduplicated)
 
     def excluding(self, *others) -> Predicate:
         others = flatten_sequence(others)

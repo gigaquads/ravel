@@ -439,12 +439,14 @@ class Batch(Entity):
 
         if isinstance(resolvers, str):
             resolvers = {resolvers}
+        elif not resolvers:
+            resolvers = set(self.ravel.owner.ravel.schema.fields.keys())
 
         # execute all requested resolvers
         for k in resolvers:
             resolver = self.ravel.owner.ravel.resolvers.get(k)
             if resolver is not None:
-                resolver.resolve.batch(self)
+                resolver.resolve_batch(self)
 
         # clean the resolved values so they arent't accidently saved on
         # update/create, as we just fetched them from the store.

@@ -150,6 +150,15 @@ class ArgumentLoader(object):
                     preloaded[REV] = preloaded.pop('rev')
                 self.preload_resolver_state(resource_type, preloaded)
                 return resource_type(state=preloaded)
+            elif (
+                (preloaded and isinstance(preloaded, str)) and
+                (preloaded[0] == '{' and preloaded[-1] == '}')
+            ):
+                try:
+                    data = self._app.json.decode(preloaded)
+                    return resource_type(data)
+                except ValueError:
+                    return None
             else:
                 return resource_type.get(_id=preloaded)
         elif is_sequence(preloaded):

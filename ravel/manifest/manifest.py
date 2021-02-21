@@ -7,6 +7,7 @@ import concurrent.futures
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Text, Dict, Type, Union, Set, List, Callable
+from datetime import datetime
 from copy import deepcopy
 
 from appyratus.utils.dict_utils import DictUtils, DictObject
@@ -169,10 +170,6 @@ class Manifest:
             # bind new store singleton to resource_class
             store = store_class()
             resource_class.bind(store)
-            console.debug(
-                f'binding {binding.store_class_name}() '
-                f'to {binding.resource_class_name} class'
-            )
             store.bind(resource_class)
 
             # bootstrap the resource and store classes if they are
@@ -225,10 +222,6 @@ class Manifest:
 
     def _bind_resources(self):
         for binding in self.bindings:
-            console.debug(
-                f'binding {binding.store_class_name}() '
-                f'to {binding.resource_class_name} class'
-            )
             store = binding.store_class()
             store.bind(binding.resource_class, **binding.bind_params)
             binding.resource_class.bind(store, **binding.bind_params)
@@ -337,10 +330,8 @@ class Manifest:
                     f'cannot find {bootstrap.store_class_name}'
                 )
             else:
-                console.debug(
-                    f'bootstrapping {bootstrap.store_class_name}'
-                )
                 store_class.bootstrap(app, **bootstrap.bootstrap_params)
+
 
     def _initialize_bootstraps(self):
         return [
@@ -516,6 +507,7 @@ class Manifest:
         Use venusian simply to scan the action packages/modules, causing the
         action callables to register themselves with the Application instance.
         """
+        t1 = datetime.now()
         package = self.package
         executor = ThreadPoolExecutor(
             max_workers=6,
@@ -563,12 +555,16 @@ class Manifest:
             async_scan(package, verbose=True)
 
         completed_scans, incomplete_scans = (
-            concurrent.futures.wait(futures, timeout=5)
+            concurrent.futures.wait(futures)
         )
         if incomplete_scans:
             raise FilesystemScanTimeout(
                 message='filesystem scan timed out',
             )
+
+        t2 = datetime.now()
+        secs = (t2 - t1).total_seconds()
+        console.debug(f'scanned filesystem in {secs:.2f}s')
 
         return scanner
 

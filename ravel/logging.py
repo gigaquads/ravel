@@ -97,10 +97,9 @@ class ConsoleLoggerInterface(LoggerInterface):
             dumped_data = None
 
         thread = StringUtils.dash(current_thread().name)
-        pid = os.getpid()
 
         display_string = (
-            f'{when} ({level}) {self._name} [{thread} (pid:{pid})]'
+            f'{when} ({level}) {self._name}'
             f' - {message}'
         )
         if dumped_data:

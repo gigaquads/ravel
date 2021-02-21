@@ -3,10 +3,12 @@ import uuid
 
 from typing import Text, Tuple, List, Set, Dict, Type, Union, Optional
 from collections import defaultdict
+from datetime import datetime
 from copy import deepcopy
 from threading import local
 
 from appyratus.utils.dict_utils import DictObject
+from appyratus.utils.type_utils import TypeUtils
 
 from ravel.exceptions import NotBootstrapped, ValidationError
 from ravel.store import Store, SimulationStore
@@ -271,9 +273,8 @@ class Resource(Entity, metaclass=ResourceMeta):
 
     @classmethod
     def bootstrap(cls, app: 'Application', **kwargs):
+        t1 = datetime.now()
         cls.ravel.app = app
-
-        console.debug(f'bootstrapping {get_class_name(cls)} class')
 
         # bootstrap all resolvers owned by this class
         for resolver in cls.ravel.resolvers.values():
@@ -284,8 +285,17 @@ class Resource(Entity, metaclass=ResourceMeta):
         cls.on_bootstrap(app, **kwargs)
         cls.ravel.local.is_bootstrapped = True
 
+        t2 = datetime.now()
+        secs = (t2 - t1).total_seconds()
+        console.debug(
+            f'bootstrapped {TypeUtils.get_class_name(cls)} '
+            f'in {secs:.2f}s'
+        )
+
+
     @classmethod
     def bind(cls, store: 'Store', **kwargs):
+        t1 = datetime.now()
         cls.ravel.local.store = store
 
         for resolver in cls.ravel.resolvers.values():
@@ -293,6 +303,14 @@ class Resource(Entity, metaclass=ResourceMeta):
 
         cls.on_bind()
         cls.ravel.is_bound = True
+
+        t2 = datetime.now()
+        secs = (t2 - t1).total_seconds()
+        console.debug(
+            f'bound {TypeUtils.get_class_name(store)} to '
+            f'{TypeUtils.get_class_name(cls)} '
+            f'in {secs:.2f}s'
+        )
 
     @classmethod
     def is_bootstrapped(cls) -> bool:

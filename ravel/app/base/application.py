@@ -1,16 +1,15 @@
 import inspect
-import logging
-import os
 import threading
+import os
 
-from threading import local, get_ident, RLock, current_thread
+from threading import local, get_ident, current_thread
 from concurrent.futures import (
     ThreadPoolExecutor, ProcessPoolExecutor, Future
 )
-from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
-from collections import deque, OrderedDict, namedtuple, defaultdict
-from random import choice
-from string import ascii_letters
+from typing import (
+    List, Dict, Text, Tuple, Type, Callable, Union, Optional
+)
+from collections import deque, OrderedDict, namedtuple
 
 from appyratus.utils.dict_utils import DictObject, DictUtils
 from appyratus.utils.string_utils import StringUtils
@@ -21,14 +20,13 @@ from ravel.manifest.manifest import Manifest
 from ravel.logging import ConsoleLoggerInterface
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
-from ravel.util.misc_functions import get_class_name, inject, is_sequence
-from ravel.schema import Field
+from ravel.util.misc_functions import get_class_name, inject
 from ravel.constants import ID
 from ravel.app.exceptions import ApplicationError
 from ravel.store.transaction_manager import TransactionManager
 
-from .action_decorator import ActionDecorator
 from .action import Action
+from .action_decorator import ActionDecorator
 from .argument_loader import ArgumentLoader
 from .resource_binder import ResourceBinder
 
@@ -88,7 +86,7 @@ class Application(object):
     def __getattr__(
         self,
         class_name: Text
-    ) -> Union[Type['Resource'], Type['Store']]:
+    ) -> Optional[Union[Type['Resource'], Type['Store']]]:
         """
         This makes it possible to do app.ResourceClass or app.StoreClass as a
         convenient way of accessing registered store and resoruce classes at
@@ -96,7 +94,7 @@ class Application(object):
         import errors.
         """
         class_obj = None
-        if self.local.manifest is not None:
+        if self.manifest is not None:
             # assume it's the name of resource class first
             class_obj = self.manifest.resource_classes.get(class_name)
             if not class_obj:
@@ -172,6 +170,10 @@ class Application(object):
         self._mode = Mode(mode)
 
     @property
+    def namespace(self) -> Dict:
+        return self._namespace
+
+    @property
     def is_bootstrapped(self) -> bool:
         return getattr(self.local, 'is_bootstrapped', False)
 
@@ -215,7 +217,7 @@ class Application(object):
 
     def bootstrap(
         self,
-        manifest: Manifest = None,
+        manifest: Union[Dict, Manifest, Text, Callable, 'Application'] = None,
         namespace: Dict = None,
         values: Dict = None,
         middleware: List = None,
@@ -231,15 +233,19 @@ class Application(object):
             """
             Setup root application logger.
             """
-            suffix = ''.join(choice(ascii_letters) for i in range(4))
-            count = self.shared.app_counter
-            self.shared.app_counter += 1
-
             if self.manifest.package:
-                name = f'{self.manifest.package}-{count}'
+                name = (
+                    f'{self.manifest.package}:'
+                    f'{os.getpid()}:'
+                    f'{get_ident()}'
+                )
             else:
                 class_name = get_class_name(self)
-                name = f'{StringUtils.snake(class_name)}-{count}'
+                name = (
+                    f'{StringUtils.snake(class_name)}:'
+                    f'{os.getpid()}:'
+                    f'{get_ident()}'
+                )
 
             return ConsoleLoggerInterface(name, level)
             
@@ -273,9 +279,15 @@ class Application(object):
 
         # build final manifest, used to bootstrap program components
         if manifest is not None:
-            self.local.manifest = Manifest(manifest)
+            if isinstance(manifest, Application):
+                source_app = manifest
+                self.local.manifest = Manifest(source_app.shared.manifest_data)
+            else:
+                self.local.manifest = Manifest(manifest)
         elif self.shared.manifest_data:
             self.local.manifest = Manifest(self.shared.manifest_data)
+        else:
+            self.local.manifest = Manifest({})
 
         assert self.local.manifest is not None
         self.manifest.bootstrap(self)
@@ -290,12 +302,11 @@ class Application(object):
         if self.manifest.package:
             current_thread().name = (
                 f'{StringUtils.camel(self.manifest.package)}'
-                f'MainThread'
             )
         else:
             # update default main thread name
             current_thread().name = (
-                f'{get_class_name(self)}MainThread'
+                f'{get_class_name(self)}'
             )
 
         self._logger = create_logger(self.manifest.logging['level'])

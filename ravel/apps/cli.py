@@ -1,8 +1,8 @@
 import inspect
 
 from pprint import pprint
+from ravel.util.type_checking import is_resource_type
 from typing import List
-from IPython.terminal.embed import InteractiveShellEmbed
 from appyratus.cli import (
     CliProgram,
     OptionalArg,
@@ -16,7 +16,7 @@ from appyratus.files import Yaml
 from appyratus.utils.string_utils import StringUtils
 from appyratus.utils.sys_utils import SysUtils
 
-from ravel.util import is_batch, is_resource
+from ravel.util import is_batch, is_resource, is_resource_type
 from ravel.app.base import Application, ActionDecorator, Action
 
 
@@ -59,9 +59,18 @@ class CliApplication(Application):
         Collect subparsers and build cli program
         """
         self._cli_args = cli_args
-        subparsers = [c.subparser for c in self.actions.values() if c.subparser]
+
+        subparsers = [
+            c.subparser for c in self.actions.values() if c.subparser
+        ]
+
         self._cli_program = CliProgram(
-            subparsers=subparsers, cli_args=self._cli_args, **self._cli_program_kwargs
+            subparsers=subparsers,
+            cli_args=self._cli_args,
+            custom_dtype_converter=(
+                lambda x: str if is_resource_type(x) else None
+            ),
+            **self._cli_program_kwargs
         )
 
     def on_start(self, debug=True):
@@ -148,6 +157,7 @@ class CliCommand(Action):
         self.subparser_kwargs = None
         self.subparser_type = None
         self.subparser = None
+        self.schema = decorator.kwargs.get('schema')
 
     def on_bootstrap(self):
         self.program_name = self.decorator.kwargs.get('name', self.name)
@@ -187,10 +197,14 @@ class CliCommand(Action):
 
             arg = None
             arg_type = None
+            dtype = param.annotation
+
             if param.annotation is inspect._empty:
                 dtype = None
-            else:
-                dtype = param.annotation
+
+            if is_resource_type(dtype):
+                dtype = str
+
             arg_params = {
                 'name': k,
                 'dtype': dtype,

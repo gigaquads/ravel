@@ -1,7 +1,5 @@
 from typing import Dict, List, Text, Type
 
-from IPython.terminal.embed import InteractiveShellEmbed
-
 from ravel.app.base import Application, Action
 
 
@@ -12,14 +10,26 @@ class Repl(Application):
     experimenting with an API from a command-line interface.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, autoreload=True, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.shell = InteractiveShellEmbed()
-        self._namespace = {}
+        self._autoreload = autoreload
+        self.shell = None
 
     @property
     def action_type(self) -> Type['ReplFunction']:
         return ReplFunction
+
+    @property
+    def autoreload(self) -> bool:
+        return self._autoreload
+
+    @autoreload.setter
+    def autoreload(self, new_value: bool):
+        if (not new_value) and self._autoreload:
+            self.shell.extension_manager.unload_extension('autoreload')
+        elif new_value and (not self._autoreload):
+            self.shell.extension_manager.load_extension('autoreload')
+        self._autoreload = new_value
 
     @property
     def namespace(self) -> Dict:
@@ -42,7 +52,10 @@ class Repl(Application):
         Now, inside the REPL session, you can do `reset_fixtures()` to reset the
         global variables available to you in the shell.
         """
-        return self.shell.user_ns
+        if not self.is_bootstrapped:
+            return super().namespace
+        else:
+            return self.shell.user_ns
 
     @property
     def functions(self) -> List[Text]:
@@ -56,14 +69,21 @@ class Repl(Application):
         Start a new REPL with all registered functions available in the REPL
         namespace.
         """
+        from IPython.terminal.embed import InteractiveShellEmbed
+        
+        self.shell = InteractiveShellEmbed()
+
+        if self._autoreload:
+            self.shell.extension_manager.load_extension('autoreload')
+
         # build the shell namespace
         local_ns = {}
         local_ns['repl'] = self
 
         local_ns.update(self._namespace)
         local_ns.update(self.actions)
-        local_ns.update(self.res)
-        local_ns.update(self.storage.utilized_store_types)
+        local_ns.update(self.manifest.resource_classes)
+        local_ns.update(self.manifest.store_classes)
 
         # enter an ipython shell
         self.shell.mainloop(local_ns=local_ns)
