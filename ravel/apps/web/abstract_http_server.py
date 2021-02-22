@@ -5,7 +5,7 @@ from typing import Text, Type, Callable, List, Dict
 
 import requests
 
-from appyratus.utils import StringUtils
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.app.base import Application, Action, ActionDecorator
 from ravel.util import get_class_name

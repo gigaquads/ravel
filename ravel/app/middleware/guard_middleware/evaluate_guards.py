@@ -1,6 +1,6 @@
 from typing import Dict, Tuple
 
-from appyratus.utils import DictObject
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.exceptions import NotAuthorized
 from ravel.util.misc_functions import is_sequence, normalize_to_tuple
@@ -11,9 +11,10 @@ from .guard import Guard, GuardFailure
 
 class EvaluateGuards(Middleware):
     """
-    Apply the Guard(s) associated with a action, set via the `auth`
-    ActionDecorator keyword argument, e.g., repl(auth=IsFoo()).
-    NotAuthorized is raised if not authorized.
+    Evaluate the guard/guards provided through an action decorator's `guard`
+    or `guards` kwarg. If any guard returns False, raise an exception;
+    however, if a guard raises its own exception, this middleware allows it
+    to bubble up.
     """
 
     def on_request(

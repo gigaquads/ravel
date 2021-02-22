@@ -12,7 +12,7 @@ from typing import Text, Dict, List, Set, Tuple, Type
 
 from BTrees.OOBTree import BTree
 
-from appyratus.utils import DictUtils
+from appyratus.utils.dict_utils import DictUtils
 
 from ravel.schema import Schema, Field, fields
 from ravel.constants import ID, REV

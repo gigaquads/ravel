@@ -3,22 +3,43 @@ import os
 import inspect
 import importlib
 
+from typing import Dict, Callable
 from os.path import splitext
 
 from appyratus.files.json import Json
+from appyratus.utils.dict_utils import DictObject
 
-from ravel.util.loggers import console
+from ravel.logging import ConsoleLoggerInterface
 
+# TODO: allow package_name to refer to a module rather than a package
 
 class Scanner:
-    def __init__(self, context=None):
-        self.context = context or {}
+    """
+    The Scanner recursively walks the filesystem, rooted at a Python package
+    or module filepath, and matches each object contained in each Python
+    source file against a logical predicate. If the predicate matches, the
+    object is passed into the overriden on_match instance method.
+    """
 
-    def scan(self, package_name, context=None):
-        # TODO: allow package_name to refer to a module rather than a package
-        context = context if context is not None else self.context
+    def __init__(
+        self,
+        predicate: Callable = None,
+        callback: Callable = None,
+    ):
+        self.log = ConsoleLoggerInterface('scanner')
+        self.context = DictObject()
+        if predicate:
+            self.predicate = predicate
+        if callback:
+            self.on_match = callback
+
+    def scan(self, package_name, context: Dict = None, verbose=False):
+        context = dict(self.context.to_dict(), **(context or {}))
+        context = DictObject(context)
+
         root_module = importlib.import_module(package_name)
         root_filename = os.path.basename(root_module.__file__)
+
         if root_filename != '__init__.py':
             self.scan_module(root_module, context)
         else:
@@ -31,16 +52,20 @@ class Scanner:
             package_parent_dir = '/' + '/'.join(
                 package_dir.strip('/').split('/')[:-package_path_len]
             )
+
             for dir_name, sub_dirs, file_names in os.walk(package_dir):
                 file_names = set(file_names)
+
                 if '.ravel' in file_names:
                     dot_file_path = os.path.join(dir_name, '.ravel')
                     dot_data = Json.read(dot_file_path) or {}
                     ignore = dot_data.get('scanner', {}).get('ignore', False)
+
                     if ignore:
-                        console.debug(f'scanner ignoring {dir_name}')
+                        self.log.debug(f'scanner ignoring {dir_name}')
                         sub_dirs.clear()
                         continue
+
                 if '__init__.py' in file_names:
                     dir_name_offset = len(package_parent_dir)
                     pkg_path = dir_name[dir_name_offset + 1:].replace("/", ".")
@@ -53,6 +78,8 @@ class Scanner:
                                 self.on_import_error(exc, mod_path, context)
                                 continue
                             self.scan_module(module, context)
+
+        self.context = context
         return context
 
     def scan_module(self, module, context):
@@ -60,6 +87,11 @@ class Scanner:
             # XXX: why is this happenings?
             del module.__dict__[None]
         for k, v in inspect.getmembers(module, predicate=self.predicate):
+            # if verbose:
+            #     console.debug(
+            #         f'scanner matched "{k}" '
+            #         f'{str(v)[:40] + "..." if len(str(v)) > 40 else v}'
+            #     )
             try:
                 self.on_match(k, v, context)
             except Exception as exc:
@@ -69,10 +101,10 @@ class Scanner:
         return True
 
     def on_match(self, name, value, context):
-        pass
+        context[name] = value
 
     def on_import_error(self, exc, module_path, context):
-        console.exception(
+        self.log.exception(
             message='scanner encountered an import error',
             data={
                 'module': module_path,
@@ -80,7 +112,7 @@ class Scanner:
         )
 
     def on_match_error(self, exc, module, context, name, value):
-        console.exception(
+        self.log.exception(
             message=f'scanner encountered an error while scanning object',
             data={
                 'module': module.__name__,

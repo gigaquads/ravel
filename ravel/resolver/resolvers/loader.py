@@ -25,9 +25,11 @@ class Loader(Resolver):
     The Loader resolver is responsible for fetching Resource fields.
     """
 
-    def __init__(self, field, *args, **kwargs):
+    def __init__(self, field=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.field = field
+        self._field = None
+        if field:
+            self.field = field
 
     @classmethod
     def property_type(cls):
@@ -55,6 +57,9 @@ class Loader(Resolver):
         self.nullable = field.nullable
         self.required = field.required
         self.private = field.meta.get('private', False)
+
+    def on_copy(self, copy):
+        copy.field = self.field
 
     def on_resolve(self, resource, request):
         exists_resource = ID in resource.internal.state
@@ -87,17 +92,25 @@ class Loader(Resolver):
 
         # merge new state into existing resoruce instance state
         new_resource_state.update(
-            resource.ravel.store.dispatch(
+            resource.ravel.local.store.dispatch(
                 'fetch',
                 args=(resource._id, ),
                 kwargs={'fields': unloaded_field_names.copy()}
             ) or {}
         )
-        resource.merge(new_resource_state)
+
+        # merge in new state to existing resource, not overwriting
+        # any fields that are dirty, i.e. have changes.
+        keys_to_clean = set()
+        for k, v in new_resource_state.items():
+            is_dirty = k in resource.internal.state.dirty
+            if not is_dirty or k in unloaded_field_names:
+                keys_to_clean.add(k)
+                resource[k] = v
 
         # mark the loaded fields as "clean", meaning, we are telling the system
         # that thse fields are new, not stale and in need of saving.
-        resource.clean(unloaded_field_names)
+        resource.clean(keys_to_clean)
 
         return resource
 
@@ -112,8 +125,8 @@ class Loader(Resolver):
 
         # field names to fetch (fetch all eagerly)
         field_names = set(self.target.ravel.schema.fields.keys())
-        state_dicts = resource.ravel.store.dispatch('fetch_many',
-            args=(batch_ids, ),
+        state_dicts = self.owner.ravel.local.store.dispatch('fetch_many',
+            args=(resource_ids, ),
             kwargs={'fields': field_names}
         )
 
@@ -180,8 +193,19 @@ class LoaderProperty(ResolverProperty):
 
     def including(self, *others) -> Predicate:
         others = flatten_sequence(others)
-        others = {obj._id if is_resource(obj) else obj for obj in others}
-        return ConditionalPredicate(OP_CODE.INCLUDING, self, others)
+        visited = set()
+        deduplicated = []
+        for obj in others:
+            if is_resource(obj):
+                if obj._id not in visited:
+                    visited.add(obj._id)
+                    deduplicated.append(obj._id)
+            else:
+                if obj not in visited:
+                    visited.add(obj)
+                    deduplicated.append(obj)
+                
+        return ConditionalPredicate(OP_CODE.INCLUDING, self, deduplicated)
 
     def excluding(self, *others) -> Predicate:
         others = flatten_sequence(others)
@@ -200,8 +224,10 @@ class LoaderProperty(ResolverProperty):
                 message=f'cannot set {self}',
                 data={
                     'resolver': str(self.resolver),
-                    'value': str(value),
+                    'field': field,
+                    'schema': owner.ravel.schema,
                     'errors': errors,
+                    'value': value,
                 }
             )
             raise Exception(str(errors))

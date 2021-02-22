@@ -70,10 +70,13 @@ class ArgumentLoader(object):
     def bind(self):
         self._action_2_specs = defaultdict(list)
         for action in self._app.actions.values():
+            self._action_2_specs[action] = []
             for idx, param in enumerate(action.signature.parameters.values()):
                 ann = param.annotation
                 many, res_class_name = extract_res_info_from_annotation(ann)
-                resource_type = self._app.res.get(res_class_name)
+                if res_class_name is None:
+                    continue
+                resource_type = self._app[res_class_name]
                 if resource_type is not None:
                     position = (
                         idx if param.default == Parameter.empty else None
@@ -82,7 +85,6 @@ class ArgumentLoader(object):
                         idx, param.name, many, resource_type
                     )
                     self._action_2_specs[action].append(spec)
-
 
     def load(self, action: 'Action', args: Tuple, kwargs: Dict) -> Tuple:
         """
@@ -148,6 +150,15 @@ class ArgumentLoader(object):
                     preloaded[REV] = preloaded.pop('rev')
                 self.preload_resolver_state(resource_type, preloaded)
                 return resource_type(state=preloaded)
+            elif (
+                (preloaded and isinstance(preloaded, str)) and
+                (preloaded[0] == '{' and preloaded[-1] == '}')
+            ):
+                try:
+                    data = self._app.json.decode(preloaded)
+                    return resource_type(data)
+                except ValueError:
+                    return None
             else:
                 return resource_type.get(_id=preloaded)
         elif is_sequence(preloaded):

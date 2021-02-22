@@ -4,8 +4,10 @@ import logging
 
 from inspect import Signature
 from typing import Dict, Text, Tuple, Callable
+from collections import deque
 
-from appyratus.utils import TimeUtils, DictObject
+from appyratus.utils.time_utils import TimeUtils
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.util.loggers import console
 from ravel.util.misc_functions import get_class_name, get_callable_name
@@ -232,26 +234,53 @@ class Action(object):
         return inspect.getsource(self.target)
 
     def bootstrap(self):
+        console.debug(f'bootstrapping {self.name} action')
+        self._prepare_middleware()
         self.on_bootstrap()
         self._is_bootstrapped = True
 
     def on_bootstrap(self):
         pass
 
+    def _prepare_middleware(self):
+        """
+        Determine which middleware hook methods will or will potentially be
+        invoked during the execution of this action. This is computed on
+        bootstrap.
+        """
+        self._mware_pre_request_methods = deque()
+        self._mware_on_request_methods = deque()
+        self._mware_post_request_methods = deque()
+        self._mware_post_bad_request_methods = deque()
+
+        def is_virtual(func):
+            return getattr(func, 'is_virtual', False)
+
+        for mware in self.app.middleware:
+            if not isinstance(self.app, mware.app_types):
+                continue
+
+            if not is_virtual(mware.pre_request):
+                self._mware_pre_request_methods.append(mware.pre_request)
+            if not is_virtual(mware.on_request):
+                self._mware_on_request_methods.append(mware.on_request)
+            if not is_virtual(mware.post_request):
+                self._mware_post_request_methods.appendleft(mware.post_request)
+            if not is_virtual(mware.post_bad_request):
+                self._mware_post_bad_request_methods.appendleft(mware.post_bad_request)
+
     def _apply_middleware_pre_request(self, request):
         state = request.internal
         error = None
-        for mware in self.app.middleware:
-            if isinstance(self.app, mware.app_types):
-                try:
-                    mware.pre_request(
-                        self, request, state.raw_args, state.raw_kwargs
-                    )
-                    state.middleware.append(mware)
-                except Exception as exc:
-                    error = ActionError(exc, mware)
-                    state.errors.append(error)
-                    break
+
+        for func in self._mware_pre_request_methods:
+            try:
+                func(self, request, state.raw_args, state.raw_kwargs)
+                state.middleware.append(func)
+            except Exception as exc:
+                error = ActionError(exc, func)
+                state.errors.append(error)
+                break
 
             # if is_complete, we abort further mware processing as well as all
             # subsequent steps in processing the action. instead, we skip
@@ -264,47 +293,43 @@ class Action(object):
     def _apply_middleware_on_request(self, request):
         state = request.internal
         error = None
-        for mware in state.middleware:
+
+        for func in self._mware_on_request_methods:
+            args = state.processed_args
+            kwargs = state.processed_kwargs
+
             try:
-                mware.on_request(
-                    self,
-                    request,
-                    state.processed_args,
-                    state.processed_kwargs,
-                )
+                func(self, request, args, kwargs)
             except Exception as exc:
                 error = Action.Error(exc, mware)
                 state.errors.append(error)
+
         return error
 
     def _apply_middleware_post_request(self, request):
         state = request.internal
         error = None
-        for mware in reversed(state.middleware):
+
+        for func in self._mware_post_request_methods:
             try:
-                mware.post_request(
-                    self,
-                    request,
-                    state.result
-                )
+                func(self, request, state.result)
             except Exception as exc:
-                error = Action.Error(exc, mware)
+                error = Action.Error(exc, func)
                 state.errors.append(error)
+
         return error
 
     def _apply_middleware_post_bad_request(self, request):
         state = request.internal
         error = None
-        for mware in reversed(state.middleware):
+
+        for func in self._mware_post_bad_request_methods:
             try:
-                mware.post_bad_request(
-                    self,
-                    request,
-                    state.exc.exc
-                )
+                func(self, request, state.exc.exc)
             except Exception as exc:
                 error = Action.Error(exc, mware)
                 state.errors.append(error)
+
         return error
 
     def _apply_target_callable(self, request):
@@ -362,13 +387,16 @@ class Action(object):
                 else (state.raw_args, state.raw_kwargs)
             )
             state.processed_args, state.processed_kwargs = (
-                self.app.loader.load(self, args, kwargs)
+                self.marshal(args, kwargs)
             )
         except Exception as exc:
             error = Action.Error(exc)
             state.errors.append(error)
 
         return error
+
+    def marshal(self, raw_args, raw_kwargs):
+        return self.app.loader.load(self, raw_args, raw_kwargs)
 
 
 class AsyncAction(Action):

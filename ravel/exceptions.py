@@ -50,3 +50,6 @@ class RelationshipArgumentError(RavelError):
 
 class ResourceError(RavelError):
     pass
+
+class NotBootstrapped(RavelError):
+    pass

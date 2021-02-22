@@ -4,6 +4,9 @@ from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
 from collections import defaultdict
 from copy import deepcopy
 from random import randint
+from threading import local
+
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.util.loggers import console
 from ravel.util.misc_functions import (
@@ -26,10 +29,17 @@ from ravel.query.predicate import (
 from .resolver_decorator import ResolverDecorator
 from .resolver_property import ResolverProperty
 
+class ResolverMeta(type):
+    def __init__(cls, name, bases, dict_):
+        cls.ravel = DictObject()
+        cls.ravel.local = local()
+        cls.ravel.local.is_bootstrapped = False
 
-class Resolver(object):
 
-    app = None
+
+class Resolver(metaclass=ResolverMeta):
+
+    app = None  # TODO: use cls.ravel.app instead
 
     def __init__(
         self,
@@ -61,6 +71,7 @@ class Resolver(object):
         self.target = None
         self.schema = None
         self.many = many
+        self.immutable = immutable
 
         self.on_resolve = on_resolve or self.on_resolve
         self.on_resolve_batch = on_resolve_batch or self.on_resolve_batch
@@ -81,8 +92,6 @@ class Resolver(object):
             assert callable(target)
             self.target_callback = target
 
-        self._is_bootstrapped = False
-
     def __repr__(self):
         return (
             f'{get_class_name(self)}('
@@ -90,9 +99,9 @@ class Resolver(object):
             f')'
         )
 
-    @property
-    def is_bootstrapped(self):
-        return self._is_bootstrapped
+    @classmethod
+    def is_bootstrapped(cls):
+        return getattr(cls.ravel.local, 'is_bootstrapped', False)
 
     @classmethod
     def property_type(cls):
@@ -150,18 +159,39 @@ class Resolver(object):
         return sorted(resolvers, key=lambda resolver: resolver.priority())
 
     def copy(self, new_owner: Type['Resource'] = None) -> 'Resolver':
-        clone = deepcopy(self)
-        clone.app = None
-        clone._is_bootstrapped = False
+        clone = type(self)(
+            target=self.target,
+            name=self.name,
+            owner=new_owner or self.owner,
+            decorator=self.decorator,
+            on_resolve=self.on_resolve,
+            on_resolve_batch=self.on_resolve_batch,
+            on_select=self.on_select,
+            on_save=self.on_save,
+            on_set=self.on_set,
+            on_get=self.on_get,
+            on_delete=self.on_delete,
+            on_dump=self.on_dump,
+            private=self.private,
+            nullable=self.nullable,
+            required=self.required,
+            immutable=self.immutable,
+            many=self.many,
+        )
+
+        clone.target_callback = self.target_callback
         clone._is_bound = False
-        if new_owner:
-            clone.owner = new_owner
+
+        self.on_copy(clone)
+
         return clone
 
+    @classmethod
     def bootstrap(cls, app: 'Application'):
+        console.debug(f'bootstrapping {get_class_name(cls)} class')
         cls.app = app
         cls.on_bootstrap()
-        cls._is_bootstrapped = True
+        cls.ravel.local.is_bootstrapped = True
 
     def bind(self):
         if self.target_callback:
@@ -174,7 +204,7 @@ class Resolver(object):
                 self.target = target.ravel.owner
                 self.many = True
             else:
-                raise Exception('unrecognized target type')
+                raise Exception('unrecognized target class')
 
         if not self.owner.ravel.is_abstract:
             self.on_bind()
@@ -239,6 +269,9 @@ class Resolver(object):
 
     def on_bind(self):
         return
+
+    def on_copy(self, copy: 'Resolver'):
+        pass
 
     def pre_resolve(self, resource, request):
         return

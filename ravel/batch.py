@@ -3,7 +3,7 @@ from typing import Text, Tuple, List, Set, Dict, Type, Union, Callable
 from collections import defaultdict, deque
 from itertools import islice
 
-from appyratus.utils import DictObject
+from appyratus.utils.dict_utils import DictObject
 from BTrees.OOBTree import BTree
 
 from ravel.util.misc_functions import (
@@ -17,7 +17,7 @@ from ravel.query.predicate import (
     BooleanPredicate,
 )
 from ravel.constants import IS_BATCH, OP_CODE
-from ravel.schema import Field, String, Int, Bool, Float, Id
+from ravel.schema import fields
 from ravel.util.loggers import console
 from ravel.util import is_batch, is_resource
 from ravel.entity import Entity
@@ -65,9 +65,12 @@ class Batch(Entity):
     """
 
     ravel = DictObject()
-    ravel.properties = {}
-    ravel.indexed_field_types = (String, Int, Id, Bool, Float)
     ravel.owner = None
+    ravel.properties = {}
+    ravel.indexed_field_types = (
+        fields.String, fields.Int, fields.Id,
+        fields.Bool, fields.Float
+    )
 
     def __init__(self, resources: List = None, indexed=True):
         self.internal = DictObject()
@@ -155,7 +158,10 @@ class Batch(Entity):
         ravel = DictObject()
 
         ravel.owner = owner
-        ravel.indexed_field_types = (String, Int, Id, Bool, Float)
+        ravel.indexed_field_types = (
+            fields.String, fields.Int, fields.Id,
+            fields.Bool, fields.Float
+        )
         ravel.properties = {}
 
         for k, resolver in owner.ravel.resolvers.items():
@@ -433,12 +439,14 @@ class Batch(Entity):
 
         if isinstance(resolvers, str):
             resolvers = {resolvers}
+        elif not resolvers:
+            resolvers = set(self.ravel.owner.ravel.schema.fields.keys())
 
         # execute all requested resolvers
         for k in resolvers:
             resolver = self.ravel.owner.ravel.resolvers.get(k)
             if resolver is not None:
-                resolver.resolve.batch(self)
+                resolver.resolve_batch(self)
 
         # clean the resolved values so they arent't accidently saved on
         # update/create, as we just fetched them from the store.

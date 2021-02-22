@@ -1,29 +1,32 @@
 import inspect
-import logging
-import os
 import threading
+import os
 
-from threading import local, get_ident
-from typing import List, Dict, Text, Tuple, Set, Type, Callable, Union
+from threading import local, get_ident, current_thread
+from concurrent.futures import (
+    ThreadPoolExecutor, ProcessPoolExecutor, Future
+)
+from typing import (
+    List, Dict, Text, Tuple, Type, Callable, Union, Optional
+)
 from collections import deque, OrderedDict, namedtuple
-from random import choice
-from string import ascii_letters
 
-from appyratus.utils import DictObject, DictUtils, StringUtils
-from appyratus.logging import ConsoleLoggerInterface
+from appyratus.utils.dict_utils import DictObject, DictUtils
+from appyratus.utils.string_utils import StringUtils
 from appyratus.enum import EnumValueStr
 from appyratus.env import Environment
 
-from ravel.manifest import Manifest
+from ravel.manifest.manifest import Manifest
+from ravel.logging import ConsoleLoggerInterface
 from ravel.util.json_encoder import JsonEncoder
 from ravel.util.loggers import console
-from ravel.util.misc_functions import get_class_name, inject, is_sequence
-from ravel.schema import Field
+from ravel.util.misc_functions import get_class_name, inject
 from ravel.constants import ID
 from ravel.app.exceptions import ApplicationError
+from ravel.store.transaction_manager import TransactionManager
 
-from .action_decorator import ActionDecorator
 from .action import Action
+from .action_decorator import ActionDecorator
 from .argument_loader import ArgumentLoader
 from .resource_binder import ResourceBinder
 
@@ -38,7 +41,6 @@ class Mode(EnumValueStr):
 
 
 class Application(object):
-    Mode = Mode
 
     def __init__(
         self,
@@ -46,39 +48,71 @@ class Application(object):
         manifest: Manifest = None,
         mode: Mode = Mode.normal,
     ):
-        self.manifest = manifest
-        self.env = Environment()
+        # thread-local storage
         self.local = local()
+        self.local.is_bootstrapped = False
+        self.local.is_started = False
+        self.local.manifest = Manifest(manifest) if manifest else None
+        self.local.bootstrapper_thread_id = None
+        self.local.thread_executor = None
+        self.local.process_executor = None
+        self.local.tx_manager = None
 
+        self.shared = DictObject()  # storage shared by threads
+        self.shared.manifest_data = None
+        self.shared.app_counter = 1
+
+        self.env = Environment()
         self._mode = mode
-        self._res = DictObject()
-        self._storage = None
-        self._actions = DictObject()
-        self._namespace = {}
         self._json = JsonEncoder()
-        self._arg_loader = None
         self._binder = ResourceBinder()
+        self._namespace = {}
+        self._arg_loader = None
         self._logger = None
+        self._root_pid = os.getpid()
+        self._actions = DictObject()
 
         self._middleware = deque([
             m for m in (middleware or [])
             if isinstance(self, m.app_types)
         ])
 
-        self._is_bootstrapped = False
-        self._is_started = False
+        # set default main thread name
+        current_thread().name = (
+            f'{get_class_name(self)}MainThread'
+        )
 
-    def __getattr__(self, resource_type_name: Text) -> Type['Resource']:
-        return self.res[resource_type_name]
 
-    def __contains__(self, action: Text):
-        return action in self._actions
+    def __getattr__(
+        self,
+        class_name: Text
+    ) -> Optional[Union[Type['Resource'], Type['Store']]]:
+        """
+        This makes it possible to do app.ResourceClass or app.StoreClass as a
+        convenient way of accessing registered store and resoruce classes at
+        runtime--as opposed to importing them and risking annoying cyclic
+        import errors.
+        """
+        class_obj = None
+        if self.manifest is not None:
+            # assume it's the name of resource class first
+            class_obj = self.manifest.resource_classes.get(class_name)
+            if not class_obj:
+                # fall back on assuming it's a store class
+                class_obj = self.manifest.store_classes.get(class_name)
+        return class_obj
+
+    def __getitem__(
+        self,
+        class_name: Text
+    ) -> Union[Type['Resource'], Type['Store']]:
+        return getattr(self, class_name, None)
 
     def __repr__(self):
         return (
             f'{get_class_name(self)}('
-            f'bootstrapped={self._is_bootstrapped}, '
-            f'started={self._is_started}, '
+            f'bootstrapped={self.is_bootstrapped}, '
+            f'started={self.is_started}, '
             f'size={len(self._actions)}'
             f')'
         )
@@ -116,12 +150,16 @@ class Application(object):
         return Action
 
     @property
-    def manifest(self):
-        return self._manifest
+    def manifest(self) -> 'Manifest':
+        return getattr(self.local, 'manifest', None)
 
     @manifest.setter
-    def manifest(self, obj):
-        self._manifest = Manifest.from_object(obj)
+    def manifest(self, manifest):
+        self.local.manifest = Manifest(manifest)
+
+    @property
+    def values(self) -> Dict:
+        return self.manifest.values
 
     @property
     def mode(self) -> Mode:
@@ -129,22 +167,30 @@ class Application(object):
 
     @mode.setter
     def mode(self, mode):
-        self._mode = Application.Mode(mode)
+        self._mode = Mode(mode)
+
+    @property
+    def namespace(self) -> Dict:
+        return self._namespace
 
     @property
     def is_bootstrapped(self) -> bool:
-        return self._is_bootstrapped
+        return getattr(self.local, 'is_bootstrapped', False)
+
+    @property
+    def is_started(self) -> bool:
+        return getattr(self.local, 'is_started', False)
 
     @property
     def is_simulation(self) -> bool:
-        return self._mode == Application.Mode.simulation
+        return self._mode == Mode.simulation
 
     @is_simulation.setter
     def is_simulation(self, is_simulation):
         if is_simulation:
-            self._mode = Application.Mode.simulation
+            self._mode = Mode.simulation
         else:
-            self._mode = Application.Mode.normal
+            self._mode = Mode.normal
 
     @property
     def json(self) -> JsonEncoder:
@@ -159,124 +205,55 @@ class Application(object):
         return self._arg_loader
 
     @property
-    def binder(self) -> 'ResourceBinder':
-        return self._binder
-
-    @property
-    def res(self) -> DictObject:
-        return self._res
-
-    @property
     def actions(self) -> DictObject:
         return self._actions
 
     @property
-    def storage(self) -> 'StoreManager':
-        return self._storage
-
-    @property
-    def log(self):
+    def log(self) -> ConsoleLoggerInterface:
         return self._logger
 
-    def action(self, *args, **kwargs):
+    def action(self, *args, **kwargs) -> 'ActionDecorator':
         return self.decorator_type(self, *args, **kwargs)
-
-    def register(
-        self,
-        action: Union['Action', 'Application'],
-        overwrite=False
-    ) -> 'Application':
-        """
-        Add a Action to this app.
-        """
-        if isinstance(action, Application):
-            app = action
-            for act in app.actions.values():
-                decorator = self.action()
-                decorator(act.target)
-        elif action.name not in self._actions or overwrite:
-            console.debug(
-                f'{get_class_name(self)}(thread_id={get_ident()}) '
-                f'registered action {action.name}'
-            )
-            if isinstance(action, Action):
-                if action.app is not self:
-                    decorator(action.target)
-                else:
-                    self._actions[action.name] = action
-            else:
-                assert callable(action)
-                decorator = self.action()
-                decorator(action)
-        else:
-            raise ApplicationError(
-                message=f'action already registered: {action.name}',
-                data={'action': action}
-            )
-
-    def bind(
-        self,
-        resource_types: List[Type['Resource']],
-        store_type: Type['Store'] = None
-    ) -> 'Application':
-        """
-        Dynamically register one or more Resource classes with this
-        bootstrapped Application. If a store_type is specified, it will be used
-        for all classes in resource_types. Otherwise, the Store class will come from
-        calling the __store__ method on each BizClass.
-        """
-        assert self.is_bootstrapped
-
-        def bind_one(resource_type, store_type):
-            store_instance = None
-            if store_type is None:
-                store_obj = resource_type.__store__()
-                if not isinstance(store_obj, type):
-                    store_type = type(store_obj)
-                    store_instance = store_obj
-                else:
-                    store_type = store_obj
-
-            self._storage.store_types[get_class_name(store_type)] = store_type
-            self._res[get_class_name(resource_type)] = resource_type
-
-            if not resource_type.is_bootstrapped():
-                resource_type.bootstrap(self)
-            if not store_type.is_bootstrapped():
-                kwargs = self.manifest.get_bootstrap_params(store_type)
-                store_type.bootstrap(self, **kwargs)
-
-            binding = self.binder.register(
-                resource_type=resource_type,
-                store_type=store_type,
-                store_instance=store_instance,
-            )
-            binding.bind(self.binder)
-
-        if not is_sequence(resource_types):
-            resource_types = [resource_types]
-
-        for resource_type in resource_types:
-            bind_one(resource_type, store_type)
-
-        self._arg_loader.bind()
-
-        return self
 
     def bootstrap(
         self,
-        manifest: Manifest = None,
+        manifest: Union[Dict, Manifest, Text, Callable, 'Application'] = None,
         namespace: Dict = None,
+        values: Dict = None,
         middleware: List = None,
         mode: Mode = Mode.normal,
-        force=False,
         *args,
         **kwargs
     ) -> 'Application':
         """
         Bootstrap the data, business, and service layers, wiring them up.
         """
-        if self.is_bootstrapped and (not force):
+
+        def create_logger(level):
+            """
+            Setup root application logger.
+            """
+            if self.manifest.package:
+                name = (
+                    f'{self.manifest.package}:'
+                    f'{os.getpid()}:'
+                    f'{get_ident()}'
+                )
+            else:
+                class_name = get_class_name(self)
+                name = (
+                    f'{StringUtils.snake(class_name)}:'
+                    f'{os.getpid()}:'
+                    f'{get_ident()}'
+                )
+
+            return ConsoleLoggerInterface(name, level)
+            
+        # warn about already being bootstrapped...
+        if (
+            self.is_bootstrapped and
+            self.local.thread_id != get_ident()
+        ):
             console.warning(
                 message=f'{get_class_name(self)} already bootstrapped.',
                 data={
@@ -286,79 +263,70 @@ class Application(object):
             )
             return self
 
-        console.debug(f'bootstrapping {get_class_name(self)} application...')
+        console.debug(f'bootstrapping {get_class_name(self)} app')
 
-        # override mode set in constructor
-        if mode is not None:
-            self._mode = Application.Mode(mode)
+        # override the application mode set in constructor
+        self._mode = Mode(mode or self.mode or Mode.normal)
 
-        # merge additional namespace data into namespace accumulator
+        # merge additional namespace data into namespace dict
         self._namespace = DictUtils.merge(self._namespace, namespace or {})
 
+        # register additional middleware targing this app subclass
         if middleware:
             self._middleware.extend(
                 m for m in middleware if isinstance(self, m.app_types)
             )
 
+        # build final manifest, used to bootstrap program components
         if manifest is not None:
-            self.manifest = Manifest.from_object(manifest)
+            if isinstance(manifest, Application):
+                source_app = manifest
+                self.local.manifest = Manifest(source_app.shared.manifest_data)
+            else:
+                self.local.manifest = Manifest(manifest)
+        elif self.shared.manifest_data:
+            self.local.manifest = Manifest(self.shared.manifest_data)
         else:
-            # manifest expected to have been passed into ctor
-            assert self.manifest is not None
+            self.local.manifest = Manifest({})
 
-        self.manifest.process(app=self, namespace=self._namespace)
+        assert self.local.manifest is not None
+        self.manifest.bootstrap(self)
 
-        # setup logger before bootstrapping components
-        logger_suffix = ''.join(choice(ascii_letters) for i in range(4))
-        logger_name = (
-            self.manifest.package + '-' + logger_suffix if self.manifest.package
-            else StringUtils.snake(get_class_name(self)) + '-' + logger_suffix
-        )
-        self._logger = ConsoleLoggerInterface(logger_name)
+        if values:
+            self.manifest.values.update(values)
+            
+        if not self.shared.manifest_data:
+            self.shared.manifest_data = self.local.manifest.data
 
-        # populate convenience data structures
-        self._storage = StoreManager(self, self.manifest.types.stores)
-        self._res.update(self.manifest.types.res)
+        # set up main thread name
+        if self.manifest.package:
+            current_thread().name = (
+                f'{StringUtils.camel(self.manifest.package)}'
+            )
+        else:
+            # update default main thread name
+            current_thread().name = (
+                f'{get_class_name(self)}'
+            )
 
-        self.manifest.bootstrap()
-        self.manifest.bind(rebind=True)
-
-        # init the arg loader, which is responsible for replacing arguments
-        # passed in as ID's with their respective Resources
+        self._logger = create_logger(self.manifest.logging['level'])
         self._arg_loader = ArgumentLoader(self)
 
-        # bootstrap the middlware
-        mware_names = []
-        for idx, mware in enumerate(self.middleware):
-            mware.bootstrap(app=self)
-            mware_names.append(' ' + ('   ' * idx) + ' ↪ ' + get_class_name(mware))
+        # if we're in a new process, unset the executors so that
+        # the spawn method lazily triggers the instantiation of
+        # new ones at runtime.
+        if not self._root_pid != os.getpid():
+            self.local.thread_executor = None
+            self.local.process_executor = None
 
-        for action in self._actions.values():
-            action.bootstrap()
-
-
-        console.debug(
-            message='action execution diagram...\n\n' + '\n'.join(
-                ['➥ initialize Ravel request'] +
-                [
-                    name + '.pre_request' for name in mware_names
-                ] + 
-                ['   ' * len(self.middleware) + '  ➥ args, kwargs = resolve(program_inputs)'] +
-                [
-                    name + '.on_request' for name in mware_names
-                ] +
-                ['   ' * len(self.middleware) + '  ➥ response.result = action(*args, **kwargs)'] +
-                [
-                    name + '.post_[bad_]response' for name in mware_names[::-1]
-                ]
-            ) + '\n'
-        )
+        self.local.thread_id = get_ident()
+        self.local.tx_manager = TransactionManager(self)
 
         # execute custom lifecycle hook provided by this subclass
         self.on_bootstrap(*args, **kwargs)
-        self._is_bootstrapped = True
+        self.local.is_bootstrapped = True
 
-        console.debug(f'finished bootstrapping {get_class_name(self)}')
+        console.debug(f'finished bootstrapping {get_class_name(self)} app')
         return self
 
     def start(self, *args, **kwargs):
@@ -366,28 +334,112 @@ class Application(object):
         Enter the main loop in whatever program context your Application is
         being used, like in a web framework or a REPL.
         """
-        self._is_started = True
+        self.local.is_started = True
         return self.on_start(*args, **kwargs)
 
     def inject(
         self,
         func: Callable,
-        include_resource_types=True,
-        include_store_types=True,
-        include_actions=False
+        include_resource_classes=True,
+        include_store_classes=True,
+        include_actions=False,
     ) -> Callable:
         """
         Inject Resource, Store, and/or Action classes into the lexical scope of
         the given function.
         """
-        if include_resource_types:
-            inject(func, self.res)
-        if include_store_types:
-            inject(func, self.storage.store_types)
+        if include_resource_classes:
+            inject(func, self.manifest.resource_classes)
+        if include_store_classes:
+            inject(func, self.manifest.store_classes)
         if include_actions:
-            inject(func, self.actions)
+            inject(func, self._actions)
 
         return func
+
+    def spawn(
+        self,
+        target: Callable,
+        args: Tuple = None,
+        kwargs: Dict = None,
+        multiprocessing: bool = False
+    ) -> Future:
+        """
+        Perform a target callable in a worker thread or subprocess, creating
+        and returning a Future object. This is a convenience method;
+        otherwise, when you manually create a thread of process in which you
+        intend to access this app, you will need to call bootstrap on the app
+        again (within said thread or process context).
+        """
+        args = tuple(args or [])
+        kwargs = kwargs or {}
+
+        # select and lazily create the appropriate executor...
+        if not multiprocessing:
+            executor = getattr(self.local, 'thread_executor', None)
+            if executor is None:
+                thread_name_prefix = (
+                    f'{StringUtils.camel(self.manifest.package)} Worker'
+                    if self.manifest.package
+                    else f'{get_class_name(self)} Worker'
+                )
+                self.local.thread_executor = ThreadPoolExecutor(
+                    max_workers=os.cpu_count(),
+                    initializer=self.bootstrap,
+                    initargs=(self.manifest.data, ),
+                    thread_name_prefix=thread_name_prefix
+                )
+            executor = self.local.thread_executor
+        else:
+            executor = getattr(self.local, 'process_executor', None)
+            if executor is None:
+                self.local.process_executor = ProcessPoolExecutor(
+                    max_workers=os.cpu_count(),
+                    initializer=self.bootstrap,
+                    initargs=(self.manifest.data, ),
+                )
+            executor = self.local.process_executor
+
+        # submit and return the future
+        return executor.submit(target, *args, **kwargs)
+
+    def add_action(self, action: 'Action', overwrite=False, *args, **kwargs):
+        """
+        Add an action to this app.
+        """
+        if action.name not in self._actions or overwrite:
+            console.debug(f'registered action {action.name}')
+            if isinstance(action, Action):
+                if action.app is not self:
+                    if args or kwargs:
+                        console.warning(
+                            '*args and **kwargs ignored by add_action'
+                        )
+                    decorator = self.action(
+                        *action.decorator.args,
+                        **action.decorator.kwargs
+                    )
+                    decorator(action.target)
+                else:
+                    self._actions[action.name] = action
+            else:
+                assert callable(action)
+                decorator = self.action(*args, **kwargs)
+                decorator(action)
+        else:
+            raise ApplicationError(
+                message=f'action already registered: {action.name}',
+                data={'action': action}
+            )
+
+    def transaction(self):
+        return self.local.tx_manager
+
+    def commit(self):
+        self.local.tx_manager.commit()
+
+    def rollback(self):
+        self.local.tx_manager.rollback()
 
     def on_extract(self, action, index, parameter, raw_args, raw_kwargs):
         """
@@ -479,31 +531,3 @@ class Application(object):
         executed.
         """
         return raw_result
-
-
-# TODO: move this class into ravel/app/base/store_manager.py
-class StoreManager(object):
-    """
-    StoreManager is a high-level interface to performing logic related to the
-    lifecycle of store instances utilized in a bootstrapped app.
-    """
-
-    def __init__(self, app: 'Application', store_types: DictObject):
-        self._app = app
-        self._store_types = DictObject(store_types)
-
-    @property
-    def store_types(self) -> DictObject:
-        return self._store_types
-
-    @property
-    def utilized_store_types(self) -> Dict[Text, Type['Store']]:
-        return {
-            get_class_name(res_type.ravel.store): type(res_type.ravel.store)
-            for res_type in self._app.res.values()
-        }
-
-    def bootstrap(self):
-        for store_type in self.utilized_store_types.values():
-            kwargs = self._app.manifest.get_bootstrap_params(store_type)
-            store_type.bootstrap(self._app, **kwargs)

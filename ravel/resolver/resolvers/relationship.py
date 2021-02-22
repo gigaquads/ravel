@@ -34,6 +34,13 @@ class Relationship(Resolver):
     def dump(self, dumper: 'Dumper', value):
         return dumper.dump(value)
 
+    def on_copy(self, copy):
+        copy._cb_order_by = self._cb_order_by
+        copy._order_by = None
+        copy._eager = self._eager
+        copy._cb_joins = self._cb_joins
+        copy._join_sequence = self._join_sequence
+
     def on_bind(self):
         def arg_count(func):
             return len(inspect.signature(func).parameters)

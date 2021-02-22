@@ -43,11 +43,12 @@ class ActionDecorator(object):
         else:
             func = obj
             action = self.setup_action(func, False)
+            func._ravel_action = action
             return func
 
     def setup_action(self, func, overwrite):
         action = self.app.action_type(func, self)
-        self.app.register(action, overwrite=overwrite)
+        self.app.add_action(action, overwrite=overwrite)
         self.app.on_decorate(action)
         return action
 

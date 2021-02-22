@@ -8,9 +8,9 @@ from typing import List
 from collections import defaultdict
 from logging import getLogger
 
-from appyratus.utils import SysUtils
-from appyratus.utils import DictObject
-from appyratus.utils import TimeUtils
+from appyratus.utils.sys_utils import SysUtils
+from appyratus.utils.dict_utils import DictObject
+from appyratus.utils.time_utils import TimeUtils
 
 from appyratus.enum import Enum
 

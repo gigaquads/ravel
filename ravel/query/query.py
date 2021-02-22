@@ -1,7 +1,7 @@
 from typing import Text, List, Dict, Type, Union, Callable
 from copy import deepcopy
 
-from appyratus.utils import DictObject
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.util.loggers import console
 from ravel.query.predicate import Predicate
@@ -26,13 +26,15 @@ class Query(object):
         target: Union[Type['Resource'], Callable] = None,
         sources: List['Resource'] = None,
         parent: 'Query' = None,
-        request: 'Request' = None
+        request: 'Request' = None,
+        eager: bool = True,
     ):
         self.sources = sources or []
         self.target = target
         self.parent = parent
         self.options = DictObject()
         self.from_request = request
+        self.eager = eager
         self.requests = {}
         self.callbacks = []
         self.parameters = DictObject(
@@ -150,6 +152,12 @@ class Query(object):
         """
         Execute the query, returning a single Resource ora a Batch.
         """
+
+        if self.eager:
+            # "eager" here means that we always fetch at least ALL field
+            # values by adding them to the "select" set...
+            self.select(self.target.ravel.resolvers.fields.keys())
+
         executor = Executor(simulate=simulate)
         batch = executor.execute(self, sources=self.sources)
 

@@ -5,7 +5,7 @@ from typing import Type
 
 import pytest
 
-from appyratus.utils import DictUtils
+from appyratus.utils.dict_utils import DictUtils
 
 from ravel.test.domains.things import Thing as BaseThing
 from ravel.constants import REV, ID
@@ -29,7 +29,7 @@ def Thing(app):
     class Thing(BaseThing):
         pass
 
-    app.bind(Thing)
+    app.register_resource(Thing)
     return Thing
 
 
@@ -58,7 +58,7 @@ class ResourceCrudTestSuite:
     def bind(cls, resource_type: Type[Resource]):
         cls.store = cls.build_store(resource_type.ravel.app)
         cls.bind_store(resource_type, cls.store)
-        resource_type.ravel.store = cls.store
+        resource_type.ravel.local.store = cls.store
 
     def test_create(self, Thing, random_things):
         self.bind(Thing)

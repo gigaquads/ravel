@@ -7,11 +7,10 @@ from appyratus.usage import (
     BaseUsage,
     BaseUsageRenderer,
 )
-from appyratus.utils import (
-    DictUtils,
-    StringUtils,
-)
-from ravel import CliApplication
+from appyratus.utils.dict_utils import DictUtils
+from appyratus.utils.string_utils import StringUtils
+
+from ravel.apps.cli import CliApplication
 
 
 class ApplicationUsage(BaseUsage):

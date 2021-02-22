@@ -3,7 +3,7 @@ from typing import Text, Type
 import sqlalchemy as sa
 
 from sqlalchemy import ForeignKey
-from appyratus.utils import StringUtils
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.constants import REV, ID
 from ravel.util.loggers import console
@@ -117,12 +117,20 @@ class SqlalchemyTableBuilder(object):
                 defaults = self._resource_type.ravel.defaults
                 server_default = defaults[field.name]()
             if server_default is not None:
-                if isinstance(field, fields.Bool):
-                    server_default = 'true' if server_default else 'false'
-                elif isinstance(field, (fields.Int, fields.Float)):
-                    server_default = str(server_default)
-                elif isinstance(field, (fields.Dict, fields.Nested)):
-                    server_default = json_encoder.encode(server_default)
+                if not isinstance(server_default, str):
+                    if adapter is not None:
+                        server_default = adapter.encode(server_default)
+                    if isinstance(field, fields.Bool):
+                        server_default = 'true' if server_default else 'false'
+                    elif isinstance(field, (fields.Int, fields.Float)):
+                        server_default = str(server_default)
+                    else:
+                        try:
+                            server_default = json_encoder.encode(
+                                server_default
+                            )
+                        except:
+                            server_default = str(server_default)
 
         # prepare positional arguments for Column ctor
         args = [
@@ -141,8 +149,17 @@ class SqlalchemyTableBuilder(object):
             unique=unique,
             server_default=server_default
         )
-
-        column = sa.Column(*args, **kwargs)
+        try:
+            column = sa.Column(*args, **kwargs)
+        except Exception:
+            console.error(
+                message=f'failed to build sa.Column: {name}',
+                data={
+                    'args': args,
+                    'kwargs': kwargs
+                }
+            )
+            raise
 
         if field.nullable is not None:
             column.nullable = field.nullable

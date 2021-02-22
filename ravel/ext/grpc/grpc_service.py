@@ -23,10 +23,11 @@ import grpc
 import jsbeautifier
 
 from google.protobuf.message import Message
-from appyratus.utils import (
-    StringUtils, FuncUtils, DictUtils,
-    DictObject, TimeUtils, TemplateEnvironment,
-)
+from appyratus.utils.string_utils import StringUtils
+from appyratus.utils.func_utils import FuncUtils
+from appyratus.utils.dict_utils import DictUtils, DictObject
+from appyratus.utils.time_utils import TimeUtils
+from appyratus.utils.template_utils import TemplateEnvironment
 
 from ravel.util import (
     is_resource,

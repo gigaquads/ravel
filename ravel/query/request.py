@@ -1,6 +1,6 @@
 from typing import Text, Dict
 
-from appyratus.utils import DictObject
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.util import is_resource, is_resource_type
 from ravel.util.misc_functions import get_class_name, flatten_sequence

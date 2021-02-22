@@ -1,2 +1,9 @@
 # Ravel
-_warp drive for Python software development_
+Python's first meta-framework
+
+# Links
+- Web https://ravel.dev
+- Source https://github.com/gigaquads/ravel
+- Docs https://docs.ravel.dev
+- Gigaquads Dev https://gqd.io
+- Gigaquads https://gigaquads.com

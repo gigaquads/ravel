@@ -6,14 +6,13 @@ from collections import defaultdict
 from datetime import datetime
 from threading import RLock
 
+import yaml
+
 from appyratus.env import Environment
 from appyratus.files import BaseFile, Yaml
 from appyratus.schema.fields import UuidString
-from appyratus.utils import (
-    DictObject,
-    DictUtils,
-    StringUtils,
-)
+from appyratus.utils.dict_utils import DictObject, DictUtils
+from appyratus.utils.string_utils import StringUtils
 
 from ravel.util.misc_functions import import_object
 from ravel.util.loggers import console
@@ -49,8 +48,6 @@ class FilesystemStore(Store):
 
         self._paths = DictObject()
         self._cache_store = SimulationStore()
-        self._table_lock = RLock()
-        self._row_locks = defaultdict(RLock)
 
         # convert the ftype string arg into a File class ref
         if not ftype:
@@ -80,36 +77,97 @@ class FilesystemStore(Store):
 
     @classmethod
     def on_bootstrap(
-        cls, ftype: Text = None, root: Text = None, use_recursive_merge=True
+        cls,
+        ftype: Text = None,
+        root: Text = None,
+        use_recursive_merge=True,
+        store_primitives=False,
+        prefetch: bool = True,
+        yaml_loader_class: Text = 'FullLoader'
     ):
         cls.ftype = import_object(ftype) if ftype else Yaml
         cls.root = root or cls.root
         cls.use_recursive_merge = use_recursive_merge
+        cls.store_primitives = store_primitives
+        cls.do_prefetch = prefetch
+
+        if 'yaml' in cls.ftype.extensions():
+            cls.yaml_loader_class = getattr(yaml, yaml_loader_class, None)
+        else:
+            cls.yaml_loader_class = None
+
         if not cls.root:
             raise MissingBootstrapParameterError('missing parameter: root')
 
-    def on_bind(self, resource_type, root: Text = None, ftype: BaseFile = None):
+    def on_bind(
+        self,
+        resource_type,
+        root: Text = None,
+        ftype: BaseFile = None,
+        store_primitives=None,
+        prefetch: bool = None,
+        yaml_loader_class: Text = None,
+    ):
         """
         Ensure the data dir exists for this Resource type.
         """
         if isinstance(ftype, str):
             self.ftype = import_object(ftype)
 
+        if store_primitives is not None:
+            self.store_primitives = store_primitives
+
+        if prefetch is not None:
+            self.do_prefetch = prefetch
+
+        if yaml_loader_class is not None:
+            if self.ftype.lower() == 'yaml':
+                self.yaml_loader_class = getattr(
+                    yaml, yaml_loader_class, None
+                )
+            else:
+                self.yaml_loader_class = None
+
         self.paths.root = root or self.root
         self.paths.records = os.path.join(
             self.paths.root, StringUtils.snake(resource_type.__name__)
         )
+
         os.makedirs(self.paths.records, exist_ok=True)
 
         # bootstrap, bind, and backfill the in-memory cache
-        with self._table_lock:
-            if not self._cache_store.is_bootstrapped():
-                self._cache_store.bootstrap(resource_type.ravel.app)
+        if self.do_prefetch:
+            self.bust_cache(self.do_prefetch)
 
-            self._cache_store.bind(resource_type)
+    def bust_cache(self, prefetch=False):
+        self._cache_store = SimulationStore()
+        if not self._cache_store.is_bootstrapped():
+            self._cache_store.bootstrap(self.resource_type.ravel.app)
+
+        self._cache_store.bind(self.resource_type)
+
+        if prefetch:
             self._cache_store.create_many(
-                record for record in self.fetch_all(ignore_cache=True).values() if record
+                record for record
+                in self.fetch_all(ignore_cache=True).values()
+                if record
             )
+
+    @classmethod
+    def has_transaction(cls):
+        return False
+
+    @classmethod
+    def begin(cls, **kwargs):
+        pass
+
+    @classmethod
+    def commit(cls, **kwargs):
+        pass
+
+    @classmethod
+    def rollback(cls, **kwargs):
+        pass
 
     def create_id(self, record):
         return record.get(ID, UuidString.next_id())
@@ -122,11 +180,10 @@ class FilesystemStore(Store):
 
     def create(self, record: Dict) -> Dict:
         _id = self.create_id(record)
-        with self._row_locks[_id]:
-            record = self.update(_id, record)
-            record[ID] = _id
-            self._cache_store.create(record)
-            return record
+        record = self.update(_id, record)
+        record[ID] = _id
+        self._cache_store.create(record)
+        return record
 
     def create_many(self, records):
         created_records = []
@@ -189,16 +246,17 @@ class FilesystemStore(Store):
 
             for _id in ids_to_fetch_from_fs:
                 fpath = self.mkpath(_id)
-                with self._row_locks[_id]:
-                    try:
-                        record = self.ftype.read(fpath)
-                    except FileNotFoundError:
-                        records[_id] = None
-                        console.debug(
-                            message='file not found by filesystem store',
-                            data={'filepath': fpath}
-                        )
-                        continue
+                try:
+                    record = self.ftype.read(
+                        fpath, loader_class=self.yaml_loader_class
+                    )
+                except FileNotFoundError:
+                    records[_id] = None
+                    console.debug(
+                        message='file not found by filesystem store',
+                        data={'filepath': fpath}
+                    )
+                    continue
 
                 if record:
                     record, errors = self.schema.process(record)
@@ -230,8 +288,10 @@ class FilesystemStore(Store):
 
     def update(self, _id, data: Dict) -> Dict:
         fpath = self.mkpath(_id)
-        with self._row_locks[_id]:
-            base_record = self.ftype.read(fpath)
+        base_record = self.ftype.read(
+            fpath,
+            loader_class=self.yaml_loader_class
+        )
 
         schema = self.resource_type.ravel.schema
         base_record, errors = schema.process(base_record)
@@ -249,7 +309,13 @@ class FilesystemStore(Store):
         if ID not in record:
             record[ID] = _id
 
-        with self._row_locks[_id]:
+        if self.store_primitives:
+            json = self.app.json
+            self.ftype.write(
+                path=fpath,
+                data=json.decode(json.encode(record))
+            )
+        else:
             self.ftype.write(path=fpath, data=record)
 
         self._cache_store.update(_id, record)
@@ -264,8 +330,7 @@ class FilesystemStore(Store):
     def delete(self, _id) -> None:
         self._cache_store.delete(_id)
         fpath = self.mkpath(_id)
-        with self._row_locks[_id]:
-            os.remove(fpath)
+        os.remove(fpath)
 
     def delete_many(self, _ids: List) -> None:
         for _id in _ids:
@@ -276,6 +341,9 @@ class FilesystemStore(Store):
         self.delete_many(_ids)
 
     def query(self, *args, **kwargs):
+        if self._cache_store is not None and not self._cache_store.count():
+            self.fetch_all(ignore_cache=True)
+
         return self._cache_store.query(*args, **kwargs)
 
     def mkpath(self, fname: Text) -> Text:

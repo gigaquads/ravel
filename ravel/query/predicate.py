@@ -15,12 +15,12 @@ from sqlparse.sql import (
 )
 
 from appyratus.enum import Enum
-from appyratus.utils import DictObject
+from appyratus.utils.dict_utils import DictObject
 
 from ravel.util.misc_functions import (
     flatten_sequence, is_sequence, get_class_name
 )
-from ravel.schema import Enum as EnumField, Field
+from ravel.schema import Field, fields
 from ravel.constants import ID, REV, OP_CODE
 from ravel.util import is_resource, is_batch
 
