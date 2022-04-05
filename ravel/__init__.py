@@ -16,14 +16,11 @@ from ravel.batch import Batch
 from ravel.query.query import Query
 from ravel.query.order_by import OrderBy
 from ravel.query.request import Request
-from ravel.query.predicate import (
-    Predicate, ConditionalPredicate, BooleanPredicate
-)
+from ravel.query.predicate import (Predicate, ConditionalPredicate, BooleanPredicate)
 from ravel.resolver.resolver import Resolver
+from ravel.resolver.resolver_manager import ResolverManager
 from ravel.resolver.resolver_decorator import ResolverDecorator
 from ravel.resolver.resolver_property import ResolverProperty
 from ravel.resolver.resolvers.loader import Loader, LoaderProperty
 from ravel.resolver.resolvers.relationship import Relationship
-from ravel.resolver.decorators import (
-    resolver, relationship, view, nested, field
-)
+from ravel.resolver.decorators import (resolver, relationship, view, nested, field)

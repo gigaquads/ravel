@@ -12,6 +12,7 @@ from appyratus.env import Environment
 from appyratus.files import BaseFile, Yaml
 from appyratus.schema.fields import UuidString
 from appyratus.utils.dict_utils import DictObject, DictUtils
+from appyratus.utils.path_utils import PathUtils
 from appyratus.utils.string_utils import StringUtils
 
 from ravel.util.misc_functions import import_object
@@ -86,7 +87,7 @@ class FilesystemStore(Store):
         yaml_loader_class: Text = 'FullLoader'
     ):
         cls.ftype = import_object(ftype) if ftype else Yaml
-        cls.root = root or cls.root
+        cls.root = PathUtils.expand_path(root or cls.root)
         cls.use_recursive_merge = use_recursive_merge
         cls.store_primitives = store_primitives
         cls.do_prefetch = prefetch
@@ -122,16 +123,12 @@ class FilesystemStore(Store):
 
         if yaml_loader_class is not None:
             if self.ftype.lower() == 'yaml':
-                self.yaml_loader_class = getattr(
-                    yaml, yaml_loader_class, None
-                )
+                self.yaml_loader_class = getattr(yaml, yaml_loader_class, None)
             else:
                 self.yaml_loader_class = None
 
         self.paths.root = root or self.root
-        self.paths.records = os.path.join(
-            self.paths.root, StringUtils.snake(resource_type.__name__)
-        )
+        self.paths.records = os.path.join(self.paths.root, StringUtils.snake(resource_type.__name__))
 
         os.makedirs(self.paths.records, exist_ok=True)
 
@@ -147,11 +144,7 @@ class FilesystemStore(Store):
         self._cache_store.bind(self.resource_type)
 
         if prefetch:
-            self._cache_store.create_many(
-                record for record
-                in self.fetch_all(ignore_cache=True).values()
-                if record
-            )
+            self._cache_store.create_many(record for record in self.fetch_all(ignore_cache=True).values() if record)
 
     @classmethod
     def has_transaction(cls):
@@ -201,12 +194,7 @@ class FilesystemStore(Store):
         record = records.get(_id) if records else {}
         return record
 
-    def fetch_many(
-        self,
-        _ids: List = None,
-        fields: Set[Text] = None,
-        ignore_cache=False
-    ) -> Dict:
+    def fetch_many(self, _ids: List = None, fields: Set[Text] = None, ignore_cache=False) -> Dict:
         """
         """
         if not _ids:
@@ -247,24 +235,16 @@ class FilesystemStore(Store):
             for _id in ids_to_fetch_from_fs:
                 fpath = self.mkpath(_id)
                 try:
-                    record = self.ftype.read(
-                        fpath, loader_class=self.yaml_loader_class
-                    )
+                    record = self.ftype.read(fpath, loader_class=self.yaml_loader_class)
                 except FileNotFoundError:
                     records[_id] = None
-                    console.debug(
-                        message='file not found by filesystem store',
-                        data={'filepath': fpath}
-                    )
+                    console.debug(message='file not found by filesystem store', data={'filepath': fpath})
                     continue
 
                 if record:
                     record, errors = self.schema.process(record)
                     if errors:
-                        raise Exception(
-                            f'validation error while loading '
-                            f'{_id}.{self.extension}'
-                        )
+                        raise Exception(f'validation error while loading ' f'{_id}.{self.extension}')
                     record.setdefault(ID, _id)
                     records[_id] = {k: record.get(k) for k in fields}
 
@@ -288,10 +268,7 @@ class FilesystemStore(Store):
 
     def update(self, _id, data: Dict) -> Dict:
         fpath = self.mkpath(_id)
-        base_record = self.ftype.read(
-            fpath,
-            loader_class=self.yaml_loader_class
-        )
+        base_record = self.ftype.read(fpath, loader_class=self.yaml_loader_class)
 
         schema = self.resource_type.ravel.schema
         base_record, errors = schema.process(base_record)
@@ -311,10 +288,7 @@ class FilesystemStore(Store):
 
         if self.store_primitives:
             json = self.app.json
-            self.ftype.write(
-                path=fpath,
-                data=json.decode(json.encode(record))
-            )
+            self.ftype.write(path=fpath, data=json.decode(json.encode(record)))
         else:
             self.ftype.write(path=fpath, data=record)
 
@@ -322,10 +296,7 @@ class FilesystemStore(Store):
         return record
 
     def update_many(self, _ids: List, updates: List = None) -> Dict:
-        return {
-            _id: self.update(_id, data)
-            for _id, data in zip(_ids, updates)
-        }
+        return {_id: self.update(_id, data) for _id, data in zip(_ids, updates)}
 
     def delete(self, _id) -> None:
         self._cache_store.delete(_id)

@@ -3,4 +3,5 @@ from .pygame_game import (
     GAME_STARTED,
     GAME_STOPPED,
     GAME_PAUSED,
- )
+    KEYS,
+)
