@@ -8,5 +8,3 @@ base36==0.1.1
 prompt-toolkit>=3.0.4
 pycryptodome==3.9.9
 appyratus>=3.0.3
-jinja2==2.11.1
-MarkupSafe==2.0.1
